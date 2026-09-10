@@ -8,7 +8,7 @@ const mockGetAuthFromBearerOrSession = jest.fn();
 const mockListConnections = jest.fn();
 const mockRefreshConnection = jest.fn();
 const mockResolveManagedWebexCredential = jest.fn();
-const mockGetReadableWebexSpaceIds = jest.fn();
+const mockListManagedWebexSharedRoomIds = jest.fn();
 
 jest.mock("@/lib/api-middleware", () => {
   const actual = jest.requireActual("@/lib/api-middleware");
@@ -33,11 +33,8 @@ jest.mock("@/lib/feature-flags/credentials", () => ({
 jest.mock("@/lib/tome/managed-webex", () => ({
   resolveManagedWebexCredential: (...args: unknown[]) =>
     mockResolveManagedWebexCredential(...args),
-}));
-
-jest.mock("@/lib/rbac/user-insights-scope", () => ({
-  getReadableWebexSpaceIds: (...args: unknown[]) =>
-    mockGetReadableWebexSpaceIds(...args),
+  listManagedWebexSharedRoomIds: (...args: unknown[]) =>
+    mockListManagedWebexSharedRoomIds(...args),
 }));
 
 jest.mock("@/lib/rbac/resource-authz", () => ({
@@ -60,7 +57,8 @@ describe("GET /api/projects/source-options for Atlassian", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetAuthFromBearerOrSession.mockResolvedValue({
-      session: { sub: "example-user" },
+      user: { email: "user@example.com", name: "Example User", role: "user" },
+      session: { sub: "example-user", user: { email: "user@example.com" } },
     });
     mockListConnections.mockResolvedValue([
       {
@@ -82,7 +80,7 @@ describe("GET /api/projects/source-options for Atlassian", () => {
         displayName: "Managed Webex account",
       },
     });
-    mockGetReadableWebexSpaceIds.mockResolvedValue([]);
+    mockListManagedWebexSharedRoomIds.mockResolvedValue(new Set());
   });
 
   afterEach(() => {
@@ -187,8 +185,10 @@ describe("GET /api/projects/source-options for GitHub", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetAuthFromBearerOrSession.mockResolvedValue({
-      session: { sub: "example-user" },
+      user: { email: "user@example.com", name: "Example User", role: "user" },
+      session: { sub: "example-user", user: { email: "user@example.com" } },
     });
+    mockListManagedWebexSharedRoomIds.mockResolvedValue(new Set());
     mockListConnections.mockResolvedValue([
       {
         id: "github-connection",
@@ -262,7 +262,8 @@ describe("GET /api/projects/source-options for Webex", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetAuthFromBearerOrSession.mockResolvedValue({
-      session: { sub: "example-user" },
+      user: { email: "user@example.com", name: "Example User", role: "user" },
+      session: { sub: "example-user", user: { email: "user@example.com" } },
     });
     mockListConnections.mockResolvedValue([
       {
@@ -322,7 +323,7 @@ describe("GET /api/projects/source-options for Webex", () => {
     });
   });
 
-  it("lists only caller-authorized rooms through the healthy managed account", async () => {
+  it("lists only rooms shared by the caller and managed account", async () => {
     mockResolveManagedWebexCredential.mockResolvedValue({
       capability: {
         enabled: true,
@@ -333,7 +334,9 @@ describe("GET /api/projects/source-options for Webex", () => {
       },
       accessToken: "managed-token",
     });
-    mockGetReadableWebexSpaceIds.mockResolvedValue(["room-readable"]);
+    mockListManagedWebexSharedRoomIds.mockResolvedValue(
+      new Set(["room-shared"]),
+    );
     global.fetch = jest.fn(async (input: string | URL | Request) => {
       const url = new URL(
         typeof input === "string"
@@ -345,8 +348,8 @@ describe("GET /api/projects/source-options for Webex", () => {
       if (url.pathname === "/v1/rooms") {
         return jsonResponse({
           items: [
-            { id: "room-readable", title: "Readable Room" },
-            { id: "room-hidden", title: "Hidden Room" },
+            { id: "room-shared", title: "Shared Room" },
+            { id: "room-not-shared", title: "Not Shared Room" },
           ],
         });
       }
@@ -361,11 +364,15 @@ describe("GET /api/projects/source-options for Webex", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(mockGetReadableWebexSpaceIds).toHaveBeenCalledWith("user:example-user");
+    expect(mockListManagedWebexSharedRoomIds).toHaveBeenCalledWith({
+      accessToken: "managed-token",
+      userEmail: "user@example.com",
+      roomIds: ["room-shared", "room-not-shared"],
+    });
     expect(body.data).toMatchObject({
       connected: true,
       connectedTo: "Managed Webex account",
-      options: [{ value: "room-readable", label: "Readable Room" }],
+      options: [{ value: "room-shared", label: "Shared Room" }],
     });
   });
 });

@@ -1,8 +1,7 @@
 import { ApiError } from "@/lib/api-error";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import type { ProviderConnectionMetadata } from "@/lib/credentials/oauth-service";
-import { getReadableWebexSpaceIds } from "@/lib/rbac/user-insights-scope";
-import { subjectFromSession, type ResourceAuthzSession } from "@/lib/rbac/resource-authz";
+import type { ResourceAuthzSession } from "@/lib/rbac/resource-authz";
 import { resolveUserIdentitiesByEmail } from "@/lib/rbac/user-identity-directory";
 import type {
   ProjectDocument,
@@ -25,6 +24,7 @@ export interface ManagedWebexCapability {
   available: boolean;
   provider: string;
   displayName: string;
+  accountEmail?: string;
   reason?: string;
 }
 
@@ -39,6 +39,10 @@ interface WebexProfile {
   orgId?: string;
   displayName?: string;
   emails?: string[];
+}
+
+interface WebexMembership {
+  roomId?: string;
 }
 
 let cachedCredential:
@@ -66,6 +70,7 @@ function unavailable(
       available: false,
       provider: config.provider,
       displayName: "Managed Webex account",
+      ...(config.accountEmail ? { accountEmail: config.accountEmail } : {}),
       reason,
     },
   };
@@ -123,6 +128,14 @@ export async function resolveManagedWebexCredential(options?: {
     );
     if (!connection) {
       result = unavailable(config, "Managed Webex account needs reconnection.");
+    } else if (
+      connection.grantedScopes?.length &&
+      !connection.grantedScopes.includes("spark:memberships_read")
+    ) {
+      result = unavailable(
+        config,
+        "Managed Webex cannot verify shared spaces. Contact an administrator.",
+      );
     } else {
       const refreshed = await service.refreshConnection(connection.id);
       const profileResponse = await (options?.fetchImpl ?? fetch)(
@@ -154,6 +167,7 @@ export async function resolveManagedWebexCredential(options?: {
               available: true,
               provider: config.provider,
               displayName: "Managed Webex account",
+              accountEmail: config.accountEmail,
             },
             accessToken: refreshed.accessToken,
             connection,
@@ -223,8 +237,101 @@ export function normalizeWebexCredentialSettings(input: {
   return { mode, provider };
 }
 
+/**
+ * List rooms visible to the managed account where the named human is also a
+ * live Webex member. Webex requires roomId when a normal user token filters
+ * memberships by personEmail, so each candidate room is checked explicitly.
+ */
+export async function listManagedWebexSharedRoomIds(input: {
+  accessToken: string;
+  userEmail: string;
+  roomIds: readonly string[];
+  fetchImpl?: typeof fetch;
+}): Promise<Set<string>> {
+  const userEmail = input.userEmail.trim().toLowerCase();
+  if (!userEmail) {
+    throw new ApiError(
+      "Your Webex identity could not be verified. Contact an administrator.",
+      400,
+      "WEBEX_USER_EMAIL_REQUIRED",
+    );
+  }
+
+  const candidates = Array.from(
+    new Set(input.roomIds.map((roomId) => roomId.trim()).filter(Boolean)),
+  );
+  const sharedRoomIds = new Set<string>();
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const batchSize = 8;
+
+  for (let offset = 0; offset < candidates.length; offset += batchSize) {
+    const batch = candidates.slice(offset, offset + batchSize);
+    const results = await Promise.all(
+      batch.map(async (roomId) => {
+        const url = new URL("https://webexapis.com/v1/memberships");
+        url.searchParams.set("roomId", roomId);
+        url.searchParams.set("personEmail", userEmail);
+        url.searchParams.set("max", "1");
+        const response = await fetchImpl(url.href, {
+          headers: {
+            Authorization: `Bearer ${input.accessToken}`,
+            Accept: "application/json",
+          },
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          console.warn(
+            `[ManagedWebex] membership verification failed (HTTP ${response.status})`,
+          );
+          throw new ApiError(
+            "Managed Webex cannot verify shared spaces. Contact an administrator.",
+            502,
+            "MANAGED_WEBEX_MEMBERSHIP_LOOKUP_FAILED",
+          );
+        }
+        const body = (await response.json().catch(() => ({}))) as {
+          items?: WebexMembership[];
+        };
+        return (body.items ?? []).some(
+          (membership) => membership.roomId?.trim() === roomId,
+        );
+      }),
+    );
+    results.forEach((isShared, index) => {
+      if (isShared) sharedRoomIds.add(batch[index]);
+    });
+  }
+  return sharedRoomIds;
+}
+
+export async function assertManagedWebexUserSharesRooms(input: {
+  accessToken: string;
+  userEmail: string;
+  rooms: WebexRoomSource[];
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  if (input.rooms.length === 0) return;
+  const sharedRoomIds = await listManagedWebexSharedRoomIds({
+    accessToken: input.accessToken,
+    userEmail: input.userEmail,
+    roomIds: input.rooms.map((room) => room.room_id),
+    fetchImpl: input.fetchImpl,
+  });
+  const notShared = input.rooms.filter((room) => !sharedRoomIds.has(room.room_id));
+  if (notShared.length > 0) {
+    throw new ApiError(
+      `You and the managed Webex account must both belong to these spaces: ${notShared
+        .map((room) => room.name || room.room_id)
+        .join(", ")}.`,
+      403,
+      "MANAGED_WEBEX_SHARED_MEMBERSHIP_REQUIRED",
+    );
+  }
+}
+
 export async function assertManagedWebexRoomsAccessible(input: {
   session: ResourceAuthzSession;
+  userEmail?: string;
   rooms: WebexRoomSource[];
 }): Promise<void> {
   const resolved = await resolveManagedWebexCredential({ force: true });
@@ -236,20 +343,11 @@ export async function assertManagedWebexRoomsAccessible(input: {
     );
   }
 
-  const openfgaSubject = subjectFromSession(input.session);
-  const readable = new Set(
-    openfgaSubject ? await getReadableWebexSpaceIds(openfgaSubject) : [],
-  );
-  const unauthorized = input.rooms.filter((room) => !readable.has(room.room_id));
-  if (unauthorized.length > 0) {
-    throw new ApiError(
-      `You are not authorized to attach these Webex spaces: ${unauthorized
-        .map((room) => room.name || room.room_id)
-        .join(", ")}.`,
-      403,
-      "WEBEX_SPACE_ACCESS_REQUIRED",
-    );
-  }
+  await assertManagedWebexUserSharesRooms({
+    accessToken: resolved.accessToken,
+    userEmail: input.userEmail ?? input.session.user?.email ?? "",
+    rooms: input.rooms,
+  });
 
   const checks = await Promise.all(
     input.rooms.map(async (room) => {

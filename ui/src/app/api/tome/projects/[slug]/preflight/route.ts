@@ -117,7 +117,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     creds = await resolveProjectCredentials(
       tctx.project,
       sessionSub(tctx.session),
-      { purpose: "ingest" },
+      { purpose: "ingest", userEmail: tctx.user.email },
     );
   } catch (error) {
     creds = {};

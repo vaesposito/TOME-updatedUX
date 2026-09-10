@@ -10,6 +10,7 @@ interface Capability {
   available: boolean;
   provider: string;
   displayName: string;
+  accountEmail?: string;
   reason?: string;
 }
 

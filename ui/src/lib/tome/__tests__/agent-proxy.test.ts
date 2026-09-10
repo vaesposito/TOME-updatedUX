@@ -1,11 +1,14 @@
 const mockCollectForwardedCredentials = jest.fn();
 const mockResolveManagedWebexCredential = jest.fn();
+const mockAssertManagedWebexUserSharesRooms = jest.fn();
 
 jest.mock("@/lib/projects/onboarding-providers", () => ({
   collectForwardedCredentials: (...args: unknown[]) =>
     mockCollectForwardedCredentials(...args),
 }));
 jest.mock("../managed-webex", () => ({
+  assertManagedWebexUserSharesRooms: (...args: unknown[]) =>
+    mockAssertManagedWebexUserSharesRooms(...args),
   projectWebexCredentialMode: (project: ProjectDocument) =>
     project.sources?.webex_credential_mode === "managed" ? "managed" : "personal",
   projectWebexCredentialProvider: (project: ProjectDocument) =>
@@ -82,6 +85,7 @@ beforeEach(() => {
     capability: { available: true },
     accessToken: "managed-webex-token",
   });
+  mockAssertManagedWebexUserSharesRooms.mockResolvedValue(undefined);
 });
 
 it("uses managed Webex only for project ingest while retaining human-owned credentials", async () => {
@@ -89,7 +93,10 @@ it("uses managed Webex only for project ingest while retaining human-owned crede
   project.sources = { ...project.sources, webex_credential_mode: "managed" };
 
   await expect(
-    resolveProjectCredentials(project, "human-sub", { purpose: "ingest" }),
+    resolveProjectCredentials(project, "human-sub", {
+      purpose: "ingest",
+      userEmail: "human@example.com",
+    }),
   ).resolves.toEqual({
     github: { access_token: "github-token" },
     webex: {
@@ -97,6 +104,11 @@ it("uses managed Webex only for project ingest while retaining human-owned crede
       credential_mode: "managed",
       messaging_only: "true",
     },
+  });
+  expect(mockAssertManagedWebexUserSharesRooms).toHaveBeenCalledWith({
+    accessToken: "managed-webex-token",
+    userEmail: "human@example.com",
+    rooms: project.sources?.webex_rooms,
   });
 });
 

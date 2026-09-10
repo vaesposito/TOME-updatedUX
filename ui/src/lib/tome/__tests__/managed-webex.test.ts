@@ -24,6 +24,7 @@ import {
   clearManagedWebexHealthCache,
   getManagedWebexConfig,
   isProtectedManagedWebexConnection,
+  listManagedWebexSharedRoomIds,
   normalizeWebexCredentialSettings,
   resolveManagedWebexCredential,
 } from "../managed-webex";
@@ -114,6 +115,26 @@ describe("managed Webex credential", () => {
     expect(result.capability.reason).toMatch(/does not match/i);
   });
 
+  it("requires reconnection when the existing grant lacks membership access", async () => {
+    mockListConnections.mockResolvedValue([
+      {
+        id: "connection-1",
+        provider: "webex_messaging",
+        owner: { type: "user", id: "managed-owner" },
+        status: "connected",
+        grantedScopes: ["spark:rooms_read", "spark:messages_read"],
+      },
+    ]);
+
+    const result = await resolveManagedWebexCredential({ force: true });
+
+    expect(result.capability.available).toBe(false);
+    expect(result.capability.reason).toBe(
+      "Managed Webex cannot verify shared spaces. Contact an administrator.",
+    );
+    expect(mockRefreshConnection).not.toHaveBeenCalled();
+  });
+
   it("keeps the managed connection outside generic token paths", () => {
     expect(
       isProtectedManagedWebexConnection({
@@ -156,5 +177,44 @@ describe("managed Webex credential", () => {
     expect(result.capability.available).toBe(false);
     expect(result.capability.reason).toMatch(/has not signed in/i);
     expect(mockListConnections).not.toHaveBeenCalled();
+  });
+
+  it("checks each candidate room with the caller email", async () => {
+    const fetchImpl = jest.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url,
+      );
+      const roomId = url.searchParams.get("roomId");
+      return new Response(
+        JSON.stringify({ items: roomId === "room-1" ? [{ roomId }] : [] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    await expect(
+      listManagedWebexSharedRoomIds({
+        accessToken: "managed-token",
+        userEmail: "User@Example.com",
+        roomIds: ["room-1", "room-2", "room-1"],
+        fetchImpl,
+      }),
+    ).resolves.toEqual(new Set(["room-1"]));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    for (const [url, init] of fetchImpl.mock.calls) {
+      const parsed = new URL(String(url));
+      expect(parsed.searchParams.get("personEmail")).toBe("user@example.com");
+      expect(parsed.searchParams.get("max")).toBe("1");
+      expect(["room-1", "room-2"]).toContain(parsed.searchParams.get("roomId"));
+      expect(init).toEqual(
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer managed-token" }),
+        }),
+      );
+    }
   });
 });

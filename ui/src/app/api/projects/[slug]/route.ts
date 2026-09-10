@@ -465,6 +465,7 @@ export const PATCH = withErrorHandler(
       if (changesWebexConfiguration && nextWebexSettings.mode === "managed") {
         await assertManagedWebexRoomsAccessible({
           session,
+          userEmail: user.email,
           rooms: nextWebexRooms,
         });
       }

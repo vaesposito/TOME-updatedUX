@@ -15,6 +15,7 @@ import {
 } from "@/lib/projects/github-repository";
 import { webexRoomSlug } from "@/lib/projects/webex-room";
 import {
+  assertManagedWebexUserSharesRooms,
   projectWebexCredentialMode,
   projectWebexCredentialProvider,
   resolveManagedWebexCredential,
@@ -76,7 +77,11 @@ export async function resolveCredentialsForSub(
 export async function resolveProjectCredentials(
   project: Pick<ProjectDocument, "sources">,
   sub: string,
-  options: { purpose: "ingest" | "chat"; sourceScope?: IngestDispatch["sourceScope"] },
+  options: {
+    purpose: "ingest" | "chat";
+    sourceScope?: IngestDispatch["sourceScope"];
+    userEmail?: string | null;
+  },
 ): Promise<ForwardedCredentials> {
   const credentials = await resolveCredentialsForSub(sub);
   if (options.sourceScope === "webex_meetings") return credentials;
@@ -92,6 +97,11 @@ export async function resolveProjectCredentials(
         managed.capability.reason || "Managed Webex account is unavailable.",
       );
     }
+    await assertManagedWebexUserSharesRooms({
+      accessToken: managed.accessToken,
+      userEmail: options.userEmail ?? "",
+      rooms: project.sources?.webex_rooms ?? [],
+    });
     credentials.webex = {
       access_token: managed.accessToken,
       messaging_only: "true",

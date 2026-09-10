@@ -15,6 +15,7 @@ export interface SourceOptionsState {
   connectedTo?: string;
   options: SourceOption[];
   loading: boolean;
+  error?: string;
   /** Connections page URL when that feature is enabled here, else null. */
   manageUrl: string | null;
   managedCapability?: {
@@ -23,6 +24,7 @@ export interface SourceOptionsState {
     available: boolean;
     provider: string;
     displayName: string;
+    accountEmail?: string;
     reason?: string;
   };
 }
@@ -35,6 +37,7 @@ async function loadSourceOptions(
   q?: string,
   webexMode?: WebexCredentialMode,
   webexCredentialProvider?: string,
+  forceRefresh = false,
 ): Promise<Loaded> {
   const params = new URLSearchParams({ provider });
   if (q) params.set("q", q);
@@ -42,6 +45,7 @@ async function loadSourceOptions(
   if (provider === "webex" && webexCredentialProvider) {
     params.set("credential_provider", webexCredentialProvider);
   }
+  if (forceRefresh) params.set("refresh", "1");
   const url = `/api/projects/source-options?${params}`;
   const res = await fetch(url);
   const json = await res.json();
@@ -50,6 +54,7 @@ async function loadSourceOptions(
     connected: Boolean(d.connected),
     connectedTo: typeof d.connectedTo === "string" ? d.connectedTo : undefined,
     options: Array.isArray(d.options) ? d.options : [],
+    error: typeof d.error === "string" ? d.error : undefined,
     manageUrl: typeof d.manageUrl === "string" ? d.manageUrl : null,
     managedCapability:
       d.managedCapability && typeof d.managedCapability === "object"
@@ -96,13 +101,14 @@ export function useSourceOptions(
 
   // Event-handler refetch (allowed to setState directly).
   const run = useCallback(
-    (q?: string) => {
+    (q?: string, forceRefresh = false) => {
       setState((s) => ({ ...s, loading: true }));
       loadSourceOptions(
         provider,
         q,
         options?.webexMode,
         options?.webexCredentialProvider,
+        forceRefresh,
       )
         .then((d) => setState({ ...d, loading: false }))
         .catch(() => setState((s) => ({ ...s, loading: false })));
@@ -118,7 +124,7 @@ export function useSourceOptions(
     [run],
   );
 
-  const reload = useCallback(() => run(), [run]);
+  const reload = useCallback(() => run(undefined, true), [run]);
 
   return { ...state, search, reload };
 }

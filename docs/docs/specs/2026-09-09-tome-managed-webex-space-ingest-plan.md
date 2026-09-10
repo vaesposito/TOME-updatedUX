@@ -120,7 +120,7 @@ Do not request:
 
 - `spark:all`
 - `spark:mcp`
-- `spark:memberships_read` or any write scope
+- any membership or message write scope
 - `identity:people_read`
 - `spark-admin:*` or `spark-compliance:*`
 - any `meeting:*` scope
@@ -245,16 +245,18 @@ Compatibility rules:
 - Resolve the managed token only on the server.
 - List only the intersection of:
   - rooms the global account can access; and
-  - Webex spaces the caller/project team is authorized to use in CAIPE.
+  - rooms where the current signed-in user is also a live Webex member.
+- Show the managed account's full configured email with instructions to add it
+  to the desired rooms, then use the existing refresh action.
 - Validate each selected room with `GET /rooms/{roomId}` using the managed
-  connection before saving or ingesting it.
+  connection and recheck the current user's membership before saving or
+  ingesting it.
 - If the room is inaccessible, tell the user to add the managed Webex account
   to the space.
 
-The global account's membership proves that Tome can read the room. It does not
-prove that every CAIPE user is authorized to attach the room. Extend/reuse the
-existing `webex_space` resource and team-visibility authorization boundary for
-Tome source attachment; do not rely on knowing a room ID as authorization.
+The live membership intersection proves that the selecting user may access the
+room and that Tome's managed identity can read it. Normal project authorization
+continues to govern who may edit the source selection and read ingested output.
 
 Do not expose an unfiltered list of every room visible to the global account.
 
@@ -528,8 +530,8 @@ After code changes, the implementation handoff must automatically:
   but ingest is blocked.
 - Projects explicitly choose personal or managed Webex space credentials.
 - Existing projects remain behaviorally unchanged until explicitly edited.
-- Managed Webex ingest can read only CAIPE-authorized, project-attached rooms
-  that the global account has joined.
+- Managed Webex ingest can read only project-attached rooms that both the
+  triggering user and global account have joined.
 - The managed token is messaging-only and cannot be retrieved through generic
   exchange/injection/chat paths.
 - Manual and scheduled ingestion never fall back to another Webex identity.

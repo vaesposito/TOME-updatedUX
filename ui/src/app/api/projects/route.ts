@@ -440,7 +440,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   });
   const webexRooms = cleanWebexRooms(body.webex_rooms);
   if (webexCredentialSettings.mode === "managed") {
-    await assertManagedWebexRoomsAccessible({ session, rooms: webexRooms });
+    await assertManagedWebexRoomsAccessible({
+      session,
+      userEmail: user.email,
+      rooms: webexRooms,
+    });
   }
   const sources = {
     repos: cleanUrls(body.github_repos),

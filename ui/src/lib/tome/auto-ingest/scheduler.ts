@@ -89,6 +89,7 @@ async function maybeFireForProject(
   try {
     credentials = await resolveProjectCredentials(project, owner.subject, {
       purpose: "ingest",
+      userEmail: owner.email,
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);

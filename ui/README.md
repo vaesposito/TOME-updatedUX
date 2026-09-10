@@ -46,8 +46,8 @@ directly.
 
 Tome projects can use either a user's Webex connection or one deployment-owned,
 messaging-only account. Configure a separate `webex_messaging` OAuth connector
-with only `spark:kms`, `spark:rooms_read`, `spark:messages_read`, and
-`spark:people_read`, then set:
+with only `spark:kms`, `spark:rooms_read`, `spark:messages_read`,
+`spark:people_read`, and `spark:memberships_read`, then set:
 
 ```text
 TOME_MANAGED_WEBEX_MESSAGING_ENABLED=true
@@ -59,6 +59,11 @@ The account must log into CAIPE and connect that provider itself. CAIPE resolves
 the account's current OIDC subject from its user record, finds that subject's
 connection, and verifies that Webex `/people/me` returns the configured email.
 The project option appears only after those checks pass.
+The managed picker tells users which account to add to a Webex space and lists
+only rooms where the signed-in user and managed account are both current Webex
+members. Project authorization continues to govern who can access the ingested
+content. Saving and ingesting recheck shared Webex membership; removing either
+account from a room therefore fails closed.
 Managed tokens remain server-side, are used only for ingest, and are never sent
 to Tome chat, AgentGateway, meeting tools, or the browser. Projects created
 before this feature remain on their existing personal Webex path.

@@ -290,7 +290,11 @@ async function prepareRun(
   const credentials = await resolveProjectCredentials(
     project,
     run.triggered_by_sub ?? "",
-    { purpose: "ingest", sourceScope: dispatch.sourceScope },
+    {
+      purpose: "ingest",
+      sourceScope: dispatch.sourceScope,
+      userEmail: run.triggered_by_email,
+    },
   );
   if (!meetingOnly) {
     const githubReconciliation = await reconcileGitHubSourcesForIngest(

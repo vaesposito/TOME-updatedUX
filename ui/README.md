@@ -23,6 +23,22 @@ npm run dev
 
 Open http://localhost:3000.
 
+## Tome ingest review
+
+When an ingest produces draft pages, editors review the run one file at a
+time:
+
+- **Accept file** publishes that file when the review is finalized.
+- **Reject file** keeps the prior live file and retains the rejected revision
+  in history.
+- **Done** becomes available after every changed file has a decision, then
+  applies the complete review and unlocks the Tome project.
+
+Decisions are persisted as they are made, but do not change live pages before
+**Done**. Starting a file-level review disables that run's unattended draft
+auto-promotion so an explicit rejection cannot later be published by timeout.
+Runs with no file-level decisions retain the existing auto-promotion behavior.
+
 ## Runtime Configuration
 
 | Variable | Default | Purpose |

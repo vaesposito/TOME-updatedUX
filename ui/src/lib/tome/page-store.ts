@@ -81,6 +81,16 @@ export interface PageStore {
    */
   rejectDraftReport(projectId: string, reportId: string): Promise<void>;
 
+  /**
+   * Resolve every draft in a report in one backend operation. Drafts whose
+   * paths are accepted become live; all remaining drafts become rejected.
+   */
+  finalizeDraftReport(
+    projectId: string,
+    reportId: string,
+    acceptedPaths: string[],
+  ): Promise<void>;
+
   /** Paths with a pending (unreviewed) draft revision for a report. */
   listDraftPaths(projectId: string, reportId: string): Promise<string[]>;
 
@@ -190,6 +200,18 @@ function withStructuredIndexes(store: PageStore): PageStore {
       await reindexTouched(projectId, touched);
     },
     rejectDraftReport: (projectId, reportId) => store.rejectDraftReport(projectId, reportId),
+    finalizeDraftReport: async (projectId, reportId, acceptedPaths) => {
+      await store.finalizeDraftReport(projectId, reportId, acceptedPaths);
+      if (acceptedPaths.length === 0) return;
+      const live = await store.listPages(projectId);
+      const touched: Record<string, string> = {};
+      for (const path of acceptedPaths) {
+        if ((path.startsWith("edges/") || isTrackedPath(path)) && path in live) {
+          touched[path] = live[path];
+        }
+      }
+      await reindexTouched(projectId, touched);
+    },
     listDraftPaths: (projectId, reportId) => store.listDraftPaths(projectId, reportId),
     listTouchedPaths: (projectId, reportId) => store.listTouchedPaths(projectId, reportId),
     revertPage: async (projectId, path, revisionId, opts) => {

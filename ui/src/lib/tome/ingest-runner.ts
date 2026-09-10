@@ -61,7 +61,8 @@ import {
 import { canAutoPromoteOverdue } from "./rubric-evaluator";
 import { captureEvidenceBundle } from "./evidence-bundle";
 import { evaluateDraftQuality } from "./draft-quality";
-import { shouldAwaitIngestReview } from "./ingest-review";
+import { shouldAwaitIngestReview, summarizeDraftFileReviews } from "./ingest-review";
+import type { IngestFileReviewDecision } from "@/types/tome";
 
 /** Load a project by its stable id (string or ObjectId), normalizing `_id` to string. */
 async function loadProjectById(
@@ -697,6 +698,8 @@ async function auditRunLifecycle(
             : status === "succeeded"
               ? reviewOutcome === "approved"
                 ? `${label} draft approved`
+                : reviewOutcome === "partially_approved"
+                  ? `${label} draft partially approved`
                 : reviewOutcome === "auto_promoted"
                   ? `${label} draft auto-promoted (no reviewer in time)`
                   : `${label} completed`
@@ -924,6 +927,9 @@ export async function approveDraftRun(runId: string, reviewedBy: string): Promis
   if (run.status !== "awaiting_review") {
     throw new Error(`run ${runId} is not awaiting review (status: ${run.status})`);
   }
+  if ((run.file_reviews?.length ?? 0) > 0) {
+    throw new Error(`run ${runId} has a file-level review in progress; finalize that review instead`);
+  }
   const store = await getPageStore();
   if (run.report_id) await store.promoteDraftReport(run.project_id, run.report_id);
   await runs.updateOne(
@@ -954,6 +960,9 @@ export async function rejectDraftRun(runId: string, reviewedBy: string): Promise
   if (run.status !== "awaiting_review") {
     throw new Error(`run ${runId} is not awaiting review (status: ${run.status})`);
   }
+  if ((run.file_reviews?.length ?? 0) > 0) {
+    throw new Error(`run ${runId} has a file-level review in progress; finalize that review instead`);
+  }
   const store = await getPageStore();
   if (run.report_id) await store.rejectDraftReport(run.project_id, run.report_id);
   await runs.updateOne(
@@ -976,6 +985,131 @@ export async function rejectDraftRun(runId: string, reviewedBy: string): Promise
   });
 }
 
+/** Persist or replace the current reviewer's decision for one draft file. */
+export async function reviewDraftFile(
+  runId: string,
+  path: string,
+  decision: IngestFileReviewDecision,
+  reviewedBy: string,
+): Promise<void> {
+  const runs = await getTomeIngestRunsCollection();
+  const run = await runs.findOne({ _id: runId });
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.status !== "awaiting_review") {
+    throw new Error(`run ${runId} is not awaiting review (status: ${run.status})`);
+  }
+  if (!run.report_id) throw new Error(`run ${runId} has no draft report`);
+
+  const store = await getPageStore();
+  const draftPaths = await store.listDraftPaths(run.project_id, run.report_id);
+  if (!draftPaths.includes(path)) {
+    throw new Error(`path ${path} is not a pending draft in run ${runId}`);
+  }
+
+  const review = {
+    path,
+    decision,
+    reviewed_by: reviewedBy,
+    reviewed_at: new Date(),
+  };
+  const result = await runs.updateOne(
+    { _id: runId, status: "awaiting_review" },
+    [
+      {
+        $set: {
+          file_reviews: {
+            $concatArrays: [
+              {
+                $filter: {
+                  input: { $ifNull: ["$file_reviews", []] },
+                  as: "review",
+                  cond: { $ne: ["$$review.path", path] },
+                },
+              },
+              { $literal: [review] },
+            ],
+          },
+          // Starting a review makes the human's explicit final Done action
+          // authoritative; the unattended auto-promotion deadline no longer
+          // applies to this run.
+          review_deadline: "$$REMOVE",
+        },
+      },
+    ],
+  );
+  if (result.matchedCount !== 1) {
+    throw new Error(`run ${runId} is no longer awaiting review`);
+  }
+}
+
+/**
+ * Finalize a completed file-level review. Accepted drafts become live,
+ * rejected drafts remain only in history, and the project is unlocked.
+ */
+export async function finalizeDraftFileReview(
+  runId: string,
+  reviewedBy: string,
+): Promise<{ accepted: number; rejected: number }> {
+  const runs = await getTomeIngestRunsCollection();
+  const run = await runs.findOne({ _id: runId });
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.status !== "awaiting_review") {
+    throw new Error(`run ${runId} is not awaiting review (status: ${run.status})`);
+  }
+  if (!run.report_id) throw new Error(`run ${runId} has no draft report`);
+
+  const store = await getPageStore();
+  const summary = summarizeDraftFileReviews(
+    await store.listDraftPaths(run.project_id, run.report_id),
+    run.file_reviews,
+  );
+  if (summary.pendingPaths.length > 0) {
+    throw new Error(
+      `${summary.pendingPaths.length} draft file${summary.pendingPaths.length === 1 ? " is" : "s are"} still awaiting a decision`,
+    );
+  }
+
+  await store.finalizeDraftReport(run.project_id, run.report_id, summary.acceptedPaths);
+  const accepted = summary.acceptedPaths.length;
+  const rejected = summary.rejectedPaths.length;
+  const reviewOutcome = accepted === 0
+    ? "rejected"
+    : rejected === 0
+      ? "approved"
+      : "partially_approved";
+  const status = accepted === 0 ? "failed" : "succeeded";
+  await runs.updateOne(
+    { _id: runId, status: "awaiting_review" },
+    {
+      $set: {
+        status,
+        review_outcome: reviewOutcome,
+        reviewed_by: reviewedBy,
+        reviewed_at: new Date(),
+        finished_at: new Date(),
+        ...(accepted === 0 ? { error: "all draft files rejected by reviewer" } : {}),
+      },
+      ...(accepted > 0 ? { $unset: { error: "" } } : {}),
+    },
+  );
+  await setProjectLocked(run.project_id, false);
+  if (accepted === 0) {
+    await auditRunLifecycle(runId, "tome.ingest.failed", {
+      error: "all draft files rejected by reviewer",
+      review_outcome: reviewOutcome,
+      accepted_files: accepted,
+      rejected_files: rejected,
+    });
+  } else {
+    await auditRunLifecycle(runId, "tome.ingest.finished", {
+      review_outcome: reviewOutcome,
+      accepted_files: accepted,
+      rejected_files: rejected,
+    });
+  }
+  return { accepted, rejected };
+}
+
 /**
  * Auto-promote any run still `awaiting_review` past its `review_deadline` —
  * same effect as `approveDraftRun`, but reviewer-less (a reviewer never
@@ -990,6 +1124,10 @@ export async function promoteOverdueRuns(): Promise<number> {
   let promoted = 0;
   for (const run of overdue) {
     try {
+      // Once a human starts making file decisions, only their explicit Done
+      // action may resolve the review. This prevents a rejected file from
+      // being silently published when the old auto-promotion timer expires.
+      if ((run.file_reviews?.length ?? 0) > 0) continue;
       if (run.quality_policy_mode && run.quality_policy_mode !== "off") {
         const evaluation = run.quality_evaluation_id
           ? await getArtifactEvaluation(run.quality_evaluation_id)

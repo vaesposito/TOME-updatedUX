@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,9 @@ interface DraftPage {
   oldBody: string;
   newBody: string;
   isNewPage: boolean;
+  decision: "accept" | "reject" | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
 }
 
 export function DraftReviewView({
@@ -36,7 +39,8 @@ export function DraftReviewView({
 }) {
   const [pages, setPages] = useState<DraftPage[] | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [resolving, setResolving] = useState<"approve" | "reject" | null>(null);
+  const [finalizing, setFinalizing] = useState(false);
+  const [savingPath, setSavingPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Approve/Reject only make sense while the run is actually awaiting review —
   // fetched here so callers can just point this at any run id (a pending
@@ -82,26 +86,50 @@ export function DraftReviewView({
     };
   }, [slug, runId]);
 
-  const resolve = async (action: "approve" | "reject") => {
-    setResolving(action);
+  const decide = async (path: string, decision: "accept" | "reject") => {
+    setSavingPath(path);
     setError(null);
     try {
-      const res = await fetch(`/api/tome/projects/${slug}/ingests/${runId}/${action}`, {
+      const res = await fetch(`/api/tome/projects/${slug}/ingests/${runId}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, decision }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || `Saving file review failed (${res.status})`);
+      }
+      setPages((current) => current?.map((page) => (
+        page.path === path ? { ...page, decision } : page
+      )) ?? current);
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setSavingPath(null);
+    }
+  };
+
+  const finalize = async () => {
+    setFinalizing(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/tome/projects/${slug}/ingests/${runId}/finalize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action === "approve" && overrideReason.trim()
+        body: JSON.stringify(overrideReason.trim()
           ? { override_reason: overrideReason.trim() }
           : {}),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || `${action} failed (${res.status})`);
+        throw new Error(j?.error || `Finalizing review failed (${res.status})`);
       }
+      setReviewable(false);
       onResolved?.();
     } catch (e) {
       setError(String((e as Error)?.message ?? e));
     } finally {
-      setResolving(null);
+      setFinalizing(false);
     }
   };
 
@@ -116,6 +144,11 @@ export function DraftReviewView({
     || qualityEvaluation.blocking_findings.length > 0
   );
   const overrideReady = qualityPolicy?.allow_steward_override && overrideReason.trim().length >= 10;
+  const reviewedCount = pages?.filter((page) => page.decision !== null).length ?? 0;
+  const acceptedCount = pages?.filter((page) => page.decision === "accept").length ?? 0;
+  const pendingCount = (pages?.length ?? 0) - reviewedCount;
+  const allFilesReviewed = pages !== null && pages.length > 0 && pendingCount === 0;
+  const qualityBlocksDone = acceptedCount > 0 && gateBlocked && !overrideReady;
 
   return (
     <div className="flex h-full flex-col">
@@ -125,42 +158,32 @@ export function DraftReviewView({
           <p className="text-xs text-muted-foreground">
             {pages === null
               ? "Loading changed pages…"
-              : `${pages.length} page${pages.length === 1 ? "" : "s"} changed`}
+              : reviewable
+                ? `${reviewedCount} of ${pages.length} files reviewed`
+                : `${pages.length} file${pages.length === 1 ? "" : "s"} changed`}
           </p>
         </div>
         {reviewable && canEdit && (
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => void resolve("reject")}
-              disabled={resolving !== null}
-              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50"
-            >
-              {resolving === "reject" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <XCircle className="h-3.5 w-3.5" />
-              )}
-              Reject
-            </button>
-            <button
-              type="button"
-              onClick={() => void resolve("approve")}
-              disabled={resolving !== null || (gateBlocked && !overrideReady)}
+              onClick={() => void finalize()}
+              disabled={finalizing || savingPath !== null || !allFilesReviewed || qualityBlocksDone}
               className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+              title={!allFilesReviewed ? `Review ${pendingCount} remaining file${pendingCount === 1 ? "" : "s"}` : "Finalize this ingest review"}
             >
-              {resolving === "approve" ? (
+              {finalizing ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <CheckCircle2 className="h-3.5 w-3.5" />
               )}
-              Approve
+              Done
             </button>
           </div>
         )}
         {reviewable && !canEdit && (
           <p className="text-xs text-muted-foreground">
-            Only the data steward or a Tome admin can approve or reject this draft.
+            Only the data steward or a Tome admin can review this draft.
           </p>
         )}
       </div>
@@ -214,7 +237,7 @@ export function DraftReviewView({
               </div>
             </details>
           )}
-          {gateBlocked && qualityPolicy.allow_steward_override && canEdit && (
+          {gateBlocked && acceptedCount > 0 && qualityPolicy.allow_steward_override && canEdit && (
             <label className="block font-medium">
               Required override reason
               <textarea
@@ -225,7 +248,7 @@ export function DraftReviewView({
               />
             </label>
           )}
-          {gateBlocked && !qualityPolicy.allow_steward_override && (
+          {gateBlocked && acceptedCount > 0 && !qualityPolicy.allow_steward_override && (
             <p className="text-destructive">Promotion is blocked by the enforced quality policy.</p>
           )}
         </div>
@@ -246,14 +269,21 @@ export function DraftReviewView({
                       type="button"
                       onClick={() => setSelectedPath(p.path)}
                       className={cn(
-                        "block w-full truncate border-b px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted",
+                        "flex w-full items-center gap-2 border-b px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted",
                         selectedPath === p.path && "bg-muted",
                       )}
                       title={p.path}
                     >
-                      {p.path}
+                      {p.decision === "accept" ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-label="Accepted" />
+                      ) : p.decision === "reject" ? (
+                        <XCircle className="h-4 w-4 shrink-0 text-destructive" aria-label="Rejected" />
+                      ) : (
+                        <Circle className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Pending" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{p.path}</span>
                       {p.isNewPage && (
-                        <span className="ml-1.5 rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        <span className="rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                           new
                         </span>
                       )}
@@ -265,19 +295,64 @@ export function DraftReviewView({
           </ScrollArea>
         </aside>
 
-        <section className="min-w-0 flex-1 overflow-auto bg-muted/30">
+        <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted/30">
           {!selected ? (
             <p className="p-6 text-sm text-muted-foreground">Pick a page on the left.</p>
           ) : (
-            <ReactDiffViewer
-              oldValue={selected.oldBody}
-              newValue={selected.newBody}
-              splitView
-              compareMethod={DiffMethod.WORDS}
-              useDarkTheme={dark}
-              leftTitle={selected.isNewPage ? "(new page)" : "live"}
-              rightTitle="draft"
-            />
+            <>
+              {reviewable && canEdit && (
+                <div className="flex items-center justify-between gap-3 border-b bg-background px-4 py-2">
+                  <p className="truncate text-xs text-muted-foreground" title={selected.path}>
+                    {selected.decision === "accept"
+                      ? "This file will be published."
+                      : selected.decision === "reject"
+                        ? "This file will be discarded."
+                        : "Choose a decision for this file."}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void decide(selected.path, "reject")}
+                      disabled={savingPath !== null || finalizing}
+                      className={cn(
+                        "flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+                        selected.decision === "reject"
+                          ? "border-destructive bg-destructive/10 text-destructive"
+                          : "border-border text-muted-foreground hover:border-destructive/50 hover:text-destructive",
+                      )}
+                    >
+                      {savingPath === selected.path ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                      Reject file
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void decide(selected.path, "accept")}
+                      disabled={savingPath !== null || finalizing}
+                      className={cn(
+                        "flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+                        selected.decision === "accept"
+                          ? "border-emerald-600 bg-emerald-600/10 text-emerald-600"
+                          : "border-border text-muted-foreground hover:border-emerald-600/50 hover:text-emerald-600",
+                      )}
+                    >
+                      {savingPath === selected.path ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      Accept file
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="min-h-0 flex-1 overflow-auto">
+                <ReactDiffViewer
+                  oldValue={selected.oldBody}
+                  newValue={selected.newBody}
+                  splitView
+                  compareMethod={DiffMethod.WORDS}
+                  useDarkTheme={dark}
+                  leftTitle={selected.isNewPage ? "(new file)" : "live"}
+                  rightTitle="draft"
+                />
+              </div>
+            </>
           )}
         </section>
       </div>

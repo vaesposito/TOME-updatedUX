@@ -1,3 +1,5 @@
+import type { IngestFileReview } from "@/types/tome";
+
 /**
  * Decide whether a completed ingest must stop at the human-review gate.
  * An explicit per-run bypass wins; otherwise only runs that actually wrote
@@ -8,4 +10,24 @@ export function shouldAwaitIngestReview(args: {
   draftPaths: string[];
 }): boolean {
   return !args.skipReview && args.draftPaths.length > 0;
+}
+
+export interface DraftFileReviewSummary {
+  acceptedPaths: string[];
+  rejectedPaths: string[];
+  pendingPaths: string[];
+}
+
+/** Resolve the latest persisted decision for every currently drafted path. */
+export function summarizeDraftFileReviews(
+  draftPaths: string[],
+  reviews: IngestFileReview[] = [],
+): DraftFileReviewSummary {
+  const decisions = new Map(reviews.map((review) => [review.path, review.decision]));
+  const paths = [...new Set(draftPaths)].sort();
+  return {
+    acceptedPaths: paths.filter((path) => decisions.get(path) === "accept"),
+    rejectedPaths: paths.filter((path) => decisions.get(path) === "reject"),
+    pendingPaths: paths.filter((path) => !decisions.has(path)),
+  };
 }

@@ -1,4 +1,4 @@
-import { shouldAwaitIngestReview } from "../ingest-review";
+import { shouldAwaitIngestReview, summarizeDraftFileReviews } from "../ingest-review";
 
 describe("shouldAwaitIngestReview", () => {
   it("auto-completes a run when review is explicitly skipped", () => {
@@ -26,5 +26,47 @@ describe("shouldAwaitIngestReview", () => {
         draftPaths: ["charter.md"],
       }),
     ).toBe(true);
+  });
+});
+
+describe("summarizeDraftFileReviews", () => {
+  it("separates accepted, rejected, and pending files", () => {
+    expect(summarizeDraftFileReviews(
+      ["pending.md", "accepted.md", "rejected.md"],
+      [
+        {
+          path: "accepted.md",
+          decision: "accept",
+          reviewed_by: "reviewer@example.test",
+          reviewed_at: new Date("2026-01-01T00:00:00Z"),
+        },
+        {
+          path: "rejected.md",
+          decision: "reject",
+          reviewed_by: "reviewer@example.test",
+          reviewed_at: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+    )).toEqual({
+      acceptedPaths: ["accepted.md"],
+      rejectedPaths: ["rejected.md"],
+      pendingPaths: ["pending.md"],
+    });
+  });
+
+  it("ignores decisions for files that are no longer pending drafts", () => {
+    expect(summarizeDraftFileReviews(
+      ["current.md"],
+      [{
+        path: "old.md",
+        decision: "accept",
+        reviewed_by: "reviewer@example.test",
+        reviewed_at: new Date("2026-01-01T00:00:00Z"),
+      }],
+    )).toEqual({
+      acceptedPaths: [],
+      rejectedPaths: [],
+      pendingPaths: ["current.md"],
+    });
   });
 });

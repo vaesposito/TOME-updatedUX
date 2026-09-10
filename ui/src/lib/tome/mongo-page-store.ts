@@ -149,6 +149,30 @@ export class MongoPageStore implements PageStore {
     );
   }
 
+  async finalizeDraftReport(
+    projectId: string,
+    reportId: string,
+    acceptedPaths: string[],
+  ): Promise<void> {
+    const accepted = [...new Set(acceptedPaths.map(safePagePath))];
+    const col = await getTomePageRevisionsCollection();
+    // A single update resolves every pending revision for the report. Using
+    // $$REMOVE preserves the existing representation of a live revision,
+    // where an absent status means live.
+    await col.updateMany(
+      { project_id: projectId, report_id: reportId, status: "draft" },
+      [
+        {
+          $set: {
+            status: {
+              $cond: [{ $in: ["$path", accepted] }, "$$REMOVE", "rejected"],
+            },
+          },
+        },
+      ],
+    );
+  }
+
   async listDraftPaths(projectId: string, reportId: string): Promise<string[]> {
     const col = await getTomePageRevisionsCollection();
     const rows = await col

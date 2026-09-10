@@ -14,6 +14,11 @@ import {
   githubSourceFromValue,
 } from "@/lib/projects/github-repository";
 import { webexRoomSlug } from "@/lib/projects/webex-room";
+import {
+  projectWebexCredentialMode,
+  projectWebexCredentialProvider,
+  resolveManagedWebexCredential,
+} from "./managed-webex";
 
 import { resolveAreaChildren, resolveBhagChildren } from "./bhag";
 import { listReadableTomeProjects } from "./access";
@@ -63,6 +68,53 @@ export async function resolveCredentialsForSub(
 }
 
 /**
+ * Resolve credentials for one project run. Managed Webex replaces only the
+ * Webex source credential; GitHub and Atlassian continue to come from the
+ * human or configured schedule owner. Managed Webex is never returned for
+ * chat, where users read already-ingested pages instead of live messages.
+ */
+export async function resolveProjectCredentials(
+  project: Pick<ProjectDocument, "sources">,
+  sub: string,
+  options: { purpose: "ingest" | "chat"; sourceScope?: IngestDispatch["sourceScope"] },
+): Promise<ForwardedCredentials> {
+  const credentials = await resolveCredentialsForSub(sub);
+  if (options.sourceScope === "webex_meetings") return credentials;
+  if ((project.sources?.webex_rooms?.length ?? 0) === 0) return credentials;
+
+  const mode = projectWebexCredentialMode(project);
+  if (mode === "managed") {
+    delete credentials.webex;
+    if (options.purpose === "chat") return credentials;
+    const managed = await resolveManagedWebexCredential({ force: true });
+    if (!managed.capability.available || !managed.accessToken) {
+      throw new Error(
+        managed.capability.reason || "Managed Webex account is unavailable.",
+      );
+    }
+    credentials.webex = {
+      access_token: managed.accessToken,
+      messaging_only: "true",
+      credential_mode: "managed",
+    };
+    return credentials;
+  }
+
+  const provider = projectWebexCredentialProvider(project);
+  if (provider === "webex") return credentials;
+  const personal = await collectForwardedCredentials(sub, [provider]);
+  delete credentials.webex;
+  if (personal[provider]) {
+    credentials.webex = {
+      ...personal[provider],
+      messaging_only: "true",
+      credential_mode: "personal",
+    };
+  }
+  return credentials;
+}
+
+/**
  * Resolve the requesting user's forwarded credentials for the providers this
  * project's sources need. Exported so the ingest path can resolve them
  * synchronously before its async task runs (by which point the session is
@@ -71,7 +123,9 @@ export async function resolveCredentialsForSub(
 export async function resolveForwardedCredentials(
   ctx: TomeProjectContext,
 ): Promise<ForwardedCredentials> {
-  return resolveCredentialsForSub(sessionSub(ctx.session));
+  return resolveProjectCredentials(ctx.project, sessionSub(ctx.session), {
+    purpose: "chat",
+  });
 }
 
 /** RepoSnapshot — mirrors contract.RepoSnapshot. */

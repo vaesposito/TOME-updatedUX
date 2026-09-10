@@ -865,9 +865,9 @@ export function IngestPanel({
                         const accessIssue = state === "access_issue";
 
                         const tooltipText = noToken
-                          ? `${row.label} not connected: the agent will skip this source`
+                          ? pf?.detail || `${row.label} not connected: the agent will skip this source`
                           : inaccessible.length > 0
-                            ? `Connected but no access to: ${inaccessible.join(", ")}`
+                            ? pf?.detail || `Connected but no access to: ${inaccessible.join(", ")}`
                             : pf
                               ? `${row.label}: access confirmed for all sources`
                               : `${row.label}: access not yet verified`;
@@ -932,7 +932,11 @@ export function IngestPanel({
                                   </li>
                                 ))}
                               </ul>
-                              {inaccessible.length > 0 ? (
+                              {pf?.detail ? (
+                                <p className="mt-1 text-xs text-amber-500">
+                                  {pf.detail}
+                                </p>
+                              ) : inaccessible.length > 0 ? (
                                 <p className="mt-1 text-xs text-amber-500">
                                   No access to {inaccessible.join(", ")}
                                   {accessible.length > 0
@@ -941,7 +945,7 @@ export function IngestPanel({
                                 </p>
                               ) : null}
                             </div>
-                            {(noToken || accessIssue) && (
+                            {(noToken || accessIssue) && pf?.fixable_by_user !== false && (
                               <Link
                                 href="/credentials"
                                 className="shrink-0 text-xs text-primary hover:underline"
@@ -1028,7 +1032,12 @@ export function IngestPanel({
                         ) : !meetings || meetings.length === 0 ? (
                           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
                             No meetings found. Connect Webex in
-                            <Link href="/credentials" className="mx-1 underline">
+                            <Link
+                              href="/credentials"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mx-1 underline"
+                            >
                               /credentials
                             </Link>
                             if you haven&apos;t.

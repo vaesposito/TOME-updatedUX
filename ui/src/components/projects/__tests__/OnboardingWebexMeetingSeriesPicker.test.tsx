@@ -100,4 +100,21 @@ describe("OnboardingWebexMeetingSeriesPicker", () => {
     expect(screen.getByRole("checkbox", { name: "Select Customer update" })).toBeDisabled();
     expect(screen.queryByText("Recording access required")).not.toBeInTheDocument();
   });
+
+  it("opens the Webex Meetings connection page in a new tab", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        code: "WEBEX_MEETINGS_CONNECTION_REQUIRED",
+        error: "Webex Meetings is not connected.",
+      }),
+    });
+
+    render(<Harness />);
+
+    const link = await screen.findByRole("link", { name: "Connect Webex (Meetings)" });
+    expect(link).toHaveAttribute("href", "/credentials#connections");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
 });

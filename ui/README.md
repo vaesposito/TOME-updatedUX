@@ -36,10 +36,32 @@ Open http://localhost:3000.
 | `AGENTIC_APPS_INSTALL_ENABLED` | `false` | Enables Agentic Apps user, admin, and proxy routes when set to `true` |
 | `AGENTIC_APPS_CONFIG_PATH` | unset | Optional path to a dedicated YAML file containing deploy-managed Agentic App packages and installations |
 | `AGENTIC_APPS_CAS_MODE` | `enforce` | CAS mode: `enforce`, `shadow`, or `off`. Enforce fails closed; built-in `agentic_app:<id>#user` grants are reconciled at startup. |
+| `TOME_MANAGED_WEBEX_MESSAGING_ENABLED` | `false` | Exposes managed Webex space ingest when the configured account has a healthy, identity-verified connection. |
 
 Browser chat traffic goes through the BFF routes under
 `/api/v1/chat/stream/*`; the browser does not call the Dynamic Agents service
 directly.
+
+### Managed Webex space ingest
+
+Tome projects can use either a user's Webex connection or one deployment-owned,
+messaging-only account. Configure a separate `webex_messaging` OAuth connector
+with only `spark:kms`, `spark:rooms_read`, `spark:messages_read`, and
+`spark:people_read`, then set:
+
+```text
+TOME_MANAGED_WEBEX_MESSAGING_ENABLED=true
+TOME_MANAGED_WEBEX_MESSAGING_PROVIDER=webex_messaging
+TOME_MANAGED_WEBEX_MESSAGING_ACCOUNT_EMAIL=<exact account email>
+```
+
+The account must log into CAIPE and connect that provider itself. CAIPE resolves
+the account's current OIDC subject from its user record, finds that subject's
+connection, and verifies that Webex `/people/me` returns the configured email.
+The project option appears only after those checks pass.
+Managed tokens remain server-side, are used only for ingest, and are never sent
+to Tome chat, AgentGateway, meeting tools, or the browser. Projects created
+before this feature remain on their existing personal Webex path.
 
 ### Config-driven Agentic Apps
 

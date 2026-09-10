@@ -13,9 +13,10 @@ import { getCollection } from "@/lib/mongodb";
 import type { AutoIngestConfig, ProjectDocument } from "@/types/projects";
 
 import { cronMatches } from "../../rbac/cron";
-import { resolveCredentialsForSub } from "../agent-proxy";
+import { resolveProjectCredentials } from "../agent-proxy";
 import { auditTome } from "../audit";
 import { isIngestRunning, startIngestRun } from "../ingest-runner";
+import { resolveManagedWebexCredential } from "../managed-webex";
 import {
   AUTO_INGEST_CREDENTIAL_REFRESH_INTERVAL_MS,
   refreshAutoIngestCredentialHealth,
@@ -84,7 +85,20 @@ async function maybeFireForProject(
     return;
   }
 
-  const credentials = await resolveCredentialsForSub(owner.subject);
+  let credentials: Awaited<ReturnType<typeof resolveProjectCredentials>>;
+  try {
+    credentials = await resolveProjectCredentials(project, owner.subject, {
+      purpose: "ingest",
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    await recordLastRun(project._id, {
+      at: now.toISOString(),
+      status: "failed",
+      reason,
+    });
+    return;
+  }
   const hasAnyCredential = Object.keys(credentials).length > 0;
   if (!hasAnyCredential) {
     console.log(
@@ -150,10 +164,13 @@ export async function tickAutoIngestScheduler(now: Date): Promise<void> {
 
   try {
     if (await claimAutoIngestCredentialRefresh(credentialRefreshWindowKey(now))) {
-      await refreshAutoIngestCredentialHealth(
-        now,
-        projects.filter((project) => project.autoIngest?.enabled),
-      );
+      await Promise.all([
+        refreshAutoIngestCredentialHealth(
+          now,
+          projects.filter((project) => project.autoIngest?.enabled),
+        ),
+        resolveManagedWebexCredential({ force: true }),
+      ]);
     }
   } catch (err) {
     console.error(

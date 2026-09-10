@@ -14,6 +14,9 @@ import {
 } from "@/lib/api-middleware";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCredentialFeatureConfig } from "@/lib/feature-flags/credentials";
+import { getReadableWebexSpaceIds } from "@/lib/rbac/user-insights-scope";
+import { subjectFromSession } from "@/lib/rbac/resource-authz";
+import { resolveManagedWebexCredential } from "@/lib/tome/managed-webex";
 import type { GitHubRepositorySource } from "@/types/projects";
 
 interface SourceOption {
@@ -356,7 +359,7 @@ async function connectedTo(provider: string, token: string): Promise<string> {
       const u = (await r.json().catch(() => ({}))) as { login?: string };
       return u.login ? `github.com/${u.login}` : "";
     }
-    if (provider === "webex") {
+    if (provider === "webex" || provider === "webex_messaging") {
       const r = await fetch("https://webexapis.com/v1/people/me", {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
@@ -376,6 +379,9 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const sp = new URL(request.url).searchParams;
   const provider = sp.get("provider")?.trim() ?? "";
   const q = sp.get("q")?.trim() ?? "";
+  const webexMode = sp.get("webex_mode") === "managed" ? "managed" : "personal";
+  const requestedCredentialProvider = sp.get("credential_provider")?.trim() ?? "";
+  const capabilityOnly = sp.get("capability_only") === "1";
 
   // Only point users at the Connections page when that feature is enabled in
   // this deployment - otherwise `/credentials` 404s, so the picker should just
@@ -386,11 +392,57 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     return successResponse({ connected: false, options: [], manageUrl });
   }
 
+  if (provider === "webex" && webexMode === "managed") {
+    const managed = await resolveManagedWebexCredential();
+    if (!managed.capability.available || !managed.accessToken) {
+      return successResponse({
+        connected: false,
+        options: [],
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    }
+    if (capabilityOnly) {
+      return successResponse({
+        connected: true,
+        options: [],
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    }
+    try {
+      const [options, readableSpaceIds] = await Promise.all([
+        webexRooms(managed.accessToken, q),
+        getReadableWebexSpaceIds(subjectFromSession(session) ?? ""),
+      ]);
+      const readable = new Set(readableSpaceIds);
+      return successResponse({
+        connected: true,
+        connectedTo: managed.capability.displayName,
+        options: options.filter((option) => readable.has(option.value)),
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    } catch {
+      return successResponse({
+        connected: true,
+        options: [],
+        error: "provider list failed",
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    }
+  }
+
   let token = "";
   try {
     const service = await getProviderConnectionService();
+    const credentialProvider =
+      provider === "webex" && requestedCredentialProvider === "webex_messaging"
+        ? "webex_messaging"
+        : provider;
     const connection = (await service.listConnections({ type: "user", id: sub })).find(
-      (c) => c.provider === provider && c.status === "connected",
+      (c) => c.provider === credentialProvider && c.status === "connected",
     );
     if (!connection) {
       return successResponse({ connected: false, options: [], manageUrl });
@@ -416,7 +468,12 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
     const [options, account] = await Promise.all([
       optionsFn(token, q),
-      connectedTo(provider, token),
+      connectedTo(
+        provider === "webex" && requestedCredentialProvider === "webex_messaging"
+          ? "webex_messaging"
+          : provider,
+        token,
+      ),
     ]);
     return successResponse({ connected: true, options, connectedTo: account, manageUrl });
   } catch {

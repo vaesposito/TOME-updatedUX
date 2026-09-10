@@ -6,7 +6,7 @@ import { Check, Plus, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { cn } from "@/lib/utils";
-import type { ConfluencePageScope } from "@/types/projects";
+import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
 import { ConfluenceManualAdd } from "./ConfluenceManualAdd";
 import { ConfluenceSpaceBrowser } from "./ConfluenceSpaceBrowser";
 import { useSourceOptions, type SourceOption } from "./useSourceOptions";
@@ -88,6 +88,8 @@ export function SourceItemPicker({
   onChange,
   confluencePageScopes = [],
   onConfluencePageScopesChange,
+  webexCredentialMode,
+  webexCredentialProvider,
 }: {
   adapter: SourceAdapter;
   selected: string[];
@@ -97,9 +99,23 @@ export function SourceItemPicker({
     scopes: ConfluencePageScope[],
     sourceUrl?: string,
   ) => void;
+  webexCredentialMode?: WebexCredentialMode;
+  webexCredentialProvider?: string;
 }) {
-  const { connected, connectedTo, options, loading, manageUrl, search, reload } =
-    useSourceOptions(adapter.provider);
+  const {
+    connected,
+    connectedTo,
+    options,
+    loading,
+    manageUrl,
+    managedCapability,
+    search,
+    reload,
+  } =
+    useSourceOptions(adapter.provider, {
+      webexMode: webexCredentialMode,
+      webexCredentialProvider,
+    });
   const [query, setQuery] = useState("");
   const [manual, setManual] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
@@ -215,8 +231,10 @@ export function SourceItemPicker({
       optionKeyOf(option) ===
       (selected[0] ? adapter.selectedKeyOf(selected[0]) : ""),
   )?.label;
+  const managedWebex =
+    adapter.provider === "webex" && webexCredentialMode === "managed";
 
-  const connectionsLink = manageUrl ? (
+  const connectionsLink = manageUrl && !managedWebex ? (
     <a
       href={manageUrl}
       target="_blank"
@@ -261,7 +279,7 @@ export function SourceItemPicker({
             // connected" until we actually know.
             "Checking…"
           ) : (
-            "Not connected"
+            managedWebex ? "Managed account unavailable" : "Not connected"
           )}
         </span>
         <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={reload} title="Refresh">
@@ -272,7 +290,12 @@ export function SourceItemPicker({
       <div className="space-y-3 p-4">
         {!connected && !loading && (
           <p className="text-sm text-muted-foreground">
-            {manageUrl ? adapter.notConnectedHowTo(connectionsLink) : adapter.notConnectedBare}
+            {managedWebex
+              ? managedCapability?.reason ||
+                "The managed Webex account needs reconnection."
+              : manageUrl
+                ? adapter.notConnectedHowTo(connectionsLink)
+                : adapter.notConnectedBare}
           </p>
         )}
 

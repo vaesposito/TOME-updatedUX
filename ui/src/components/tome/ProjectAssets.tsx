@@ -51,6 +51,12 @@ export function ProjectAssets({
             ? s.confluence_page_scope
             : undefined,
         webex_rooms: Array.isArray(s.webex_rooms) ? s.webex_rooms : [],
+        webex_credential_mode:
+          s.webex_credential_mode === "managed" ? "managed" : "personal",
+        webex_credential_provider:
+          typeof s.webex_credential_provider === "string"
+            ? s.webex_credential_provider
+            : "webex",
       });
     } catch (e) {
       setError(String((e as Error)?.message ?? e));
@@ -83,6 +89,10 @@ export function ProjectAssets({
             confluence_page_scopes: draft.confluence_page_scopes ?? [],
             confluence_page_scope: draft.confluence_page_scope ?? null,
             webex_rooms: draft.webex_rooms ?? [],
+            webex_credential_mode:
+              draft.webex_credential_mode ?? "personal",
+            webex_credential_provider:
+              draft.webex_credential_provider ?? "webex",
           },
         }),
       });

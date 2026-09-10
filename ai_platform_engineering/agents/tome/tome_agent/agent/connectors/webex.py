@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from tome_agent.agent import http_client
 from tome_agent.agent.connectors.base import Connector, SourceItem, format_pages
 from tome_agent.agent.mcp_webex import build_webex_mcp
-from tome_agent.reports.schema import PageSpec, frontmatter_example, WEBEX_MEETING_FRONTMATTER
+from tome_agent.reports.schema import (
+    WEBEX_MEETING_FRONTMATTER,
+    PageSpec,
+    frontmatter_example,
+)
 
 
 class WebexMeetingItem(BaseModel):
@@ -23,6 +28,7 @@ class WebexMeetingItem(BaseModel):
 
 class WebexExtra(BaseModel):
     meetings: list[WebexMeetingItem] = Field(default_factory=list)
+    messaging_only: bool = False
 
 
 class WebexConnector(Connector[WebexExtra]):
@@ -40,15 +46,29 @@ class WebexConnector(Connector[WebexExtra]):
         allowed_room_ids = [
             s.extra.get("room_id", "") for s in sources if s.extra.get("room_id")
         ]
-        return build_webex_mcp(token=token, allowed_room_ids=allowed_room_ids)
+        return build_webex_mcp(
+            token=token,
+            allowed_room_ids=allowed_room_ids,
+            messaging_only=self._messaging_only(),
+        )
+
+    @staticmethod
+    def _messaging_only() -> bool:
+        credential = http_client.get_active_credentials().get("webex", {})
+        return credential.get("messaging_only", "").lower() == "true"
 
     @property
     def mcp_tools(self) -> list[str]:
-        return [
+        messaging_tools = [
             "mcp__webex__webex_list_rooms",
             "mcp__webex__webex_list_messages",
             "mcp__webex__webex_get_message",
             "mcp__webex__webex_get_person",
+        ]
+        if self._messaging_only():
+            return messaging_tools
+        return [
+            *messaging_tools,
             "mcp__webex__webex_meetings_list_meetings",
             "mcp__webex__webex_meetings_list_transcripts",
             "mcp__webex__webex_meetings_get_summary",
@@ -104,9 +124,10 @@ class WebexConnector(Connector[WebexExtra]):
             "also write one file per listed message."
         )
 
+        messaging_only = extra_data.messaging_only if extra_data else False
         meetings_section = ""
         meetings = extra_data.meetings if extra_data else []
-        if meetings:
+        if meetings and not messaging_only:
             meeting_blocks = []
             for meeting in meetings:
                 series = meeting.series_title or meeting.title
@@ -188,13 +209,19 @@ class WebexConnector(Connector[WebexExtra]):
         if not sources:
             return ""
         room_names = ", ".join(f"`{s.slug}`" for s in sources)
+        meeting_step = (
+            "3. Referenced meetings → `webex_meetings_list_transcripts` and "
+            "`webex_meetings_get_summary` for recorded substance\n"
+            if not self._messaging_only()
+            else ""
+        )
         return (
             f"WEBEX DEEP RESEARCH: When investigating {room_names}:\n"
             "1. Scan `webex_list_messages` for signal (recency and context clues in titles)\n"
             "2. Threads that carry decisions → `webex_get_message` for full bodies; read author names verbatim (call "
             "`webex_get_person` if only email is present)\n"
-            "3. Referenced meetings → `webex_meetings_list_transcripts` and `webex_meetings_get_summary` for recorded substance\n"
-            "4. Don't write about a message you only saw as a title in the list. Breadth scan for signal; "
+            f"{meeting_step}"
+            "Don't write about a message you only saw as a title in the list. Breadth scan for signal; "
             "depth calls on what matters — decisions, disagreements, action items, context shifts.\n"
             "Write concepts and decisions, not dated message logs."
         )

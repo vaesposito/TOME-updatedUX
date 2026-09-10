@@ -117,6 +117,34 @@ describe("requiredAutoIngestProviders", () => {
       ),
     ).toEqual(["github", "atlassian", "webex"]);
   });
+
+  it("tracks a personal messaging connector but not the deployment-managed account", () => {
+    const baseSources = {
+      webex_rooms: [{ slug: "example", name: "Example", room_id: "room-id" }],
+    };
+    expect(
+      requiredAutoIngestProviders(
+        project("personal-messaging", {
+          sources: {
+            ...baseSources,
+            webex_credential_mode: "personal",
+            webex_credential_provider: "webex_messaging",
+          },
+        }),
+      ),
+    ).toEqual(["webex_messaging"]);
+    expect(
+      requiredAutoIngestProviders(
+        project("managed", {
+          sources: {
+            ...baseSources,
+            webex_credential_mode: "managed",
+            webex_credential_provider: "webex_messaging",
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("refreshAutoIngestCredentialHealth", () => {

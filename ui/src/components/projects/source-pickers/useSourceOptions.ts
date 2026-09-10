@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitHubRepositorySource } from "@/types/projects";
+import type { WebexCredentialMode } from "@/types/projects";
 
 export interface SourceOption {
   value: string;
@@ -16,6 +17,14 @@ export interface SourceOptionsState {
   loading: boolean;
   /** Connections page URL when that feature is enabled here, else null. */
   manageUrl: string | null;
+  managedCapability?: {
+    enabled: boolean;
+    configured: boolean;
+    available: boolean;
+    provider: string;
+    displayName: string;
+    reason?: string;
+  };
 }
 
 type Loaded = Omit<SourceOptionsState, "loading">;
@@ -24,10 +33,16 @@ type Loaded = Omit<SourceOptionsState, "loading">;
 async function loadSourceOptions(
   provider: "github" | "atlassian" | "webex",
   q?: string,
+  webexMode?: WebexCredentialMode,
+  webexCredentialProvider?: string,
 ): Promise<Loaded> {
-  const url = `/api/projects/source-options?provider=${provider}${
-    q ? `&q=${encodeURIComponent(q)}` : ""
-  }`;
+  const params = new URLSearchParams({ provider });
+  if (q) params.set("q", q);
+  if (provider === "webex" && webexMode) params.set("webex_mode", webexMode);
+  if (provider === "webex" && webexCredentialProvider) {
+    params.set("credential_provider", webexCredentialProvider);
+  }
+  const url = `/api/projects/source-options?${params}`;
   const res = await fetch(url);
   const json = await res.json();
   const d = json?.data ?? {};
@@ -36,6 +51,10 @@ async function loadSourceOptions(
     connectedTo: typeof d.connectedTo === "string" ? d.connectedTo : undefined,
     options: Array.isArray(d.options) ? d.options : [],
     manageUrl: typeof d.manageUrl === "string" ? d.manageUrl : null,
+    managedCapability:
+      d.managedCapability && typeof d.managedCapability === "object"
+        ? d.managedCapability
+        : undefined,
   };
 }
 
@@ -46,6 +65,10 @@ async function loadSourceOptions(
  */
 export function useSourceOptions(
   provider: "github" | "atlassian" | "webex",
+  options?: {
+    webexMode?: WebexCredentialMode;
+    webexCredentialProvider?: string;
+  },
 ): SourceOptionsState & { search: (q: string) => void; reload: () => void } {
   const [state, setState] = useState<SourceOptionsState>({
     connected: false,
@@ -58,23 +81,33 @@ export function useSourceOptions(
   // Initial load: setState only inside the promise callback (not the effect body).
   useEffect(() => {
     let cancelled = false;
-    loadSourceOptions(provider)
+    loadSourceOptions(
+      provider,
+      undefined,
+      options?.webexMode,
+      options?.webexCredentialProvider,
+    )
       .then((d) => !cancelled && setState({ ...d, loading: false }))
       .catch(() => !cancelled && setState((s) => ({ ...s, loading: false })));
     return () => {
       cancelled = true;
     };
-  }, [provider]);
+  }, [provider, options?.webexMode, options?.webexCredentialProvider]);
 
   // Event-handler refetch (allowed to setState directly).
   const run = useCallback(
     (q?: string) => {
       setState((s) => ({ ...s, loading: true }));
-      loadSourceOptions(provider, q)
+      loadSourceOptions(
+        provider,
+        q,
+        options?.webexMode,
+        options?.webexCredentialProvider,
+      )
         .then((d) => setState({ ...d, loading: false }))
         .catch(() => setState((s) => ({ ...s, loading: false })));
     },
-    [provider],
+    [provider, options?.webexMode, options?.webexCredentialProvider],
   );
 
   const search = useCallback(

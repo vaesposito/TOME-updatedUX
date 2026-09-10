@@ -22,7 +22,7 @@ import { getPageStore } from "./page-store";
 import { getTomeIngestRunsCollection, getTomeReportsCollection } from "./mongo-collections";
 import {
   buildIngestRequest,
-  resolveCredentialsForSub,
+  resolveProjectCredentials,
   sessionSub,
 } from "./agent-proxy";
 import { reconcileGitHubSourcesForIngest } from "./github-source-reconciliation";
@@ -287,7 +287,11 @@ async function prepareRun(
   await appendLog(runId, dispatchLine(isGreenfield, run.triggered_by));
 
   // The original request session is gone by now; re-resolve from the stored sub.
-  const credentials = await resolveCredentialsForSub(run.triggered_by_sub ?? "");
+  const credentials = await resolveProjectCredentials(
+    project,
+    run.triggered_by_sub ?? "",
+    { purpose: "ingest", sourceScope: dispatch.sourceScope },
+  );
   if (!meetingOnly) {
     const githubReconciliation = await reconcileGitHubSourcesForIngest(
       project,
@@ -315,8 +319,11 @@ async function prepareRun(
     );
   }
 
+  const messagingOnly = credentials.webex?.messaging_only === "true";
   const connectorData: Record<string, unknown> =
-    meetings.length > 0 ? { webex: { meetings } } : {};
+    meetings.length > 0 || messagingOnly
+      ? { webex: { meetings, messaging_only: messagingOnly } }
+      : {};
   const scopedProject = meetingOnly ? { ...project, sources: {} } : project;
 
   // BHAGs and Areas carry their child projects for synthesis/compaction. A

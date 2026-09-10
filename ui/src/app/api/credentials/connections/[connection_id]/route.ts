@@ -8,6 +8,7 @@ import {
 } from "@/lib/api-middleware";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCredentialFeatureConfig } from "@/lib/feature-flags/credentials";
+import { isProtectedManagedWebexConnection } from "@/lib/tome/managed-webex-config";
 
 interface RouteContext {
   params: Promise<{ connection_id: string }>;
@@ -33,6 +34,14 @@ export const DELETE = withErrorHandler(async (request: NextRequest, context: Rou
   }
 
   const service = await getProviderConnectionService();
+  const connection = await service.getConnection(connectionId);
+  if (isProtectedManagedWebexConnection(connection)) {
+    throw new ApiError(
+      "The managed Webex connection cannot be removed from the normal connection screen",
+      403,
+      "MANAGED_WEBEX_CREDENTIAL_PROTECTED",
+    );
+  }
   const revoked = await service.revokeConnection({
     connectionId,
     owner: { type: "user", id: ownerId },

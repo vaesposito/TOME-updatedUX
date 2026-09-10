@@ -5,7 +5,7 @@
 import { NextRequest } from "next/server";
 
 import { successResponse, withErrorHandler } from "@/lib/api-middleware";
-import { resolveForwardedCredentials } from "@/lib/tome/agent-proxy";
+import { resolveProjectCredentials, sessionSub } from "@/lib/tome/agent-proxy";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import type { PreflightResult, PreflightSourceResult } from "@/lib/tome/preflight";
 
@@ -111,7 +111,18 @@ async function checkWebex(
 export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug } = await ctx.params;
   const tctx = await loadTomeProject(request, slug);
-  const creds = await resolveForwardedCredentials(tctx);
+  let creds: Awaited<ReturnType<typeof resolveProjectCredentials>>;
+  let credentialError = "";
+  try {
+    creds = await resolveProjectCredentials(
+      tctx.project,
+      sessionSub(tctx.session),
+      { purpose: "ingest" },
+    );
+  } catch (error) {
+    creds = {};
+    credentialError = error instanceof Error ? error.message : String(error);
+  }
 
   const project = tctx.project;
   const sources = project.sources ?? {};
@@ -141,6 +152,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const webexRooms: { room_id: string; name?: string }[] = Array.isArray(sources.webex_rooms)
     ? sources.webex_rooms
     : [];
+  const usesManagedWebex = sources.webex_credential_mode === "managed";
 
   const [ghResult, cfResult, wxResult] = await Promise.all([
     repos.length > 0
@@ -156,13 +168,38 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     webexRooms.length > 0
       ? creds["webex"]?.access_token
         ? checkWebex(webexRooms, creds["webex"].access_token)
-        : Promise.resolve({ no_token: true, accessible: [], inaccessible: webexRooms.map((r) => r.name || r.room_id) })
+        : Promise.resolve({
+            no_token: true,
+            accessible: [],
+            inaccessible: webexRooms.map((r) => r.name || r.room_id),
+            ...(usesManagedWebex
+              ? {
+                  detail:
+                    credentialError ||
+                    "Managed Webex account needs reconnection.",
+                  fixable_by_user: false,
+                }
+              : {}),
+          })
       : null,
   ]);
 
   if (ghResult) results.push({ provider: "github", label: "GitHub", ...ghResult });
   if (cfResult) results.push({ provider: "confluence", label: "Confluence", ...cfResult });
-  if (wxResult) results.push({ provider: "webex", label: "Webex", ...wxResult });
+  if (wxResult) {
+    results.push({
+      provider: "webex",
+      label: usesManagedWebex ? "Managed Webex" : "Webex",
+      ...wxResult,
+      ...(usesManagedWebex && wxResult.inaccessible.length > 0 && !wxResult.detail
+        ? {
+            detail:
+              "The managed Webex account cannot access one or more selected spaces.",
+            fixable_by_user: false,
+          }
+        : {}),
+    });
+  }
 
   const can_ingest =
     results.length === 0 ||

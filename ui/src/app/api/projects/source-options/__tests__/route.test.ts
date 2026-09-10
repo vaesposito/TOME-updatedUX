@@ -7,6 +7,8 @@ import { NextRequest } from "next/server";
 const mockGetAuthFromBearerOrSession = jest.fn();
 const mockListConnections = jest.fn();
 const mockRefreshConnection = jest.fn();
+const mockResolveManagedWebexCredential = jest.fn();
+const mockGetReadableWebexSpaceIds = jest.fn();
 
 jest.mock("@/lib/api-middleware", () => {
   const actual = jest.requireActual("@/lib/api-middleware");
@@ -26,6 +28,21 @@ jest.mock("@/lib/credentials/oauth-service-factory", () => ({
 
 jest.mock("@/lib/feature-flags/credentials", () => ({
   getCredentialFeatureConfig: jest.fn(() => ({ enabled: true })),
+}));
+
+jest.mock("@/lib/tome/managed-webex", () => ({
+  resolveManagedWebexCredential: (...args: unknown[]) =>
+    mockResolveManagedWebexCredential(...args),
+}));
+
+jest.mock("@/lib/rbac/user-insights-scope", () => ({
+  getReadableWebexSpaceIds: (...args: unknown[]) =>
+    mockGetReadableWebexSpaceIds(...args),
+}));
+
+jest.mock("@/lib/rbac/resource-authz", () => ({
+  subjectFromSession: (session: { sub?: string }) =>
+    session.sub ? `user:${session.sub}` : null,
 }));
 
 import { GET } from "../route";
@@ -56,6 +73,16 @@ describe("GET /api/projects/source-options for Atlassian", () => {
       accessToken: "atlassian-token",
       expiresIn: 3600,
     });
+    mockResolveManagedWebexCredential.mockResolvedValue({
+      capability: {
+        enabled: false,
+        configured: false,
+        available: false,
+        provider: "webex_messaging",
+        displayName: "Managed Webex account",
+      },
+    });
+    mockGetReadableWebexSpaceIds.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -292,6 +319,53 @@ describe("GET /api/projects/source-options for Webex", () => {
     expect(body.data.options[0]).toEqual({
       value: "room-0",
       label: "Room 0",
+    });
+  });
+
+  it("lists only caller-authorized rooms through the healthy managed account", async () => {
+    mockResolveManagedWebexCredential.mockResolvedValue({
+      capability: {
+        enabled: true,
+        configured: true,
+        available: true,
+        provider: "webex_messaging",
+        displayName: "Managed Webex account",
+      },
+      accessToken: "managed-token",
+    });
+    mockGetReadableWebexSpaceIds.mockResolvedValue(["room-readable"]);
+    global.fetch = jest.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url,
+      );
+      if (url.pathname === "/v1/rooms") {
+        return jsonResponse({
+          items: [
+            { id: "room-readable", title: "Readable Room" },
+            { id: "room-hidden", title: "Hidden Room" },
+          ],
+        });
+      }
+      return jsonResponse({}, 404);
+    }) as typeof fetch;
+
+    const response = await GET(
+      new NextRequest(
+        "http://example.test/api/projects/source-options?provider=webex&webex_mode=managed",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockGetReadableWebexSpaceIds).toHaveBeenCalledWith("user:example-user");
+    expect(body.data).toMatchObject({
+      connected: true,
+      connectedTo: "Managed Webex account",
+      options: [{ value: "room-readable", label: "Readable Room" }],
     });
   });
 });

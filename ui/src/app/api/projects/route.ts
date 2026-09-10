@@ -32,6 +32,10 @@ import { isValidCron } from "@/lib/rbac/cron";
 import { isTomeAdmin, type TomeAdminSession } from "@/lib/rbac/tome-admin";
 import { SYSTEM_AGENT_IDENTITIES } from "@/lib/tome/agent-identities";
 import { auditTome, tomeActorFromAuth } from "@/lib/tome/audit";
+import {
+  assertManagedWebexRoomsAccessible,
+  normalizeWebexCredentialSettings,
+} from "@/lib/tome/managed-webex";
 import { sessionSub } from "@/lib/tome/agent-proxy";
 import { requestWebexMeetingOwnerCheck } from "@/lib/tome/auto-ingest/cursor";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
@@ -430,6 +434,14 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
         name: (r.name ?? "").trim() || r.room_id.trim(),
         slug: (r.slug ?? "").trim(),
       }));
+  const webexCredentialSettings = normalizeWebexCredentialSettings({
+    mode: body.webex_credential_mode ?? "personal",
+    provider: body.webex_credential_provider ?? "webex",
+  });
+  const webexRooms = cleanWebexRooms(body.webex_rooms);
+  if (webexCredentialSettings.mode === "managed") {
+    await assertManagedWebexRoomsAccessible({ session, rooms: webexRooms });
+  }
   const sources = {
     repos: cleanUrls(body.github_repos),
     confluence_url: body.confluence_url?.trim() || undefined,
@@ -440,7 +452,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       body.confluence_page_scope,
     ),
     component_urls: cleanUrls(body.component_urls),
-    webex_rooms: cleanWebexRooms(body.webex_rooms),
+    webex_rooms: webexRooms,
+    webex_credential_mode: webexCredentialSettings.mode,
+    webex_credential_provider: webexCredentialSettings.provider,
   };
   const sourceIntegrations: Record<string, string> = {};
   if (sources.repos[0]) sourceIntegrations.github_url = sources.repos[0];

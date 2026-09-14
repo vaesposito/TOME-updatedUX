@@ -168,6 +168,15 @@ async function createRunRecord(
       || (resolvedPolicy.policy.mode !== "off" && resolvedPolicy.policy.require_human_review)
       ? { skipReview: false }
       : {}),
+    // Stable-page seeding is a founding-run opt-in and meaningless elsewhere.
+    // `prepareRun` already clamps it the same way when building the agent
+    // request, but that shapes what the agent is *told*; this clamps what is
+    // *stored*, so the run record can never assert an opt-in that did not
+    // apply. The write route treats the record as authorization (#369), and a
+    // record is easier to trust than to re-derive at every read site.
+    ...(opts.dispatch.seedStablePages === true && !isGreenfield
+      ? { seedStablePages: false }
+      : {}),
   };
 
   const now = new Date();
@@ -331,8 +340,8 @@ async function prepareRun(
   const scopedProject = meetingOnly ? { ...project, sources: {} } : project;
 
   // BHAGs and Areas carry their child projects for synthesis/compaction. A
-  // meeting-only Area run remains scoped to that transcript and reads no
-  // unrelated child wiki, matching its attached-source isolation above.
+  // meeting-only synthesized-entity run remains scoped to that transcript and
+  // reads no unrelated child wiki, matching its attached-source isolation above.
   const endpoint = dispatch.endpoint || "/ingest";
   const isBhag = project.type === "bhag";
   const isArea = project.type === "area";

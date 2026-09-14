@@ -1,6 +1,9 @@
 name: "[CI] CAIPE UI Build and Push"
 
 on:
+  push:
+    tags:
+      - '**-dev.*'
   pull_request:
     paths:
       - 'ui/**'
@@ -77,8 +80,9 @@ jobs:
           UI_CHANGED: ${{ steps.filter.outputs.ui }}
           TAG_VERSION: ${{ steps.version.outputs.tag_version }}
           FORCE_BUILD: ${{ inputs.force_build }}
+          TAG_EVENT: ${{ startsWith(github.ref, 'refs/tags/') }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "$TAG_EVENT" == "true" ]]; then
             echo 'build_matrix={"include":[{"platform":"linux/amd64","runner":"ubuntu-latest","arch":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm","arch":"arm64"}]}' >> "$GITHUB_OUTPUT"
           else
             echo 'build_matrix={"include":[{"platform":"linux/amd64","runner":"ubuntu-latest","arch":"amd64"}]}' >> "$GITHUB_OUTPUT"
@@ -231,7 +235,7 @@ jobs:
           labels: |
             ${{ steps.meta.outputs.labels }}
             org.opencontainers.image.revision=${{ inputs.source_sha || github.sha }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'workflow_dispatch' }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=min,scope=${{ matrix.arch }}
           build-args: |
@@ -244,14 +248,14 @@ jobs:
           sbom: false
 
       - name: Export digest
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: digests-${{ matrix.arch }}
@@ -265,7 +269,7 @@ jobs:
     needs: [determine-changes, build-and-push]
     if: |
       needs.determine-changes.outputs.should_build == 'true' &&
-      github.event_name == 'workflow_dispatch'
+      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
     permissions:
       contents: read
       packages: write

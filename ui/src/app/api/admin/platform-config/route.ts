@@ -30,6 +30,7 @@ normalizeRagDefaultSearchTeamSlug,
 RAG_TEAM_SLUG_PATTERN,
 } from '@/lib/rag-settings';
 import { normalizeRagIngestorLimits } from '@/lib/rag-ingestor-limits';
+import { isValidReleaseNotesRef } from '@/lib/release-notes-ref';
 import { NextRequest,NextResponse } from 'next/server';
 
 const platformConfigCache = createJsonResponseCacheStore();
@@ -218,17 +219,16 @@ function validateReleaseNotesConfig(config: ReleaseNotesNotificationConfig): voi
     );
   }
 
-  const commitPattern = /^[0-9a-f]{7,40}$/i;
-  if (!commitPattern.test(config.previous_commit as string)) {
+  if (!isValidReleaseNotesRef(config.previous_commit as string)) {
     throw new ApiError(
-      'release notes previous_commit must be a 7 to 40 character commit SHA',
+      'release notes previous_commit must be a valid commit SHA, tag, or branch name',
       400,
       'INVALID_RELEASE_NOTES_PREVIOUS_COMMIT',
     );
   }
-  if (!commitPattern.test(config.latest_commit as string)) {
+  if (!isValidReleaseNotesRef(config.latest_commit as string)) {
     throw new ApiError(
-      'release notes latest_commit must be a 7 to 40 character commit SHA',
+      'release notes latest_commit must be a valid commit SHA, tag, or branch name',
       400,
       'INVALID_RELEASE_NOTES_LATEST_COMMIT',
     );

@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card,CardContent,CardDescription,CardHeader,CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { isValidReleaseNotesRef } from "@/lib/release-notes-ref";
 
 interface ReleaseNotesSettingsTabProps {
   isAdmin: boolean;
@@ -175,13 +176,12 @@ function ReleaseNotesCard({ isAdmin, readOnly = false }: ReleaseNotesSettingsTab
         setPlatformSaveError("Enter an https://github.com/<owner>/<repository> URL.");
         return;
       }
-      const commitPattern = /^[0-9a-f]{7,40}$/i;
       if (
-        !commitPattern.test(nextConfig.previous_commit as string) ||
-        !commitPattern.test(nextConfig.latest_commit as string)
+        !isValidReleaseNotesRef(nextConfig.previous_commit as string) ||
+        !isValidReleaseNotesRef(nextConfig.latest_commit as string)
       ) {
         setPlatformSaveResult("error");
-        setPlatformSaveError("Enter commit SHAs containing 7 to 40 hexadecimal characters.");
+        setPlatformSaveError("Enter a valid commit SHA, tag, or branch name for each ref.");
         return;
       }
     }
@@ -368,10 +368,11 @@ function ReleaseNotesCard({ isAdmin, readOnly = false }: ReleaseNotesSettingsTab
                 </p>
                 <div className="space-y-3 rounded-md border p-3">
                   <div>
-                    <p className="text-sm font-medium">Optional GitHub commit diff</p>
+                    <p className="text-sm font-medium">Optional GitHub ref diff</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Set all three fields to show changes between two commits. Leave them empty to use the
-                      deployed-version release notes. Private repositories require a GitHub token on the UI server.
+                      Set all three fields to show changes between two commits, tags, or branches. Leave them empty
+                      to use the deployed-version release notes. Private repositories require a GitHub token on the
+                      UI server.
                     </p>
                   </div>
                   <label className="block space-y-1 text-xs font-medium" htmlFor="release-notes-repository-url">
@@ -392,7 +393,7 @@ function ReleaseNotesCard({ isAdmin, readOnly = false }: ReleaseNotesSettingsTab
                         id="release-notes-previous-commit"
                         value={previousCommit}
                         onChange={(event) => setPreviousCommit(event.target.value)}
-                        placeholder="Previous commit SHA"
+                        placeholder="Commit SHA or tag (e.g. v1.2.3)"
                         disabled={readOnly}
                         spellCheck={false}
                       />
@@ -403,7 +404,7 @@ function ReleaseNotesCard({ isAdmin, readOnly = false }: ReleaseNotesSettingsTab
                         id="release-notes-latest-commit"
                         value={latestCommit}
                         onChange={(event) => setLatestCommit(event.target.value)}
-                        placeholder="Latest commit SHA"
+                        placeholder="Commit SHA or tag (e.g. v1.3.0)"
                         disabled={readOnly}
                         spellCheck={false}
                       />

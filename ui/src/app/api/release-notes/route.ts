@@ -4,6 +4,7 @@ import path from "path";
 
 import { getCollection } from "@/lib/mongodb";
 import { PLATFORM_CONFIG_ID } from "@/lib/platform-default-agent";
+import { isValidReleaseNotesRef } from "@/lib/release-notes-ref";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ const RELEASE_FILE_PATTERN = /release-(\d+)-(\d+)-(\d+)\.mdx?$/i;
 const LISTING_TTL_MS = 10 * 60 * 1000;
 const CONTENT_TTL_MS = 10 * 60 * 1000;
 const COMPARE_TTL_MS = 10 * 60 * 1000;
-const COMMIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
+const GITHUB_COMMIT_SHA_PATTERN = /^[0-9a-f]{7,64}$/i;
 
 interface ReleaseFile {
   name: string;
@@ -131,8 +132,8 @@ async function readConfiguredGithubCompare(): Promise<ConfiguredGithubCompare | 
   const repository = parseGithubRepositoryUrl(repositoryUrl);
   if (
     !repository ||
-    !COMMIT_SHA_PATTERN.test(previousCommit) ||
-    !COMMIT_SHA_PATTERN.test(latestCommit)
+    !isValidReleaseNotesRef(previousCommit) ||
+    !isValidReleaseNotesRef(latestCommit)
   ) {
     return null;
   }
@@ -233,7 +234,11 @@ async function readGithubCompareReleaseNotes(
   if (cached && Date.now() - cached.at < COMPARE_TTL_MS) return cached.notes;
 
   const commits: GithubCompareCommit[] = [];
-  const compareUrl = `https://github.com/${repository.owner}/${repository.repository}/compare/${previousCommit}...${latestCommit}`;
+  const encodedPreviousCommit = encodeURIComponent(previousCommit);
+  const encodedLatestCommit = encodeURIComponent(latestCommit);
+  const compareUrl =
+    `https://github.com/${repository.owner}/${repository.repository}/compare/` +
+    `${encodedPreviousCommit}...${encodedLatestCommit}`;
   // Prefer the UI's standard GitHub token. The PAT name remains a compatibility
   // fallback for older Compose deployments.
   const token =
@@ -252,7 +257,8 @@ async function readGithubCompareReleaseNotes(
       const timeout = setTimeout(() => controller.abort(), 10000);
       const apiUrl =
         `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/` +
-        `${encodeURIComponent(repository.repository)}/compare/${previousCommit}...${latestCommit}` +
+        `${encodeURIComponent(repository.repository)}/compare/` +
+        `${encodedPreviousCommit}...${encodedLatestCommit}` +
         `?per_page=100&page=${page}`;
       let response: Response;
       try {
@@ -275,7 +281,7 @@ async function readGithubCompareReleaseNotes(
       commits.push(
         ...pageCommits.filter(
           (commit): commit is GithubCompareCommit =>
-            typeof commit?.sha === "string" && COMMIT_SHA_PATTERN.test(commit.sha),
+            typeof commit?.sha === "string" && GITHUB_COMMIT_SHA_PATTERN.test(commit.sha),
         ),
       );
       if (pageCommits.length < 100) break;

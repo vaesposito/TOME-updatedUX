@@ -39,7 +39,7 @@ export function wikiExportHref(
   return `/api/tome/projects/${encodeURIComponent(slug)}/export?${params.toString()}`;
 }
 
-/** Shared PDF/HTML/Markdown download menu for wiki and gist exports. */
+/** Shared document export menu and guided presentation workflow for wiki and gist exports. */
 export function WikiExportMenu({ slug, path, gist, triggerClassName }: Props) {
   const [open, setOpen] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);
@@ -95,7 +95,7 @@ export function WikiExportMenu({ slug, path, gist, triggerClassName }: Props) {
               Export as presentation
               <BetaBadge />
             </span>
-            <span className="block text-[10px] text-muted-foreground">Guide AI, review, and export HTML or editable .pptx</span>
+            <span className="block text-[10px] text-muted-foreground">Guide AI, review, and choose the HTML or PowerPoint template</span>
           </span>
         </button>
       </PopoverContent>

@@ -27,6 +27,10 @@ jest.mock("@/lib/tome/navigation-store", () => ({
   ensurePagePlacements: jest.fn(),
   listPagePlacements: jest.fn().mockResolvedValue([]),
 }));
+jest.mock("@/lib/tome/presentation-pptx", () => ({
+  presentationFilename: (slug: string, title: string) => `${slug}-${title.toLowerCase().replace(/\s+/g, "-")}.pptx`,
+  renderPresentationPptx: jest.fn().mockResolvedValue(new Uint8Array([80, 75, 3, 4])),
+}));
 
 import { GET } from "@/app/api/tome/projects/[slug]/export/route";
 
@@ -114,6 +118,22 @@ describe("GET Tome wiki export", () => {
     expect(Number(response.headers.get("Content-Length"))).toBe(bytes.byteLength);
   });
 
+  it("downloads a source-grounded Outshift PowerPoint for a wiki", async () => {
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/tome/projects/example-project/export?format=pptx",
+      ),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("presentationml.presentation");
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="example-project-example-project.pptx"',
+    );
+    expect(Buffer.from(await response.arrayBuffer()).subarray(0, 2).toString("ascii")).toBe("PK");
+  });
+
   it("downloads a project-authorized gist with its own filename", async () => {
     mockFindGist.mockResolvedValue({
       _id: "gist-1",
@@ -136,6 +156,31 @@ describe("GET Tome wiki export", () => {
     );
     expect(await response.text()).toBe("# Notes\n\nVisible.\n");
     expect(mockFindGist).toHaveBeenCalledWith({ _id: "gist-1", project_id: "project-1" });
+    expect(mockListPages).not.toHaveBeenCalled();
+  });
+
+  it("downloads a source-grounded Outshift PowerPoint for a gist", async () => {
+    mockFindGist.mockResolvedValue({
+      _id: "gist-1",
+      project_id: "project-1",
+      title: "Example notes",
+      filename: "example-notes.md",
+      body: "# Notes\n\n- A source-backed note",
+    });
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/tome/projects/example-project/export?format=pptx&gist=gist-1",
+      ),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("presentationml.presentation");
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="example-project-example-notes.pptx"',
+    );
+    expect(Buffer.from(await response.arrayBuffer()).subarray(0, 2).toString("ascii")).toBe("PK");
     expect(mockListPages).not.toHaveBeenCalled();
   });
 
@@ -183,7 +228,7 @@ describe("GET Tome wiki export", () => {
     expect(await response.json()).toEqual(
       expect.objectContaining({
         success: false,
-        error: "Supported export formats: pdf, html, markdown",
+        error: "Supported export formats: pdf, html, markdown, pptx",
       }),
     );
   });

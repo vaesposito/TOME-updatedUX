@@ -182,6 +182,32 @@ describe("MarkdownRenderer links", () => {
     expect(figure?.querySelector("figcaption")).toHaveTextContent("Example diagram");
   });
 
+  it("preserves responsive widths for video embeds and block images", async () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content={[
+          "```youtube",
+          "url: https://www.youtube.com/watch?v=b4STimVN60E",
+          "width: 60%",
+          "```",
+          "",
+          '![0.55|right](https://example.com/example.png "Example diagram")',
+        ].join("\n")}
+        enableExternalEmbeds
+      />,
+    );
+
+    await waitFor(() => expect(container.querySelector("iframe")).toBeInTheDocument());
+    expect(container.querySelector(".tome-embed-preview")).toHaveStyle(
+      "--tome-media-width: 60%",
+    );
+    const image = container.querySelector("img.tome-sized-image");
+    expect(image).toHaveStyle("--tome-media-width: 55%");
+    expect(image).toHaveAttribute("data-media-align", "right");
+    expect(image).toHaveAttribute("alt", "Example diagram");
+    expect(figure?.querySelector("figcaption")).toHaveTextContent("Example diagram");
+  });
+
   it("shows a safe error for invalid opted-in embeds", async () => {
     const { container } = render(
       <MarkdownRenderer

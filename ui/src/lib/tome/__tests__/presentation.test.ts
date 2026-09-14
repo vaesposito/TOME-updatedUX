@@ -3,6 +3,7 @@
 import JSZip from "jszip";
 
 import {
+  buildPresentationDeckFromSources,
   buildPresentationPrompt,
   DEFAULT_PRESENTATION_REQUIREMENTS,
   defaultPresentationRequirements,
@@ -50,6 +51,21 @@ const rawDeck = {
 };
 
 describe("TOME presentation export", () => {
+  it("builds direct wiki and gist downloads from source summaries", () => {
+    const deck = buildPresentationDeckFromSources("Example Project", [
+      { path: "status.md", title: "Status", content: "# Status\n\n- Ready for review\n- Source linked" },
+      { path: "@gist/gist-1", title: "Notes", content: "A short note." },
+    ]);
+    expect(deck.title).toBe("Example Project");
+    expect(deck.slides).toHaveLength(2);
+    expect(deck.slides[0].bullets.map((bullet) => bullet.text)).toEqual([
+      "Status",
+      "Ready for review",
+      "Source linked",
+    ]);
+    expect(deck.slides[1].bullets[0].source_refs).toEqual(["@gist/gist-1"]);
+  });
+
   it("starts with a complete, subject-aware brief", () => {
     const requirements = defaultPresentationRequirements("Example Project");
     expect(requirements.goal).toContain("Example Project");
@@ -156,6 +172,7 @@ describe("TOME presentation export", () => {
     expect(slide).toContain("GRAPHIC");
     expect(slide).toContain("Delivery milestones");
     expect(slide).toContain("Design complete");
+    expect(slide).toContain("CiscoSansTT Light");
     expect(slide).not.toContain("A simple milestone timeline");
     expect(slideRelations).toContain("https://tome.example.test/projects/example-project/tome/wiki/status.md");
     expect(notes).toContain("Explain the source and recommendation separately.");
@@ -174,6 +191,8 @@ describe("TOME presentation export", () => {
     expect(html).toContain("[1] https://tome.example.test/projects/example-project/tome/wiki/status.md");
     expect(html).toContain("href=\"https://tome.example.test/projects/example-project/tome/wiki/status.md\"");
     expect(html).toContain("Speaker notes");
+    expect(html).toContain('class="rail"');
+    expect(html).toContain("--cyan:#3cb8ea");
     expect(html).toContain("Graphic");
     expect(html).toContain("visual-canvas timeline");
     expect(html).toContain("Design complete → Launch review");

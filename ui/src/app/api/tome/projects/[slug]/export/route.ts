@@ -15,24 +15,31 @@ import {
   renderWikiMarkdown,
   stripAgentHtmlComments,
 } from "@/lib/tome/wiki-export";
+import {
+  buildPresentationDeckFromSources,
+  presentationSourceFromGist,
+  presentationSourceFromPage,
+} from "@/lib/tome/presentation";
+import { presentationFilename, renderPresentationPptx } from "@/lib/tome/presentation-pptx";
+import { presentationPublicOrigin } from "@/lib/tome/public-origin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ slug: string }> };
-type ExportFormat = "pdf" | "html" | "markdown";
+type ExportFormat = "pdf" | "html" | "markdown" | "pptx";
 
 function exportFormat(request: NextRequest): ExportFormat {
   const format = request.nextUrl.searchParams.get("format") ?? "pdf";
-  if (format === "pdf" || format === "html" || format === "markdown") return format;
-  throw new ApiError("Supported export formats: pdf, html, markdown", 400, "BAD_REQUEST");
+  if (format === "pdf" || format === "html" || format === "markdown" || format === "pptx") return format;
+  throw new ApiError("Supported export formats: pdf, html, markdown, pptx", 400, "BAD_REQUEST");
 }
 
 function safeFilename(slug: string): string {
   return slug.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "wiki";
 }
 
-/** Download the current wiki, one selected page, or one gist as PDF, HTML, or Markdown. */
+/** Download the current wiki, one selected page, or one gist as PDF, HTML, Markdown, or PowerPoint. */
 export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug } = await ctx.params;
   const format = exportFormat(request);
@@ -57,6 +64,25 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       "X-Content-Type-Options": "nosniff",
     };
     const markdown = stripAgentHtmlComments(gist.body);
+    if (format === "pptx") {
+      const deck = buildPresentationDeckFromSources(
+        gist.title,
+        [presentationSourceFromGist(requestedGistId, gist.title, markdown)],
+      );
+      const sourceBaseUrl = new URL(
+        `/projects/${encodeURIComponent(slug)}/tome/wiki/`,
+        presentationPublicOrigin(request),
+      ).toString();
+      const bytes = await renderPresentationPptx({ deck, projectName: gist.title, sourceBaseUrl });
+      return new Response(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
+        headers: {
+          ...commonHeaders,
+          "Content-Disposition": `attachment; filename="${presentationFilename(slug, gist.title)}"`,
+          "Content-Length": String(bytes.byteLength),
+          "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        },
+      });
+    }
     if (format === "markdown") {
       return new Response(`${markdown}${markdown.endsWith("\n") ? "" : "\n"}`, {
         headers: { ...commonHeaders, "Content-Type": "text/markdown; charset=utf-8" },
@@ -120,6 +146,30 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     "Content-Disposition": `attachment; filename="${base}.${format === "markdown" ? "md" : format}"`,
     "X-Content-Type-Options": "nosniff",
   };
+
+  if (format === "pptx") {
+    const deck = buildPresentationDeckFromSources(
+      tctx.project.title || tctx.project.name || slug,
+      Object.entries(exportPages).map(([path, markdown]) => presentationSourceFromPage(path, markdown)),
+    );
+    const sourceBaseUrl = new URL(
+      `/projects/${encodeURIComponent(slug)}/tome/wiki/`,
+      presentationPublicOrigin(request),
+    ).toString();
+    const bytes = await renderPresentationPptx({
+      deck,
+      projectName: tctx.project.title || tctx.project.name || slug,
+      sourceBaseUrl,
+    });
+    return new Response(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
+      headers: {
+        ...commonHeaders,
+        "Content-Disposition": `attachment; filename="${presentationFilename(slug, deck.title)}"`,
+        "Content-Length": String(bytes.byteLength),
+        "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      },
+    });
+  }
 
   if (format === "html") {
     return new Response(renderWikiHtml(document), {

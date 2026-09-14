@@ -22,11 +22,18 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     deck?: unknown;
     format?: unknown;
     gist_id?: unknown;
+    use_outshift_template?: unknown;
   };
   const format = body.format === undefined ? "pptx" : body.format;
   if (format !== "pptx" && format !== "html") {
     throw new ApiError("format must be pptx or html", 400, "INVALID_FORMAT");
   }
+  if (body.use_outshift_template !== undefined && typeof body.use_outshift_template !== "boolean") {
+    throw new ApiError("use_outshift_template must be a boolean", 400, "INVALID_TEMPLATE");
+  }
+  const useOutshiftTemplate = typeof body.use_outshift_template === "boolean"
+    ? body.use_outshift_template
+    : undefined;
   const gistId = typeof body.gist_id === "string" ? body.gist_id.trim() : "";
   let allowedPaths: string[];
   if (gistId) {
@@ -65,7 +72,12 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       },
     });
   }
-  const bytes = await renderPresentationPptx({ deck, projectName, sourceBaseUrl });
+  const bytes = await renderPresentationPptx({
+    deck,
+    projectName,
+    sourceBaseUrl,
+    useOutshiftTemplate,
+  });
   const bodyBytes = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   return new Response(bodyBytes, {
     headers: {

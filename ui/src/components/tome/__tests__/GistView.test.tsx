@@ -248,6 +248,99 @@ describe("GistView", () => {
     expect(await screen.findByRole("button", { name: "renamed.md" })).toBeInTheDocument();
   });
 
+  it("keeps gist metadata compact and reveals audit details in a tooltip", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          gist: {
+            id: "gist-1",
+            title: "Example gist",
+            filename: "example-gist.md",
+            body: "Example markdown",
+            author: "creator@example.test",
+            created_at: "2026-08-14T12:00:00.000Z",
+            updated_at: "2026-08-14T13:00:00.000Z",
+            updated_by: "editor@example.test",
+            tags: [],
+          },
+        },
+      }),
+    );
+
+    render(
+      <GistView
+        slug="example-project"
+        id="gist-1"
+        canEdit={false}
+        onBack={jest.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Example gist" });
+    const metadata = screen.getByTestId("gist-author-meta");
+    expect(metadata).toHaveTextContent("example-gist.md");
+    expect(metadata).toHaveTextContent("creator@example.test");
+    expect(metadata).toHaveTextContent("modified");
+    expect(metadata).not.toHaveTextContent("editor@example.test");
+
+    fireEvent.mouseEnter(
+      screen.getByRole("button", {
+        name: "View gist creation and modification details",
+      }),
+    );
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Created");
+    expect(tooltip).toHaveTextContent("Created by");
+    expect(tooltip).toHaveTextContent("Last modified");
+    expect(tooltip).toHaveTextContent("Modified by");
+    expect(tooltip).toHaveTextContent("creator@example.test");
+    expect(tooltip).toHaveTextContent("editor@example.test");
+  });
+
+  it("renames the Markdown filename inline without changing the gist id", async () => {
+    const original = {
+      id: "gist-1",
+      title: "Example gist",
+      filename: "example-gist.md",
+      body: "Original markdown",
+      author: "test-user",
+      created_at: "2026-08-14T12:00:00.000Z",
+      tags: [],
+    };
+    (global.fetch as jest.Mock)
+      .mockReset()
+      .mockResolvedValueOnce(jsonResponse({ data: { gist: original } }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { gist: { ...original, filename: "renamed.md" } } }),
+      );
+
+    render(
+      <GistView
+        slug="example-project"
+        id="gist-1"
+        canEdit
+        onBack={jest.fn()}
+      />,
+    );
+
+    await screen.findByRole("button", { name: "example-gist.md" });
+    fireEvent.click(screen.getByRole("button", { name: "example-gist.md" }));
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Rename gist filename (Enter to save, Esc to cancel)",
+    });
+    fireEvent.change(filenameInput, { target: { value: "renamed" } });
+    fireEvent.keyDown(filenameInput, { key: "Enter" });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenLastCalledWith(
+      "/api/tome/projects/example-project/gists/gist-1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ filename: "renamed.md" }),
+      }),
+    ));
+    expect(await screen.findByRole("button", { name: "renamed.md" })).toBeInTheDocument();
+  });
+
   it("lets editors update a gist with the shared Rich, Markdown, and Preview modes", async () => {
     const updatedGist = {
       id: "gist-1",

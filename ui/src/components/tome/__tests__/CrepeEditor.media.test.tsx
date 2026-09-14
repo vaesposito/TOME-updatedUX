@@ -141,6 +141,14 @@ jest.mock(
   { virtual: true },
 );
 jest.mock(
+  "@milkdown/kit/prose/history",
+  () => ({
+    undo: (...args: unknown[]) => mockUndo(...args),
+    redo: (...args: unknown[]) => mockRedo(...args),
+  }),
+  { virtual: true },
+);
+jest.mock(
   "@milkdown/utils",
   () => ({
     $prose: jest.fn((factory: () => unknown) => ({
@@ -839,6 +847,19 @@ describe("CrepeEditor media configuration", () => {
         title: "Example image",
         url: "https://example.com/example.png",
       },
+    );
+  });
+
+  it("serializes language display names as portable Markdown fence identifiers", () => {
+    mockGetMarkdown.mockReturnValueOnce(
+      ["```C++", "int main() { return 0; }", "```"].join("\n"),
+    );
+    const editorRef = createRef<CrepeEditorHandle>();
+
+    render(<CrepeEditor ref={editorRef} initialMarkdown="" />);
+
+    expect(editorRef.current?.getMarkdown()).toBe(
+      ["```cpp", "int main() { return 0; }", "```"].join("\n"),
     );
   });
 

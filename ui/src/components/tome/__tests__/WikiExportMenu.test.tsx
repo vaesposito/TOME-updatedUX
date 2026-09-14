@@ -24,6 +24,7 @@ describe("WikiExportMenu", () => {
       "href",
       "/api/tome/projects/example-project/export?format=pdf&path=roadmap.md",
     );
+    expect(screen.queryByRole("link", { name: /PowerPoint/ })).not.toBeInTheDocument();
     for (const label of ["PDF", "HTML", "Markdown"]) {
       expect(screen.getByRole("link", { name: new RegExp(label) }).querySelector("svg"))
         .toBeInTheDocument();
@@ -45,6 +46,7 @@ describe("WikiExportMenu", () => {
       "href",
       "/api/tome/projects/example-project/export?format=markdown&gist=gist-1",
     );
+    expect(screen.queryByRole("link", { name: /PowerPoint/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Export as presentation/ }));
     expect(screen.getByText("Example gist")).toBeInTheDocument();
     expect(screen.getByText("example-gist.md")).toBeInTheDocument();

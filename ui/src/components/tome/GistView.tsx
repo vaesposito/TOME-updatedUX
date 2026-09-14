@@ -803,6 +803,44 @@ export function GistView({
                   )}
                 </p>
               )}
+              <p
+                className="shrink-0 whitespace-nowrap text-sm text-muted-foreground"
+                data-testid="gist-author-meta"
+              >
+                {creating ? (
+                  "New gist · saved outside the curated wiki"
+                ) : gist ? (
+                  <>
+                    {gist.author} · {timeLabel(gist.created_at)}
+                    {gist.updated_at && (
+                      <>
+                        {" · edited "}{timeLabel(gist.updated_at)}
+                        {gist.updated_by ? ` by ${gist.updated_by}` : ""}
+                      </>
+                    )}
+                  </>
+                ) : null}
+              </p>
+              {editing && draftStatus && (
+                <p
+                  className="min-w-0 truncate rounded bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300"
+                  data-testid="gist-draft-status"
+                >
+                  <span>{draftStatus}</span>
+                  {draftSavedAt && (
+                    <>
+                      {" · Last saved "}
+                      <time dateTime={draftSavedAt}>
+                        {new Date(draftSavedAt).toLocaleTimeString(undefined, {
+                          hour: "numeric",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </time>
+                    </>
+                  )}
+                </p>
+              )}
               {editing && editorMode !== "preview" ? (
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
                   {tags.map((tag) => (

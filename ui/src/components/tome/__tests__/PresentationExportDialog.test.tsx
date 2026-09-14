@@ -235,4 +235,54 @@ describe("PresentationExportDialog", () => {
       visual: { description: "Human-edited diagram", source_refs: [] },
     });
   });
+
+  it("shows the template choice after generation and sends the neutral selection to PPTX export", async () => {
+    const fetchMock = jest.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/pages")) {
+        return {
+          ok: true,
+          json: async () => ({ data: { pages: { "overview.md": "# Overview" } } }),
+        } as Response;
+      }
+      if (url.endsWith("/presentations/generate")) return generationStream(initialDeck);
+      if (url.endsWith("/presentations/export")) {
+        return {
+          ok: true,
+          blob: async () => new Blob(["presentation"]),
+          headers: new Headers({ "Content-Disposition": 'attachment; filename="presentation.pptx"' }),
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: jest.fn(() => "blob:test") });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: jest.fn() });
+
+    render(
+      <PresentationExportDialog
+        slug="example-project"
+        currentPath="overview.md"
+        open
+        onOpenChange={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /Compose prompt/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /Compose prompt/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Generate deck/ }));
+    const generationDialog = await screen.findByRole("dialog", { name: /AI deck generation stream/ });
+    await within(generationDialog).findByText(/Project briefing/);
+    fireEvent.click(await within(generationDialog).findByRole("button", { name: "Review deck" }));
+
+    const neutral = screen.getByRole("radio", { name: /Neutral TOME/ });
+    expect(screen.getByRole("radio", { name: /Outshift by Cisco/ })).toBeChecked();
+    fireEvent.click(neutral);
+    expect(neutral).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: /Export \.pptx/ }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/presentations/export"))).toBe(true));
+    const exportCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/presentations/export"));
+    expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({
+      format: "pptx",
+      use_outshift_template: false,
+    });
+  });
 });

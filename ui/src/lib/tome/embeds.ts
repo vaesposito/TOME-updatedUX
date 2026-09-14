@@ -8,6 +8,11 @@ export interface TomeEmbedUrlMatch {
   markdown: string;
 }
 
+export interface TomeEmbedUrlMatch {
+  provider: TomeEmbedProvider;
+  markdown: string;
+}
+
 export interface TomeEmbed {
   provider: TomeEmbedProvider;
   kind: "video" | "document";

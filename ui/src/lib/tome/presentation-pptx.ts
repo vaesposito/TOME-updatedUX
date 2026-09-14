@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import pptxgen from "pptxgenjs";
 
 import type {
@@ -10,18 +12,43 @@ import type {
 import { presentationSourceRefs, presentationSourceUrl } from "@/lib/tome/presentation";
 
 const COLORS = {
-  navy: "172033",
-  blue: "175CD3",
-  paleBlue: "EFF6FF",
-  border: "D0D5DD",
-  muted: "667085",
-  background: "F8FAFC",
+  ink: "071726",
+  surface: "0D2033",
+  panel: "12314E",
+  panelTwo: "0F2841",
+  line: "35556F",
+  text: "E9F1F7",
+  muted: "9CB5CA",
+  cyan: "3CB8EA",
+  blue: "0051AF",
+  green: "74BF4B",
+  orange: "FF6D2D",
+  amber: "F0A93B",
+  coral: "EE7F72",
   white: "FFFFFF",
-  generated: "7C3AED",
-  paleViolet: "F5F3FF",
-  softBlue: "DCE9FF",
-  softViolet: "E9E2FF",
+  generated: "F0A93B",
 };
+
+const TEMPLATE_ASSET_ROOT = path.join(process.cwd(), "public", "tome", "presentation");
+
+interface OutshiftAssets {
+  grid: string;
+  logo: string;
+  logoReversed: string;
+}
+
+async function loadOutshiftAssets(): Promise<OutshiftAssets> {
+  const [grid, logo, logoReversed] = await Promise.all([
+    readFile(path.join(TEMPLATE_ASSET_ROOT, "outshift-grid.png")),
+    readFile(path.join(TEMPLATE_ASSET_ROOT, "outshift-logo.png")),
+    readFile(path.join(TEMPLATE_ASSET_ROOT, "outshift-logo-reversed.png")),
+  ]);
+  return {
+    grid: `data:image/png;base64,${grid.toString("base64")}`,
+    logo: `data:image/png;base64,${logo.toString("base64")}`,
+    logoReversed: `data:image/png;base64,${logoReversed.toString("base64")}`,
+  };
+}
 
 type PptxSlide = ReturnType<InstanceType<typeof pptxgen>["addSlide"]>;
 
@@ -61,7 +88,7 @@ function estimatedBulletHeight(bullet: PresentationBullet, width: number): numbe
   return Math.max(0.48, estimatedLineCount(`${bullet.text}${" ".repeat(markerLength)}`, width) * 0.29 + 0.12);
 }
 
-function paginateSlide(content: PresentationSlide): PhysicalSlide[] {
+function paginateSlide(content: PresentationSlide, cover = false): PhysicalSlide[] {
   if (content.bullets.length === 0) {
     return [{ content, bullets: [], showVisual: Boolean(content.visual), continuation: false }];
   }
@@ -70,7 +97,7 @@ function paginateSlide(content: PresentationSlide): PhysicalSlide[] {
   while (start < content.bullets.length) {
     const showVisual = pages.length === 0 && Boolean(content.visual);
     const textWidth = showVisual ? 7.15 : 11.35;
-    const availableHeight = 4.55;
+    const availableHeight = cover ? 2.75 : 4.55;
     let usedHeight = 0;
     let end = start;
     while (end < content.bullets.length) {
@@ -130,7 +157,7 @@ function addVisualHeader(slide: PptxSlide, visual: PresentationVisual, x: number
     fontSize: 9,
     bold: true,
     charSpacing: 1.1,
-    color: visual.kind === "graphic" ? COLORS.generated : COLORS.blue,
+    color: visual.kind === "graphic" ? COLORS.amber : COLORS.cyan,
     margin: 0,
   });
   if (visual.title) {
@@ -142,7 +169,7 @@ function addVisualHeader(slide: PptxSlide, visual: PresentationVisual, x: number
       fontSize: 13,
       bold: true,
       align: "right",
-      color: COLORS.navy,
+      color: COLORS.text,
       margin: 0,
       fit: "shrink",
     });
@@ -172,7 +199,7 @@ function drawStackVisual(
       y: arrowY - 0.02,
       w: 0,
       h: gap + 0.04,
-      line: { color: COLORS.blue, width: 1.2, endArrowType: "triangle" },
+      line: { color: COLORS.cyan, width: 1.2, endArrowType: "triangle" },
     });
   });
   groups.slice(0, 6).forEach((group, index) => {
@@ -183,8 +210,8 @@ function drawStackVisual(
       w: width,
       h: groupHeight,
       rectRadius: 0.04,
-      line: { color: visual.kind === "graphic" ? COLORS.softViolet : COLORS.softBlue, width: 1 },
-      fill: { color: COLORS.white, transparency: 8 },
+      line: { color: visual.kind === "graphic" ? COLORS.amber : COLORS.cyan, transparency: 35, width: 1 },
+      fill: { color: COLORS.panelTwo, transparency: 5 },
     });
     const labelWidth = group.label ? Math.min(1.3, width * 0.32) : 0;
     if (group.label) {
@@ -195,7 +222,7 @@ function drawStackVisual(
         h: groupHeight - 0.16,
         fontSize: 10.5,
         bold: true,
-        color: visual.kind === "graphic" ? COLORS.generated : COLORS.blue,
+        color: visual.kind === "graphic" ? COLORS.amber : COLORS.cyan,
         margin: 0,
         valign: "middle",
         fit: "shrink",
@@ -207,7 +234,7 @@ function drawStackVisual(
       w: width - labelWidth - 0.24,
       h: groupHeight - 0.16,
       fontSize: 11.5,
-      color: COLORS.navy,
+      color: COLORS.text,
       margin: 0,
       valign: "middle",
       fit: "shrink",
@@ -241,8 +268,8 @@ function drawGridVisual(
       w: cardWidth,
       h: cardHeight,
       rectRadius: 0.04,
-      line: { color: visual.kind === "graphic" ? COLORS.softViolet : COLORS.softBlue, width: 1 },
-      fill: { color: COLORS.white, transparency: 6 },
+      line: { color: visual.kind === "graphic" ? COLORS.amber : COLORS.cyan, transparency: 35, width: 1 },
+      fill: { color: COLORS.panelTwo, transparency: 5 },
     });
     if (group.label) {
       slide.addText(group.label, {
@@ -252,7 +279,7 @@ function drawGridVisual(
         h: 0.28,
         fontSize: 11,
         bold: true,
-        color: visual.kind === "graphic" ? COLORS.generated : COLORS.blue,
+        color: visual.kind === "graphic" ? COLORS.amber : COLORS.cyan,
         margin: 0,
         fit: "shrink",
       });
@@ -263,7 +290,7 @@ function drawGridVisual(
       w: cardWidth - 0.24,
       h: cardHeight - (group.label ? 0.56 : 0.28),
       fontSize: 10.5,
-      color: COLORS.navy,
+      color: COLORS.text,
       margin: 0,
       breakLine: false,
       fit: "shrink",
@@ -288,8 +315,8 @@ function drawVisual(
     w: width,
     h: height,
     rectRadius: 0.06,
-    line: { color: visual.kind === "graphic" ? COLORS.softViolet : COLORS.softBlue, width: 1 },
-    fill: { color: visual.kind === "graphic" ? COLORS.paleViolet : COLORS.paleBlue },
+    line: { color: visual.kind === "graphic" ? COLORS.amber : COLORS.cyan, transparency: 35, width: 1 },
+    fill: { color: visual.kind === "graphic" ? "3A2C2A" : COLORS.panel },
   });
   addVisualHeader(slide, visual, x + 0.22, y + 0.2, width - 0.44);
   if (groups.length === 0) {
@@ -299,7 +326,7 @@ function drawVisual(
       w: width - 0.5,
       h: height - 1,
       fontSize: 14,
-      color: COLORS.navy,
+      color: COLORS.text,
       margin: 0,
       valign: "middle",
       fit: "shrink",
@@ -321,7 +348,7 @@ function visibleFooter(refs: string[], sourceBaseUrl: string): string | pptxgen.
     runs.push({
       text: `[${index + 1}] ${ref}`,
       options: {
-        color: COLORS.blue,
+        color: COLORS.cyan,
         hyperlink: { url: presentationSourceUrl(sourceBaseUrl, ref) },
       },
     });
@@ -335,56 +362,117 @@ export async function renderPresentationPptx(input: {
   deck: PresentationDeck;
   projectName: string;
   sourceBaseUrl: string;
+  /** Keep the supplied Outshift treatment opt-in while preserving existing exports by default. */
+  useOutshiftTemplate?: boolean;
 }): Promise<Uint8Array> {
   const { deck, projectName, sourceBaseUrl } = input;
+  const useOutshiftTemplate = input.useOutshiftTemplate ?? true;
+  const assets = useOutshiftTemplate ? await loadOutshiftAssets() : null;
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
   pptx.author = "TOME presentation export";
-  pptx.company = "";
-  pptx.subject = `AI-assisted presentation grounded in ${projectName}`;
+  pptx.company = useOutshiftTemplate ? "Outshift by Cisco" : "TOME";
+  pptx.subject = `Presentation grounded in ${projectName}`;
   pptx.title = deck.title;
   pptx.theme = {
-    headFontFace: "Aptos Display",
-    bodyFontFace: "Aptos",
+    headFontFace: "CiscoSansTT Light",
+    bodyFontFace: "CiscoSansTT Light",
   };
 
-  const physicalSlides = deck.slides.flatMap(paginateSlide);
+  const physicalSlides = deck.slides.flatMap((slide, index) => paginateSlide(slide, index === 0 && !slide.visual));
   physicalSlides.forEach((page, slideIndex) => {
     const { content } = page;
     const renderedTitle = `${content.title}${page.continuation ? " — continued" : ""}`;
-    const longTitle = renderedTitle.length > 52;
-    const bodyStart = longTitle ? 1.78 : 1.52;
+    const isCover = slideIndex === 0 && !content.visual;
+    const titleY = isCover ? 1.58 : 0.82;
+    const titleWidth = isCover ? 9.9 : 10.55;
+    const titleLines = estimatedLineCount(renderedTitle, titleWidth);
+    const titleHeight = isCover ? 1.42 : Math.min(1.2, Math.max(0.66, titleLines * 0.4));
+    const subtitleY = titleY + titleHeight + 0.08;
+    const bodyStart = isCover
+      ? 3.72
+      : subtitleY + (content.subtitle ? 0.48 : 0.12);
     const slideSourceRefs = presentationSourceRefs(content);
     const slide = pptx.addSlide();
-    slide.background = { color: COLORS.background };
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: 13.333,
-      h: 0.12,
-      line: { color: COLORS.blue, transparency: 100 },
-      fill: { color: COLORS.blue },
-    });
+    slide.background = { color: isCover && useOutshiftTemplate ? "000000" : COLORS.ink };
+    if (isCover && useOutshiftTemplate && assets) {
+      slide.addImage({ data: assets.grid, x: 0, y: 0, w: 13.333, h: 7.5 });
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0,
+        y: 0,
+        w: 13.333,
+        h: 7.5,
+        line: { color: "000000", transparency: 100 },
+        fill: { color: "000000", transparency: 18 },
+      });
+      slide.addImage({ data: assets.logoReversed, x: 0.56, y: 0.38, w: 1.35, h: 0.56 });
+      slide.addText("TOME", {
+        x: 11.65,
+        y: 0.48,
+        w: 1.12,
+        h: 0.2,
+        fontFace: "CiscoSansTT Light",
+        fontSize: 10,
+        bold: true,
+        charSpacing: 1.5,
+        color: COLORS.cyan,
+        align: "right",
+        margin: 0,
+      });
+    } else {
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0,
+        y: 0,
+        w: 13.333,
+        h: 0.08,
+        line: { color: COLORS.cyan, transparency: 100 },
+        fill: { color: COLORS.cyan },
+      });
+      if (useOutshiftTemplate && assets) {
+        slide.addImage({ data: assets.logoReversed, x: 11.75, y: 0.24, w: 0.95, h: 0.39 });
+      }
+      slide.addText(projectName, {
+        x: 0.7,
+        y: 0.32,
+        w: 4.8,
+        h: 0.2,
+        fontFace: "CiscoSansTT Light",
+        fontSize: 9,
+        bold: true,
+        charSpacing: 0.8,
+        color: COLORS.cyan,
+        margin: 0,
+        fit: "shrink",
+      });
+      slide.addShape(pptx.ShapeType.line, {
+        x: 0.68,
+        y: 0.72,
+        w: 0.72,
+        h: 0,
+        line: { color: COLORS.amber, width: 1.5 },
+      });
+    }
     slide.addText(renderedTitle, {
-      x: 0.65,
-      y: 0.42,
-      w: 11.9,
-      h: longTitle ? 0.9 : 0.58,
-      fontFace: "Aptos Display",
-      fontSize: 35,
-      bold: true,
-      color: COLORS.navy,
+      x: isCover ? 0.78 : 1.08,
+      y: titleY,
+      w: titleWidth,
+      h: titleHeight,
+      fontFace: "CiscoSansTT Light",
+      fontSize: isCover ? 32 : 29,
+      bold: false,
+      color: COLORS.text,
       margin: 0,
       breakLine: false,
       fit: "shrink",
     });
     if (content.subtitle) {
       slide.addText(content.subtitle, {
-        x: 0.68,
-        y: longTitle ? 1.32 : 1.02,
-        w: 11.8,
+        x: isCover ? 0.82 : 1.1,
+        y: isCover ? 3.08 : subtitleY,
+        w: isCover ? 9.2 : 10.4,
         h: 0.38,
-        fontSize: 18,
+        fontFace: "CiscoSansTT Light",
+        fontSize: isCover ? 17 : 15,
         color: COLORS.muted,
         margin: 0,
         fit: "shrink",
@@ -399,21 +487,21 @@ export async function renderPresentationPptx(input: {
       const marker = refs.length > 0
         ? `[${refs.map((ref) => slideSourceRefs.indexOf(ref) + 1).join(",")}]`
         : "AI";
-      slide.addShape(pptx.ShapeType.ellipse, {
-        x: 0.72,
-        y: bulletY + 0.15,
-        w: 0.14,
-        h: 0.14,
-        line: { color: bullet.generated ? COLORS.generated : COLORS.blue, transparency: 100 },
-        fill: { color: bullet.generated ? COLORS.generated : COLORS.blue },
+      slide.addShape(pptx.ShapeType.line, {
+        x: isCover ? 0.86 : 1.12,
+        y: bulletY + 0.22,
+        w: 0.22,
+        h: 0,
+        line: { color: bullet.generated ? COLORS.amber : COLORS.cyan, width: 1.2 },
       });
       slide.addText(`${bullet.text}  ${marker}`, {
-        x: 1.02,
+        x: isCover ? 1.22 : 1.5,
         y: bulletY,
-        w: bodyWidth - 0.35,
+        w: bodyWidth - 0.65,
         h: estimatedBulletHeight(bullet, bodyWidth - 0.35),
-        fontSize: 16,
-        color: COLORS.navy,
+        fontFace: "CiscoSansTT Light",
+        fontSize: isCover ? 15 : 14,
+        color: COLORS.text,
         margin: 0,
         valign: "top",
         breakLine: false,
@@ -435,7 +523,7 @@ export async function renderPresentationPptx(input: {
       y: 6.82,
       w: 12.05,
       h: 0,
-      line: { color: COLORS.border, width: 0.7 },
+      line: { color: COLORS.line, width: 0.7 },
     });
     slide.addText(footer, {
       x: 0.68,
@@ -443,7 +531,7 @@ export async function renderPresentationPptx(input: {
       w: 11.35,
       h: 0.24,
       fontSize: 8,
-      color: slideSourceRefs.length > 0 ? COLORS.muted : COLORS.generated,
+      color: slideSourceRefs.length > 0 ? COLORS.muted : COLORS.amber,
       margin: 0,
       fit: "shrink",
     });

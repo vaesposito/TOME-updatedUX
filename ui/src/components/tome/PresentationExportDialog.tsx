@@ -49,6 +49,7 @@ interface PageChoice {
 }
 
 type Step = "requirements" | "prompt" | "preview";
+type PresentationTemplate = "neutral" | "outshift";
 
 function errorMessage(body: unknown, fallback: string): string {
   if (!body || typeof body !== "object") return fallback;
@@ -148,6 +149,7 @@ export function PresentationExportDialog({
   const [selectedPaths, setSelectedPaths] = useState<string[]>(currentPath ? [currentPath] : []);
   const [prompt, setPrompt] = useState("");
   const [deck, setDeck] = useState<PresentationDeck | null>(null);
+  const [template, setTemplate] = useState<PresentationTemplate>("outshift");
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
   const [revisionInstruction, setRevisionInstruction] = useState("");
   const [model, setModel] = useState<string | null>(null);
@@ -433,7 +435,12 @@ export function PresentationExportDialog({
       const response = await fetch(`/api/tome/projects/${encodeURIComponent(slug)}/presentations/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deck, format, ...(gist ? { gist_id: gist.id } : {}) }),
+        body: JSON.stringify({
+          deck,
+          format,
+          use_outshift_template: template === "outshift",
+          ...(gist ? { gist_id: gist.id } : {}),
+        }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
@@ -467,7 +474,7 @@ export function PresentationExportDialog({
           <DialogDescription>
             {step === "requirements" && "Start with useful defaults, or let AI Assist build the brief from your selected sources."}
             {step === "prompt" && "Review and edit the exact generation prompt before invoking the model."}
-            {step === "preview" && "Edit, reorder, refine, and export as HTML or editable PowerPoint."}
+            {step === "preview" && "Edit, reorder, refine, choose a PowerPoint style, and download the review webpage or editable deck."}
           </DialogDescription>
           <div className="flex gap-2 pt-2 text-xs">
             {(["requirements", "prompt", "preview"] as Step[]).map((item, index) => (
@@ -623,6 +630,21 @@ export function PresentationExportDialog({
                   </div>
                 </ScrollArea>
               )}
+              <div className="col-span-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                <div className="text-xs font-semibold">PowerPoint template</div>
+                <p className="mt-1 text-[11px] text-muted-foreground">Choose this after reviewing the generated deck. The HTML download always uses the attached TOME review webpage format.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {([
+                    ["outshift", "Outshift by Cisco", "Use the supplied Outshift grid, logo, and editable slide styling."],
+                    ["neutral", "Neutral TOME", "Keep the editable deck dark and editorial without Outshift branding."],
+                  ] as const).map(([value, label, description]) => (
+                    <label key={value} className={cn("flex cursor-pointer items-start gap-3 rounded-md border p-3", template === value ? "border-primary bg-background" : "border-border bg-background/60")}>
+                      <input className="mt-0.5" type="radio" name="presentation-template" value={value} checked={template === value} onChange={() => setTemplate(value)} />
+                      <span><span className="block text-xs font-medium">{label}</span><span className="mt-1 block text-[11px] text-muted-foreground">{description}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

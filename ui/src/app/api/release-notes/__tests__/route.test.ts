@@ -3,6 +3,12 @@
  */
 import { NextRequest } from "next/server";
 
+const mockGetCollection = jest.fn();
+
+jest.mock("@/lib/mongodb", () => ({
+  getCollection: (...args: unknown[]) => mockGetCollection(...args),
+}));
+
 const RAW_BASE = "https://raw.githubusercontent.com/caipe-io/ai-platform-engineering/main/docs/releases";
 
 const LISTING = [
@@ -76,7 +82,12 @@ async function callGet(version: string) {
 }
 
 describe("/api/release-notes", () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete process.env.RELEASE_NOTES_GITHUB_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+  });
 
   it("returns the series notes with frontmatter and truncate marker stripped", async () => {
     const data = await callGet("0.5.0");
@@ -118,5 +129,66 @@ describe("/api/release-notes", () => {
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.body).toBeNull();
+  });
+
+  it("builds release notes from configured full SHAs and Git tag refs", async () => {
+    jest.resetModules();
+    process.env.RELEASE_NOTES_GITHUB_TOKEN = "test-token";
+    const previousSha = "a".repeat(64);
+    mockGetCollection.mockResolvedValue({
+      findOne: jest.fn().mockResolvedValue({
+        _id: "platform_settings",
+        release_notes: {
+          repository_url: "https://github.com/example/repository",
+          previous_commit: previousSha,
+          latest_commit: "release/1.1",
+        },
+      }),
+    });
+    global.fetch = jest.fn(async (_url: string | URL, init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({
+        commits: [
+          {
+            sha: "b".repeat(40),
+            commit: {
+              message: "feat(ui): add tag-based release notes (#42)",
+              committer: { date: "2026-09-14T12:00:00Z" },
+            },
+          },
+        ],
+      }),
+      headers: init?.headers,
+    })) as unknown as typeof fetch;
+
+    const { GET } = await import("../route");
+    const response = await GET(
+      new NextRequest("http://localhost/api/release-notes?version=1.0.0&compare=platform"),
+    );
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toMatchObject({
+      requestedVersion: "1.0.0",
+      matchedVersion: "1.0.0",
+      source: "github-compare",
+      date: "2026-09-14",
+    });
+    expect(data.body).toContain("tag-based release notes");
+    expect(data.changelogUrl).toBe(
+      "https://github.com/example/repository/compare/" +
+        encodeURIComponent(previousSha) +
+        "...release%2F1.1",
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "/repos/example/repository/compare/" +
+          encodeURIComponent(previousSha) +
+          "...release%2F1.1",
+      ),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+      }),
+    );
   });
 });

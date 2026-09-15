@@ -1,5 +1,20 @@
+const mockCollectForwardedCredentials = jest.fn();
+const mockResolveManagedWebexCredential = jest.fn();
+const mockAssertManagedWebexUserSharesRooms = jest.fn();
+
 jest.mock("@/lib/projects/onboarding-providers", () => ({
-  collectForwardedCredentials: jest.fn(),
+  collectForwardedCredentials: (...args: unknown[]) =>
+    mockCollectForwardedCredentials(...args),
+}));
+jest.mock("../managed-webex", () => ({
+  assertManagedWebexUserSharesRooms: (...args: unknown[]) =>
+    mockAssertManagedWebexUserSharesRooms(...args),
+  projectWebexCredentialMode: (project: ProjectDocument) =>
+    project.sources?.webex_credential_mode === "managed" ? "managed" : "personal",
+  projectWebexCredentialProvider: (project: ProjectDocument) =>
+    project.sources?.webex_credential_provider || "webex",
+  resolveManagedWebexCredential: (...args: unknown[]) =>
+    mockResolveManagedWebexCredential(...args),
 }));
 jest.mock("../bhag", () => ({
   resolveAreaChildren: jest.fn(),
@@ -15,7 +30,11 @@ jest.mock("../page-store", () => ({
   getPageStore: jest.fn(),
 }));
 
-import { buildIngestRequest, buildSnapshotFromProject } from "../agent-proxy";
+import {
+  buildIngestRequest,
+  buildSnapshotFromProject,
+  resolveProjectCredentials,
+} from "../agent-proxy";
 import type { ProjectDocument, ProjectType } from "@/types/projects";
 
 function synthesizedProject(type: ProjectType): ProjectDocument & { _id: string } {
@@ -55,6 +74,69 @@ function synthesizedProject(type: ProjectType): ProjectDocument & { _id: string 
     updated_at: new Date(),
   };
 }
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockCollectForwardedCredentials.mockResolvedValue({
+    github: { access_token: "github-token" },
+    webex: { access_token: "personal-webex-token" },
+  });
+  mockResolveManagedWebexCredential.mockResolvedValue({
+    capability: { available: true },
+    accessToken: "managed-webex-token",
+  });
+  mockAssertManagedWebexUserSharesRooms.mockResolvedValue(undefined);
+});
+
+it("uses managed Webex only for project ingest while retaining human-owned credentials", async () => {
+  const project = synthesizedProject("project");
+  project.sources = { ...project.sources, webex_credential_mode: "managed" };
+
+  await expect(
+    resolveProjectCredentials(project, "human-sub", {
+      purpose: "ingest",
+      userEmail: "human@example.com",
+    }),
+  ).resolves.toEqual({
+    github: { access_token: "github-token" },
+    webex: {
+      access_token: "managed-webex-token",
+      credential_mode: "managed",
+      messaging_only: "true",
+    },
+  });
+  expect(mockAssertManagedWebexUserSharesRooms).toHaveBeenCalledWith({
+    accessToken: "managed-webex-token",
+    userEmail: "human@example.com",
+    rooms: project.sources?.webex_rooms,
+  });
+});
+
+it("never forwards the managed Webex credential to Tome chat", async () => {
+  const project = synthesizedProject("project");
+  project.sources = { ...project.sources, webex_credential_mode: "managed" };
+
+  await expect(
+    resolveProjectCredentials(project, "human-sub", { purpose: "chat" }),
+  ).resolves.toEqual({ github: { access_token: "github-token" } });
+  expect(mockResolveManagedWebexCredential).not.toHaveBeenCalled();
+});
+
+it("keeps meeting-only ingestion on the human's Webex credential", async () => {
+  const project = synthesizedProject("project");
+  project.sources = { ...project.sources, webex_credential_mode: "managed" };
+
+  await expect(
+    resolveProjectCredentials(project, "human-sub", {
+      purpose: "ingest",
+      sourceScope: "webex_meetings",
+    }),
+  ).resolves.toEqual({
+    github: { access_token: "github-token" },
+    webex: { access_token: "personal-webex-token" },
+  });
+  expect(mockResolveManagedWebexCredential).not.toHaveBeenCalled();
+});
 
 describe.each(["bhag", "area"] as const)(
   "buildSnapshotFromProject(%s)",
@@ -211,27 +293,36 @@ it("excludes every attached project source from a Webex meeting-only ingest", ()
   });
 });
 
-it("excludes child-project context from an Area meeting-only ingest", () => {
-  const request = buildIngestRequest(synthesizedProject("area"), {
-    runId: "run-1",
-    reportId: "report-1",
-    seed: null,
-    isGreenfield: false,
-    sourceScope: "webex_meetings",
-    childProjects: [
-      { project_id: "child-1", slug: "child-one", name: "Child one" },
-    ],
-    readableProjects: [
-      { project_id: "child-1", slug: "child-one", name: "Child one" },
-    ],
-    connectorData: {
-      webex: {
-        meetings: [{ id: "meeting-1", title: "Area sync", start: "2026-09-03T10:00:00Z" }],
+it.each(["area", "bhag"] as const)(
+  "excludes child-project context from a %s meeting-only ingest",
+  (projectType) => {
+    const request = buildIngestRequest(synthesizedProject(projectType), {
+      runId: "run-1",
+      reportId: "report-1",
+      seed: null,
+      isGreenfield: false,
+      sourceScope: "webex_meetings",
+      childProjects: [
+        { project_id: "child-1", slug: "child-one", name: "Child one" },
+      ],
+      readableProjects: [
+        { project_id: "child-1", slug: "child-one", name: "Child one" },
+      ],
+      connectorData: {
+        webex: {
+          meetings: [
+            {
+              id: "meeting-1",
+              title: "Leadership sync",
+              start: "2026-09-03T10:00:00Z",
+            },
+          ],
+        },
       },
-    },
-  });
+    });
 
-  expect(request.snapshot.project_type).toBe("area");
-  expect(request.snapshot.child_projects).toEqual([]);
-  expect(request.snapshot.readable_projects).toEqual([]);
-});
+    expect(request.snapshot.project_type).toBe(projectType);
+    expect(request.snapshot.child_projects).toEqual([]);
+    expect(request.snapshot.readable_projects).toEqual([]);
+  },
+);

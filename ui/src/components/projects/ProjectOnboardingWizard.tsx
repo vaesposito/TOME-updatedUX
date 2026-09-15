@@ -32,6 +32,7 @@ import { UserEmailPicker } from "@/components/ui/user-email-picker";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { OnboardingWebexMeetingSeriesPicker } from "@/components/projects/OnboardingWebexMeetingSeriesPicker";
 import { SourcePicker } from "@/components/projects/source-pickers";
+import { WebexCredentialModePicker } from "@/components/projects/source-pickers/WebexCredentialModePicker";
 import { getConfig } from "@/lib/config";
 import {
   toHierarchyOptions,
@@ -48,6 +49,7 @@ import {
 import type {
   ConfluencePageScope,
   ProjectDocument,
+  WebexCredentialMode,
 } from "@/types/projects";
 
 const BLAST_RADIUS_OPTIONS = [
@@ -259,6 +261,9 @@ export function ProjectOnboardingWizard({
   >([]);
   // Encoded {room_id, name} blobs from the picker (see lib/projects/webex-room).
   const [webexRooms, setWebexRooms] = useState<string[]>([]);
+  const [webexCredentialMode, setWebexCredentialMode] =
+    useState<WebexCredentialMode>("personal");
+  const [webexCredentialProvider, setWebexCredentialProvider] = useState("webex");
   const [teams, setTeams] = useState<TeamPickerOption[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [provisioning, setProvisioning] = useState(false);
@@ -393,6 +398,8 @@ export function ProjectOnboardingWizard({
     setConfluenceUrl("");
     setConfluencePageScopes([]);
     setWebexRooms([]);
+    setWebexCredentialMode("personal");
+    setWebexCredentialProvider("webex");
     setAutoIngestOnboardEnabled(false);
     setAutoIngestSchedule(DEFAULT_SCHEDULE);
     setOnboardingWebexMeetingSeriesKeys([]);
@@ -447,6 +454,8 @@ export function ProjectOnboardingWizard({
       confluence_url,
       confluence_page_scopes,
       webex_rooms,
+      webex_credential_mode: webexCredentialMode,
+      webex_credential_provider: webexCredentialProvider,
     };
 
     let payload: Record<string, unknown>;
@@ -1028,6 +1037,17 @@ export function ProjectOnboardingWizard({
 
                         {on && isSource ? (
                           <div className="border-t border-border/60 p-4">
+                            {step.source === "webex" ? (
+                              <div className="mb-3">
+                                <WebexCredentialModePicker
+                                  value={webexCredentialMode}
+                                  onChange={(mode, provider) => {
+                                    setWebexCredentialMode(mode);
+                                    setWebexCredentialProvider(provider);
+                                  }}
+                                />
+                              </div>
+                            ) : null}
                             <SourcePicker
                               source={step.source}
                               selected={
@@ -1052,6 +1072,16 @@ export function ProjectOnboardingWizard({
                                 else if (step.source === "webex")
                                   setWebexRooms(next);
                               }}
+                              webexCredentialMode={
+                                step.source === "webex"
+                                  ? webexCredentialMode
+                                  : undefined
+                              }
+                              webexCredentialProvider={
+                                step.source === "webex"
+                                  ? webexCredentialProvider
+                                  : undefined
+                              }
                               confluencePageScopes={
                                 step.source === "confluence"
                                   ? confluencePageScopes

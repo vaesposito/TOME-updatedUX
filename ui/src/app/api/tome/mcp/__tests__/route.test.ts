@@ -81,7 +81,7 @@ describe("Tome MCP authentication challenge", () => {
     expect(response.status).toBe(401);
   });
 
-  it("allows an interactive OIDC principal to list tools", async () => {
+  it("allows a linked secondary OIDC principal to list all tools", async () => {
     mockGetAuthFromBearerOrSession.mockResolvedValue({
       user: { email: "viewer@example.test" },
       session: { principalType: "oidc_user", sub: "viewer-subject" },
@@ -100,11 +100,89 @@ describe("Tome MCP authentication challenge", () => {
     expect(body.result.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "tome_list_projects" }),
-        expect.objectContaining({ name: "tome_get_auto_ingest" }),
+        expect.objectContaining({ name: "tome_edit_page" }),
         expect.objectContaining({ name: "tome_create_project" }),
         expect.objectContaining({ name: "tome_update_gist" }),
+        expect.objectContaining({ name: "tome_resolve_page_draft" }),
       ]),
     );
+  });
+
+  it("exposes only server info before a secondary identity is linked", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "new-user@example.test" },
+      session: { principalType: "secondary_oidc_unlinked" },
+    });
+    const response = await POST(
+      new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+        method: "POST",
+        headers: { authorization: "Bearer redacted" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 8, method: "tools/list" }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.result.tools).toEqual([
+      expect.objectContaining({ name: "tome_server_info" }),
+    ]);
+  });
+
+  it("allows an unlinked secondary identity to call server info", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "new-user@example.test" },
+      session: { principalType: "secondary_oidc_unlinked" },
+    });
+    const response = await POST(
+      new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+        method: "POST",
+        headers: { authorization: "Bearer redacted" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/call",
+          params: { name: "tome_server_info", arguments: {} },
+        }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.result.isError).toBeUndefined();
+    expect(body.result.content[0].text).toContain('"name": "tome"');
+  });
+
+  it("blocks project tools before a secondary identity is linked", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "new-user@example.test" },
+      session: { principalType: "secondary_oidc_unlinked" },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn();
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          headers: { authorization: "Bearer redacted" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 10,
+            method: "tools/call",
+            params: { name: "tome_list_projects", arguments: {} },
+          }),
+        }),
+      );
+      const body = await response.json();
+
+      expect(body.result).toMatchObject({ isError: true });
+      expect(body.result.content[0].text).toContain(
+        "Sign in to the CAIPE portal once",
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
   it("allows a user-owned TOME API-key principal to list tools", async () => {
@@ -129,6 +207,8 @@ describe("Tome MCP authentication challenge", () => {
     expect(body.result.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "tome_list_projects" }),
+        expect.objectContaining({ name: "tome_create_project" }),
+        expect.objectContaining({ name: "tome_update_gist" }),
       ]),
     );
   });
@@ -466,5 +546,360 @@ describe("Tome MCP authentication challenge", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: -32700, message: "Parse error" },
     });
+  });
+
+  it("returns an explicitly empty response for notifications", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+    const response = await POST(
+      new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+        method: "POST",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    expect(response.headers.get("content-length")).toBe("0");
+    await expect(response.text()).resolves.toBe("");
+  });
+
+  it("sets an explicit byte boundary on JSON responses", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+    const response = await POST(
+      new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+        method: "POST",
+        body: JSON.stringify({ jsonrpc: "2.0", id: 12, method: "ping" }),
+      }),
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-length")).toBe(
+      String(Buffer.byteLength(body, "utf8")),
+    );
+  });
+
+  it("returns explicit current and draft status through page history", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(
+      Response.json({
+        success: true,
+        data: {
+          path: "charter.md",
+          current_revision_id: "live-revision",
+          revisions: [
+            { id: "draft-revision", status: "draft" },
+            { id: "live-revision", status: "live" },
+          ],
+        },
+      }),
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          headers: { authorization: "Bearer redacted" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 16,
+            method: "tools/call",
+            params: {
+              name: "tome_get_page_history",
+              arguments: {
+                project_slug: "example-project",
+                page_path: "charter.md",
+              },
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+      const history = JSON.parse(body.result.content[0].text);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        "http://caipe-ui:3000/api/tome/projects/example-project/history/charter.md",
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({ Authorization: "Bearer redacted" }),
+        }),
+      );
+      expect(history).toEqual({
+        path: "charter.md",
+        current_revision_id: "live-revision",
+        revisions: [
+          { id: "draft-revision", status: "draft" },
+          { id: "live-revision", status: "live" },
+        ],
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("resolves a report-less draft through the caller-authenticated route", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "editor@example.test" },
+      session: { principalType: "oidc_user", sub: "editor-subject" },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(
+      Response.json({
+        success: true,
+        data: {
+          ok: true,
+          path: "charter.md",
+          revision_id: "draft-revision",
+          status: "live",
+          current_revision_id: "draft-revision",
+        },
+      }),
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          headers: { authorization: "Bearer redacted" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 17,
+            method: "tools/call",
+            params: {
+              name: "tome_resolve_page_draft",
+              arguments: {
+                project_slug: "example-project",
+                revision_id: "draft-revision",
+                action: "publish",
+                base_revision_id: "live-revision",
+              },
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+      const result = JSON.parse(body.result.content[0].text);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        "http://caipe-ui:3000/api/tome/projects/example-project/revisions/draft-revision/resolve",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({ Authorization: "Bearer redacted" }),
+          body: JSON.stringify({
+            action: "publish",
+            base_revision_id: "live-revision",
+          }),
+        }),
+      );
+      expect(result).toMatchObject({
+        revision_id: "draft-revision",
+        status: "live",
+        current_revision_id: "draft-revision",
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("requires a history baseline before resolving a page draft", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "editor@example.test" },
+      session: { principalType: "oidc_user", sub: "editor-subject" },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn();
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 18,
+            method: "tools/call",
+            params: {
+              name: "tome_resolve_page_draft",
+              arguments: {
+                project_slug: "example-project",
+                revision_id: "draft-revision",
+                action: "publish",
+              },
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(body.result.isError).toBe(true);
+      expect(body.result.content[0].text).toContain("base_revision_id is required");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("omits inline Base64 images from tool results", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(
+      Response.json({
+        success: true,
+        data: {
+          path: "architecture.md",
+          markdown:
+            "Before ![diagram](data:image/png;base64,QUJDREVGRw==) after",
+        },
+      }),
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 13,
+            method: "tools/call",
+            params: {
+              name: "tome_get_page",
+              arguments: {
+                project_slug: "example-project",
+                page_path: "architecture.md",
+              },
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+      const text = body.result.content[0].text;
+
+      expect(text).toContain("tome-image://omitted");
+      expect(text).toContain("omitted 1 inline image");
+      expect(text).not.toContain("QUJDREVGRw==");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("returns a compact tool error when sanitized output exceeds the limit", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+    const originalFetch = global.fetch;
+    const originalLimit = process.env.TOME_MCP_MAX_TOOL_RESULT_BYTES;
+    process.env.TOME_MCP_MAX_TOOL_RESULT_BYTES = "1024";
+    global.fetch = jest.fn().mockResolvedValue(
+      Response.json({
+        success: true,
+        data: { path: "large.md", markdown: "x".repeat(2048) },
+      }),
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 14,
+            method: "tools/call",
+            params: {
+              name: "tome_get_page",
+              arguments: {
+                project_slug: "example-project",
+                page_path: "large.md",
+              },
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+
+      expect(body.result.isError).toBe(true);
+      expect(body.result.content[0].text).toContain("exceeds the 1024-byte");
+      expect(body.result.content[0].text).toContain("tome_list_pages");
+      expect(body.result.content[0].text.length).toBeLessThan(500);
+    } finally {
+      global.fetch = originalFetch;
+      if (originalLimit === undefined)
+        delete process.env.TOME_MCP_MAX_TOOL_RESULT_BYTES;
+      else process.env.TOME_MCP_MAX_TOOL_RESULT_BYTES = originalLimit;
+    }
+  });
+
+  it("fetches duplicate BHAG child page context only once", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      let data: unknown;
+      if (url.endsWith("/api/projects/ioc")) {
+        data = { project: { slug: "ioc", title: "IoC", type: "bhag" } };
+      } else if (url.includes("type=area")) {
+        data = { projects: [{ slug: "core", title: "Core area" }] };
+      } else if (url.includes("initiative=ioc")) {
+        data = { projects: [{ slug: "shared", title: "Shared project" }] };
+      } else if (url.includes("/api/projects?area=core")) {
+        data = { projects: [{ slug: "shared", title: "Shared project" }] };
+      } else if (url.includes("/pages")) {
+        data = { pages: { "overview.md": "context" } };
+      } else {
+        throw new Error(`Unexpected URL: ${url}`);
+      }
+      return Response.json({ success: true, data });
+    });
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 15,
+            method: "tools/call",
+            params: {
+              name: "tome_get_bhag_synthesis_context",
+              arguments: { bhag_slug: "ioc" },
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+      const context = JSON.parse(body.result.content[0].text);
+      const calls = (global.fetch as jest.Mock).mock.calls.map(([url]) =>
+        String(url),
+      );
+
+      expect(calls.filter((url) => url.endsWith("/shared/pages"))).toHaveLength(1);
+      expect(context.children).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            slug: "shared",
+            pages_omitted: "Duplicate project context already included.",
+          }),
+        ]),
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

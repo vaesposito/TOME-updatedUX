@@ -77,6 +77,32 @@ describe("WebexMeetingSeriesSettings", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
   });
 
+  it("opens the Webex Meetings connection page in a new tab", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { subscriptions: [], occurrences: [] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({
+          code: "WEBEX_MEETINGS_CONNECTION_REQUIRED",
+          error: "Webex Meetings is not connected.",
+        }),
+      });
+
+    render(<WebexMeetingSeriesSettings slug="example-project" canEdit />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add series" }));
+
+    const link = await screen.findByRole("link", { name: "Connect Webex (Meetings)" });
+    expect(link).toHaveAttribute("href", "/credentials#connections");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
   it("shows the next scheduled check beside a transcript settle message", async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,

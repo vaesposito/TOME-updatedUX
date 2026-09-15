@@ -91,6 +91,14 @@ export interface PageStore {
     acceptedPaths: string[],
   ): Promise<void>;
 
+  /** Resolve one report-less legacy draft. Publish makes it the live head. */
+  resolveOrphanDraft(
+    projectId: string,
+    revisionId: string,
+    resolution: "publish" | "reject",
+    reviewedBy: string,
+  ): Promise<PageRevision | null>;
+
   /** Paths with a pending (unreviewed) draft revision for a report. */
   listDraftPaths(projectId: string, reportId: string): Promise<string[]>;
 
@@ -211,6 +219,22 @@ function withStructuredIndexes(store: PageStore): PageStore {
         }
       }
       await reindexTouched(projectId, touched);
+    },
+    resolveOrphanDraft: async (projectId, revisionId, resolution, reviewedBy) => {
+      const revision = await store.resolveOrphanDraft(
+        projectId,
+        revisionId,
+        resolution,
+        reviewedBy,
+      );
+      if (
+        resolution === "publish" &&
+        revision &&
+        (revision.path.startsWith("edges/") || isTrackedPath(revision.path))
+      ) {
+        await reindexTouched(projectId, { [revision.path]: revision.markdown ?? "" });
+      }
+      return revision;
     },
     listDraftPaths: (projectId, reportId) => store.listDraftPaths(projectId, reportId),
     listTouchedPaths: (projectId, reportId) => store.listTouchedPaths(projectId, reportId),

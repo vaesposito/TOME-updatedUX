@@ -12,6 +12,10 @@ export interface PreflightSourceResult {
   inaccessible: string[];
   /** True when the provider token is missing entirely (not just per-item failures). */
   no_token: boolean;
+  /** Safe provider-specific explanation for an unavailable managed credential. */
+  detail?: string;
+  /** False when the signed-in user cannot fix this from their Connections page. */
+  fixable_by_user?: boolean;
 }
 
 /** Resource-level preflight for one project across all its sources. */

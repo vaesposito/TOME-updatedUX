@@ -12,8 +12,13 @@ import {
   successResponse,
   withErrorHandler,
 } from "@/lib/api-middleware";
+import { ApiError } from "@/lib/api-error";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCredentialFeatureConfig } from "@/lib/feature-flags/credentials";
+import {
+  listManagedWebexSharedRoomIds,
+  resolveManagedWebexCredential,
+} from "@/lib/tome/managed-webex";
 import type { GitHubRepositorySource } from "@/types/projects";
 
 interface SourceOption {
@@ -356,7 +361,7 @@ async function connectedTo(provider: string, token: string): Promise<string> {
       const u = (await r.json().catch(() => ({}))) as { login?: string };
       return u.login ? `github.com/${u.login}` : "";
     }
-    if (provider === "webex") {
+    if (provider === "webex" || provider === "webex_messaging") {
       const r = await fetch("https://webexapis.com/v1/people/me", {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
@@ -371,11 +376,15 @@ async function connectedTo(provider: string, token: string): Promise<string> {
 }
 
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { session } = await getAuthFromBearerOrSession(request);
+  const { user, session } = await getAuthFromBearerOrSession(request);
   const sub = (session as { sub?: string } | undefined)?.sub;
   const sp = new URL(request.url).searchParams;
   const provider = sp.get("provider")?.trim() ?? "";
   const q = sp.get("q")?.trim() ?? "";
+  const webexMode = sp.get("webex_mode") === "managed" ? "managed" : "personal";
+  const requestedCredentialProvider = sp.get("credential_provider")?.trim() ?? "";
+  const capabilityOnly = sp.get("capability_only") === "1";
+  const forceRefresh = sp.get("refresh") === "1";
 
   // Only point users at the Connections page when that feature is enabled in
   // this deployment - otherwise `/credentials` 404s, so the picker should just
@@ -386,11 +395,61 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     return successResponse({ connected: false, options: [], manageUrl });
   }
 
+  if (provider === "webex" && webexMode === "managed") {
+    const managed = await resolveManagedWebexCredential({ force: forceRefresh });
+    if (!managed.capability.available || !managed.accessToken) {
+      return successResponse({
+        connected: false,
+        options: [],
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    }
+    if (capabilityOnly) {
+      return successResponse({
+        connected: true,
+        options: [],
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    }
+    try {
+      const options = await webexRooms(managed.accessToken, q);
+      const sharedSpaceIds = await listManagedWebexSharedRoomIds({
+        accessToken: managed.accessToken,
+        userEmail: user.email,
+        roomIds: options.map((option) => option.value),
+      });
+      return successResponse({
+        connected: true,
+        connectedTo: managed.capability.displayName,
+        options: options.filter((option) => sharedSpaceIds.has(option.value)),
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    } catch (error) {
+      return successResponse({
+        connected: true,
+        options: [],
+        error:
+          error instanceof ApiError
+            ? error.message
+            : "Unable to list shared Webex spaces. Try Refresh again.",
+        manageUrl,
+        managedCapability: managed.capability,
+      });
+    }
+  }
+
   let token = "";
   try {
     const service = await getProviderConnectionService();
+    const credentialProvider =
+      provider === "webex" && requestedCredentialProvider === "webex_messaging"
+        ? "webex_messaging"
+        : provider;
     const connection = (await service.listConnections({ type: "user", id: sub })).find(
-      (c) => c.provider === provider && c.status === "connected",
+      (c) => c.provider === credentialProvider && c.status === "connected",
     );
     if (!connection) {
       return successResponse({ connected: false, options: [], manageUrl });
@@ -416,7 +475,12 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
     const [options, account] = await Promise.all([
       optionsFn(token, q),
-      connectedTo(provider, token),
+      connectedTo(
+        provider === "webex" && requestedCredentialProvider === "webex_messaging"
+          ? "webex_messaging"
+          : provider,
+        token,
+      ),
     ]);
     return successResponse({ connected: true, options, connectedTo: account, manageUrl });
   } catch {

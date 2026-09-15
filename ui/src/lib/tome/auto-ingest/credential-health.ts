@@ -14,7 +14,12 @@ export const AUTO_INGEST_CREDENTIAL_REFRESH_INTERVAL_MS = Math.max(
   Number(process.env.TOME_AUTO_INGEST_CREDENTIAL_REFRESH_MS) || 5 * 60 * 1000,
 );
 
-export const AUTO_INGEST_PROVIDERS = ["github", "atlassian", "webex"] as const;
+export const AUTO_INGEST_PROVIDERS = [
+  "github",
+  "atlassian",
+  "webex",
+  "webex_messaging",
+] as const;
 export type AutoIngestProvider = (typeof AUTO_INGEST_PROVIDERS)[number];
 
 export type AutoIngestCredentialStatus =
@@ -119,7 +124,16 @@ export function requiredAutoIngestProviders(project: ProjectDocument): AutoInges
   ) {
     providers.push("atlassian");
   }
-  if ((sources.webex_rooms?.length ?? 0) > 0) providers.push("webex");
+  if (
+    (sources.webex_rooms?.length ?? 0) > 0 &&
+    sources.webex_credential_mode !== "managed"
+  ) {
+    providers.push(
+      sources.webex_credential_provider === "webex_messaging"
+        ? "webex_messaging"
+        : "webex",
+    );
+  }
   return providers;
 }
 

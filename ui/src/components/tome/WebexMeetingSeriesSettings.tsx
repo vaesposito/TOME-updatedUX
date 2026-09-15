@@ -721,7 +721,12 @@ export function WebexMeetingSeriesSettings({
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
               <p>{error}</p>
               {errorCode === WEBEX_CONNECTION_REQUIRED && (
-                <Link href="/credentials#connections" className="mt-2 inline-block font-medium text-primary underline">
+                <Link
+                  href="/credentials#connections"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block font-medium text-primary underline"
+                >
                   Connect Webex (Meetings)
                 </Link>
               )}

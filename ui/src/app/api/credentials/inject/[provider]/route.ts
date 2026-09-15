@@ -5,6 +5,7 @@ import { assertCredentialServiceCaller } from "@/lib/credentials/internal-caller
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCredentialFeatureConfig } from "@/lib/feature-flags/credentials";
 import { validateBearerJWT } from "@/lib/jwt-validation";
+import { isProtectedManagedWebexConnection } from "@/lib/tome/managed-webex-config";
 
 interface RouteContext {
   params: Promise<{ provider: string }>;
@@ -40,6 +41,13 @@ export const GET = withErrorHandler(async (request: NextRequest, context: RouteC
   );
   if (!connection) {
     throw new ApiError("Provider connection was not found", 404, "CREDENTIAL_NOT_FOUND");
+  }
+  if (isProtectedManagedWebexConnection(connection)) {
+    throw new ApiError(
+      "The managed Webex credential cannot be injected into AgentGateway",
+      403,
+      "MANAGED_WEBEX_CREDENTIAL_PROTECTED",
+    );
   }
 
   const token = await service.refreshConnection(connection.id);

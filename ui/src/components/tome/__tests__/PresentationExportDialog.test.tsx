@@ -125,6 +125,49 @@ describe("PresentationExportDialog", () => {
     expect(within(streamDialog).getByRole("button", { name: "Review filled brief" })).toBeEnabled();
   });
 
+  it("uses the current gist without loading or exposing the wiki page picker", async () => {
+    const gistDeck = {
+      ...initialDeck,
+      slides: [{
+        ...initialDeck.slides[0],
+        bullets: [{ text: "Gist fact", source_refs: ["@gist/gist-1"], generated: false }],
+        visual: null,
+      }],
+    };
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue(
+      generationStream(gistDeck),
+    );
+    fetchMock.mockClear();
+
+    render(
+      <PresentationExportDialog
+        slug="example-project"
+        gist={{ id: "gist-1", title: "Example gist", filename: "example-gist.md" }}
+        open
+        onOpenChange={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Example gist")).toBeInTheDocument();
+    expect(screen.getByText("example-gist.md")).toBeInTheDocument();
+    expect(screen.queryByText("Entire wiki")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Compose prompt/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Generate deck/ }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(
+      ([input]) => String(input).includes("/presentations/generate"),
+    )).toBe(true));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/pages"))).toBe(false);
+    const generationCall = fetchMock.mock.calls.find(
+      ([input]) => String(input).includes("/presentations/generate"),
+    );
+    expect(JSON.parse(String(generationCall?.[1]?.body))).toMatchObject({
+      source_scope: "gist",
+      paths: ["@gist/gist-1"],
+      gist_id: "gist-1",
+    });
+  });
+
   it("includes slide edits and reordered slides in a slide-scoped revision request", async () => {
     const generationBodies: Array<Record<string, unknown>> = [];
     jest.spyOn(global, "fetch").mockImplementation(async (input, init) => {
@@ -190,6 +233,56 @@ describe("PresentationExportDialog", () => {
       title: "Edited overview",
       bullets: [{ text: "Human-edited overview", source_refs: [], generated: true }],
       visual: { description: "Human-edited diagram", source_refs: [] },
+    });
+  });
+
+  it("shows the template choice after generation and sends the neutral selection to PPTX export", async () => {
+    const fetchMock = jest.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/pages")) {
+        return {
+          ok: true,
+          json: async () => ({ data: { pages: { "overview.md": "# Overview" } } }),
+        } as Response;
+      }
+      if (url.endsWith("/presentations/generate")) return generationStream(initialDeck);
+      if (url.endsWith("/presentations/export")) {
+        return {
+          ok: true,
+          blob: async () => new Blob(["presentation"]),
+          headers: new Headers({ "Content-Disposition": 'attachment; filename="presentation.pptx"' }),
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: jest.fn(() => "blob:test") });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: jest.fn() });
+
+    render(
+      <PresentationExportDialog
+        slug="example-project"
+        currentPath="overview.md"
+        open
+        onOpenChange={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /Compose prompt/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /Compose prompt/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Generate deck/ }));
+    const generationDialog = await screen.findByRole("dialog", { name: /AI deck generation stream/ });
+    await within(generationDialog).findByText(/Project briefing/);
+    fireEvent.click(await within(generationDialog).findByRole("button", { name: "Review deck" }));
+
+    const neutral = screen.getByRole("radio", { name: /Neutral TOME/ });
+    expect(screen.getByRole("radio", { name: /Outshift by Cisco/ })).toBeChecked();
+    fireEvent.click(neutral);
+    expect(neutral).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: /Export \.pptx/ }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/presentations/export"))).toBe(true));
+    const exportCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/presentations/export"));
+    expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({
+      format: "pptx",
+      use_outshift_template: false,
     });
   });
 });

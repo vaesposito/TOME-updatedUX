@@ -401,6 +401,46 @@ describe("admin platform-config route", () => {
     });
   });
 
+  it("accepts full commit SHAs and Git tags in the release notes range", async () => {
+    const collection = {
+      findOne: jest.fn().mockResolvedValue(null),
+      updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    };
+    mockGetCollection.mockResolvedValue(collection);
+    const { PATCH } = await import("../route");
+
+    const response = await PATCH(
+      request("/api/admin/platform-config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          release_notes: {
+            enabled: true,
+            repository_url: "https://github.com/example/repository",
+            previous_commit: "a".repeat(64),
+            latest_commit: "v1.2.3",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(collection.updateOne).toHaveBeenCalledWith(
+      { _id: "platform_settings" },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          release_notes: {
+            enabled: true,
+            repository_url: "https://github.com/example/repository",
+            previous_commit: "a".repeat(64),
+            latest_commit: "v1.2.3",
+          },
+        }),
+      }),
+      { upsert: true },
+    );
+  });
+
   it("rejects an incomplete release notes commit range", async () => {
     const collection = {
       findOne: jest.fn().mockResolvedValue(null),

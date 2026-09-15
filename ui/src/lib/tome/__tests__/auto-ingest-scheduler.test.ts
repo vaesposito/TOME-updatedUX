@@ -14,7 +14,8 @@ const getCollection = jest.fn(async () => ({
 const claimAutoIngestFire = jest.fn();
 const claimAutoIngestCredentialRefresh = jest.fn();
 const refreshAutoIngestCredentialHealth = jest.fn();
-const resolveCredentialsForSub = jest.fn();
+const resolveProjectCredentials = jest.fn();
+const resolveManagedWebexCredential = jest.fn();
 const isIngestRunning = jest.fn();
 const startIngestRun = jest.fn();
 const auditTome = jest.fn();
@@ -32,7 +33,11 @@ jest.mock("../auto-ingest/credential-health", () => ({
   refreshAutoIngestCredentialHealth: (...a: unknown[]) => refreshAutoIngestCredentialHealth(...a),
 }));
 jest.mock("../agent-proxy", () => ({
-  resolveCredentialsForSub: (...a: unknown[]) => resolveCredentialsForSub(...a),
+  resolveProjectCredentials: (...a: unknown[]) => resolveProjectCredentials(...a),
+}));
+jest.mock("../managed-webex", () => ({
+  resolveManagedWebexCredential: (...a: unknown[]) =>
+    resolveManagedWebexCredential(...a),
 }));
 jest.mock("../ingest-runner", () => ({
   isIngestRunning: (...a: unknown[]) => isIngestRunning(...a),
@@ -80,7 +85,10 @@ beforeEach(() => {
   claimAutoIngestCredentialRefresh.mockResolvedValue(true);
   refreshAutoIngestCredentialHealth.mockResolvedValue(undefined);
   isIngestRunning.mockResolvedValue(false);
-  resolveCredentialsForSub.mockResolvedValue({ github: { access_token: "tok" } });
+  resolveProjectCredentials.mockResolvedValue({ github: { access_token: "tok" } });
+  resolveManagedWebexCredential.mockResolvedValue({
+    capability: { available: false },
+  });
   startIngestRun.mockResolvedValue({ runId: "run-1" });
   tickWebexMeetingSeriesScheduler.mockResolvedValue(undefined);
 });
@@ -179,7 +187,7 @@ describe("tickAutoIngestScheduler", () => {
     findToArray.mockResolvedValue([
       project({ autoIngest: { enabled: true, cron: "0 2 * * *", credentialOwner: owner } }),
     ]);
-    resolveCredentialsForSub.mockResolvedValue({});
+    resolveProjectCredentials.mockResolvedValue({});
 
     await tickAutoIngestScheduler(dueNow);
 

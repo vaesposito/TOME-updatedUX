@@ -78,6 +78,11 @@ export function ProjectDetailView({ slug }: { slug: string }) {
       confluence_url: project.sources?.confluence_url ?? "",
       confluence_page_scopes: project.sources?.confluence_page_scopes,
       confluence_page_scope: project.sources?.confluence_page_scope,
+      webex_rooms: project.sources?.webex_rooms ?? [],
+      webex_credential_mode:
+        project.sources?.webex_credential_mode === "managed" ? "managed" : "personal",
+      webex_credential_provider:
+        project.sources?.webex_credential_provider ?? "webex",
     });
     setEditOpen(true);
   }
@@ -99,6 +104,11 @@ export function ProjectDetailView({ slug }: { slug: string }) {
               editSources.confluence_page_scopes ?? [],
             confluence_page_scope:
               editSources.confluence_page_scope ?? null,
+            webex_rooms: editSources.webex_rooms ?? [],
+            webex_credential_mode:
+              editSources.webex_credential_mode ?? "personal",
+            webex_credential_provider:
+              editSources.webex_credential_provider ?? "webex",
           },
         }),
       });

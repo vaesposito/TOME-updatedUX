@@ -119,12 +119,6 @@ export function isSynthesizedType(type: ProjectType | undefined): boolean {
   return type === "bhag" || type === "area";
 }
 
-/** Recurring Webex meetings can feed regular project and Area wikis. BHAGs
- * remain synthesis-only because their content rolls up Areas/projects. */
-export function supportsWebexMeetingSeries(type: ProjectType | undefined): boolean {
-  return type !== "bhag";
-}
-
 /**
  * Label dimensions for discovery + the executive dashboard. Free-form,
  * multi-value (except domain). `domain` is denormalized from the structural
@@ -170,6 +164,8 @@ export interface WebexRoomSource {
   room_id: string;
 }
 
+export type WebexCredentialMode = "personal" | "managed";
+
 /**
  * One attached GitHub repository. `id` is the durable identity returned by
  * GitHub; names, URLs, and the default branch are canonical metadata refreshed
@@ -201,6 +197,10 @@ export interface ProjectSources {
   confluence_page_scope?: ConfluencePageScope;
   confluence_spaces?: ConfluenceSpaceSource[]; // typed Confluence spaces
   webex_rooms?: WebexRoomSource[]; // typed Webex rooms (slug+name+room_id)
+  /** Missing means the legacy, personal `webex` connection. */
+  webex_credential_mode?: WebexCredentialMode;
+  /** Personal provider selection; managed mode always uses deployment config. */
+  webex_credential_provider?: string;
   component_urls?: string[]; // arbitrary software/service URLs
 }
 
@@ -365,6 +365,8 @@ export interface CreateProjectRequest {
   confluence_page_scopes?: ConfluencePageScope[];
   confluence_page_scope?: ConfluencePageScope;
   webex_rooms?: WebexRoomSource[];
+  webex_credential_mode?: WebexCredentialMode;
+  webex_credential_provider?: string;
   component_urls?: string[];
   /** User or team that can write Tome content and operate ingestion/review. */
   data_steward?: DataStewardInput;

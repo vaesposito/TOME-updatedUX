@@ -222,6 +222,35 @@ describe('ReleaseNotesSettingsTab', () => {
     });
   });
 
+  it('lets admins configure full SHAs and Git tags for release notes', async () => {
+    render(<ReleaseNotesSettingsTab isAdmin />);
+
+    fireEvent.change(await screen.findByLabelText('Repository URL'), {
+      target: { value: 'https://github.com/example/repository' },
+    });
+    fireEvent.change(screen.getByLabelText('Previous upgraded commit'), {
+      target: { value: 'a'.repeat(64) },
+    });
+    fireEvent.change(screen.getByLabelText('Latest commit'), {
+      target: { value: 'v1.2.3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save release notes settings' }));
+
+    await waitFor(() => {
+      const patchCall = (global.fetch as jest.Mock).mock.calls.find(
+        ([url, init]) => url === '/api/admin/platform-config' && init?.method === 'PATCH',
+      );
+      expect(JSON.parse(patchCall[1].body)).toEqual({
+        release_notes: {
+          enabled: true,
+          repository_url: 'https://github.com/example/repository',
+          previous_commit: 'a'.repeat(64),
+          latest_commit: 'v1.2.3',
+        },
+      });
+    });
+  });
+
   it('requires all optional commit-diff fields before saving', async () => {
     render(<ReleaseNotesSettingsTab isAdmin />);
 

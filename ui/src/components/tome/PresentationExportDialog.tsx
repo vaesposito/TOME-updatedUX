@@ -32,6 +32,7 @@ import {
   defaultPresentationRequirements,
   normalizePresentationDeck,
   normalizePresentationRequirements,
+  presentationGistSourcePath,
   presentationSourceRefs,
   type PresentationDeck,
   type PresentationRequirements,
@@ -48,6 +49,7 @@ interface PageChoice {
 }
 
 type Step = "requirements" | "prompt" | "preview";
+type PresentationTemplate = "neutral" | "outshift";
 
 function errorMessage(body: unknown, fallback: string): string {
   if (!body || typeof body !== "object") return fallback;
@@ -126,16 +128,20 @@ function presentationSubject(slug: string): string {
 export function PresentationExportDialog({
   slug,
   currentPath,
+  gist,
   open,
   onOpenChange,
 }: {
   slug: string;
   currentPath?: string;
+  gist?: { id: string; title: string; filename: string };
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const [step, setStep] = useState<Step>("requirements");
-  const [scope, setScope] = useState<PresentationSourceScope>(currentPath ? "current" : "wiki");
+  const [scope, setScope] = useState<PresentationSourceScope>(
+    gist ? "gist" : currentPath ? "current" : "wiki",
+  );
   const [requirements, setRequirements] = useState<PresentationRequirements>(
     () => defaultPresentationRequirements(presentationSubject(slug)),
   );
@@ -143,6 +149,7 @@ export function PresentationExportDialog({
   const [selectedPaths, setSelectedPaths] = useState<string[]>(currentPath ? [currentPath] : []);
   const [prompt, setPrompt] = useState("");
   const [deck, setDeck] = useState<PresentationDeck | null>(null);
+  const [template, setTemplate] = useState<PresentationTemplate>("outshift");
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
   const [revisionInstruction, setRevisionInstruction] = useState("");
   const [model, setModel] = useState<string | null>(null);
@@ -164,7 +171,7 @@ export function PresentationExportDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open || pages.length > 0) return;
+    if (!open || gist || pages.length > 0) return;
     let cancelled = false;
     setLoadingPages(true);
     setError(null);
@@ -181,20 +188,24 @@ export function PresentationExportDialog({
         if (!cancelled) setLoadingPages(false);
       });
     return () => { cancelled = true; };
-  }, [open, pages.length, slug]);
+  }, [gist, open, pages.length, slug]);
 
   const visiblePages = useMemo(() => pages.filter((page) => !page.hidden), [pages]);
   const sourcePaths = useMemo(() => {
+    if (scope === "gist") return gist ? [presentationGistSourcePath(gist.id)] : [];
     if (scope === "current") return currentPath ? [currentPath] : [];
     if (scope === "selected") return selectedPaths;
     return visiblePages.map((page) => page.path);
-  }, [scope, currentPath, selectedPaths, visiblePages]);
+  }, [scope, gist, currentPath, selectedPaths, visiblePages]);
   const sourceManifest = useMemo(
     () => sourcePaths.map((path) => {
+      if (gist && path === presentationGistSourcePath(gist.id)) {
+        return { path, title: gist.title };
+      }
       const page = pages.find((candidate) => candidate.path === path);
       return { path, title: page?.title ?? path };
     }),
-    [pages, sourcePaths],
+    [gist, pages, sourcePaths],
   );
   const selectedSlide = deck?.slides.find((slide) => slide.id === selectedSlideId) ?? deck?.slides[0] ?? null;
 
@@ -236,6 +247,7 @@ export function PresentationExportDialog({
         body: JSON.stringify({
           source_scope: scope,
           paths: sourcePaths,
+          ...(gist ? { gist_id: gist.id } : {}),
           current_requirements: requirements,
           instruction: assistInstruction,
         }),
@@ -307,6 +319,7 @@ export function PresentationExportDialog({
         body: JSON.stringify({
           source_scope: scope,
           paths: sourcePaths,
+          ...(gist ? { gist_id: gist.id } : {}),
           prompt,
           ...(options?.existing ? { existing_deck: options.existing } : {}),
           ...(options?.instruction ? { revision_instruction: options.instruction } : {}),
@@ -422,7 +435,12 @@ export function PresentationExportDialog({
       const response = await fetch(`/api/tome/projects/${encodeURIComponent(slug)}/presentations/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deck, format }),
+        body: JSON.stringify({
+          deck,
+          format,
+          use_outshift_template: template === "outshift",
+          ...(gist ? { gist_id: gist.id } : {}),
+        }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
@@ -456,7 +474,7 @@ export function PresentationExportDialog({
           <DialogDescription>
             {step === "requirements" && "Start with useful defaults, or let AI Assist build the brief from your selected sources."}
             {step === "prompt" && "Review and edit the exact generation prompt before invoking the model."}
-            {step === "preview" && "Edit, reorder, refine, and export as HTML or editable PowerPoint."}
+            {step === "preview" && "Edit, reorder, refine, choose a PowerPoint style, and download the review webpage or editable deck."}
           </DialogDescription>
           <div className="flex gap-2 pt-2 text-xs">
             {(["requirements", "prompt", "preview"] as Step[]).map((item, index) => (
@@ -476,7 +494,7 @@ export function PresentationExportDialog({
                         <Sparkles className="h-4 w-4 text-primary" /> AI Assist
                       </Label>
                       <p className="text-xs text-muted-foreground">
-                        Uses the selected wiki pages to fill the goal, audience, key message, sections, exclusions, tone, detail, timing, and visual guidance.
+                        Uses the selected TOME sources to fill the goal, audience, key message, sections, exclusions, tone, detail, timing, and visual guidance.
                       </p>
                       <Input
                         id="presentation-ai-guidance"
@@ -500,18 +518,28 @@ export function PresentationExportDialog({
 
                 <div className="grid gap-5 lg:grid-cols-2">
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Source scope</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {([
-                        ["current", "Current page"],
-                        ["selected", "Selected pages"],
-                        ["wiki", "Entire wiki"],
-                      ] as const).map(([value, label]) => (
-                        <button key={value} type="button" disabled={value === "current" && !currentPath} onClick={() => setScope(value)} className={cn("rounded-md border p-2 text-left text-xs", scope === value ? "border-primary bg-primary/5" : "border-border", "disabled:opacity-40")}>{label}</button>
-                      ))}
+                  {gist ? (
+                    <div className="space-y-2">
+                      <Label>Source</Label>
+                      <div className="rounded-md border border-primary bg-primary/5 p-3 text-xs">
+                        <span className="block font-medium">{gist.title}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">{gist.filename}</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label>Source scope</Label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          ["current", "Current page"],
+                          ["selected", "Selected pages"],
+                          ["wiki", "Entire wiki"],
+                        ] as const).map(([value, label]) => (
+                          <button key={value} type="button" disabled={value === "current" && !currentPath} onClick={() => setScope(value)} className={cn("rounded-md border p-2 text-left text-xs", scope === value ? "border-primary bg-primary/5" : "border-border", "disabled:opacity-40")}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {scope === "selected" && (
                     <div className="space-y-2">
                       <Label>Select wiki pages</Label>
@@ -544,7 +572,8 @@ export function PresentationExportDialog({
                   <Field label="Visual or branding preferences"><Textarea value={requirements.visualPreferences} onChange={(event) => updateRequirement("visualPreferences", event.target.value)} /></Field>
                   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={requirements.includeSpeakerNotes} onChange={(event) => updateRequirement("includeSpeakerNotes", event.target.checked)} /> Include speaker notes</label>
                   <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-                    {sourcePaths.length} source page{sourcePaths.length === 1 ? "" : "s"} selected. Hidden agent-only pages are excluded from Entire wiki.
+                    {sourcePaths.length} source{sourcePaths.length === 1 ? "" : "s"} selected.
+                    {!gist && " Hidden agent-only pages are excluded from Entire wiki."}
                   </div>
                 </div>
                 </div>
@@ -555,7 +584,7 @@ export function PresentationExportDialog({
           {step === "prompt" && (
             <div className="flex h-full flex-col gap-3 py-2">
               <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-                Source bodies are attached securely by the server after access checks. The manifest below shows exactly which pages will be included.
+                Source bodies are attached securely by the server after access checks. The manifest below shows exactly which sources will be included.
               </div>
               <Textarea aria-label="Presentation prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} className="min-h-0 flex-1 resize-none font-mono text-xs leading-relaxed" />
             </div>
@@ -601,6 +630,21 @@ export function PresentationExportDialog({
                   </div>
                 </ScrollArea>
               )}
+              <div className="col-span-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                <div className="text-xs font-semibold">PowerPoint template</div>
+                <p className="mt-1 text-[11px] text-muted-foreground">Choose this after reviewing the generated deck. The HTML download always uses the attached TOME review webpage format.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {([
+                    ["outshift", "Outshift by Cisco", "Use the supplied Outshift grid, logo, and editable slide styling."],
+                    ["neutral", "Neutral TOME", "Keep the editable deck dark and editorial without Outshift branding."],
+                  ] as const).map(([value, label, description]) => (
+                    <label key={value} className={cn("flex cursor-pointer items-start gap-3 rounded-md border p-3", template === value ? "border-primary bg-background" : "border-border bg-background/60")}>
+                      <input className="mt-0.5" type="radio" name="presentation-template" value={value} checked={template === value} onChange={() => setTemplate(value)} />
+                      <span><span className="block text-xs font-medium">{label}</span><span className="mt-1 block text-[11px] text-muted-foreground">{description}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -17,11 +17,11 @@ import {
   validateLocalSkillsJWT,
 } from '@/lib/jwt-validation';
 import {
-  buildTomeOidcAuth,
-  isValidTomeOidcProof,
-  TOME_MCP_OIDC_PROOF_HEADER,
-  validateTomeSecondaryOidcJWT,
-} from '@/lib/tome/oidc-jwt';
+  buildSecondaryOidcAuth,
+  isValidSecondaryOidcProof,
+  SECONDARY_OIDC_PROOF_HEADER,
+  validateSecondaryOidcJWT,
+} from '@/lib/auth/secondary-oidc';
 import { verifyCatalogApiKey } from '@/lib/catalog-api-keys';
 import { isSkillsApiKeyActive } from '@/lib/skills-api-keys';
 import { verifyTomeApiKey } from '@/lib/tome-api-keys';
@@ -397,7 +397,11 @@ export async function getAuthenticatedUser(
     );
   }
 
-  if (getConfig('ssoEnabled') && session.isAuthorized === false) {
+  // Bootstrap admins are an explicit break-glass allowlist. Honor it at
+  // request time as well as during JWT creation so an older session cannot
+  // lose access when a refreshed ID token omits the email claim.
+  const bootstrapAdmin = isBootstrapAdminEmail(session.user.email);
+  if (getConfig('ssoEnabled') && session.isAuthorized === false && !bootstrapAdmin) {
     throw new ApiError(
       'Your account is not authorized to access this application. Contact an administrator if you need access.',
       403,
@@ -703,15 +707,15 @@ export async function getAuthFromBearerOrSession(
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
 
-    // TOME's MCP handler adds a server-generated proof when it has already
+    // An MCP handler adds a server-generated proof when it has already
     // validated a secondary OIDC JWT. The proof is bound to this exact token,
     // so a caller cannot opt into the secondary trust anchor on unrelated
     // routes.
-    const oidcProof = request.headers.get(TOME_MCP_OIDC_PROOF_HEADER);
-    if (isValidTomeOidcProof(token, oidcProof)) {
+    const oidcProof = request.headers.get(SECONDARY_OIDC_PROOF_HEADER);
+    if (isValidSecondaryOidcProof(token, oidcProof)) {
       try {
-        const identity = await validateTomeSecondaryOidcJWT(token);
-        return buildTomeOidcAuth(token, identity);
+        const identity = await validateSecondaryOidcJWT(token);
+        return buildSecondaryOidcAuth(token, identity);
       } catch (err) {
         throw classifyBearerError(err);
       }

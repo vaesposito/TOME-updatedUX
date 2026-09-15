@@ -14,6 +14,7 @@ import {
   encodeGitHubPickerValue,
 } from "@/lib/projects/github-repository";
 import { SourcePicker, type SourceKind } from "./index";
+import { WebexCredentialModePicker } from "./WebexCredentialModePicker";
 
 /**
  * The single, generic, config-driven sources surface, used everywhere a
@@ -111,38 +112,70 @@ export function SourcesEditor({
               />
               {LABELS[kind]}
             </h4>
+            {kind === "webex" ? (
+              <WebexCredentialModePicker
+                value={value.webex_credential_mode === "managed" ? "managed" : "personal"}
+                readOnly
+                onChange={() => {}}
+              />
+            ) : null}
             <ReadOnlyKind kind={kind} value={valueFor(kind, value)} />
           </div>
         ) : (
           // The picker renders its own bounded card + branded header — no
           // wrapper needed here (see SourceItemPicker.tsx).
-          <SourcePicker
-            key={kind}
-            source={kind}
-            selected={valueFor(kind, value)}
-            onChange={(next) => onChange(applyTo(kind, next, value))}
-            confluencePageScopes={
-              kind === "confluence"
-                ? value.confluence_page_scopes?.length
-                  ? value.confluence_page_scopes
-                  : value.confluence_page_scope
-                    ? [value.confluence_page_scope]
-                    : []
-                : undefined
-            }
-            onConfluencePageScopesChange={
-              kind === "confluence"
-                ? (scopes, sourceUrl) =>
-                    onChange({
-                      ...value,
-                      confluence_url:
-                        sourceUrl ?? value.confluence_url ?? "",
-                      confluence_page_scopes: scopes,
-                      confluence_page_scope: undefined,
-                    })
-                : undefined
-            }
-          />
+          <div key={kind} className="space-y-3">
+            {kind === "webex" ? (
+              <WebexCredentialModePicker
+                value={value.webex_credential_mode === "managed" ? "managed" : "personal"}
+                onChange={(mode, provider) =>
+                  onChange({
+                    ...value,
+                    webex_credential_mode: mode,
+                    webex_credential_provider: provider,
+                  })
+                }
+              />
+            ) : null}
+            <SourcePicker
+              source={kind}
+              selected={valueFor(kind, value)}
+              onChange={(next) => onChange(applyTo(kind, next, value))}
+              webexCredentialMode={
+                kind === "webex"
+                  ? value.webex_credential_mode === "managed"
+                    ? "managed"
+                    : "personal"
+                  : undefined
+              }
+              webexCredentialProvider={
+                kind === "webex"
+                  ? value.webex_credential_provider || "webex"
+                  : undefined
+              }
+              confluencePageScopes={
+                kind === "confluence"
+                  ? value.confluence_page_scopes?.length
+                    ? value.confluence_page_scopes
+                    : value.confluence_page_scope
+                      ? [value.confluence_page_scope]
+                      : []
+                  : undefined
+              }
+              onConfluencePageScopesChange={
+                kind === "confluence"
+                  ? (scopes, sourceUrl) =>
+                      onChange({
+                        ...value,
+                        confluence_url:
+                          sourceUrl ?? value.confluence_url ?? "",
+                        confluence_page_scopes: scopes,
+                        confluence_page_scope: undefined,
+                      })
+                  : undefined
+              }
+            />
+          </div>
         ),
       )}
     </div>

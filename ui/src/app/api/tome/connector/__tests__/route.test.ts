@@ -21,6 +21,8 @@ jest.mock("@/lib/tome/principal", () => ({
 
 jest.mock("@/app/api/tome/mcp/route", () => ({
   getTomeMcpTool: (...args: unknown[]) => mockGetTomeMcpTool(...args),
+  isTomeRestReadOnlyTool: (name: string) =>
+    name === "tome_list_projects" || name === "tome_get_project",
 }));
 
 import { POST } from "../[toolName]/route";
@@ -101,5 +103,28 @@ describe("TOME REST connector operation", () => {
     );
 
     expect(response.status).toBe(401);
+  });
+
+  it("does not execute write-capable tools", async () => {
+    const handler = jest.fn();
+    mockGetTomeMcpTool.mockReturnValue({
+      name: "tome_edit_page",
+      inputSchema: { type: "object", required: [] },
+      handler,
+    });
+
+    const response = await POST(
+      new NextRequest("https://example.test/api/tome/connector/tome_edit_page", {
+        method: "POST",
+        body: "{}",
+      }),
+      { params: Promise.resolve({ toolName: "tome_edit_page" }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "Unknown TOME read operation: tome_edit_page",
+    });
+    expect(handler).not.toHaveBeenCalled();
   });
 });

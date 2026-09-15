@@ -8,7 +8,10 @@ import { loadTomeProject, requireTomeEditor } from "@/lib/tome/tome-api";
 import { auditTome, tomeActorFromAuth } from "@/lib/tome/audit";
 import { getTomeIngestRunsCollection } from "@/lib/tome/mongo-collections";
 import { cancelRun } from "@/lib/tome/ingest-runner";
-import { getArtifactEvaluation } from "@/lib/tome/evaluation-store";
+import { getArtifactEvaluation, getEvidenceBundle } from "@/lib/tome/evaluation-store";
+import { bundleHasMyAgentEvidence } from "@/lib/tome/evidence-bundle";
+import { tomeSessionSubject } from "@/lib/tome/data-steward";
+import { mayViewMyAgentRunEvidence } from "@/lib/projects/myagent-source";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +19,8 @@ type Ctx = { params: Promise<{ slug: string; runId: string }> };
 
 export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug, runId } = await ctx.params;
-  const { projectId } = await loadTomeProject(request, slug);
+  const tctx = await loadTomeProject(request, slug);
+  const { projectId } = tctx;
 
   const runs = await getTomeIngestRunsCollection();
   const run = await runs.findOne({ _id: runId, project_id: projectId });
@@ -24,16 +28,35 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     throw new ApiError("Ingest run not found", 404, "RUN_NOT_FOUND");
   }
 
-  const qualityEvaluation = run.quality_evaluation_id
-    ? await getArtifactEvaluation(run.quality_evaluation_id)
+  const evidenceBundle = run.evidence_bundle_id
+    ? await getEvidenceBundle(run.evidence_bundle_id)
     : null;
+  const hasPrivateMyAgentEvidence =
+    run.myagent_delegated === true || bundleHasMyAgentEvidence(evidenceBundle);
+  const privateRunDetailsRestricted =
+    hasPrivateMyAgentEvidence &&
+    !mayViewMyAgentRunEvidence(
+      run.triggered_by_sub,
+      tomeSessionSubject(tctx.session),
+      tctx.canManageSteward,
+    );
+  const qualityEvaluationRestricted = Boolean(
+    run.quality_evaluation_id && privateRunDetailsRestricted,
+  );
+  // A run's ordinary status is project-readable, but MyAgent replies are
+  // delegated per-user evidence. Do not expose evaluator quotes, reasons, or
+  // citations derived from them to another project reader.
+  const qualityEvaluation =
+    run.quality_evaluation_id && !privateRunDetailsRestricted
+      ? await getArtifactEvaluation(run.quality_evaluation_id)
+      : null;
   return successResponse({
     id: String(run._id),
     status: run.status,
     greenfield: run.greenfield,
     started_at: run.started_at,
     finished_at: run.finished_at ?? null,
-    error: run.error ?? null,
+    error: privateRunDetailsRestricted ? null : run.error ?? null,
     report_id: run.report_id ?? null,
     cascade_id: run.cascade_id ?? null,
     cascade_role: run.cascade_role ?? null,
@@ -55,7 +78,15 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         }
       : null,
     quality_evaluation: qualityEvaluation,
-    log: (run.log ?? []).join("\n"),
+    quality_evaluation_restricted: qualityEvaluationRestricted,
+    // Do not disclose another user's delegated source. The owner/admin needs
+    // the marker to understand why approval is mandatory and has no deadline;
+    // other collaborators receive only an access-state signal.
+    myagent_evidence_received:
+      run.myagent_evidence_received === true && !privateRunDetailsRestricted,
+    review_access_restricted:
+      run.myagent_evidence_received === true && privateRunDetailsRestricted,
+    log: privateRunDetailsRestricted ? "" : (run.log ?? []).join("\n"),
   });
 });
 

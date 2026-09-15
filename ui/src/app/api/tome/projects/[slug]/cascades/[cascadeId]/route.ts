@@ -8,6 +8,10 @@ import { ApiError, successResponse, withErrorHandler } from "@/lib/api-middlewar
 import { getCollection } from "@/lib/mongodb";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import { getTomeIngestRunsCollection } from "@/lib/tome/mongo-collections";
+import { getEvidenceBundles } from "@/lib/tome/evaluation-store";
+import { tomeSessionSubject } from "@/lib/tome/data-steward";
+import { mayViewMyAgentRunEvidence } from "@/lib/projects/myagent-source";
+import { bundleHasMyAgentEvidence } from "@/lib/tome/evidence-bundle";
 import type { ProjectDocument } from "@/types/projects";
 import type { IngestRun } from "@/types/tome";
 
@@ -15,7 +19,13 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ slug: string; cascadeId: string }> };
 
-function summarize(run: IngestRun, name: string, slug: string, viaArea?: string) {
+function summarize(
+  run: IngestRun,
+  name: string,
+  slug: string,
+  canViewPrivateDetails: boolean,
+  viaArea?: string,
+) {
   return {
     id: String(run._id),
     project_id: run.project_id,
@@ -25,7 +35,7 @@ function summarize(run: IngestRun, name: string, slug: string, viaArea?: string)
     status: run.status,
     started_at: run.started_at,
     finished_at: run.finished_at ?? null,
-    error: run.error ?? null,
+    error: canViewPrivateDetails ? run.error ?? null : null,
     /** Endpoint this run dispatches to — "synthesize" for an Area's own
      * roll-up (shown distinctly from a plain project "ingest") vs "ingest". */
     endpoint: run.dispatch?.endpoint === "/synthesize" ? "synthesize" : "ingest",
@@ -38,7 +48,8 @@ function summarize(run: IngestRun, name: string, slug: string, viaArea?: string)
 
 export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug, cascadeId } = await ctx.params;
-  await loadTomeProject(request, slug); // auth + feature gate
+  const tctx = await loadTomeProject(request, slug); // auth + feature gate
+  const viewerSubject = tomeSessionSubject(tctx.session);
 
   const runs = await getTomeIngestRunsCollection();
   const rows = await runs.find({ cascade_id: cascadeId }).toArray();
@@ -68,6 +79,24 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     }
     frontier = next;
   }
+  const evidenceBundles = await getEvidenceBundles(
+    allRows.flatMap((run) => (run.evidence_bundle_id ? [run.evidence_bundle_id] : [])),
+  );
+  const canViewPrivateDetails = (run: IngestRun) => {
+    const hasPrivateEvidence =
+      run.myagent_delegated === true ||
+      bundleHasMyAgentEvidence(
+        run.evidence_bundle_id ? evidenceBundles.get(run.evidence_bundle_id) : null,
+      );
+    return (
+      !hasPrivateEvidence ||
+      mayViewMyAgentRunEvidence(
+        run.triggered_by_sub,
+        viewerSubject,
+        tctx.canManageSteward,
+      )
+    );
+  };
 
   // Resolve project names + slugs for everything in the cascade in one pass.
   const projects = await getCollection<ProjectDocument>("projects");
@@ -92,6 +121,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         r,
         nameById.get(r.project_id) ?? r.project_id,
         slugById.get(r.project_id) ?? r.project_id,
+        canViewPrivateDetails(r),
         viaAreaName,
       );
     })
@@ -104,6 +134,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
           parent,
           nameById.get(parent.project_id) ?? parent.project_id,
           slugById.get(parent.project_id) ?? parent.project_id,
+          canViewPrivateDetails(parent),
         )
       : null,
     children,

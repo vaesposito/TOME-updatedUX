@@ -419,6 +419,24 @@ export interface IngestRun {
   /** OIDC sub of the triggering user; the worker re-resolves their forwarded
    *  OAuth credentials at dispatch time (the request session is long gone). */
   triggered_by_sub?: string;
+  /**
+   * True once this run has sent or prepared a user-delegated MyAgent request.
+   * Its raw trace/evaluation is visible only to that run owner or a Tome admin.
+   */
+  myagent_delegated?: boolean;
+  /**
+   * A bounded MyAgent reply was received for this run. Every report-backed
+   * page write is held as a draft and can be promoted only by an explicit
+   * reviewer; it is never eligible for deadline auto-promotion.
+   */
+  myagent_evidence_received?: boolean;
+  /**
+   * Set only when this exact run was created by the consent owner's explicit,
+   * same-origin first-party browser action. A Bearer/OBO/MCP call (including
+   * one that forwards a session cookie) must never turn a stored consent into
+   * a Webex request on that person's behalf.
+   */
+  myagent_interactive_authorized?: boolean;
   /** Email of the triggering user; stored for revision attribution. */
   triggered_by_email?: string;
   /** Params the worker uses to start a queued run; absent on the immediate path. */

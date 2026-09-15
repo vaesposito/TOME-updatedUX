@@ -279,9 +279,15 @@ async function draftStatusForWrite(args: {
   const run = args.run as {
     quality_policy_mode?: string;
     quality_require_human_review?: boolean;
+    myagent_evidence_received?: boolean;
     dispatch?: { skipReview?: boolean };
   } | null;
   if (run) {
+    // A received user-delegated reply is untrusted external evidence. Its
+    // whole report stays out of the live PageStore until a human reviews it;
+    // no project review setting or caller-supplied skipReview flag can turn
+    // that response into future credentialed-agent context automatically.
+    if (run.myagent_evidence_received === true) return "draft";
     // Quality-policy enforcement is stronger than both the project setting
     // and a caller's run-level opt-out. createRunRecord also forces
     // skipReview=false for these runs; keep the write path independently

@@ -293,6 +293,32 @@ it("excludes every attached project source from a Webex meeting-only ingest", ()
   });
 });
 
+it("does not forward a bridge-only Webex credential to the agent", () => {
+  const request = buildIngestRequest(synthesizedProject("project"), {
+    runId: "run-1",
+    reportId: "report-1",
+    seed: null,
+    isGreenfield: false,
+    credentials: {
+      github: { access_token: "github-token" },
+      webex: { access_token: "personal-webex-token" },
+    },
+    omitWebexCredential: true,
+    myAgentEvidence: {
+      capabilities: ["outlook"],
+      status: "received",
+      content: "Delegated evidence",
+    },
+  });
+
+  expect(request.credentials).toEqual({ github: { access_token: "github-token" } });
+  expect(request.myagent_evidence).toEqual({
+    capabilities: ["outlook"],
+    status: "received",
+    content: "Delegated evidence",
+  });
+});
+
 it.each(["area", "bhag"] as const)(
   "excludes child-project context from a %s meeting-only ingest",
   (projectType) => {

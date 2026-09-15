@@ -18,9 +18,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getMcpAuthFromBearerOrSession } from "@/lib/auth/mcp-auth";
+import { MYAGENT_CONNECTOR_SETTINGS_URL } from "@/lib/projects/myagent-source";
 import { SECONDARY_OIDC_PROOF_HEADER } from "@/lib/auth/secondary-oidc";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
 import { isTomeServerEnabled } from "@/lib/tome/guard";
+import { TOME_MCP_FORWARDED_HEADER } from "@/lib/tome/myagent-interactive";
 
 export const dynamic = "force-dynamic";
 
@@ -151,7 +153,13 @@ function tomeAutoIngestSettingsUrl(request: NextRequest, slug: unknown): string 
 /** Forward the caller's credentials so the target route re-authenticates as the
  *  same principal (per-user RBAC preserved). */
 function forwardHeaders(request: NextRequest): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
+  // This is a server-side provenance marker, not caller input. In particular,
+  // a session-cookie MCP tool call must never acquire the browser-only
+  // authority to send a delegated MyAgent Webex message.
+  const h: Record<string, string> = {
+    "Content-Type": "application/json",
+    [TOME_MCP_FORWARDED_HEADER]: "1",
+  };
   const auth = request.headers.get("Authorization");
   const cookie = request.headers.get("cookie");
   const tomeApiKey = request.headers.get("x-caipe-token");
@@ -1126,7 +1134,7 @@ const TOOLS: ToolDef[] = [
   {
     name: "tome_preflight_ingest",
     description:
-      "Check whether the authenticated user's credentials have resource-level access to every source attached to a project — not just that a provider is connected, but that they can actually read each repo, Confluence space, or Webex room. Call this before `tome_reingest` to avoid a silent partial ingest. Returns `can_ingest` (true if all sources are accessible), a per-source breakdown (accessible vs inaccessible items), and a `credentials_url` the user should visit to reconnect any provider that is missing or lacks access. `project_slug` is required.",
+      "Check whether the authenticated user's credentials have resource-level access to every source attached to a project — not just that a provider is connected, but that they can actually read each repo, Confluence space, or Webex room. Call this before `tome_reingest` to avoid a silent partial ingest. Returns `can_ingest` (true if all sources are accessible), a per-source breakdown (accessible vs inaccessible items), and a `credentials_url` the user should visit to reconnect any provider that is missing or lacks access. MyAgent connector authorization and reply provenance are external and may be reported as unverified; selected MyAgent categories limit TOME's request, not a verified connector scope. Direct the user to MyAgent connector settings instead of treating it as confirmed access. `project_slug` is required.",
     inputSchema: schema({ project_slug: STR }, ["project_slug"]),
     handler: async (_req, fwd, args) => {
       const slug = encodeURIComponent(String(args.project_slug));
@@ -1142,6 +1150,10 @@ const TOOLS: ToolDef[] = [
           lines.push(`${s.label}: not connected — visit ${data.credentials_url} to connect`);
         } else if (s.inaccessible?.length > 0) {
           lines.push(`${s.label}: accessible [${s.accessible?.join(", ") || "none"}], no access [${s.inaccessible.join(", ")}] — visit ${data.credentials_url} to reconnect or update scopes`);
+        } else if (s.unverified?.length > 0) {
+          lines.push(
+            `${s.label}: external connector authorization/provenance unverified [${s.unverified.join(", ")}] — review ${MYAGENT_CONNECTOR_SETTINGS_URL}`,
+          );
         } else {
           lines.push(`${s.label}: all sources accessible [${s.accessible?.join(", ")}]`);
         }

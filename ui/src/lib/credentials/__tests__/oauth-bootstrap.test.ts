@@ -73,6 +73,7 @@ describe("OAuth connector env bootstrap", () => {
         "meeting:recordings_read",
         "identity:people_read",
         "spark:messages_read",
+        "spark:messages_write",
         "spark:mcp",
         "spark-admin:people_read",
         "spark:rooms_read",

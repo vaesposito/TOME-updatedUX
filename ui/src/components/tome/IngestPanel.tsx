@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import Link from "next/link";
 import {
+  CircleAlert,
   CheckCircle2,
+  Bot,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -32,6 +34,14 @@ import {
   normalizeConfluencePageScopes,
   parseConfluenceUrl,
 } from "@/lib/projects/confluence-source";
+import {
+  MYAGENT_BROWSER_ACTION_HEADER,
+} from "@/lib/tome/myagent-interactive";
+import {
+  MYAGENT_CONNECTOR_SETTINGS_URL,
+  myAgentConnectorOption,
+  normalizeMyAgentConnectors,
+} from "@/lib/projects/myagent-source";
 import { preflightState, type PreflightSourceResult } from "@/lib/tome/preflight";
 import { describeRelativeTime, nextCronRun } from "@/lib/tome/auto-ingest/schedule-presets";
 import { cn } from "@/lib/utils";
@@ -51,6 +61,10 @@ interface RunSummary {
   review_outcome?: "approved" | "partially_approved" | "rejected" | "auto_promoted" | null;
   reviewed_by?: string | null;
   report_id?: string | null;
+  /** Visible only to the user who delegated the evidence or a Tome admin. */
+  myagent_evidence_received?: boolean;
+  /** A private delegated-evidence review owned by someone else. */
+  review_access_restricted?: boolean;
 }
 
 interface WebexMeeting {
@@ -75,6 +89,8 @@ interface ProjectSources {
     id?: string;
     title?: string;
   }>;
+  myagent_connectors?: unknown;
+  myagent_enabled?: boolean;
 }
 
 interface SourceItem {
@@ -84,7 +100,7 @@ interface SourceItem {
 }
 
 interface SourceRow {
-  kind: "github" | "confluence" | "webex";
+  kind: "github" | "confluence" | "webex" | "myagent";
   label: string;
   items: SourceItem[];
   connectorKey: string;
@@ -194,6 +210,24 @@ export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
       kind: "webex",
       label: "Webex",
       items: roomLabels.map((room) => ({ label: room })),
+      connectorKey: "webex",
+    });
+  }
+  const myAgentConnectors = s.myagent_enabled === true
+    ? normalizeMyAgentConnectors(s.myagent_connectors)
+    : [];
+  if (myAgentConnectors.length > 0) {
+    rows.push({
+      kind: "myagent",
+      label: "MyAgent",
+      items: myAgentConnectors.map((connector) => {
+        const option = myAgentConnectorOption(connector);
+        return {
+          label: option.label,
+          detail: option.capabilities,
+          href: MYAGENT_CONNECTOR_SETTINGS_URL,
+        };
+      }),
       connectorKey: "webex",
     });
   }
@@ -454,7 +488,13 @@ export function IngestPanel({
         setProjectName(proj.slug ?? "");
         setAutoIngest(proj.autoIngest);
         const s = proj.sources ?? {};
-        setSourceRows(sourcesFromProject(s));
+        // MyAgent delegated evidence is intentionally unsupported for Area and
+        // BHAG synthesis. Hide any malformed or legacy stored selection here:
+        // synthesis never dispatches it, and showing it would misleadingly
+        // suggest that it can be used from this surface.
+        setSourceRows(
+          sourcesFromProject(s).filter((row) => !isSynthesized || row.kind !== "myagent"),
+        );
         setPreflight(preflightJson?.data?.sources ?? null);
       })
       .catch(() => {
@@ -465,7 +505,7 @@ export function IngestPanel({
       });
 
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, isSynthesized]);
 
   // ── Meetings ───────────────────────────────────────────────────────────────
 
@@ -590,7 +630,13 @@ export function IngestPanel({
     try {
       const res = await fetch(`/api/tome/projects/${slug}/${endpoint}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // This header is intentionally emitted only by the first-party
+          // reingest UI. The server also verifies its same-origin browser
+          // request provenance before allowing a MyAgent Webex delegation.
+          ...(!isSynthesized ? { [MYAGENT_BROWSER_ACTION_HEADER]: "1" } : {}),
+        },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -667,8 +713,10 @@ export function IngestPanel({
                     Draft awaiting review
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    This run&apos;s page changes are held as a draft until approved.
-                    {reviewRun.review_deadline && (
+                    {reviewRun.myagent_evidence_received
+                      ? "This run includes private delegated MyAgent evidence. It remains a draft until you explicitly approve it and will never auto-promote."
+                      : "This run's page changes are held as a draft until approved."}
+                    {!reviewRun.myagent_evidence_received && reviewRun.review_deadline && (
                       <> Auto-promotes {timeUntil(reviewRun.review_deadline)} if unreviewed.</>
                     )}{" "}
                     <button
@@ -692,9 +740,15 @@ export function IngestPanel({
                     </ul>
                   )}
                 </div>
-                <Button size="sm" onClick={() => onReviewDraft(reviewRun.id)}>
-                  Review diff
-                </Button>
+                {reviewRun.review_access_restricted ? (
+                  <p className="text-xs text-muted-foreground">
+                    This draft can be reviewed only by its authorizing user or a Tome administrator.
+                  </p>
+                ) : (
+                  <Button size="sm" onClick={() => onReviewDraft(reviewRun.id)}>
+                    Review diff
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -874,11 +928,14 @@ export function IngestPanel({
                         const noToken = state === "no_token";
                         const allOk = state === "ok";
                         const accessIssue = state === "access_issue";
+                        const unverified = state === "unverified";
 
                         const tooltipText = noToken
                           ? pf?.detail || `${row.label} not connected: the agent will skip this source`
                           : inaccessible.length > 0
                             ? pf?.detail || `Connected but no access to: ${inaccessible.join(", ")}`
+                            : unverified
+                              ? pf?.detail || `${row.label}: connector authorization is not verified by TOME`
                             : pf
                               ? `${row.label}: access confirmed for all sources`
                               : `${row.label}: access not yet verified`;
@@ -890,6 +947,8 @@ export function IngestPanel({
                                 <TooltipTrigger asChild>
                                   {allOk ? (
                                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 cursor-default text-emerald-500" />
+                                  ) : unverified ? (
+                                    <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 cursor-default text-amber-500" />
                                   ) : accessIssue ? (
                                     <XCircle className="mt-0.5 h-4 w-4 shrink-0 cursor-default text-amber-500" />
                                   ) : noToken ? (
@@ -905,7 +964,11 @@ export function IngestPanel({
                             </TooltipProvider>
                             <div className="min-w-0 flex-1">
                               <p className="flex items-center gap-1.5 text-sm font-medium">
-                                <ProviderLogo provider={row.connectorKey} className="h-3.5 w-3.5 shrink-0 object-contain" />
+                                {row.kind === "myagent" ? (
+                                  <Bot className="h-3.5 w-3.5 shrink-0 text-[#616BFA]" aria-hidden="true" />
+                                ) : (
+                                  <ProviderLogo provider={row.connectorKey} className="h-3.5 w-3.5 shrink-0 object-contain" />
+                                )}
                                 {row.label}
                               </p>
                               <ul className="mt-1 space-y-1">
@@ -956,14 +1019,23 @@ export function IngestPanel({
                                 </p>
                               ) : null}
                             </div>
-                            {(noToken || accessIssue) && pf?.fixable_by_user !== false && (
+                            {unverified && row.kind === "myagent" ? (
+                              <a
+                                href={MYAGENT_CONNECTOR_SETTINGS_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 text-xs text-primary hover:underline"
+                              >
+                                Review connectors →
+                              </a>
+                            ) : (noToken || accessIssue) && pf?.fixable_by_user !== false ? (
                               <Link
                                 href="/credentials"
                                 className="shrink-0 text-xs text-primary hover:underline"
                               >
                                 {noToken ? "Connect →" : "Fix access →"}
                               </Link>
-                            )}
+                            ) : null}
                           </li>
                         );
                       })

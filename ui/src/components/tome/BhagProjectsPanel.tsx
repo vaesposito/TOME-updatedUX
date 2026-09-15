@@ -364,6 +364,7 @@ function AccessLine({ state }: { state: PreflightState | undefined }) {
     ok: { dot: "bg-emerald-500", label: "Access confirmed" },
     access_issue: { dot: "bg-amber-500", label: "Some sources blocked" },
     no_token: { dot: "bg-destructive", label: "Not connected" },
+    unverified: { dot: "bg-amber-500", label: "External authorization unverified" },
     unknown: { dot: "bg-muted-foreground/50", label: "Access unknown" },
   };
   const s = spec[state];

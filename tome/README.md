@@ -82,9 +82,13 @@ ANTHROPIC_API_KEY=...                 # required
 ANTHROPIC_BASE_URL=https://...        # optional: proxy/gateway (e.g. litellm)
 TTT_CHAT_MODEL=claude-sonnet-4-6      # optional override
 TTT_INGEST_MODEL=claude-haiku-4-5     # optional override
-TOME_AGENT_TOKEN=dev                  # required; must match ui/.env.local
+TOME_AGENT_TOKEN=...                  # required; generate with `openssl rand -hex 32`
 AGENTIC_APP_TOKEN_SECRET=...          # required; must match ui/.env.local
 ```
+
+Copy the same non-empty `TOME_AGENT_TOKEN` to `ui/.env.local`. It is the
+shared `Authorization: Bearer` credential for both UI → agent operations and
+agent → UI callbacks; Compose refuses to start the agent when it is missing.
 
 Tome model settings resolve in this order: exact Project/Area/BHAG override,
 entity-type default, global default, environment variable, then the built-in
@@ -92,8 +96,10 @@ default. `TTT_CHAT_MODEL` backs chat; `TTT_INGEST_MODEL` backs ingest,
 synthesis, and compaction. Every value saved in Settings must first pass a live
 agent smoke test.
 
-Internal agent callbacks fail closed when `TOME_AGENT_TOKEN` is missing or
-does not match. Do not expose `/api/tome/api/internal/*` through public ingress.
+Agent operations and internal callbacks fail closed when `TOME_AGENT_TOKEN` is
+missing or does not match. The agent port is loopback-bound by Compose; do not
+publish it or `/api/tome/api/internal/*` through public ingress. Only the
+agent's local health, readiness, and passive metrics endpoints are unauthenticated.
 
 The UI can mint a separate, user-owned API token for the public TOME MCP
 connector. `POST /api/tome/token` requires the user's browser session and

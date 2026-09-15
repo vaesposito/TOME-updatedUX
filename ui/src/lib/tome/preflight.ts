@@ -4,12 +4,14 @@
 
 /** Per-provider resource access result for one project. */
 export interface PreflightSourceResult {
-  provider: "github" | "confluence" | "webex";
+  provider: "github" | "confluence" | "webex" | "myagent";
   label: string;
   /** Items that passed the resource-level access check. */
   accessible: string[];
   /** Items where the check returned 403/404 (no access or not found). */
   inaccessible: string[];
+  /** Items that require external authorization TOME cannot verify directly. */
+  unverified?: string[];
   /** True when the provider token is missing entirely (not just per-item failures). */
   no_token: boolean;
   /** Safe provider-specific explanation for an unavailable managed credential. */
@@ -32,12 +34,18 @@ export interface PreflightResult {
  *  - no_token     — provider not connected at all (red)
  *  - unknown      — not checked yet / no result
  */
-export type PreflightState = "ok" | "access_issue" | "no_token" | "unknown";
+export type PreflightState =
+  | "ok"
+  | "access_issue"
+  | "no_token"
+  | "unverified"
+  | "unknown";
 
 export function preflightState(pf: PreflightSourceResult | undefined): PreflightState {
   if (!pf) return "unknown";
   if (pf.no_token) return "no_token";
   if (pf.inaccessible.length > 0) return "access_issue";
+  if (pf.unverified?.length) return "unverified";
   return "ok";
 }
 
@@ -51,5 +59,6 @@ export function preflightRollup(result: PreflightResult | undefined): PreflightS
   const states = result.sources.map(preflightState);
   if (states.includes("no_token")) return "no_token";
   if (states.includes("access_issue")) return "access_issue";
+  if (states.includes("unverified")) return "unverified";
   return "ok";
 }

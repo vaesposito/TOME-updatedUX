@@ -8,6 +8,7 @@ import { loadTomeProject, requireTomeEditor } from "@/lib/tome/tome-api";
 import { auditTome, tomeActorFromAuth } from "@/lib/tome/audit";
 import { tomeSessionSubject } from "@/lib/tome/data-steward";
 import { startIngestRun, IngestInProgressError } from "@/lib/tome/ingest-runner";
+import { isMyAgentInteractiveBrowserIngest } from "@/lib/tome/myagent-interactive";
 import {
   prefetchManualWebexMeetingTranscripts,
   type ManualWebexMeetingSelection,
@@ -75,6 +76,10 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       sourceScope: body.sourceScope,
       seedStablePages: body.seedStablePages,
       skipReview: body.skipReview,
+      // A valid session alone is insufficient: MCP can forward that cookie.
+      // Only the first-party UI's explicit, same-origin action may delegate a
+      // MyAgent Webex request for this run.
+      myAgentInteractiveAuthorized: isMyAgentInteractiveBrowserIngest(request, tctx.session),
     });
     auditTome({
       action: "tome.ingest.trigger",

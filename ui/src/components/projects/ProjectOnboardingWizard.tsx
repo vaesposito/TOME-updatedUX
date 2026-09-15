@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Boxes,
+  Bot,
   Check,
   CheckCircle2,
   Clock,
@@ -32,6 +33,7 @@ import { UserEmailPicker } from "@/components/ui/user-email-picker";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { OnboardingWebexMeetingSeriesPicker } from "@/components/projects/OnboardingWebexMeetingSeriesPicker";
 import { SourcePicker } from "@/components/projects/source-pickers";
+import { MyAgentSourcePicker } from "@/components/projects/source-pickers/MyAgentSourcePicker";
 import { WebexCredentialModePicker } from "@/components/projects/source-pickers/WebexCredentialModePicker";
 import { getConfig } from "@/lib/config";
 import {
@@ -41,6 +43,12 @@ import {
 } from "@/lib/projects/hierarchy-options";
 import { cn } from "@/lib/utils";
 import { toWebexRoomSource } from "@/lib/projects/webex-room";
+import {
+  myAgentConnectorLabel,
+  normalizeMyAgentConnectors,
+  type MyAgentConnector,
+} from "@/lib/projects/myagent-source";
+import { MYAGENT_BROWSER_ACTION_HEADER } from "@/lib/tome/myagent-interactive";
 import {
   DEFAULT_SCHEDULE,
   describeSchedule,
@@ -65,10 +73,10 @@ const OPTIONALITY_OPTIONS = [
   "Free Service with Adoption",
 ] as const;
 
-type SourceKind = "github" | "confluence" | "webex";
+type SourceKind = "github" | "confluence" | "webex" | "myagent";
 
 /** Source kind → credentials provider id for the shared `ProviderLogo`. */
-const SOURCE_PROVIDER: Record<SourceKind, string> = {
+const SOURCE_PROVIDER: Record<Exclude<SourceKind, "myagent">, string> = {
   github: "github",
   confluence: "atlassian",
   webex: "webex",
@@ -172,10 +180,12 @@ function buildWizardSteps(
     gradient: DEFAULT_GRADIENT,
     kind: "access",
   };
-  // BHAGs/Areas can attach the same data sources as projects, but do not
-  // provision project-only app integrations.
+  // BHAGs/Areas can attach their regular direct sources for synthesis, but a
+  // MyAgent reply is supported only by the project ingest endpoint.
   const relevantConfigSteps =
-    entityType === "project" ? configSteps : configSteps.filter(isSourceStep);
+    entityType === "project"
+      ? configSteps
+      : configSteps.filter((step) => isSourceStep(step) && step.source !== "myagent");
   const integrations: WizardStepMeta | null = relevantConfigSteps.length
     ? {
         id: "integrations",
@@ -264,6 +274,8 @@ export function ProjectOnboardingWizard({
   const [webexCredentialMode, setWebexCredentialMode] =
     useState<WebexCredentialMode>("personal");
   const [webexCredentialProvider, setWebexCredentialProvider] = useState("webex");
+  const [myAgentConnectors, setMyAgentConnectors] = useState<MyAgentConnector[]>([]);
+  const [myAgentEnabled, setMyAgentEnabled] = useState(false);
   const [teams, setTeams] = useState<TeamPickerOption[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [provisioning, setProvisioning] = useState(false);
@@ -289,7 +301,10 @@ export function ProjectOnboardingWizard({
     [configSteps, entityType],
   );
   const entityConfigSteps = useMemo(
-    () => (entityType === "project" ? configSteps : configSteps.filter(isSourceStep)),
+    () =>
+      entityType === "project"
+        ? configSteps
+        : configSteps.filter((step) => isSourceStep(step) && step.source !== "myagent"),
     [configSteps, entityType],
   );
   const phase = wizardSteps[phaseIndex] ?? wizardSteps[0];
@@ -400,6 +415,8 @@ export function ProjectOnboardingWizard({
     setWebexRooms([]);
     setWebexCredentialMode("personal");
     setWebexCredentialProvider("webex");
+    setMyAgentConnectors([]);
+    setMyAgentEnabled(false);
     setAutoIngestOnboardEnabled(false);
     setAutoIngestSchedule(DEFAULT_SCHEDULE);
     setOnboardingWebexMeetingSeriesKeys([]);
@@ -440,6 +457,13 @@ export function ProjectOnboardingWizard({
     const webex_rooms = enabledSourceKinds.has("webex")
       ? webexRooms.map(toWebexRoomSource)
       : [];
+    const myagent_connectors = enabledSourceKinds.has("myagent")
+      ? normalizeMyAgentConnectors(myAgentConnectors)
+      : [];
+    const myagent_enabled =
+      enabledSourceKinds.has("myagent") &&
+      myagent_connectors.length > 0 &&
+      myAgentEnabled;
     const common = {
       name: projectName.trim(),
       description: description.trim() || undefined,
@@ -456,6 +480,8 @@ export function ProjectOnboardingWizard({
       webex_rooms,
       webex_credential_mode: webexCredentialMode,
       webex_credential_provider: webexCredentialProvider,
+      myagent_connectors,
+      myagent_enabled,
     };
 
     let payload: Record<string, unknown>;
@@ -499,7 +525,10 @@ export function ProjectOnboardingWizard({
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(myagent_enabled ? { [MYAGENT_BROWSER_ACTION_HEADER]: "1" } : {}),
+        },
         body: JSON.stringify(payload),
       });
       const body = await res.json();
@@ -1017,10 +1046,14 @@ export function ProjectOnboardingWizard({
                             {on ? <Check className="h-3.5 w-3.5" /> : null}
                           </span>
                           {isSource && step.source ? (
+                            step.source === "myagent" ? (
+                              <Bot className="h-5 w-5 shrink-0 text-[#616BFA]" aria-hidden="true" />
+                            ) : (
                             <ProviderLogo
                               provider={SOURCE_PROVIDER[step.source]}
                               className="h-5 w-5 shrink-0 object-contain grayscale transition-all group-hover:grayscale-0"
                             />
+                            )
                           ) : null}
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium">
@@ -1048,6 +1081,17 @@ export function ProjectOnboardingWizard({
                                 />
                               </div>
                             ) : null}
+                            {step.source === "myagent" ? (
+                              <MyAgentSourcePicker
+                                selected={myAgentConnectors}
+                                onChange={(next) => {
+                                  setMyAgentConnectors(next);
+                                  setMyAgentEnabled(false);
+                                }}
+                                enabled={myAgentEnabled}
+                                onEnabledChange={setMyAgentEnabled}
+                              />
+                            ) : (
                             <SourcePicker
                               source={step.source}
                               selected={
@@ -1097,6 +1141,7 @@ export function ProjectOnboardingWizard({
                                   : undefined
                               }
                             />
+                            )}
                           </div>
                         ) : null}
 
@@ -1221,6 +1266,7 @@ export function ProjectOnboardingWizard({
                     const showGithub = enabledSourceKinds.has("github");
                     const showConfluence = enabledSourceKinds.has("confluence");
                     const showWebex = enabledSourceKinds.has("webex");
+                    const showMyAgent = enabledSourceKinds.has("myagent");
                     const rooms = webexRooms.map(toWebexRoomSource);
                     const SourceLabel = ({
                       provider,
@@ -1367,6 +1413,33 @@ export function ProjectOnboardingWizard({
                                 </span>
                               ) : (
                                 muted
+                              )}
+                            </Row>
+                          ) : null}
+                          {showMyAgent ? (
+                            <Row
+                              label={
+                                <span className="flex items-center gap-1.5 text-foreground">
+                                  <Bot className="h-4 w-4 text-[#616BFA]" aria-hidden="true" />
+                                  MyAgent
+                                </span>
+                              }
+                            >
+                              {myAgentEnabled && myAgentConnectors.length ? (
+                                <span className="flex flex-wrap gap-1.5">
+                                  {normalizeMyAgentConnectors(myAgentConnectors).map((connector) => (
+                                    <span
+                                      key={connector}
+                                      className="rounded-md bg-muted px-2 py-0.5 text-xs"
+                                    >
+                                      {myAgentConnectorLabel(connector)}
+                                    </span>
+                                  ))}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">
+                                  Not authorized — no MyAgent request will be sent or saved.
+                                </span>
                               )}
                             </Row>
                           ) : null}

@@ -405,7 +405,7 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
 
   it("makes attached-source ingestion discoverable for an Area", async () => {
     mockUseProjectSourceKinds.mockReturnValue({
-      kinds: ["github"],
+      kinds: ["github", "myagent"],
       loading: false,
     });
     const fallback = (global.fetch as jest.Mock).getMockImplementation();
@@ -446,6 +446,7 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
       button: 0,
       ctrlKey: false,
     });
+    expect(screen.queryByText("MyAgent")).not.toBeInTheDocument();
     fireEvent.click(
       await screen.findByRole("button", { name: "Ingest & synthesize" }),
     );

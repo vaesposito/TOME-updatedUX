@@ -6,8 +6,14 @@ import { NextRequest } from "next/server";
 
 import { successResponse, withErrorHandler } from "@/lib/api-middleware";
 import { resolveProjectCredentials, sessionSub } from "@/lib/tome/agent-proxy";
+import { resolveMyAgentWebexCredential } from "@/lib/tome/myagent-webex";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import type { PreflightResult, PreflightSourceResult } from "@/lib/tome/preflight";
+import {
+  myAgentConnectorsForSubject,
+  myAgentConnectorLabel,
+  type MyAgentConnector,
+} from "@/lib/projects/myagent-source";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +114,32 @@ async function checkWebex(
   };
 }
 
+async function checkMyAgent(
+  connectors: MyAgentConnector[],
+  sub: string,
+): Promise<Omit<PreflightSourceResult, "label" | "provider">> {
+  const labels = connectors.map(myAgentConnectorLabel);
+  const credential = await resolveMyAgentWebexCredential(sub);
+  if (credential.available) {
+    return {
+      no_token: false,
+      accessible: [],
+      inaccessible: [],
+      unverified: labels,
+      detail:
+        "Webex delegation is ready, but TOME cannot verify MyAgent connector authorization or which connector produced a reply. Confirm MyAgent settings and policy.",
+      fixable_by_user: false,
+    };
+  }
+  return {
+    no_token: credential.fixableByUser === true,
+    accessible: [],
+    inaccessible: labels,
+    detail: credential.reason || "MyAgent delegation is unavailable.",
+    fixable_by_user: credential.fixableByUser,
+  };
+}
+
 export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug } = await ctx.params;
   const tctx = await loadTomeProject(request, slug);
@@ -153,8 +185,12 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     ? sources.webex_rooms
     : [];
   const usesManagedWebex = sources.webex_credential_mode === "managed";
+  const myAgentConnectors = myAgentConnectorsForSubject(
+    sources,
+    sessionSub(tctx.session),
+  );
 
-  const [ghResult, cfResult, wxResult] = await Promise.all([
+  const [ghResult, cfResult, wxResult, myAgentResult] = await Promise.all([
     repos.length > 0
       ? creds["github"]?.access_token
         ? checkGitHub(repos, creds["github"].access_token)
@@ -182,6 +218,9 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
               : {}),
           })
       : null,
+    myAgentConnectors.length > 0
+      ? checkMyAgent(myAgentConnectors, sessionSub(tctx.session))
+      : null,
   ]);
 
   if (ghResult) results.push({ provider: "github", label: "GitHub", ...ghResult });
@@ -198,6 +237,13 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
             fixable_by_user: false,
           }
         : {}),
+    });
+  }
+  if (myAgentResult) {
+    results.push({
+      provider: "myagent",
+      label: "MyAgent",
+      ...myAgentResult,
     });
   }
 

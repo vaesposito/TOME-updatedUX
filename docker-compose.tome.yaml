@@ -595,21 +595,21 @@ services:
       start_period: 10s
 
   # ── Tome agent — Claude Agent SDK chat/ingest backend for the wiki ──
-  # The UI runs on the host (:33000); this publishes :9500 to match
-  # TOME_AGENT_URL, and calls back to the host UI for its internal endpoints.
+  # The UI runs on the host (:33000); bind the matching TOME_AGENT_URL port to
+  # loopback only. The agent calls back to the host UI for internal endpoints.
   tome-agent:
     build:
       context: ./ai_platform_engineering/agents/tome
     image: tome-agent:tome
     container_name: tome-agent-tome
     ports:
-      - "9500:8766"
+      - "127.0.0.1:9500:8766"
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       TTT_CHAT_MODEL: ${TTT_CHAT_MODEL:-claude-sonnet-4-6}
       TTT_INGEST_MODEL: ${TTT_INGEST_MODEL:-claude-haiku-4-5}
-      TTT_AGENT_TOKEN: ${TOME_AGENT_TOKEN:-dev}
+      TTT_AGENT_TOKEN: ${TOME_AGENT_TOKEN:?TOME_AGENT_TOKEN must be set to a shared secret}
       TTT_AGENT_ROLE: editor
       TTT_BACKEND_URL: ${TOME_AGENT_BACKEND_URL:-http://host.docker.internal:33000/api/tome}
       TTT_PROJECT_ROOT: /project

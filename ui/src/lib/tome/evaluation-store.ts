@@ -186,6 +186,15 @@ export async function getEvidenceBundle(id: string): Promise<EvidenceBundle | nu
   return col.findOne({ _id: id });
 }
 
+/** Fetch a bounded set of immutable bundles in one query for privacy checks. */
+export async function getEvidenceBundles(ids: string[]): Promise<Map<string, EvidenceBundle>> {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map();
+  const col = await getCollection<EvidenceBundle>(TOME_EVIDENCE_BUNDLES_COLLECTION);
+  const bundles = await col.find({ _id: { $in: uniqueIds } }).toArray();
+  return new Map(bundles.map((bundle) => [bundle._id, bundle]));
+}
+
 export async function insertExperiment(experiment: TomeExperiment): Promise<void> {
   const col = await getCollection<TomeExperiment>(TOME_EXPERIMENTS_COLLECTION);
   await col.insertOne(experiment);

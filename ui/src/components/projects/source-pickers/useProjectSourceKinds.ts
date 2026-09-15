@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { SourceKind } from "./index";
 
-const VALID: SourceKind[] = ["github", "confluence", "webex"];
+const VALID: SourceKind[] = ["github", "confluence", "webex", "myagent"];
 
 /**
  * The single "which connectors does this deployment use" answer, read by every

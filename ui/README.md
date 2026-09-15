@@ -96,6 +96,45 @@ Managed tokens remain server-side, are used only for ingest, and are never sent
 to Tome chat, AgentGateway, meeting tools, or the browser. Projects created
 before this feature remain on their existing personal Webex path.
 
+### MyAgent delegated ingestion
+
+Tome can optionally ask MyAgent for selected Outlook, Salesforce, or
+SharePoint context while it ingests a project. Configure the feature with a
+MyAgent Webex recipient identity:
+
+```text
+TOME_MYAGENT_ENABLED=true
+TOME_MYAGENT_WEBEX_EMAIL=<MyAgent Webex email>
+TOME_MYAGENT_POLL_INTERVAL_MS=2000
+TOME_MYAGENT_REPLY_TIMEOUT_MS=30000
+```
+
+Each browser user explicitly authorizes TOME to send a delegated request for
+their own identity; that authorization is not project-wide. For every run,
+CAIPE resolves the triggering user's own `webex` connection, sends a bounded
+one-time direct message naming the requested connector categories to MyAgent
+as that user, and accepts only a reply correlated to that request. It never
+uses the managed Webex identity for this path and never exposes the user Webex
+token to the Tome agent. The selected categories limit TOME's request; they
+are not a CAIPE-enforced provider scope. MyAgent—not CAIPE—enforces the
+Outlook, Salesforce, and SharePoint authorizations, and CAIPE cannot verify
+which connector produced a reply. Users must manage the actual integrations in
+[MyAgent connector settings](https://circuit.cisco.com/myagent/settings/connectors).
+Hard per-connector provenance requires a MyAgent-owned scoped delegation API
+or attestation contract, which this Webex handoff does not currently expose.
+Existing Webex connections must be reauthorized to grant both message read and
+message write permissions. A received reply is retained as protected evidence
+and is used only in a restricted wiki-only follow-up pass. Every report it
+influences is a private draft with no deadline auto-promotion; only the
+authorizing user or a Tome administrator can explicitly approve it. After that
+approval, its pages follow the project's normal sharing rules. The raw
+delegated run trace and detailed quality evidence remain restricted to the
+authorizing user and Tome administrators. Disconnect blocks requests that have
+not yet been claimed; a Webex message already sent cannot be recalled, but its
+reply is discarded if the revoke wins before consumption.
+MyAgent delegation is manual-only: scheduled auto-ingest never sends a request
+using a user's MyAgent/Webex authorization.
+
 ### Config-driven Agentic Apps
 
 Set `AGENTIC_APPS_CONFIG_PATH` when Agentic Apps should be registered from a

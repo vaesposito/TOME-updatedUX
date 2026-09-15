@@ -21,6 +21,7 @@ import { NextRequest } from "next/server";
 
 import { ApiError, withErrorHandler } from "@/lib/api-middleware";
 import { getMetrics, trackActiveStream } from "@/lib/metrics";
+import { tomeAgentAuthorizationHeaders } from "@/lib/tome/agent-auth";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import { buildChatRequest } from "@/lib/tome/agent-proxy";
 import {
@@ -111,7 +112,10 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   try {
     upstream = await fetch(`${agentUrl.replace(/\/$/, "")}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...tomeAgentAuthorizationHeaders(),
+      },
       body: JSON.stringify(chatRequest),
     });
   } catch (error) {

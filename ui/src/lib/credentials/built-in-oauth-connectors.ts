@@ -58,6 +58,9 @@ export const BUILT_IN_OAUTH_CONNECTORS: BuiltInOAuthConnectorDescriptor[] = [
       "meeting:recordings_read",
       "identity:people_read",
       "spark:messages_read",
+      // MyAgent delegated ingestion sends a correlated direct message as the
+      // user. Existing Webex connections must reconnect to gain this scope.
+      "spark:messages_write",
       "spark:mcp",
       "spark-admin:people_read",
       "spark:rooms_read",          // list/read rooms (source picker + project sources)

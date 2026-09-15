@@ -1,5 +1,7 @@
 // assisted-by Cursor Composer
 
+import type { MyAgentConnector, MyAgentConsent } from "@/lib/projects/myagent-source";
+
 /** Backstage catalog entity for an Outshift project (maps to kind: System). */
 export interface BackstageProjectCatalog {
   apiVersion: "backstage.io/v1alpha1";
@@ -201,6 +203,17 @@ export interface ProjectSources {
   webex_credential_mode?: WebexCredentialMode;
   /** Personal provider selection; managed mode always uses deployment config. */
   webex_credential_provider?: string;
+  /** Current caller's MyAgent selections; projected from their private consent. */
+  myagent_connectors?: MyAgentConnector[];
+  /**
+   * Current caller's durable consent view. This is not a project-wide grant;
+   * the server resolves it from `myagent_consents` for the run owner.
+   */
+  myagent_enabled?: boolean;
+  /** Opaque caller-only revision for MyAgent consent compare-and-swap. */
+  myagent_consent_revision?: string | null;
+  /** Server-only per-subject MyAgent consents. Never serialize to a client. */
+  myagent_consents?: MyAgentConsent[];
   component_urls?: string[]; // arbitrary software/service URLs
 }
 
@@ -367,6 +380,8 @@ export interface CreateProjectRequest {
   webex_rooms?: WebexRoomSource[];
   webex_credential_mode?: WebexCredentialMode;
   webex_credential_provider?: string;
+  myagent_connectors?: MyAgentConnector[];
+  myagent_enabled?: boolean;
   component_urls?: string[];
   /** User or team that can write Tome content and operate ingestion/review. */
   data_steward?: DataStewardInput;

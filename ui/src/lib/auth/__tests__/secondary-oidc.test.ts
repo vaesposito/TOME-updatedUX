@@ -30,6 +30,7 @@ describe("CAIPE secondary OIDC JWT validation", () => {
     process.env.CAIPE_SECONDARY_OIDC_ISSUER = "https://identity.example.test/oauth2";
     process.env.CAIPE_SECONDARY_OIDC_AUDIENCES = "caipe-api, mcp";
     process.env.CAIPE_SECONDARY_OIDC_PROVIDER_ID = "example-corporate";
+    delete process.env.CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL;
     process.env.NEXTAUTH_SECRET = "internal-test-secret";
     mockJwtVerify.mockResolvedValue({
       payload: {
@@ -93,7 +94,64 @@ describe("CAIPE secondary OIDC JWT validation", () => {
         externalSub: "secondary-subject",
         email: "user@example.test",
         emailVerified: true,
+        requireVerifiedEmail: true,
       }),
+    );
+  });
+
+  it("allows a trusted provider to link without a verified email claim", async () => {
+    process.env.CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL = "false";
+    mockJwtVerify.mockResolvedValue({
+      payload: {
+        sub: "secondary-subject",
+        email: "user@example.test",
+        email_verified: false,
+        iss: "https://identity.example.test/oauth2",
+        aud: ["caipe-api"],
+        exp: Math.floor(Date.now() / 1000) + 300,
+      },
+      protectedHeader: { alg: "RS256" },
+    } as Awaited<ReturnType<typeof jwtVerify>>);
+
+    await validateSecondaryOidcJWT("oidc-token");
+
+    expect(mockLinkSecondaryOidcIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "user@example.test",
+        emailVerified: false,
+        requireVerifiedEmail: false,
+      }),
+    );
+  });
+
+  it("uses an email-formatted subject when the email claim is absent", async () => {
+    process.env.CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL = "false";
+    mockJwtVerify.mockResolvedValue({
+      payload: {
+        sub: "user@example.test",
+        iss: "https://identity.example.test/oauth2",
+        aud: ["caipe-api"],
+        exp: Math.floor(Date.now() / 1000) + 300,
+      },
+      protectedHeader: { alg: "RS256" },
+    } as Awaited<ReturnType<typeof jwtVerify>>);
+
+    await validateSecondaryOidcJWT("oidc-token");
+
+    expect(mockLinkSecondaryOidcIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalSub: "user@example.test",
+        email: "user@example.test",
+        identity: expect.objectContaining({ email: "user@example.test" }),
+      }),
+    );
+  });
+
+  it("rejects an invalid email-verification policy value", () => {
+    process.env.CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL = "sometimes";
+
+    expect(isSecondaryOidcConfigured).toThrow(
+      /CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL must be either true or false/,
     );
   });
 

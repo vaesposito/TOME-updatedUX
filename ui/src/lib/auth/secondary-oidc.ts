@@ -19,6 +19,8 @@ const SECONDARY_OIDC_JWKS_URI = "CAIPE_SECONDARY_OIDC_JWKS_URI";
 const SECONDARY_OIDC_ISSUER = "CAIPE_SECONDARY_OIDC_ISSUER";
 const SECONDARY_OIDC_AUDIENCES = "CAIPE_SECONDARY_OIDC_AUDIENCES";
 const SECONDARY_OIDC_PROVIDER_ID = "CAIPE_SECONDARY_OIDC_PROVIDER_ID";
+const SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL =
+  "CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL";
 const PROVIDER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 interface SecondaryOidcConfig {
@@ -26,6 +28,7 @@ interface SecondaryOidcConfig {
   issuer: string;
   jwksUri: string;
   providerId: string;
+  requireVerifiedEmail: boolean;
 }
 
 interface SecondaryOidcSession {
@@ -53,12 +56,23 @@ function csv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function booleanEnv(name: string, value: string | undefined, defaultValue: boolean): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return defaultValue;
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  throw new Error(`${name} must be either true or false`);
+}
+
 function getSecondaryOidcConfig(): SecondaryOidcConfig | null {
   const jwksUri = process.env[SECONDARY_OIDC_JWKS_URI]?.trim() || "";
   const issuer = process.env[SECONDARY_OIDC_ISSUER]?.trim() || "";
   const audiences = csv(process.env[SECONDARY_OIDC_AUDIENCES]);
   const providerId = process.env[SECONDARY_OIDC_PROVIDER_ID]?.trim() || "";
-  const configured = Boolean(jwksUri || issuer || audiences.length || providerId);
+  const requireVerifiedEmailValue = process.env[SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL];
+  const configured = Boolean(
+    jwksUri || issuer || audiences.length || providerId || requireVerifiedEmailValue,
+  );
 
   if (!configured) return null;
   if (!jwksUri || !issuer || audiences.length === 0 || !providerId) {
@@ -81,7 +95,20 @@ function getSecondaryOidcConfig(): SecondaryOidcConfig | null {
     );
   }
 
-  return { audiences, issuer, jwksUri, providerId };
+  return {
+    audiences,
+    issuer,
+    jwksUri,
+    providerId,
+    // Keep strict email verification by default. Set this to false only for
+    // a provider whose validated email claim is authoritative even when the
+    // provider omits or sets email_verified=false (for example, Circuit).
+    requireVerifiedEmail: booleanEnv(
+      SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL,
+      requireVerifiedEmailValue,
+      true,
+    ),
+  };
 }
 
 export function isSecondaryOidcConfigured(): boolean {
@@ -141,16 +168,20 @@ export async function validateSecondaryOidcJWT(token: string): Promise<JWTIdenti
   if (typeof payload.iss !== "string" || typeof payload.sub !== "string") {
     throw new Error("The secondary OIDC token must contain issuer and subject claims");
   }
+  const identity = identityFromPayload(payload);
   return linkSecondaryOidcIdentity({
     providerId: config.providerId,
     issuer: payload.iss,
     externalSub: payload.sub,
-    email: typeof payload.email === "string" ? payload.email : undefined,
+    // Some providers, including Circuit, encode the user's email address in
+    // the OIDC subject instead of emitting a separate email claim.
+    email: identity.email,
     emailVerified:
       typeof payload.email_verified === "boolean"
         ? payload.email_verified
         : undefined,
-    identity: identityFromPayload(payload),
+    requireVerifiedEmail: config.requireVerifiedEmail,
+    identity,
   });
 }
 

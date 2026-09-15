@@ -677,10 +677,13 @@ CAIPE_SECONDARY_OIDC_JWKS_URI=https://idp.example.com/oauth2/example/v1/keys
 CAIPE_SECONDARY_OIDC_ISSUER=https://idp.example.com/oauth2/example
 CAIPE_SECONDARY_OIDC_AUDIENCES=caipe-api
 CAIPE_SECONDARY_OIDC_PROVIDER_ID=corporate-assistant
+# Optional; defaults to true. Set false only when the configured provider is
+# trusted to provide authoritative email claims without email_verified=true.
+CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL=false
 ```
 
 These settings configure one secondary trust domain for any MCP surface that
-uses the shared authenticator. On the first verified request for a new
+uses the shared authenticator. On the first valid request for a new
 secondary `(issuer, sub)` pair, CAIPE requires the token's corporate email to
 match exactly one existing CAIPE user and stores an immutable link as admin-only
 attributes on that Keycloak user. The lookup attribute is a SHA-256 digest of

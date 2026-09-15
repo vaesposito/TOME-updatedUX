@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import { MarkdownRenderer } from "@/components/shared/timeline";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import type { ChatPart as Part, ModelProvenance } from "@/types/tome";
@@ -52,6 +53,8 @@ const newMessageId = (): string =>
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const CONTEXT_COMPACT_THRESHOLD = 75;
 
 function isTomeSessionId(id: string | null | undefined): id is string {
   return typeof id === "string" && UUID_RE.test(id);
@@ -100,6 +103,8 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(!storedChat?.hydrated);
   const [confirmDialog, setConfirmDialog] = useState<"clear" | "compact" | null>(null);
+  const [autoCompact, setAutoCompact] = useState(true);
+  const [sessionContextTooLarge, setSessionContextTooLarge] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -290,7 +295,8 @@ export function ChatPanel({
             }));
           },
           onPageWritten: () => onPagesChanged?.(),
-          onError: (message) => {
+          onError: (message, code) => {
+            if (code === "session_context_exhausted") setSessionContextTooLarge(true);
             patchPendingAssistant((pending) => ({
               ...pending,
               parts: pending.parts.some(
@@ -380,14 +386,15 @@ export function ChatPanel({
         contextUsage: null,
         resumeRunId: null,
       }));
+      setSessionContextTooLarge(false);
     }
   }, [chatKey, slug, updateChat]);
 
   // Compact: trigger the SDK's own `/compact` against the current session.
   // No-op if there's no session yet (nothing to compact).
-  const handleCompact = useCallback(async () => {
+  const handleCompact = useCallback(async (): Promise<boolean> => {
     const current = useTomeChatStore.getState().chats[chatKey];
-    if (current?.streaming || current?.compacting || !current?.sdkSessionId) return;
+    if (current?.streaming || current?.compacting || !current?.sdkSessionId) return false;
     updateChat(chatKey, (chat) => ({ ...chat, compacting: true }));
     try {
       const res = await fetch(`/api/tome/projects/${slug}/chat`, {
@@ -404,7 +411,7 @@ export function ChatPanel({
           ...m,
           { id: newMessageId(), role: "assistant", system: true, parts: [{ kind: "text", text: `⚠️ Compact failed. ${detail.slice(0, 300)}` }] },
         ]);
-        return;
+        return false;
       }
       // Only claim success if the SDK actually emitted a compact_boundary —
       // an errored/no-op stream must not tell the user it worked.
@@ -438,6 +445,13 @@ export function ChatPanel({
         ...m,
         { id: newMessageId(), role: "assistant", system: true, parts: [{ kind: "text", text }] },
       ]);
+      return boundarySeen;
+    } catch (error) {
+      updateMessages((m) => [
+        ...m,
+        { id: newMessageId(), role: "assistant", system: true, parts: [{ kind: "text", text: `⚠️ Compact failed. ${String((error as Error)?.message ?? error)}` }] },
+      ]);
+      return false;
     } finally {
       updateChat(chatKey, (chat) => ({ ...chat, compacting: false }));
     }
@@ -445,10 +459,20 @@ export function ChatPanel({
 
   const send = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
-    const current = useTomeChatStore.getState().chats[chatKey] ?? emptyTomeChatViewState();
+    let current = useTomeChatStore.getState().chats[chatKey] ?? emptyTomeChatViewState();
     // Also blocked while compacting: both calls resume the same sdk_session_id,
     // so a concurrent send would race the SDK's compaction turn.
-    if (!text || current.streaming || current.compacting || current.readOnly) return;
+    if (!text || current.streaming || current.compacting || current.readOnly || sessionContextTooLarge) return;
+    if (
+      autoCompact &&
+      current.contextUsage?.percentage >= CONTEXT_COMPACT_THRESHOLD &&
+      current.sdkSessionId
+    ) {
+      const compacted = await handleCompact();
+      if (!compacted) return;
+      current = useTomeChatStore.getState().chats[chatKey] ?? emptyTomeChatViewState();
+      if (current.streaming || current.compacting || current.readOnly) return;
+    }
     if (overrideText === undefined) setInput("");
     updateChat(chatKey, (chat) => ({
       ...chat,
@@ -499,7 +523,8 @@ export function ChatPanel({
       }));
     };
 
-    const pushErrorIfEmpty = (message: string) =>
+    const pushErrorIfEmpty = (message: string, code?: string) => {
+      if (code === "session_context_exhausted") setSessionContextTooLarge(true);
       patchLast((m) => {
         const hasText = m.parts.some(
           (p) => p.kind === "text" && p.text.trim(),
@@ -512,6 +537,7 @@ export function ChatPanel({
             : [...m.parts, { kind: "text", text: `⚠️ ${message}` }],
         };
       });
+    };
 
     try {
       const res = await fetch(`/api/tome/projects/${slug}/chat`, {
@@ -578,7 +604,7 @@ export function ChatPanel({
     } finally {
       updateChat(chatKey, (chat) => ({ ...chat, streaming: false }));
     }
-  }, [chatKey, input, onPagesChanged, projectTitle, slug, updateChat, updateMessages]);
+  }, [autoCompact, chatKey, handleCompact, input, onPagesChanged, projectTitle, sessionContextTooLarge, slug, updateChat, updateMessages]);
 
   // Regenerate: re-sends the same prompt as a fresh turn (append, not
   // in-place replace — the SDK session already has the prior answer in its
@@ -604,6 +630,15 @@ export function ChatPanel({
             context: {Math.round(contextUsage.percentage)}%
           </span>
         )}
+        <label className="mr-1 flex items-center gap-1.5 text-xs text-muted-foreground" title={`Compact automatically before the next message at ${CONTEXT_COMPACT_THRESHOLD}% context`}>
+          Auto-compact
+          <Switch
+            checked={autoCompact}
+            onCheckedChange={setAutoCompact}
+            disabled={readOnlyView || streaming || compacting}
+            aria-label="Auto-compact at 75% context"
+          />
+        </label>
         <Button
           variant="ghost"
           size="sm"
@@ -636,6 +671,29 @@ export function ChatPanel({
           Viewing Tome chat history
           {sessionOwner ? ` for ${sessionOwner}` : ""}
           {isTomeSessionId(sessionId) ? ` (session ${sessionId})` : ""}
+        </div>
+      )}
+      {contextUsage && contextUsage.percentage >= CONTEXT_COMPACT_THRESHOLD && !sessionContextTooLarge && (
+        <div className="flex items-center justify-between gap-3 border-b bg-amber-50 px-4 py-2 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+          <span>
+            Context is {Math.round(contextUsage.percentage)}% full.
+            {autoCompact
+              ? " Auto-compact will run before your next message."
+              : " Compact now or start a new chat before continuing."}
+          </span>
+          {!autoCompact && (
+            <Button size="sm" variant="outline" onClick={() => void handleCompact()} disabled={streaming || compacting}>
+              Compact now
+            </Button>
+          )}
+        </div>
+      )}
+      {sessionContextTooLarge && (
+        <div role="alert" className="flex items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm">
+          <span>Session context too large — start a new chat to continue.</span>
+          <Button size="sm" variant="outline" onClick={() => void handleClear()} disabled={streaming || compacting}>
+            Start new chat
+          </Button>
         </div>
       )}
       <ScrollArea viewportRef={scrollRef} className="flex-1">
@@ -689,15 +747,15 @@ export function ChatPanel({
             }}
             minRows={1}
             maxRows={10}
-            disabled={readOnlyView || compacting || loadingHistory}
-            placeholder={readOnlyView ? "Read-only session view" : loadingHistory ? "Loading conversation…" : compacting ? "Compacting…" : "Ask about this project…"}
+            disabled={readOnlyView || compacting || loadingHistory || sessionContextTooLarge}
+            placeholder={readOnlyView ? "Read-only session view" : loadingHistory ? "Loading conversation…" : compacting ? "Compacting…" : sessionContextTooLarge ? "Start a new chat to continue" : "Ask about this project…"}
             className="flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-relaxed outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
           />
           <Button
             size="icon"
             className="shrink-0 rounded-full"
             onClick={() => void send()}
-            disabled={readOnlyView || loadingHistory || !input.trim() || streaming || compacting}
+            disabled={readOnlyView || loadingHistory || !input.trim() || streaming || compacting || sessionContextTooLarge}
             title={compacting ? "Compacting…" : "Send"}
           >
             {streaming ? (
@@ -1054,7 +1112,7 @@ interface SseHandlers {
   onTool: (label: string, path?: string) => void;
   onSession: (id: string) => void;
   onPageWritten: () => void;
-  onError: (message: string) => void;
+  onError: (message: string, code?: string) => void;
   onCompact?: (data: {
     pre_tokens?: number | null;
     post_tokens?: number | null;
@@ -1160,7 +1218,10 @@ function handleFrame(frame: string, h: SseHandlers): void {
       if (typeof data.session_id === "string") h.onSession(data.session_id);
       break;
     case "error":
-      h.onError(String(data.message ?? "agent error"));
+      h.onError(
+        String(data.message ?? "agent error"),
+        typeof data.code === "string" ? data.code : undefined,
+      );
       break;
     case "compact_boundary":
       h.onCompact?.({

@@ -23,6 +23,13 @@ export interface WritePageOpts {
   status?: "live" | "draft";
 }
 
+export interface ConditionalPageWriteResult {
+  /** Whether the write was appended. */
+  written: boolean;
+  /** The current live revision when the base revision was stale. */
+  current?: PageRevision;
+}
+
 /** Backend-agnostic contract for reading/writing wiki page bodies. */
 export interface PageStore {
   /** Write one page (append a new revision). */
@@ -32,6 +39,19 @@ export interface PageStore {
     markdown: string,
     opts: WritePageOpts,
   ): Promise<void>;
+
+  /**
+   * Append only when `baseRevisionId` is still the current live revision.
+   * Backends that can serialize this check with the write should implement
+   * this method; callers retain a read-then-write fallback for older backends.
+   */
+  writePageIfCurrent?(
+    projectId: string,
+    path: string,
+    markdown: string,
+    opts: WritePageOpts,
+    baseRevisionId: string | null,
+  ): Promise<ConditionalPageWriteResult>;
 
   /** Write many pages atomically-ish under one message/timestamp. */
   writePages(
@@ -176,6 +196,29 @@ function withStructuredIndexes(store: PageStore): PageStore {
         await reindexTouched(projectId, pages);
       }
     },
+    ...(store.writePageIfCurrent
+      ? {
+          writePageIfCurrent: async (
+            projectId: string,
+            path: string,
+            markdown: string,
+            opts: WritePageOpts,
+            baseRevisionId: string | null,
+          ) => {
+            const result = await store.writePageIfCurrent!(
+              projectId,
+              path,
+              markdown,
+              opts,
+              baseRevisionId,
+            );
+            if (result.written && opts.status !== "draft") {
+              await reindexTouched(projectId, { [path]: markdown });
+            }
+            return result;
+          },
+        }
+      : {}),
     deletePage: async (projectId, path, opts) => {
       await store.deletePage(projectId, path, opts);
       const slug = await projectSlugFor(projectId);

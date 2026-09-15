@@ -222,6 +222,10 @@ async function createIndexes(db: Db) {
     safeCreateIndex(db, 'tome_api_keys', { key_id: 1 }, { unique: true }),
     safeCreateIndex(db, 'tome_api_keys', { owner_user_id: 1, status: 1 }),
 
+    // Short-lived distributed leases serialize conditional TOME page writes
+    // across UI replicas and expire automatically after a crashed writer.
+    safeCreateIndex(db, 'tome_page_write_locks', { expires_at: 1 }, { expireAfterSeconds: 0 }),
+
     // TOME MCP API keys — key lookup on every connector request and active-key
     // replacement/status operations per Keycloak subject.
     safeCreateIndex(db, 'tome_api_keys', { key_id: 1 }, { unique: true }),

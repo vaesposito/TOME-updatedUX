@@ -24,10 +24,22 @@ import {
   type TomePagePlacement,
 } from "@/types/tome";
 
+export interface TomePageWriteLock {
+  _id: string;
+  owner_token: string;
+  expires_at: Date;
+}
+
 export async function getTomePageRevisionsCollection(): Promise<
   Collection<PageRevision>
 > {
   return getCollection<PageRevision>(TOME_COLLECTIONS.PAGE_REVISIONS);
+}
+
+export async function getTomePageWriteLocksCollection(): Promise<
+  Collection<TomePageWriteLock>
+> {
+  return getCollection<TomePageWriteLock>("tome_page_write_locks");
 }
 
 export async function getTomeReportsCollection(): Promise<Collection<Report>> {

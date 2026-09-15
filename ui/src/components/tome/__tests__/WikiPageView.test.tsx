@@ -39,7 +39,9 @@ jest.mock("@/components/ai-assist", () => ({
 }));
 
 jest.mock("@/components/ui/scroll-area", () => ({
-  ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ScrollArea: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+    <div {...props}>{children}</div>
+  ),
 }));
 
 jest.mock("@/components/shared/timeline/MarkdownRenderer", () => ({
@@ -115,6 +117,13 @@ jest.mock("@/components/tome/CrepeEditor", () => {
 });
 
 describe("WikiPageView", () => {
+  const openEditor = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    });
+    expect(screen.getByRole("textbox", { name: "Wiki editor" })).toBeInTheDocument();
+  };
+
   beforeEach(() => {
     mockAiContext.mockClear();
     mockCaptureSelection.mockClear();
@@ -122,7 +131,7 @@ describe("WikiPageView", () => {
     window.localStorage.clear();
   });
 
-  it("shows when the browser last saved the local draft", () => {
+  it("shows when the browser last saved the local draft", async () => {
     const savedAt = new Date(2026, 8, 11, 17, 56, 27);
     jest.useFakeTimers();
     jest.setSystemTime(savedAt);
@@ -138,7 +147,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
     act(() => jest.advanceTimersByTime(500));
 
     const persistedAt = new Date(savedAt.getTime() + 500);
@@ -162,7 +171,7 @@ describe("WikiPageView", () => {
     jest.useRealTimers();
   });
 
-  it("keeps the agent-rewrite caution in the page title row", () => {
+  it("keeps the agent-rewrite caution in the page title row", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -173,7 +182,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
 
     const titleRow = screen.getByTestId("tome-page-title-row");
     const warning = screen.getByTestId("tome-dynamic-warning");
@@ -181,7 +190,7 @@ describe("WikiPageView", () => {
     expect(warning).toHaveTextContent("Agent rewrites on ingest");
   });
 
-  it("uses the full editing canvas in Rich mode", () => {
+  it("uses the full editing canvas in Rich mode", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -192,7 +201,9 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
+
+    expect(screen.getByTestId("tome-page-editor-scroll")).toHaveClass("min-h-0");
 
     expect(
       screen
@@ -255,7 +266,49 @@ describe("WikiPageView", () => {
     expect(onAutoStartEditing).toHaveBeenCalledTimes(1);
   });
 
-  it("applies an AI suggestion only at the rich editor selection", () => {
+  it("captures the current revision before saving an auto-opened page", async () => {
+    const onWrite = jest.fn().mockResolvedValue(undefined);
+    (global.fetch as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            revisions: [{
+              id: "revision-created",
+              author: "test-user@example.com",
+              created_at: "2026-09-15T18:18:54.000Z",
+            }],
+          },
+        }),
+      }),
+    );
+
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="notes.md"
+        markdown="# Notes\n"
+        onWrite={onWrite}
+        onReload={jest.fn()}
+        autoStartEditing
+      />,
+    );
+
+    const editor = await screen.findByRole("textbox", { name: "Wiki editor" });
+    fireEvent.change(editor, { target: { value: "Updated notes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onWrite).toHaveBeenCalledTimes(1));
+    expect(onWrite).toHaveBeenCalledWith(
+      "notes.md",
+      expect.stringContaining("Updated notes"),
+      "edit notes.md",
+      { baseRevisionId: "revision-created" },
+    );
+  });
+
+  it("applies an AI suggestion only at the rich editor selection", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -266,7 +319,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "AI" }));
 
     expect(mockAiContext).toHaveBeenCalledWith(expect.objectContaining({
@@ -278,7 +331,7 @@ describe("WikiPageView", () => {
     );
   });
 
-  it("opens AI Assist from the rich text selection toolbar", () => {
+  it("opens AI Assist from the rich text selection toolbar", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -289,7 +342,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
     expect(screen.getByRole("button", { name: "AI" })).toHaveAttribute(
       "data-open",
       "false",
@@ -302,7 +355,7 @@ describe("WikiPageView", () => {
     );
   });
 
-  it("restores the rich editor selection when an AI suggestion is discarded", () => {
+  it("restores the rich editor selection when an AI suggestion is discarded", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -313,7 +366,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "Enhance with AI" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard AI suggestion" }));
 
@@ -336,7 +389,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
     fireEvent.change(screen.getByRole("textbox", { name: "Wiki editor" }), {
       target: { value: "Updated markdown" },
     });
@@ -372,7 +425,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     const source = "---\ntitle: Example charter\nkind: stable\n---\nUpdated raw markdown";
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown source editor" }), {
@@ -388,7 +441,7 @@ describe("WikiPageView", () => {
     expect(screen.getByRole("textbox", { name: "Markdown source editor" })).toHaveValue(source);
   });
 
-  it("converts a supported URL pasted into Markdown source mode", () => {
+  it("converts a supported URL pasted into Markdown source mode", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -399,7 +452,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     const editor = screen.getByRole("textbox", { name: "Markdown source editor" });
     fireEvent.paste(editor, {

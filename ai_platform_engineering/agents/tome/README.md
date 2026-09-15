@@ -39,6 +39,12 @@ and persistence. CAIPE Mongo is the system of record.
 | `LANGFUSE_TRACING_ENABLED` | Optional kill switch; defaults to `true` when Langfuse credentials are configured |
 | `GITHUB_TOKEN` / `CONFLUENCE_TOKEN` / `WEBEX_TOKEN` | Read-only source tokens for the connector MCPs (optional) |
 
+Webex request credentials may include `messaging_only: true`. In that mode the
+embedded Webex MCP registers only room, message, and people tools; meeting,
+recording, transcript, and summary tools are unavailable. CAIPE UI uses this
+mode for the deployment-owned Webex space-ingest account. It is request-scoped
+and does not create an ambient service credential inside Tome Agent.
+
 The endpoint, models, and credentials are config-driven — nothing host- or
 product-specific is hardcoded. Model resolution is exact entity, entity type,
 global, environment, then built-in fallback. `TTT_CHAT_MODEL` backs chat and

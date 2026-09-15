@@ -20,7 +20,6 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 API = "https://webexapis.com/v1"
@@ -35,7 +34,12 @@ def _err(message: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": message}], "is_error": True}
 
 
-def build_webex_mcp(token: str = "", allowed_room_ids: list[str] | None = None):
+def build_webex_mcp(
+    token: str = "",
+    allowed_room_ids: list[str] | None = None,
+    *,
+    messaging_only: bool = False,
+):
     """Create the MCP server for Webex API calls.
 
     `allowed_room_ids` is the project's attached-room allowlist. Room-scoped
@@ -341,16 +345,11 @@ def build_webex_mcp(token: str = "", allowed_room_ids: list[str] | None = None):
         }
         return _ok(out)
 
+    tools = [list_rooms, list_messages, get_message, get_person]
+    if not messaging_only:
+        tools.extend([list_meetings, list_transcripts, get_summary])
     return create_sdk_mcp_server(
         name="webex",
         version="0.1.0",
-        tools=[
-            list_rooms,
-            list_messages,
-            get_message,
-            get_person,
-            list_meetings,
-            list_transcripts,
-            get_summary,
-        ],
+        tools=tools,
     )

@@ -80,6 +80,7 @@ const PROVIDER_BRANDING: Record<string, { name: string }> = {
   github: { name: "GitHub" },
   pagerduty: { name: "PagerDuty" },
   webex: { name: "Webex" },
+  webex_messaging: { name: "Webex Messaging" },
 };
 
 function providerBranding(providerKey: string): { name: string } {

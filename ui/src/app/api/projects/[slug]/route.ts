@@ -25,6 +25,10 @@ import { isBootstrapAdmin } from "@/lib/auth-config";
 import { isValidCron } from "@/lib/rbac/cron";
 import { getCollection, isMongoDBConfigured } from "@/lib/mongodb";
 import { auditTome, tomeActorFromAuth, type TomeAuditActor } from "@/lib/tome/audit";
+import {
+  assertManagedWebexRoomsAccessible,
+  normalizeWebexCredentialSettings,
+} from "@/lib/tome/managed-webex";
 import { resolveUniqueTomeProjectBySlug } from "@/lib/tome/project-resolver";
 import {
   getTomeReadConfiguration,
@@ -39,7 +43,13 @@ import {
   resolveDataSteward,
   resolveStoredDataSteward,
 } from "@/lib/tome/data-steward";
-import type { DataStewardInput, ProjectDocument, TomeReviewMode } from "@/types/projects";
+import type {
+  DataStewardInput,
+  ProjectDocument,
+  TomeReviewMode,
+  WebexCredentialMode,
+  WebexRoomSource,
+} from "@/types/projects";
 import type { Team } from "@/types/teams";
 
 /**
@@ -266,6 +276,8 @@ export const PATCH = withErrorHandler(
         confluence_page_scopes?: unknown;
         confluence_page_scope?: unknown;
         webex_rooms?: Array<{ room_id?: string; name?: string; slug?: string }>;
+        webex_credential_mode?: WebexCredentialMode;
+        webex_credential_provider?: string;
       };
       /** Scoped user/team steward for this Project, Area, or BHAG. */
       data_steward?: DataStewardInput | null;
@@ -422,6 +434,48 @@ export const PATCH = withErrorHandler(
       else $unset["optionality"] = "";
     }
     if (body.sources) {
+      const cleanWebexRooms = (
+        rooms: Array<{ room_id?: string; name?: string; slug?: string }>,
+      ): WebexRoomSource[] =>
+        rooms
+          .filter((r) => r && typeof r.room_id === "string" && r.room_id.trim())
+          .map((r) => ({
+            room_id: r.room_id!.trim(),
+            name: (r.name ?? "").trim() || r.room_id!.trim(),
+            slug: (r.slug ?? "").trim(),
+          }));
+
+      const changesWebexConfiguration =
+        "webex_credential_mode" in body.sources ||
+        "webex_credential_provider" in body.sources ||
+        Array.isArray(body.sources.webex_rooms);
+      const nextWebexSettings = normalizeWebexCredentialSettings({
+        mode:
+          body.sources.webex_credential_mode ??
+          project.sources?.webex_credential_mode ??
+          "personal",
+        provider:
+          body.sources.webex_credential_provider ??
+          project.sources?.webex_credential_provider ??
+          "webex",
+      });
+      const nextWebexRooms = Array.isArray(body.sources.webex_rooms)
+        ? cleanWebexRooms(body.sources.webex_rooms)
+        : project.sources?.webex_rooms ?? [];
+      if (changesWebexConfiguration && nextWebexSettings.mode === "managed") {
+        await assertManagedWebexRoomsAccessible({
+          session,
+          userEmail: user.email,
+          rooms: nextWebexRooms,
+        });
+      }
+      if (
+        "webex_credential_mode" in body.sources ||
+        "webex_credential_provider" in body.sources
+      ) {
+        $set["sources.webex_credential_mode"] = nextWebexSettings.mode;
+        $set["sources.webex_credential_provider"] = nextWebexSettings.provider;
+      }
       if (Array.isArray(body.sources.github_repos)) {
         const githubRepos = body.sources.github_repos
           .map(normalizeGitHubRepositorySource)
@@ -456,13 +510,7 @@ export const PATCH = withErrorHandler(
         else $unset["sources.confluence_page_scope"] = "";
       }
       if (Array.isArray(body.sources.webex_rooms)) {
-        $set["sources.webex_rooms"] = body.sources.webex_rooms
-          .filter((r) => r && typeof r.room_id === "string" && r.room_id.trim())
-          .map((r) => ({
-            room_id: r.room_id!.trim(),
-            name: (r.name ?? "").trim() || r.room_id!.trim(),
-            slug: (r.slug ?? "").trim(),
-          }));
+        $set["sources.webex_rooms"] = nextWebexRooms;
       }
     }
 
@@ -540,6 +588,18 @@ export const PATCH = withErrorHandler(
     }
     if (body.sources) {
       auditSourceChanges(slug, actor, project.sources, updated.sources);
+      const previousMode =
+        project.sources?.webex_credential_mode === "managed" ? "managed" : "personal";
+      const updatedMode =
+        updated.sources?.webex_credential_mode === "managed" ? "managed" : "personal";
+      if (previousMode !== updatedMode) {
+        auditTome({
+          action: "tome.source.webex_credential_mode_change",
+          actor,
+          projectSlug: slug,
+          metadata: { from: previousMode, to: updatedMode },
+        });
+      }
     }
 
     const updatedReadConfiguration = await getTomeReadConfiguration(updated);

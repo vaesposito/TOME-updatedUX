@@ -5,6 +5,7 @@ import { ApiError,successResponse,withErrorHandler } from "@/lib/api-middleware"
 import { assertCredentialServiceCaller } from "@/lib/credentials/internal-caller";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCredentialFeatureConfig } from "@/lib/feature-flags/credentials";
+import { isProtectedManagedWebexConnection } from "@/lib/tome/managed-webex-config";
 import { validateBearerJWT } from "@/lib/jwt-validation";
 import { requireResourcePermission } from "@/lib/rbac/resource-authz";
 
@@ -50,6 +51,13 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       );
   if (!connection || connection.status !== "connected") {
     throw new ApiError("Provider connection was not found", 404, "CREDENTIAL_NOT_FOUND");
+  }
+  if (isProtectedManagedWebexConnection(connection)) {
+    throw new ApiError(
+      "The managed Webex credential is restricted to Tome space ingestion",
+      403,
+      "MANAGED_WEBEX_CREDENTIAL_PROTECTED",
+    );
   }
 
   // Owned-by-caller connections need no extra grant. For any other owner, require

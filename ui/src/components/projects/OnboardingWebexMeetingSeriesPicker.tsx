@@ -141,7 +141,12 @@ export function OnboardingWebexMeetingSeriesPicker({
             <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {error}
           </p>
           {errorCode === CONNECTION_REQUIRED && (
-            <Link href="/credentials#connections" className="mt-2 inline-block font-medium text-primary underline">
+            <Link
+              href="/credentials#connections"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block font-medium text-primary underline"
+            >
               Connect Webex (Meetings)
             </Link>
           )}

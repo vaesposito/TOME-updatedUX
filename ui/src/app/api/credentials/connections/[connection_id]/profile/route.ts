@@ -55,6 +55,7 @@ function profileEndpoint(provider: Provider): string {
     case "atlassian":
       return "https://api.atlassian.com/me";
     case "webex":
+    case "webex_messaging":
       return "https://webexapis.com/v1/people/me";
     case "pagerduty":
       return "https://api.pagerduty.com/users/me";
@@ -74,6 +75,7 @@ function providerDisplayName(provider: Provider): string {
     case "atlassian":
       return "Atlassian";
     case "webex":
+    case "webex_messaging":
       return "Webex";
     case "pagerduty":
       return "PagerDuty";
@@ -114,6 +116,7 @@ function safeProfile(provider: Provider, payload: Record<string, unknown>): Reco
         picture: payload.picture,
       };
     case "webex":
+    case "webex_messaging":
       return {
         id: payload.id,
         displayName: payload.displayName,
@@ -197,7 +200,7 @@ function profileFailureAction(provider: Provider, failure: ProviderProfileFailur
   if (provider === "atlassian" && failure.status === 403) {
     return "Ask an Atlassian admin to verify User Identity API access, or rely on accessible resources for token validation.";
   }
-  if (provider === "webex" && failure.status === 403) {
+  if ((provider === "webex" || provider === "webex_messaging") && failure.status === 403) {
     return "Verify the Webex integration includes spark:people_read, then relink Webex. If it still fails, confirm the Webex user can sign in and has the required role or license.";
   }
   return `Relink ${providerDisplayName(provider)} and try the profile check again.`;

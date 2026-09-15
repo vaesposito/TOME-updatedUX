@@ -2,7 +2,7 @@
 
 import { SourceItemPicker } from "./SourceItemPicker";
 import { SOURCE_ADAPTERS } from "./adapters";
-import type { ConfluencePageScope } from "@/types/projects";
+import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
 
 /** The connectors a project can draw sources from (YAML `source:` values). */
 export type SourceKind = "github" | "confluence" | "webex";
@@ -16,6 +16,8 @@ export interface SourcePickerProps {
     scopes: ConfluencePageScope[],
     sourceUrl?: string,
   ) => void;
+  webexCredentialMode?: WebexCredentialMode;
+  webexCredentialProvider?: string;
 }
 
 /**
@@ -30,6 +32,8 @@ export function SourcePicker({
   onChange,
   confluencePageScopes,
   onConfluencePageScopesChange,
+  webexCredentialMode,
+  webexCredentialProvider,
 }: { source?: string } & SourcePickerProps) {
   const adapter = source ? SOURCE_ADAPTERS[source as SourceKind] : undefined;
   if (!adapter) {
@@ -46,6 +50,8 @@ export function SourcePicker({
       onChange={onChange}
       confluencePageScopes={confluencePageScopes}
       onConfluencePageScopesChange={onConfluencePageScopesChange}
+      webexCredentialMode={webexCredentialMode}
+      webexCredentialProvider={webexCredentialProvider}
     />
   );
 }

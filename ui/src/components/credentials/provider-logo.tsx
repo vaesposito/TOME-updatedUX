@@ -28,6 +28,7 @@ export function ProviderLogo({
         />
       );
     case "webex":
+    case "webex_messaging":
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img

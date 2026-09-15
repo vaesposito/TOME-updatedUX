@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, Plus, RefreshCw, Search } from "lucide-react";
+import { Check, Copy, Plus, RefreshCw, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { cn } from "@/lib/utils";
-import type { ConfluencePageScope } from "@/types/projects";
+import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
 import { ConfluenceManualAdd } from "./ConfluenceManualAdd";
 import { ConfluenceSpaceBrowser } from "./ConfluenceSpaceBrowser";
 import { useSourceOptions, type SourceOption } from "./useSourceOptions";
@@ -88,6 +88,8 @@ export function SourceItemPicker({
   onChange,
   confluencePageScopes = [],
   onConfluencePageScopesChange,
+  webexCredentialMode,
+  webexCredentialProvider,
 }: {
   adapter: SourceAdapter;
   selected: string[];
@@ -97,12 +99,28 @@ export function SourceItemPicker({
     scopes: ConfluencePageScope[],
     sourceUrl?: string,
   ) => void;
+  webexCredentialMode?: WebexCredentialMode;
+  webexCredentialProvider?: string;
 }) {
-  const { connected, connectedTo, options, loading, manageUrl, search, reload } =
-    useSourceOptions(adapter.provider);
+  const {
+    connected,
+    connectedTo,
+    options,
+    loading,
+    error,
+    manageUrl,
+    managedCapability,
+    search,
+    reload,
+  } =
+    useSourceOptions(adapter.provider, {
+      webexMode: webexCredentialMode,
+      webexCredentialProvider,
+    });
   const [query, setQuery] = useState("");
   const [manual, setManual] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
+  const [managedEmailCopied, setManagedEmailCopied] = useState(false);
   // Once a Confluence space is picked, the search+list collapses into a
   // compact "Connected to X · Change" row — "Change" re-expands it.
   const [changingSpace, setChangingSpace] = useState(false);
@@ -215,8 +233,32 @@ export function SourceItemPicker({
       optionKeyOf(option) ===
       (selected[0] ? adapter.selectedKeyOf(selected[0]) : ""),
   )?.label;
+  const managedWebex =
+    adapter.provider === "webex" && webexCredentialMode === "managed";
+  const managedAccountEmail = managedCapability?.accountEmail;
+  const emptyListCopy =
+    managedWebex && error
+      ? error
+      : managedWebex && managedAccountEmail
+      ? query.trim()
+        ? "No shared Webex spaces match your search."
+        : `No shared spaces found. You and ${managedAccountEmail} must both be members.`
+      : query.trim()
+        ? adapter.emptyNoMatch ?? adapter.emptyNone
+        : adapter.emptyNone;
 
-  const connectionsLink = manageUrl ? (
+  const copyManagedAccountEmail = async () => {
+    if (!managedAccountEmail) return;
+    try {
+      await navigator.clipboard.writeText(managedAccountEmail);
+      setManagedEmailCopied(true);
+      setTimeout(() => setManagedEmailCopied(false), 1500);
+    } catch {
+      setManagedEmailCopied(false);
+    }
+  };
+
+  const connectionsLink = manageUrl && !managedWebex ? (
     <a
       href={manageUrl}
       target="_blank"
@@ -261,7 +303,7 @@ export function SourceItemPicker({
             // connected" until we actually know.
             "Checking…"
           ) : (
-            "Not connected"
+            managedWebex ? "Managed account unavailable" : "Not connected"
           )}
         </span>
         <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={reload} title="Refresh">
@@ -270,9 +312,34 @@ export function SourceItemPicker({
       </div>
 
       <div className="space-y-3 p-4">
+        {managedWebex && connected && managedAccountEmail ? (
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <p>
+              Add <span className="font-mono font-medium text-foreground">{managedAccountEmail}</span>{" "}
+              to each Webex space you want to ingest, then use Refresh above.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mt-1 h-7 px-2 text-xs"
+              onClick={() => void copyManagedAccountEmail()}
+              aria-label="Copy managed Webex account email"
+            >
+              {managedEmailCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {managedEmailCopied ? "Copied" : "Copy email"}
+            </Button>
+          </div>
+        ) : null}
+
         {!connected && !loading && (
           <p className="text-sm text-muted-foreground">
-            {manageUrl ? adapter.notConnectedHowTo(connectionsLink) : adapter.notConnectedBare}
+            {managedWebex
+              ? managedCapability?.reason ||
+                "The managed Webex account needs reconnection."
+              : manageUrl
+                ? adapter.notConnectedHowTo(connectionsLink)
+                : adapter.notConnectedBare}
           </p>
         )}
 
@@ -342,7 +409,7 @@ export function SourceItemPicker({
                 </div>
               ) : rows.length === 0 ? (
                 <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-                  {query.trim() ? adapter.emptyNoMatch ?? adapter.emptyNone : adapter.emptyNone}
+                  <span className="px-4 text-center">{emptyListCopy}</span>
                 </div>
               ) : (
                 <ul className="divide-y divide-border/40">

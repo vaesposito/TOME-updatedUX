@@ -19,14 +19,21 @@ const MERMAID_ZOOM_STEP = 25;
 export type ExpandedMermaidDiagram = {
   svg: string;
   width: number;
+  kind: "Mermaid" | "Excalidraw";
 };
 
 export function expandedMermaidDiagramFrom(
   expandButton: Element,
 ): ExpandedMermaidDiagram | null {
-  const svg = expandButton
-    .closest(".tome-mermaid-preview")
-    ?.querySelector<SVGSVGElement>(".tome-mermaid-canvas svg");
+  const preview = expandButton.closest(
+    ".tome-mermaid-preview, .tome-excalidraw-preview",
+  );
+  const kind = preview?.classList.contains("tome-excalidraw-preview")
+    ? "Excalidraw"
+    : "Mermaid";
+  const svg = preview?.querySelector<SVGSVGElement>(
+    ".tome-mermaid-canvas svg, .tome-excalidraw-canvas svg",
+  );
   if (!svg) return null;
 
   const viewBoxWidth = Number(svg.getAttribute("viewBox")?.split(/\s+/)[2]);
@@ -34,6 +41,7 @@ export function expandedMermaidDiagramFrom(
   return {
     // The SVG has already passed through the renderer's DOM sanitizer.
     svg: svg.outerHTML,
+    kind,
     width: Math.max(
       Number.isFinite(viewBoxWidth) ? viewBoxWidth : 0,
       renderedWidth,
@@ -64,7 +72,7 @@ export function MermaidLightbox({
       <DialogContent className="tome-mermaid-lightbox">
         <div className="tome-mermaid-lightbox-header">
           <DialogHeader>
-            <DialogTitle>Mermaid diagram</DialogTitle>
+            <DialogTitle>{diagram?.kind ?? "Diagram"} diagram</DialogTitle>
             <DialogDescription>
               Zoom the diagram, then scroll to inspect it.
             </DialogDescription>
@@ -72,13 +80,13 @@ export function MermaidLightbox({
           <div
             className="tome-mermaid-zoom-controls"
             role="group"
-            aria-label="Mermaid diagram zoom controls"
+            aria-label={`${diagram?.kind ?? "Diagram"} diagram zoom controls`}
           >
             <Button
               type="button"
               variant="outline"
               size="icon"
-              aria-label="Zoom out Mermaid diagram"
+              aria-label={`Zoom out ${diagram?.kind ?? "diagram"} diagram`}
               title="Zoom out"
               disabled={zoom === MERMAID_ZOOM_MIN}
               onClick={() =>
@@ -94,7 +102,7 @@ export function MermaidLightbox({
               variant="ghost"
               size="sm"
               className="tome-mermaid-zoom-value"
-              aria-label="Reset Mermaid zoom"
+              aria-label={`Reset ${diagram?.kind ?? "diagram"} zoom`}
               title="Reset zoom"
               onClick={() => setZoom(100)}
             >
@@ -104,7 +112,7 @@ export function MermaidLightbox({
               type="button"
               variant="outline"
               size="icon"
-              aria-label="Zoom in Mermaid diagram"
+              aria-label={`Zoom in ${diagram?.kind ?? "diagram"} diagram`}
               title="Zoom in"
               disabled={zoom === MERMAID_ZOOM_MAX}
               onClick={() =>

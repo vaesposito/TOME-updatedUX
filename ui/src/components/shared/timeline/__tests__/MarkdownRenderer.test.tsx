@@ -14,6 +14,34 @@ const mockMermaidRender = jest.fn(async (_id: string, _content: string) => ({
     "</svg>",
   ].join(""),
 }));
+const mockExcalidrawExportToSvg = jest.fn(async () => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 600 400");
+  svg.setAttribute("onload", "alert('unsafe')");
+  const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.textContent = ".excalidraw-label{fill:#123456}";
+  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  text.setAttribute("class", "excalidraw-label");
+  text.textContent = "Visible drawing";
+  const script = document.createElementNS("http://www.w3.org/2000/svg", "script");
+  script.textContent = "alert('unsafe')";
+  const foreignObject = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "foreignObject",
+  );
+  foreignObject.textContent = "interactive content";
+  svg.append(style, text, script, foreignObject);
+  return svg;
+});
+const EXCALIDRAW_CONTENT = JSON.stringify({
+  type: "excalidraw",
+  version: 2,
+  elements: [
+    { id: "shape-1", type: "rectangle", x: 0, y: 0, width: 100, height: 80 },
+  ],
+  appState: {},
+  files: {},
+});
 const mockCodeToHtml = jest.fn(
   (code: string, options: { lang: string }) =>
     `<pre class="shiki" data-language="${options.lang}"><code>${code}</code></pre>`,
@@ -62,6 +90,10 @@ jest.mock("mermaid", () => ({
     initialize: mockMermaidInitialize,
     render: mockMermaidRender,
   },
+}));
+
+jest.mock("@excalidraw/utils", () => ({
+  exportToSvg: mockExcalidrawExportToSvg,
 }));
 
 describe("MarkdownRenderer links", () => {
@@ -215,6 +247,95 @@ describe("MarkdownRenderer links", () => {
     );
     expect(container.querySelector("style")?.textContent).toContain(
       "#tome-mermaid-test .nodeLabel",
+    );
+
+    unmount();
+    root.removeAttribute("data-theme-preference");
+    root.removeAttribute("data-theme");
+  });
+
+  it("renders opted-in Excalidraw fences as sanitized native drawings", async () => {
+    const content = `\`\`\`excalidraw\n${EXCALIDRAW_CONTENT}\n\`\`\``;
+    const disabled = render(<MarkdownRenderer content={content} />);
+
+    await waitFor(() =>
+      expect(
+        disabled.container.querySelector('pre[data-language="excalidraw"]'),
+      ).toBeInTheDocument(),
+    );
+    expect(disabled.container.querySelector(".tome-excalidraw-preview")).toBeNull();
+    expect(disabled.container.querySelector(".md-code-lang")).toHaveTextContent(
+      "excalidraw",
+    );
+    disabled.unmount();
+
+    const enabled = render(
+      <MarkdownRenderer content={content} enableExcalidraw />,
+    );
+    await waitFor(() =>
+      expect(
+        enabled.container.querySelector(".tome-excalidraw-canvas svg"),
+      ).toBeInTheDocument(),
+    );
+    expect(enabled.container.querySelector("script")).toBeNull();
+    expect(enabled.container.querySelector("foreignObject")).toBeNull();
+    expect(enabled.container.querySelector("svg")).not.toHaveAttribute("onload");
+    expect(enabled.container.querySelector("style")).toHaveTextContent(
+      ".excalidraw-label",
+    );
+    expect(enabled.container.querySelector(".excalidraw-label")).toHaveTextContent(
+      "Visible drawing",
+    );
+    expect(enabled.container.querySelector(".md-code-block")).toBeNull();
+    expect(enabled.container).not.toHaveTextContent("plain text");
+
+    fireEvent.click(
+      enabled.getByRole("button", { name: "Expand Excalidraw drawing" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Excalidraw diagram" }),
+    ).toBeInTheDocument();
+  });
+
+  it("re-renders saved Excalidraw drawings when the app theme changes", async () => {
+    const root = document.documentElement;
+    root.setAttribute("data-theme-preference", "light");
+    root.setAttribute("data-theme", "light");
+    const initialExportCount = mockExcalidrawExportToSvg.mock.calls.length;
+    const { unmount } = render(
+      <MarkdownRenderer
+        content={`\`\`\`excalidraw\n${EXCALIDRAW_CONTENT}\n\`\`\``}
+        enableExcalidraw
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockExcalidrawExportToSvg).toHaveBeenCalledTimes(initialExportCount + 1),
+    );
+    expect(mockExcalidrawExportToSvg).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          appState: expect.objectContaining({ exportWithDarkMode: false }),
+        }),
+        config: expect.objectContaining({ theme: "light" }),
+      }),
+    );
+
+    act(() => {
+      root.setAttribute("data-theme-preference", "dark");
+      root.setAttribute("data-theme", "dark");
+      window.dispatchEvent(new Event("caipe:theme-change"));
+    });
+    await waitFor(() =>
+      expect(mockExcalidrawExportToSvg).toHaveBeenCalledTimes(initialExportCount + 2),
+    );
+    expect(mockExcalidrawExportToSvg).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          appState: expect.objectContaining({ exportWithDarkMode: true }),
+        }),
+        config: expect.objectContaining({ theme: "dark" }),
+      }),
     );
 
     unmount();

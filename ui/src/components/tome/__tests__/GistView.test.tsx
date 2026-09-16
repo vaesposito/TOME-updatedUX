@@ -218,6 +218,7 @@ describe("GistView", () => {
     expect(mockMarkdownRenderer).toHaveBeenLastCalledWith(
       expect.objectContaining({
         content: "```mermaid\nflowchart LR\nBrowser --> App\n```",
+        enableExcalidraw: true,
         enableExternalEmbeds: true,
         enableMermaid: true,
       }),

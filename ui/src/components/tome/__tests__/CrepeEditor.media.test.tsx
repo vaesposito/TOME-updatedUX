@@ -190,7 +190,7 @@ describe("CrepeEditor media configuration", () => {
     const imageBlock = options.featureConfigs["image-block"];
 
     expect(codeMirror.renderPreview).toEqual(expect.any(Function));
-    expect(codeMirror.previewLoading).toBe("Rendering Mermaid diagram…");
+    expect(codeMirror.previewLoading).toBe("Rendering diagram…");
     expect(imageBlock.onUpload).toEqual(expect.any(Function));
 
     const file = new File(["image bytes"], "example.png", { type: "image/png" });

@@ -5,6 +5,18 @@ import { TomeMediaInsertDialog } from "../TomeMediaInsertDialog";
 const PLAYLIST_ID = "daa5d80c-9272-4587-989b-91d6c5f35b93";
 
 describe("TomeMediaInsertDialog", () => {
+  it("explains how to insert a regular link without a preview", () => {
+    render(
+      <TomeMediaInsertDialog
+        open
+        onOpenChange={jest.fn()}
+        onInsert={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/paste it directly into the document instead/i)).toBeVisible();
+  });
+
   it("exposes and persists the Vidcast playlist expansion preference", () => {
     const onInsert = jest.fn();
     render(

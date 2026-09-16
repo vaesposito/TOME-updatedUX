@@ -195,16 +195,16 @@ describe("TOME external embeds", () => {
       "https://arxiv.org/abs/1706.03762",
       "https://arxiv.org/html/1706.03762",
       "https://arxiv.org/pdf/1706.03762.pdf",
-    ])("normalizes modern paper reference %s to a PDF", (value) => {
+    ])("normalizes modern paper reference %s to the HTML reader", (value) => {
       expect(normalizeArxivUrl(value)).toEqual({
-        src: "https://arxiv.org/pdf/1706.03762",
+        src: "https://arxiv.org/html/1706.03762",
         watchUrl: "https://arxiv.org/abs/1706.03762",
       });
     });
 
     it("accepts legacy identifiers and explicit versions", () => {
       expect(normalizeArxivUrl("arXiv:hep-th/9901001v2")).toEqual({
-        src: "https://arxiv.org/pdf/hep-th/9901001v2",
+        src: "https://arxiv.org/html/hep-th/9901001v2",
         watchUrl: "https://arxiv.org/abs/hep-th/9901001v2",
       });
     });
@@ -234,7 +234,7 @@ describe("TOME external embeds", () => {
           alignment: "center",
           provider: "arxiv",
           kind: "document",
-          src: "https://arxiv.org/pdf/1706.03762",
+          src: "https://arxiv.org/html/1706.03762",
           title: "Attention Is All You Need",
           watchUrl: "https://arxiv.org/abs/1706.03762",
           linkLabel: "Open on arXiv",
@@ -256,7 +256,7 @@ describe("TOME external embeds", () => {
           alignment: "center",
           provider: "arxiv",
           kind: "document",
-          src: "https://arxiv.org/pdf/1706.03762",
+          src: "https://arxiv.org/html/1706.03762",
           title: "Attention Is All You Need",
           watchUrl: "https://arxiv.org/abs/1706.03762",
           linkLabel: "Open on arXiv",

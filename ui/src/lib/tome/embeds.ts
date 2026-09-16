@@ -284,12 +284,7 @@ export function serializeTomeEmbedBlock(
   return `\`\`\`${provider}\n${lines.join("\n")}\n\`\`\``;
 }
 
-/**
- * Recognize a standalone, safe media URL and convert it to Tome's portable
- * fenced-block representation. This is intentionally URL-only: ordinary
- * prose, Markdown links, and provider-like text must retain normal paste
- * behavior.
- */
+/** Build Tome's portable fenced-block representation for a standalone, safe media URL. */
 export function matchTomeEmbedUrl(value: string): TomeEmbedUrlMatch | null {
   const url = value.trim();
   if (!url || /\s/.test(url)) return null;
@@ -322,7 +317,7 @@ function normalizeArxivId(value: string): string | null {
   return candidate;
 }
 
-/** Normalize an arXiv identifier or abs, HTML, or PDF URL to its PDF. */
+/** Normalize an arXiv identifier or abs, HTML, or PDF URL to its HTML reader. */
 export function normalizeArxivUrl(value: string): {
   src: string;
   watchUrl: string;
@@ -330,7 +325,7 @@ export function normalizeArxivUrl(value: string): {
   const directId = normalizeArxivId(value);
   if (directId) {
     return {
-      src: `https://arxiv.org/pdf/${directId}`,
+      src: `https://arxiv.org/html/${directId}`,
       watchUrl: `https://arxiv.org/abs/${directId}`,
     };
   }
@@ -363,7 +358,7 @@ export function normalizeArxivUrl(value: string): {
   const id = normalizeArxivId(decodedPath);
   if (!id) return null;
   return {
-    src: `https://arxiv.org/pdf/${id}`,
+    src: `https://arxiv.org/html/${id}`,
     watchUrl: `https://arxiv.org/abs/${id}`,
   };
 }

@@ -4,6 +4,37 @@ import { GistView } from "../GistView";
 
 const mockCrepeEditor = jest.fn();
 const mockMarkdownRenderer = jest.fn();
+let mockUseRealMarkdownRenderer = false;
+const mockMermaidRender = jest.fn(async () => ({
+  svg: '<svg viewBox="0 0 800 400" aria-roledescription="flowchart-v2"></svg>',
+}));
+
+jest.mock("remend", () => ({
+  __esModule: true,
+  default: (content: string) => content,
+}), { virtual: true });
+
+jest.mock("marked-shiki", () => ({
+  __esModule: true,
+  default: ({ highlight }: { highlight: (code: string, lang: string) => Promise<string> }) => ({
+    async: true,
+    async walkTokens(token: { type: string; lang?: string; text: string; block?: boolean }) {
+      if (token.type !== "code") return;
+      token.type = "html";
+      token.block = true;
+      token.text = `${await highlight(token.text, token.lang ?? "text")}\n`;
+    },
+  }),
+}));
+
+jest.mock("shiki", () => ({
+  bundledLanguages: { text: true },
+  createHighlighter: jest.fn(async () => ({
+    codeToHtml: (code: string) => `<pre><code>${code}</code></pre>`,
+    getLoadedLanguages: () => ["text"],
+    loadLanguage: jest.fn(),
+  })),
+}));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -95,9 +126,26 @@ jest.mock("@/components/tome/CrepeEditor", () => {
 });
 
 jest.mock("@/components/shared/timeline/MarkdownRenderer", () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => {
-    mockMarkdownRenderer(content);
+  ...jest.requireActual("@/components/shared/timeline/MarkdownRenderer"),
+  MarkdownRenderer: (props: { content: string; enableMermaid?: boolean }) => {
+    mockMarkdownRenderer(props);
+    if (mockUseRealMarkdownRenderer) {
+      const React = jest.requireActual<typeof import("react")>("react");
+      const actual = jest.requireActual<
+        typeof import("@/components/shared/timeline/MarkdownRenderer")
+      >("@/components/shared/timeline/MarkdownRenderer");
+      return React.createElement(actual.MarkdownRenderer, props);
+    }
+    const { content } = props;
     return <div aria-label="Rendered gist body">{content}</div>;
+  },
+}));
+
+jest.mock("mermaid", () => ({
+  __esModule: true,
+  default: {
+    initialize: jest.fn(),
+    render: mockMermaidRender,
   },
 }));
 
@@ -120,6 +168,7 @@ jest.mock("@/components/skills/workspace/RichCodeEditor", () => ({
 describe("GistView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseRealMarkdownRenderer = false;
     window.localStorage.clear();
     global.fetch = jest.fn().mockResolvedValue(
       jsonResponse({
@@ -137,7 +186,22 @@ describe("GistView", () => {
     ) as jest.Mock;
   });
 
-  it("renders the gist body through the same Markdown preview as wiki pages", async () => {
+  it("renders Mermaid in the gist read view through the real shared renderer", async () => {
+    mockUseRealMarkdownRenderer = true;
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          gist: {
+            id: "gist-1",
+            title: "Example gist",
+            body: "```mermaid\nflowchart LR\nBrowser --> App\n```",
+            author: "test-user",
+            created_at: "2026-08-14T12:00:00.000Z",
+            tags: [],
+          },
+        },
+      }),
+    );
     render(
       <GistView
         slug="example-project"
@@ -148,10 +212,18 @@ describe("GistView", () => {
     );
 
     await screen.findByText("Example gist");
-    await waitFor(() => expect(mockMarkdownRenderer).toHaveBeenCalled());
-    expect(mockMarkdownRenderer).toHaveBeenLastCalledWith(
-      "```youtube\nhttps://youtu.be/M7lc1UVf-VE\n```",
+    await waitFor(() =>
+      expect(document.querySelector(".tome-mermaid-canvas svg")).toBeInTheDocument(),
     );
+    expect(mockMarkdownRenderer).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        content: "```mermaid\nflowchart LR\nBrowser --> App\n```",
+        enableExternalEmbeds: true,
+        enableMermaid: true,
+      }),
+    );
+    expect(document.querySelector(".tome-mermaid-error")).toBeNull();
+    expect(screen.queryByText("plain text", { exact: true })).toBeNull();
     expect(screen.getByRole("button", { name: "Export this gist" })).toBeInTheDocument();
   });
 
@@ -441,7 +513,9 @@ describe("GistView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByRole("button", { name: "Preview" })).toHaveAttribute("aria-pressed", "true");
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(mockMarkdownRenderer).toHaveBeenLastCalledWith("Updated markdown");
+    expect(mockMarkdownRenderer).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: "Updated markdown", enableMermaid: true }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -459,7 +533,35 @@ describe("GistView", () => {
       ),
     );
     await screen.findByRole("heading", { name: "Updated gist" });
-    expect(mockMarkdownRenderer).toHaveBeenLastCalledWith("Updated markdown");
+    expect(mockMarkdownRenderer).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: "Updated markdown", enableMermaid: true }),
+    );
+  });
+
+  it("leaves a supported URL as a normal paste in Markdown source mode", async () => {
+    render(
+      <GistView
+        slug="example-project"
+        id="gist-1"
+        canEdit
+        onBack={jest.fn()}
+      />,
+    );
+
+    await screen.findByText("Example gist");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    const editor = screen.getByRole("textbox", { name: "Markdown gist body" });
+
+    const wasNotCancelled = fireEvent.paste(editor, {
+      clipboardData: {
+        files: [],
+        getData: () => "https://arxiv.org/abs/1706.03762",
+      },
+    });
+
+    expect(wasNotCancelled).toBe(true);
+    expect((editor as HTMLTextAreaElement).value).not.toContain("```arxiv");
   });
 
   it("opens a blank full editor and creates a gist without a dialog", async () => {

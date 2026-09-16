@@ -1,7 +1,19 @@
-import { render,screen,waitFor } from "@testing-library/react";
+import { act, fireEvent, render,screen,waitFor } from "@testing-library/react";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 
 const mockLoadLanguage = jest.fn();
+const mockMermaidInitialize = jest.fn();
+const mockMermaidRender = jest.fn(async (_id: string, _content: string) => ({
+  svg: [
+    '<svg id="tome-mermaid-test" viewBox="0 0 800 400" aria-roledescription="flowchart-v2" onload="alert(unsafe)">',
+    "<title>Example architecture</title>",
+    "<style>#tome-mermaid-test .nodeLabel{fill:#f8fafc}</style>",
+    '<text class="nodeLabel">Visible label</text>',
+    '<foreignObject><div class="nodeLabel" onclick="alert(unsafe)">Saved label</div></foreignObject>',
+    '<script>alert("unsafe")</script>',
+    "</svg>",
+  ].join(""),
+}));
 const mockCodeToHtml = jest.fn(
   (code: string, options: { lang: string }) =>
     `<pre class="shiki" data-language="${options.lang}"><code>${code}</code></pre>`,
@@ -44,6 +56,14 @@ jest.mock("shiki", () => ({
   })),
 }));
 
+jest.mock("mermaid", () => ({
+  __esModule: true,
+  default: {
+    initialize: mockMermaidInitialize,
+    render: mockMermaidRender,
+  },
+}));
+
 describe("MarkdownRenderer links", () => {
   it("preserves nested, mixed, ordered, and task-list structure", async () => {
     const { container } = render(
@@ -78,6 +98,170 @@ describe("MarkdownRenderer links", () => {
     );
     expect(mockLoadLanguage).toHaveBeenCalledWith("cpp");
     expect(container.querySelector(".md-code-lang")).toHaveTextContent("cpp");
+  });
+
+  it("renders opted-in Mermaid fences as sanitized, expandable diagrams", async () => {
+    const content = [
+      "```mermaid",
+      "flowchart LR",
+      "  Browser --> App",
+      "```",
+    ].join("\n");
+    const disabled = render(<MarkdownRenderer content={content} />);
+
+    await waitFor(() =>
+      expect(disabled.container.querySelector('pre[data-language="mermaid"]')).toBeInTheDocument(),
+    );
+    expect(disabled.container.querySelector(".tome-mermaid-preview")).toBeNull();
+    expect(disabled.container.querySelector(".md-code-lang")).toHaveTextContent("mermaid");
+    disabled.unmount();
+
+    const enabled = render(<MarkdownRenderer content={content} enableMermaid />);
+
+    await waitFor(() =>
+      expect(enabled.container.querySelector(".tome-mermaid-canvas svg")).toBeInTheDocument(),
+    );
+    expect(mockMermaidInitialize).toHaveBeenCalledWith({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "dark",
+    });
+    expect(mockMermaidRender).toHaveBeenCalledWith(
+      expect.stringMatching(/^tome-mermaid-\d+$/),
+      "flowchart LR\n  Browser --> App",
+    );
+    expect(enabled.container.querySelector("script")).toBeNull();
+    expect(enabled.container.querySelector("style")?.textContent).toContain(
+      "#tome-mermaid-test .nodeLabel",
+    );
+    expect(enabled.container.querySelector("svg")).not.toHaveAttribute("onload");
+    expect(enabled.container.querySelector(".nodeLabel")).toHaveTextContent("Visible label");
+    expect(enabled.container.querySelector("foreignObject")).toHaveTextContent("Saved label");
+    expect(enabled.container.querySelector("[onclick]")).toBeNull();
+    expect(enabled.container.querySelector(".md-code-block")).toBeNull();
+    expect(enabled.container).not.toHaveTextContent("plain text");
+
+    fireEvent.click(enabled.getByRole("button", { name: "Expand Mermaid diagram" }));
+    const dialog = await screen.findByRole("dialog", { name: "Mermaid diagram" });
+    expect(dialog.querySelector(".tome-mermaid-lightbox-canvas svg")).toHaveAttribute(
+      "aria-roledescription",
+      "flowchart-v2",
+    );
+  });
+
+  it("shows actionable Mermaid syntax errors in saved views", async () => {
+    mockMermaidRender.mockRejectedValueOnce(
+      new Error("Parse error on line 2: Unexpected token"),
+    );
+    const { container } = render(
+      <MarkdownRenderer
+        content={[
+          "```mermaid",
+          "flowchart LR",
+          "  API --> Broken[",
+          "```",
+        ].join("\n")}
+        enableMermaid
+      />,
+    );
+
+    await waitFor(() =>
+      expect(container.querySelector(".tome-mermaid-error")).toBeInTheDocument(),
+    );
+    const alert = container.querySelector(".tome-mermaid-error");
+    expect(alert).toHaveAttribute("role", "alert");
+    expect(alert?.querySelector(".tome-mermaid-error-title")).toHaveTextContent(
+      "Mermaid syntax error",
+    );
+    expect(alert?.querySelector(".tome-mermaid-error-summary")).toHaveTextContent(
+      "Line 2 · Parse error · Unexpected token",
+    );
+    expect(alert?.querySelector(".tome-mermaid-error-excerpt")).toHaveTextContent(
+      "2 | API --> Broken[",
+    );
+    expect(container.querySelector(".md-code-block")).toBeNull();
+  });
+
+  it("re-renders saved Mermaid diagrams when the app theme changes", async () => {
+    const root = document.documentElement;
+    root.setAttribute("data-theme-preference", "dark");
+    root.setAttribute("data-theme", "dark");
+    const initialRenderCount = mockMermaidRender.mock.calls.length;
+    const { container, unmount } = render(
+      <MarkdownRenderer
+        content={"```mermaid\nflowchart LR\n  Browser --> App\n```"}
+        enableMermaid
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockMermaidRender).toHaveBeenCalledTimes(initialRenderCount + 1),
+    );
+    expect(mockMermaidInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "dark" }),
+    );
+
+    act(() => {
+      root.setAttribute("data-theme-preference", "light");
+      root.setAttribute("data-theme", "light");
+      window.dispatchEvent(new Event("caipe:theme-change"));
+    });
+
+    await waitFor(() =>
+      expect(mockMermaidRender).toHaveBeenCalledTimes(initialRenderCount + 2),
+    );
+    expect(mockMermaidInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "default" }),
+    );
+    expect(container.querySelector("style")?.textContent).toContain(
+      "#tome-mermaid-test .nodeLabel",
+    );
+
+    unmount();
+    root.removeAttribute("data-theme-preference");
+    root.removeAttribute("data-theme");
+  });
+
+  it("does not apply stale Mermaid output after the Markdown changes", async () => {
+    let resolveFirst: ((value: { svg: string }) => void) | undefined;
+    const initialRenderCount = mockMermaidRender.mock.calls.length;
+    mockMermaidRender
+      .mockImplementationOnce(
+        async () =>
+          new Promise<{ svg: string }>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        svg: '<svg aria-label="Current diagram" viewBox="0 0 400 200"></svg>',
+      });
+    const { container, rerender } = render(
+      <MarkdownRenderer
+        content={"```mermaid\nflowchart LR\nOld --> Diagram\n```"}
+        enableMermaid
+      />,
+    );
+    await waitFor(() =>
+      expect(mockMermaidRender).toHaveBeenCalledTimes(initialRenderCount + 1),
+    );
+
+    rerender(
+      <MarkdownRenderer
+        content={"```mermaid\nflowchart LR\nCurrent --> Diagram\n```"}
+        enableMermaid
+      />,
+    );
+    await waitFor(() =>
+      expect(container.querySelector('svg[aria-label="Current diagram"]')).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      resolveFirst?.({
+        svg: '<svg aria-label="Stale diagram" viewBox="0 0 400 200"></svg>',
+      });
+    });
+    expect(container.querySelector('svg[aria-label="Current diagram"]')).toBeInTheDocument();
+    expect(container.querySelector('svg[aria-label="Stale diagram"]')).toBeNull();
   });
 
   it("opens external and relative links in a new tab", async () => {
@@ -142,7 +326,11 @@ describe("MarkdownRenderer links", () => {
     );
     expect(enabled.container.querySelector(".tome-arxiv-iframe")).toHaveAttribute(
       "src",
-      "https://arxiv.org/pdf/2607.12662v1",
+      "https://arxiv.org/html/2607.12662v1",
+    );
+    expect(enabled.container.querySelector(".tome-arxiv-iframe")).toHaveAttribute(
+      "sandbox",
+      "allow-scripts allow-same-origin allow-presentation",
     );
     expect(enabled.container.querySelector(".tome-pdf-iframe")).toHaveAttribute(
       "sandbox",
@@ -178,32 +366,6 @@ describe("MarkdownRenderer links", () => {
     const image = figure?.querySelector("img");
     expect(figure).toHaveStyle("--tome-media-width: 55%");
     expect(figure).toHaveAttribute("data-media-align", "right");
-    expect(image).toHaveAttribute("alt", "Example diagram");
-    expect(figure?.querySelector("figcaption")).toHaveTextContent("Example diagram");
-  });
-
-  it("preserves responsive widths for video embeds and block images", async () => {
-    const { container } = render(
-      <MarkdownRenderer
-        content={[
-          "```youtube",
-          "url: https://www.youtube.com/watch?v=b4STimVN60E",
-          "width: 60%",
-          "```",
-          "",
-          '![0.55|right](https://example.com/example.png "Example diagram")',
-        ].join("\n")}
-        enableExternalEmbeds
-      />,
-    );
-
-    await waitFor(() => expect(container.querySelector("iframe")).toBeInTheDocument());
-    expect(container.querySelector(".tome-embed-preview")).toHaveStyle(
-      "--tome-media-width: 60%",
-    );
-    const image = container.querySelector("img.tome-sized-image");
-    expect(image).toHaveStyle("--tome-media-width: 55%");
-    expect(image).toHaveAttribute("data-media-align", "right");
     expect(image).toHaveAttribute("alt", "Example diagram");
     expect(figure?.querySelector("figcaption")).toHaveTextContent("Example diagram");
   });

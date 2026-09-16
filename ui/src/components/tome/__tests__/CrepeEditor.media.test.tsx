@@ -538,7 +538,7 @@ describe("CrepeEditor media configuration", () => {
     expect(view.focus).toHaveBeenCalledTimes(1);
   });
 
-  it("converts a standalone supported URL pasted into Crepe", async () => {
+  it("leaves a supported URL to Crepe's normal paste behavior", async () => {
     const { container } = render(<CrepeEditor initialMarkdown="# Example" />);
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
     const host = container.querySelector(".milkdown-host") as HTMLDivElement;
@@ -546,20 +546,17 @@ describe("CrepeEditor media configuration", () => {
     editor.className = "ProseMirror";
     host.append(editor);
 
-    fireEvent.paste(editor, {
+    const wasNotCancelled = fireEvent.paste(editor, {
       clipboardData: {
         files: [],
         getData: () => "https://www.youtube.com/watch?v=Od6M0AXpcxQ",
       },
     });
 
-    const markdown = "\n\n```youtube\nurl: https://www.youtube.com/watch?v=Od6M0AXpcxQ\n```\n\n";
-    expect(mockInsert).toHaveBeenCalledWith(markdown);
-    expect(mockEditorAction).toHaveBeenCalledWith({ command: "insert", markdown });
-    expect(mockToast).toHaveBeenCalledWith(
-      "YouTube link converted to an embed",
-      "success",
-    );
+    expect(wasNotCancelled).toBe(true);
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockEditorAction).not.toHaveBeenCalled();
+    expect(mockToast).not.toHaveBeenCalled();
   });
 
   it("leaves an ordinary pasted link to Crepe's default behavior", async () => {

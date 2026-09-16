@@ -8,8 +8,18 @@ import {
 
 const MAX_EMBEDDED_IMAGE_BYTES = 2 * 1024 * 1024;
 
-let mermaidInitialized = false;
 let mermaidRenderId = 0;
+
+const LIGHT_TOME_THEMES = new Set(["light", "legacy-light"]);
+
+function mermaidTheme(theme?: string): "default" | "dark" {
+  const currentTheme =
+    theme ??
+    (typeof document === "undefined"
+      ? undefined
+      : document.documentElement.getAttribute("data-theme") ?? undefined);
+  return currentTheme && LIGHT_TOME_THEMES.has(currentTheme) ? "default" : "dark";
+}
 
 function mermaidPreviewMarkup(svg: string): string {
   return [
@@ -23,6 +33,72 @@ function mermaidPreviewMarkup(svg: string): string {
     "</div>",
     "</div>",
   ].join("");
+}
+
+function createMermaidError(error: unknown, source: string): HTMLElement {
+  const message = error instanceof Error ? error.message : "Invalid Mermaid diagram";
+  const lineMatch = message.match(/\bline\s+(\d+)\b/i);
+  const lineNumber = lineMatch ? Number.parseInt(lineMatch[1], 10) : null;
+  const syntaxKind = message.match(/\b(lexical|parse|syntax)\s+error\b/i)?.[1];
+  const isSyntaxError = Boolean(syntaxKind || lineNumber);
+  const node = document.createElement("div");
+  node.className = "tome-mermaid-error";
+  node.setAttribute("role", "alert");
+
+  const title = document.createElement("p");
+  title.className = "tome-mermaid-error-title";
+  title.textContent = isSyntaxError
+    ? "Mermaid syntax error"
+    : "Could not render Mermaid diagram";
+  node.append(title);
+
+  const summary = document.createElement("p");
+  summary.className = "tome-mermaid-error-summary";
+  if (isSyntaxError) {
+    const firstLine = message.split(/\r?\n/, 1)[0].trim();
+    const description = firstLine
+      .replace(/^(?:lexical|parse|syntax)\s+error(?:\s+on\s+line\s+\d+)?[.:]?\s*/i, "")
+      .trim();
+    const kind = syntaxKind
+      ? `${syntaxKind[0].toUpperCase()}${syntaxKind.slice(1).toLowerCase()} error`
+      : "Mermaid could not parse this diagram";
+    summary.textContent = [lineNumber ? `Line ${lineNumber}` : null, kind, description]
+      .filter(Boolean)
+      .join(" · ");
+  } else {
+    summary.textContent = "Mermaid could not render this diagram.";
+  }
+  node.append(summary);
+
+  if (lineNumber) {
+    const sourceLine = source.split(/\r?\n/)[lineNumber - 1];
+    if (sourceLine !== undefined) {
+      const excerpt = document.createElement("pre");
+      excerpt.className = "tome-mermaid-error-excerpt";
+      const code = document.createElement("code");
+      code.textContent = `${lineNumber} | ${sourceLine}`;
+      excerpt.append(code);
+      node.append(excerpt);
+    }
+  }
+
+  const hint = document.createElement("p");
+  hint.className = "tome-mermaid-error-hint";
+  hint.textContent = isSyntaxError
+    ? "Check brackets, quotes, arrows, and diagram keywords, then preview again."
+    : "Try editing the Mermaid source and previewing again.";
+  node.append(hint);
+
+  const details = document.createElement("details");
+  details.className = "tome-mermaid-error-details";
+  const detailsLabel = document.createElement("summary");
+  detailsLabel.textContent = "Technical details";
+  const diagnostic = document.createElement("pre");
+  diagnostic.textContent = message;
+  details.append(detailsLabel, diagnostic);
+  node.append(details);
+
+  return node;
 }
 
 function embedToolbarMarkup(embed: TomeEmbed): string {
@@ -166,6 +242,7 @@ export function renderTomeCodePreview(
   language: string,
   content: string,
   applyPreview: (value: null | string | HTMLElement) => void,
+  theme?: string,
 ): null | void {
   const normalizedLanguage = language.trim().toLowerCase();
   const embed = parseTomeEmbed(normalizedLanguage, content);
@@ -193,23 +270,24 @@ export function renderTomeCodePreview(
   const renderId = `tome-mermaid-${mermaidRenderId++}`;
   void import("mermaid")
     .then(async ({ default: mermaid }) => {
-      if (!mermaidInitialized) {
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-        });
-        mermaidInitialized = true;
-      }
+      // Mermaid emits concrete colors into its SVG. Initialize for every
+      // render so diagrams created after a theme change use the active CAIPE
+      // palette instead of retaining the first theme seen by the module.
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: mermaidTheme(theme),
+      });
       const { svg } = await mermaid.render(renderId, content);
       applyPreview(mermaidPreviewMarkup(svg));
     })
     .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "Invalid Mermaid diagram";
-      const node = document.createElement("div");
-      node.className = "tome-mermaid-error";
-      node.setAttribute("role", "alert");
-      node.textContent = `Could not render Mermaid diagram: ${message}`;
-      applyPreview(node);
+      // Mermaid appends a temporary `d<renderId>` container to <body>. On a
+      // parser failure it leaves its own large error SVG behind, outside the
+      // editor/reader that requested the preview. Remove only that render's
+      // temporary node and show our scoped, text-only error instead.
+      document.getElementById(`d${renderId}`)?.remove();
+      applyPreview(createMermaidError(error, content));
     });
 }
 

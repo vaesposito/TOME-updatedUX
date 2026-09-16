@@ -5,6 +5,38 @@ import { WikiPageView } from "../WikiPageView";
 const mockAiContext = jest.fn();
 const mockCaptureSelection = jest.fn();
 const mockRestoreSelection = jest.fn();
+const mockMarkdownRenderer = jest.fn();
+let mockUseRealMarkdownRenderer = false;
+const mockMermaidRender = jest.fn(async () => ({
+  svg: '<svg viewBox="0 0 800 400" aria-roledescription="flowchart-v2"></svg>',
+}));
+
+jest.mock("remend", () => ({
+  __esModule: true,
+  default: (content: string) => content,
+}), { virtual: true });
+
+jest.mock("marked-shiki", () => ({
+  __esModule: true,
+  default: ({ highlight }: { highlight: (code: string, lang: string) => Promise<string> }) => ({
+    async: true,
+    async walkTokens(token: { type: string; lang?: string; text: string; block?: boolean }) {
+      if (token.type !== "code") return;
+      token.type = "html";
+      token.block = true;
+      token.text = `${await highlight(token.text, token.lang ?? "text")}\n`;
+    },
+  }),
+}));
+
+jest.mock("shiki", () => ({
+  bundledLanguages: { text: true },
+  createHighlighter: jest.fn(async () => ({
+    codeToHtml: (code: string) => `<pre><code>${code}</code></pre>`,
+    getLoadedLanguages: () => ["text"],
+    loadLanguage: jest.fn(),
+  })),
+}));
 
 jest.mock("@/components/ai-assist", () => ({
   AiAssistButton: ({
@@ -45,9 +77,26 @@ jest.mock("@/components/ui/scroll-area", () => ({
 }));
 
 jest.mock("@/components/shared/timeline/MarkdownRenderer", () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => (
-    <textarea aria-label="Wiki preview" value={content} readOnly />
-  ),
+  ...jest.requireActual("@/components/shared/timeline/MarkdownRenderer"),
+  MarkdownRenderer: (props: { content: string; enableMermaid?: boolean }) => {
+    mockMarkdownRenderer(props);
+    if (mockUseRealMarkdownRenderer) {
+      const React = jest.requireActual<typeof import("react")>("react");
+      const actual = jest.requireActual<
+        typeof import("@/components/shared/timeline/MarkdownRenderer")
+      >("@/components/shared/timeline/MarkdownRenderer");
+      return React.createElement(actual.MarkdownRenderer, props);
+    }
+    return <textarea aria-label="Wiki preview" value={props.content} readOnly />;
+  },
+}));
+
+jest.mock("mermaid", () => ({
+  __esModule: true,
+  default: {
+    initialize: jest.fn(),
+    render: mockMermaidRender,
+  },
 }));
 
 jest.mock("@/components/skills/workspace/RichCodeEditor", () => ({
@@ -128,7 +177,34 @@ describe("WikiPageView", () => {
     mockAiContext.mockClear();
     mockCaptureSelection.mockClear();
     mockRestoreSelection.mockClear();
+    mockMarkdownRenderer.mockClear();
+    mockUseRealMarkdownRenderer = false;
     window.localStorage.clear();
+  });
+
+  it("renders Mermaid in the wiki read view through the real shared renderer", async () => {
+    mockUseRealMarkdownRenderer = true;
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="architecture.md"
+        markdown={"---\ntitle: Architecture\n---\n```mermaid\nflowchart LR\nA --> B\n```"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    expect(mockMarkdownRenderer).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        content: "```mermaid\nflowchart LR\nA --> B\n```",
+        enableMermaid: true,
+      }),
+    );
+    await waitFor(() =>
+      expect(document.querySelector(".tome-mermaid-canvas svg")).toBeInTheDocument(),
+    );
+    expect(document.querySelector(".tome-mermaid-error")).toBeNull();
+    expect(screen.queryByText("plain text", { exact: true })).toBeNull();
   });
 
   it("shows when the browser last saved the local draft", async () => {
@@ -441,7 +517,7 @@ describe("WikiPageView", () => {
     expect(screen.getByRole("textbox", { name: "Markdown source editor" })).toHaveValue(source);
   });
 
-  it("converts a supported URL pasted into Markdown source mode", async () => {
+  it("leaves a supported URL as a normal paste in Markdown source mode", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -455,15 +531,14 @@ describe("WikiPageView", () => {
     await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     const editor = screen.getByRole("textbox", { name: "Markdown source editor" });
-    fireEvent.paste(editor, {
+    const wasNotCancelled = fireEvent.paste(editor, {
       clipboardData: {
         files: [],
         getData: () => "https://arxiv.org/pdf/1706.03762.pdf",
       },
     });
 
-    expect((editor as HTMLTextAreaElement).value).toContain(
-      "```arxiv\nurl: https://arxiv.org/pdf/1706.03762.pdf\n```",
-    );
+    expect(wasNotCancelled).toBe(true);
+    expect((editor as HTMLTextAreaElement).value).not.toContain("```arxiv");
   });
 });

@@ -396,11 +396,63 @@
 }
 
 .tome-mermaid-error {
-  border: 1px solid var(--crepe-color-error);
+  display: grid;
+  gap: 0.625rem;
+  margin: 0.75rem 0;
+  border: 1px solid hsl(var(--destructive) / 0.55);
+  border-radius: 0.5rem;
+  background: hsl(var(--destructive) / 0.08);
+  color: hsl(var(--foreground));
+  padding: 0.875rem 1rem;
+}
+
+.tome-mermaid-error > * {
+  margin: 0;
+}
+
+.tome-mermaid-error-title {
+  color: hsl(var(--destructive));
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.tome-mermaid-error-summary,
+.tome-mermaid-error-hint {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.tome-mermaid-error-hint {
+  color: hsl(var(--muted-foreground));
+}
+
+.tome-mermaid-error-excerpt,
+.tome-mermaid-error-details pre {
+  overflow-x: auto;
+  border: 1px solid hsl(var(--border));
   border-radius: 0.375rem;
-  color: var(--crepe-color-error);
-  padding: 0.75rem;
+  background: hsl(var(--background) / 0.72);
+  color: hsl(var(--foreground));
+  padding: 0.625rem 0.75rem;
+  font-family: var(--crepe-font-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8125rem;
+  line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.tome-mermaid-error-details {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+}
+
+.tome-mermaid-error-details summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.tome-mermaid-error-details pre {
+  margin: 0.625rem 0 0;
 }
 
 /* External embed blocks are hydrated after Crepe sanitizes their inert

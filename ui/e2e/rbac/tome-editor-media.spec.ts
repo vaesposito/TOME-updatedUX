@@ -153,7 +153,7 @@ test.describe("Tome editor media (mocked)", () => {
       waitUntil: "domcontentloaded",
     });
 
-    const preview = page.locator(".milkdown-code-block .preview svg");
+    const preview = page.locator(".tome-mermaid-preview .tome-mermaid-canvas svg");
     await expect(preview).toBeVisible();
     await expect(preview).toHaveAttribute("aria-roledescription", "flowchart-v2");
     await expect(page.locator(".tome-mermaid-error")).toHaveCount(0);
@@ -209,7 +209,7 @@ test.describe("Tome editor media (mocked)", () => {
     });
 
     await expect(page.getByRole("heading", { name: "Example architecture gist" })).toBeVisible();
-    const preview = page.locator(".milkdown-code-block .preview svg");
+    const preview = page.locator(".tome-mermaid-preview .tome-mermaid-canvas svg");
     await expect(preview).toBeVisible();
     await expect(preview).toHaveAttribute("aria-roledescription", "flowchart-v2");
     await expect(page.locator(".tome-mermaid-error")).toHaveCount(0);

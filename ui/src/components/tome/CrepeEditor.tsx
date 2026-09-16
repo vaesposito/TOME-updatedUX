@@ -19,14 +19,12 @@ import {
   linkAttr,
 } from "@milkdown/kit/preset/commonmark";
 import { $prose, insert, markdownToSlice, replaceAll } from "@milkdown/utils";
-import { Minus, Plus } from "lucide-react";
 import {
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 
 import { classifyCitationHref } from "@/lib/tome/citations";
@@ -42,6 +40,11 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { TomeMediaInsertDialog } from "@/components/tome/TomeMediaInsertDialog";
+import {
+  expandedMermaidDiagramFrom,
+  MermaidLightbox,
+  type ExpandedMermaidDiagram,
+} from "@/components/tome/MermaidLightbox";
 import { normalizeMarkdownCodeFences } from "@/lib/markdown-code-languages";
 import {
   hydrateEmbedPreviews,
@@ -52,7 +55,6 @@ import {
 import {
   MAX_EMBED_WIDTH_PERCENT,
   MIN_EMBED_WIDTH_PERCENT,
-  matchTomeEmbedUrl,
   type TomeMediaAlignment,
 } from "@/lib/tome/embeds";
 import { setVidcastBlockPlaylistExpanded } from "@/lib/tome/vidcast";
@@ -124,9 +126,6 @@ type Props = {
   enableColumns?: boolean;
 };
 
-const MERMAID_ZOOM_MIN = 25;
-const MERMAID_ZOOM_MAX = 200;
-const MERMAID_ZOOM_STEP = 25;
 const TOME_MEDIA_ICON = [
   '<svg data-tome-media-icon="true" viewBox="0 0 24 24" fill="none"',
   ' xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2"',
@@ -734,11 +733,8 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
   const hostRef = useRef<HTMLDivElement | null>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const readyRef = useRef(false);
-  const [expandedMermaid, setExpandedMermaid] = useState<{
-    svg: string;
-    width: number;
-  } | null>(null);
-  const [mermaidZoom, setMermaidZoom] = useState(100);
+  const [expandedMermaid, setExpandedMermaid] =
+    useState<ExpandedMermaidDiagram | null>(null);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   // Latest callbacks, read by the (mount-once) DOM handlers.
@@ -1324,22 +1320,11 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
       }
       const expandButton = target?.closest?.("button.tome-mermaid-expand");
       if (expandButton) {
-        const svg = expandButton
-          .closest(".tome-mermaid-preview")
-          ?.querySelector<SVGSVGElement>(".tome-mermaid-canvas svg");
-        if (!svg) return;
+        const diagram = expandedMermaidDiagramFrom(expandButton);
+        if (!diagram) return;
         e.preventDefault();
         e.stopPropagation();
-        const viewBoxWidth = Number(svg.getAttribute("viewBox")?.split(/\s+/)[2]);
-        const renderedWidth = svg.getBoundingClientRect().width;
-        const width = Math.max(
-          Number.isFinite(viewBoxWidth) ? viewBoxWidth : 0,
-          renderedWidth,
-          1200,
-        );
-        // The SVG has already passed through Crepe's DOMPurify sanitizer.
-        setMermaidZoom(100);
-        setExpandedMermaid({ svg: svg.outerHTML, width });
+        setExpandedMermaid(diagram);
         return;
       }
       const anchor = target?.closest?.("a") as HTMLAnchorElement | null;
@@ -1620,8 +1605,9 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     };
   }, []);
 
-  // Treat a supported URL pasted by itself as an embed. Mixed prose and
-  // ordinary links deliberately keep Crepe's normal paste behavior.
+  // Preserve multiline text pasted into a single table cell. All other
+  // content, including supported media URLs, keeps Crepe's normal paste
+  // behavior. Users opt into an inline preview through Insert media.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -1630,24 +1616,8 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
       const target = event.target;
       if (!(target instanceof Element) || !target.closest(".ProseMirror")) return;
       const clipboardText = event.clipboardData?.getData("text/plain") ?? "";
-      const match = matchTomeEmbedUrl(clipboardText);
       const crepe = crepeRef.current;
       if (!crepe) return;
-      if (match) {
-        event.preventDefault();
-        event.stopPropagation();
-        crepe.editor.action(insert(match.markdown));
-        const label =
-          match.provider === "youtube"
-            ? "YouTube"
-            : match.provider === "vidcast"
-              ? "Vidcast"
-              : match.provider === "arxiv"
-                ? "arXiv"
-                : "PDF";
-        toast(`${label} link converted to an embed`, "success");
-        return;
-      }
 
       // Keep a multiline plain-text paste inside one cell. Tabs and HTML
       // tables remain delegated to Crepe's native multi-cell paste handling.
@@ -1669,7 +1639,7 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     };
     host.addEventListener("paste", onPaste, true);
     return () => host.removeEventListener("paste", onPaste, true);
-  }, [toast]);
+  }, []);
 
   // Deep-linking: scroll to the heading named by the URL hash once it exists.
   useEffect(() => {
@@ -1813,80 +1783,10 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={expandedMermaid !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setExpandedMermaid(null);
-            setMermaidZoom(100);
-          }
-        }}
-      >
-        <DialogContent className="tome-mermaid-lightbox">
-          <div className="tome-mermaid-lightbox-header">
-            <DialogHeader>
-              <DialogTitle>Mermaid diagram</DialogTitle>
-              <DialogDescription>
-                Zoom the diagram, then scroll to inspect it.
-              </DialogDescription>
-            </DialogHeader>
-            <div
-              className="tome-mermaid-zoom-controls"
-              role="group"
-              aria-label="Mermaid diagram zoom controls"
-            >
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Zoom out Mermaid diagram"
-                title="Zoom out"
-                disabled={mermaidZoom === MERMAID_ZOOM_MIN}
-                onClick={() =>
-                  setMermaidZoom((zoom) => Math.max(MERMAID_ZOOM_MIN, zoom - MERMAID_ZOOM_STEP))
-                }
-              >
-                <Minus aria-hidden="true" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="tome-mermaid-zoom-value"
-                aria-label="Reset Mermaid zoom"
-                title="Reset zoom"
-                onClick={() => setMermaidZoom(100)}
-              >
-                {mermaidZoom}%
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Zoom in Mermaid diagram"
-                title="Zoom in"
-                disabled={mermaidZoom === MERMAID_ZOOM_MAX}
-                onClick={() =>
-                  setMermaidZoom((zoom) => Math.min(MERMAID_ZOOM_MAX, zoom + MERMAID_ZOOM_STEP))
-                }
-              >
-                <Plus aria-hidden="true" />
-              </Button>
-            </div>
-          </div>
-          <div
-            className="tome-mermaid-lightbox-canvas"
-            style={
-              {
-                "--tome-mermaid-expanded-width": `${
-                  ((expandedMermaid?.width ?? 1200) * mermaidZoom) / 100
-                }px`,
-              } as CSSProperties
-            }
-            dangerouslySetInnerHTML={{ __html: expandedMermaid?.svg ?? "" }}
-          />
-        </DialogContent>
-      </Dialog>
+      <MermaidLightbox
+        diagram={expandedMermaid}
+        onClose={() => setExpandedMermaid(null)}
+      />
     </>
   );
 });

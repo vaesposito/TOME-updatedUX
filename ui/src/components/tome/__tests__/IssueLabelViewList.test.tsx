@@ -9,7 +9,7 @@ describe("IssueLabelViewList", () => {
     render(
       <IssueLabelViewList
         labels={TOME_TRACKED_ISSUE_LABELS}
-        activeLabel="tome:needs attention"
+        activeLabel="needs attention"
         onSelect={onSelect}
       />,
     );
@@ -18,6 +18,6 @@ describe("IssueLabelViewList", () => {
     expect(screen.getByText("Needs Attention")).toBeInTheDocument();
     expect(screen.getByText("Decisions")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Critical" }));
-    expect(onSelect).toHaveBeenCalledWith("tome:critical");
+    expect(onSelect).toHaveBeenCalledWith("critical");
   });
 });

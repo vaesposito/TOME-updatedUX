@@ -18,15 +18,15 @@ export interface TomeTrackedIssueLabel {
 export interface TomeIssueLabelSetting {
   title: string;
   suffix: string;
+  /** Disabled labels remain configurable so an administrator can restore them later. */
+  enabled?: boolean;
 }
 
 export interface TomeIssueLabelSettings {
-  use_prefix: boolean;
   labels: Record<TomeIssueLabelKey, TomeIssueLabelSetting>;
 }
 
 export const DEFAULT_TOME_ISSUE_LABEL_SETTINGS: TomeIssueLabelSettings = {
-  use_prefix: true,
   labels: {
     critical: { title: "Critical", suffix: "critical" },
     "needs-attention": { title: "Needs Attention", suffix: "needs attention" },
@@ -38,15 +38,14 @@ export function materializeTomeIssueLabels(
   settings: TomeIssueLabelSettings,
   legacyLabels?: Partial<Record<TomeIssueLabelKey, readonly string[]>>,
 ): TomeTrackedIssueLabel[] {
-  const prefix = settings.use_prefix ? TOME_TRACKER_PREFIX : "";
-  return TOME_ISSUE_LABEL_KEYS.map((id) => {
+  return TOME_ISSUE_LABEL_KEYS.filter((id) => settings.labels[id].enabled !== false).map((id) => {
     const setting = settings.labels[id];
     const aliases = [...new Set((legacyLabels?.[id] ?? []).filter(
-      (alias) => alias !== `${prefix}${setting.suffix}`,
+      (alias) => alias !== setting.suffix,
     ))];
     return {
       id,
-      label: `${prefix}${setting.suffix}`,
+      label: setting.suffix,
       title: setting.title,
       ...(aliases.length > 0 ? { aliases } : {}),
     };
@@ -61,7 +60,7 @@ const CUSTOM_TRACKER_SUFFIX = /^[a-z0-9](?:[a-z0-9-]{0,47}[a-z0-9])?$/;
 
 export function customTomeTrackerLabel(
   suffix: string,
-  prefix = TOME_TRACKER_PREFIX,
+  prefix = "",
 ): string | null {
   const normalized = suffix.trim().toLowerCase();
   if (!CUSTOM_TRACKER_SUFFIX.test(normalized)) return null;
@@ -91,7 +90,7 @@ export function tomeTrackedIssueLabel(label: string): TomeTrackedIssueLabel {
 
 export function normalizeCustomTomeTrackerLabels(
   value: unknown,
-  prefix = TOME_TRACKER_PREFIX,
+  prefix = "",
 ): string[] {
   if (!Array.isArray(value)) return [];
   const labels = new Set<string>();

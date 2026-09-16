@@ -1478,11 +1478,52 @@ const TOOLS: ToolDef[] = [
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 const UNLINKED_SECONDARY_OIDC_TOOL = "tome_server_info";
 
+// The REST connector is intentionally read-only. Keep this allowlist separate
+// from the MCP registry because MCP clients may still use the write-capable
+// tools when they are explicitly authorized to do so.
+const REST_READ_ONLY_TOOL_NAMES = new Set([
+  "tome_list_projects",
+  "tome_get_project",
+  "tome_get_auto_ingest",
+  "tome_list_bhags",
+  "tome_get_bhag",
+  "tome_get_bhag_synthesis_context",
+  "tome_list_areas",
+  "tome_get_area",
+  "tome_get_area_synthesis_context",
+  "tome_resolve_ref",
+  "tome_list_repos",
+  "tome_list_webex_rooms",
+  "tome_list_confluence_spaces",
+  "tome_get_pages",
+  "tome_list_pages",
+  "tome_get_page",
+  "tome_get_critical_items_report",
+  "tome_list_github_issues",
+  "tome_get_github_issue",
+  "tome_get_page_history",
+  "tome_get_ingest_log",
+  "tome_list_webex_meetings",
+  // Preflight only checks source access; it does not start an ingest or mutate data.
+  "tome_preflight_ingest",
+  "tome_feed_read",
+  "tome_list_gists",
+  "tome_get_gist",
+]);
+
 /** Shared tool registry for the REST connector facade. The facade exposes the
  * same operations as ordinary OpenAPI-described HTTP endpoints, while this
  * MCP route remains the canonical implementation of the tool behavior. */
 export function getTomeMcpTools(): readonly ToolDef[] {
   return TOOLS;
+}
+
+export function getTomeRestReadOnlyTools(): readonly ToolDef[] {
+  return TOOLS.filter((tool) => REST_READ_ONLY_TOOL_NAMES.has(tool.name));
+}
+
+export function isTomeRestReadOnlyTool(name: string): boolean {
+  return REST_READ_ONLY_TOOL_NAMES.has(name);
 }
 
 export function getTomeMcpTool(name: string): ToolDef | undefined {

@@ -118,4 +118,45 @@ describe("ChatPanel stream session", () => {
     render(<ChatPanel slug="example-project" />);
     expect(await screen.findByText("Response continues")).toBeInTheDocument();
   });
+
+  it("offers a fresh chat when the agent reports an exhausted session context", async () => {
+    const encoder = new TextEncoder();
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/chat/history") && !init?.method) {
+        return { ok: true, json: async () => ({ data: { session: null, messages: [], readOnly: false, sessionOwner: null } }) } as Response;
+      }
+      if (url.endsWith("/chat/history") && init?.method === "POST") {
+        return { ok: true, json: async () => ({ data: { sessionId: "00000000-0000-4000-8000-000000000002" } }) } as Response;
+      }
+      if (url.endsWith("/chat/history") && init?.method === "DELETE") {
+        return { ok: true, json: async () => ({ data: { sessionId: "00000000-0000-4000-8000-000000000003" } }) } as Response;
+      }
+      if (url.endsWith("/chat") && init?.method === "POST") {
+        let read = false;
+        return {
+          ok: true,
+          headers: new Headers({ "X-Tome-Session-Id": "00000000-0000-4000-8000-000000000002" }),
+          body: { getReader: () => ({ read: async () => {
+            if (read) return { done: true, value: undefined };
+            read = true;
+            return { done: false, value: encoder.encode("event: error\ndata: {\"code\":\"session_context_exhausted\",\"message\":\"This session's context is too large to continue. Start a new chat to continue.\"}\n\n") };
+          } }) },
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as jest.Mock;
+
+    render(<ChatPanel slug="example-project" />);
+    const composer = await screen.findByPlaceholderText("Ask about this project…");
+    fireEvent.change(composer, { target: { value: "Continue" } });
+    fireEvent.click(screen.getByTitle("Send"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Session context too large — start a new chat to continue.");
+    await waitFor(() => expect(composer).toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "Start new chat" }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+      "/api/tome/projects/example-project/chat/history", { method: "DELETE" },
+    ));
+  });
 });

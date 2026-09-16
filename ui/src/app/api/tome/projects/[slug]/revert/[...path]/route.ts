@@ -33,6 +33,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   try {
     await store.revertPage(tctx.projectId, pagePath, body.revisionId, {
       author: tctx.user.email ?? AGENT_IDENTITIES.default,
+      origin: "manual",
     });
   } catch (err) {
     if (err instanceof PageNotFoundError) {

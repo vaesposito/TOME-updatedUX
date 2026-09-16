@@ -28,6 +28,8 @@ export const TOME_COLLECTIONS = {
   CHAT_SESSIONS: "tome_chat_sessions",
   /** Chat messages within a session. */
   CHAT_MESSAGES: "tome_chat_messages",
+  /** Authenticated product-view events used for aggregate Tome usage analytics. */
+  USAGE_EVENTS: "tome_usage_events",
   /** Short-lived replay buffers for in-flight chat responses. */
   CHAT_RUNS: "tome_chat_runs",
   /** Backlink index over `edges/*.md` pages, keyed by resolved target project. */
@@ -125,6 +127,12 @@ export interface PageRevision {
   deleted?: boolean;
   /** The ingest run/report that produced this write, when agent-authored. */
   report_id?: string;
+  /** Durable attribution for analytics; absent on revisions written before this field existed. */
+  origin?: "manual" | "import" | "ingest" | "chat_agent" | "template" | "system";
+  /** Template binding copied from the page frontmatter at write time. */
+  template_scope?: string | null;
+  template_path?: string | null;
+  template_version?: number | null;
   /**
    * "draft" revisions are written by an ingest run awaiting human review —
    * excluded from normal reads/history until promoted to "live" (or
@@ -514,6 +522,42 @@ export interface ChatMessage {
   model?: string;
   model_provenance?: ModelProvenance;
   created_at: Date;
+}
+
+export const TOME_USAGE_VIEW_KINDS = [
+  "agent",
+  "standup",
+  "issues",
+  "feed",
+  "gists",
+  "gist",
+  "newGist",
+  "folder",
+  "settings",
+  "templates",
+  "insights",
+  "page",
+  "pageHistory",
+  "ingest",
+  "ingestRun",
+  "draftReview",
+] as const;
+
+export type TomeUsageViewKind = (typeof TOME_USAGE_VIEW_KINDS)[number];
+
+/** One authenticated navigation within a project Tome surface. */
+export interface TomeUsageEvent {
+  _id?: string;
+  event_id: string;
+  event: "view";
+  occurred_at: Date;
+  /** Stable salted subject hash. Raw user identity is deliberately not stored. */
+  subject_hash: string;
+  project_id: string;
+  project_slug: string;
+  analytics_session_id: string;
+  view_kind: TomeUsageViewKind;
+  page_path?: string;
 }
 
 export type ChatRunStatus = "starting" | "running" | "completed" | "failed";

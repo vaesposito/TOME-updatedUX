@@ -552,18 +552,28 @@ the primary Streamable HTTP operation and the legacy SSE compatibility routes.
 
 #### TOME REST Connector API
 
-Connector Studio's REST connector flow uses the dedicated REST facade rather
-than the MCP transport. For the minimal connectivity test, the published
-OpenAPI document currently exposes only `GET /version`:
+Connector Studio's REST connector flow uses the dedicated read-only REST facade
+rather than the MCP transport. The OpenAPI document exposes `GET /version` plus
+the read-only project, wiki, source, issue, ingest-status, feed, and gist
+operations. Mutating operations are not published or accepted by this
+connector.
 
-- **API URL:** `/api/tome/connector`
-- **OpenAPI / Swagger URL:** `/api/tome/connector/openapi.json`
+- **API URL:** `${TOME_PUBLIC_ORIGIN}/api/tome/connector`
+- **OpenAPI / Swagger URL:** `${TOME_PUBLIC_ORIGIN}/api/tome/connector/openapi.json`
 - **Authentication:** user-minted `x-caipe-token` API key
 
+Set `TOME_PUBLIC_ORIGIN` to the deployment's public origin (for example,
+`https://grid.outshift.io` in production or `https://grid.preview.outshift.io` in
+preview). The connector falls back to `NEXTAUTH_URL` when
+`TOME_PUBLIC_ORIGIN` is not set.
+
 The version endpoint returns `{ "service": "tome", "version": "0.1.0", "status": "ok" }`
-after authenticating the user-minted TOME API key. The existing MCP and legacy
-SSE surfaces remain available for clients that speak MCP directly, but are not
-published by this connector document.
+after authenticating the user-minted TOME API key. Read operations use
+`POST /api/tome/connector/{toolName}` with a JSON body matching the operation's
+OpenAPI schema and return a `{ "data": ... }` envelope. The existing MCP and
+legacy SSE surfaces remain available for clients that speak MCP directly, but
+are not published by this connector document. The native MCP surface retains
+its separate authorization and tool policy.
 
 #### Legacy MCP SSE transport
 
@@ -677,10 +687,13 @@ CAIPE_SECONDARY_OIDC_JWKS_URI=https://idp.example.com/oauth2/example/v1/keys
 CAIPE_SECONDARY_OIDC_ISSUER=https://idp.example.com/oauth2/example
 CAIPE_SECONDARY_OIDC_AUDIENCES=caipe-api
 CAIPE_SECONDARY_OIDC_PROVIDER_ID=corporate-assistant
+# Optional; defaults to true. Set false only when the configured provider is
+# trusted to provide authoritative email claims without email_verified=true.
+CAIPE_SECONDARY_OIDC_REQUIRE_VERIFIED_EMAIL=false
 ```
 
 These settings configure one secondary trust domain for any MCP surface that
-uses the shared authenticator. On the first verified request for a new
+uses the shared authenticator. On the first valid request for a new
 secondary `(issuer, sub)` pair, CAIPE requires the token's corporate email to
 match exactly one existing CAIPE user and stores an immutable link as admin-only
 attributes on that Keycloak user. The lookup attribute is a SHA-256 digest of

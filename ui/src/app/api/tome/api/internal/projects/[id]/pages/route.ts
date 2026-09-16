@@ -190,6 +190,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     message: body.message || `agent wrote ${body.path}`,
     author: body.author || "tome-agent",
     reportId: body.report_id ?? undefined,
+    origin: body.report_id ? "ingest" : "chat_agent",
     ...(status === "draft" ? { status: "draft" as const } : {}),
   });
   return Response.json({ ok: true, kind_change_blocked: guard.blocked });

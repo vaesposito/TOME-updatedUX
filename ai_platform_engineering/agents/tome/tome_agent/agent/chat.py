@@ -272,11 +272,34 @@ async def stream_chat(
                             ],
                         )
                         state["span_renamed"] = True
+                    # The CLI can report a context-window failure as the
+                    # contradictory ResultMessage(is_error=True,
+                    # subtype="success", result=None). Do not translate that
+                    # into a blank successful `done` event.
+                    if _is_context_exhausted_result(message):
+                        state["context_exhausted"] = True
+                        log.warning(
+                            "chat session %s exhausted its context window",
+                            getattr(message, "session_id", resume),
+                        )
+                        yield ChatEventPayload(
+                            type="error",
+                            data={
+                                "code": "session_context_exhausted",
+                                "message": (
+                                    "This session's context is too large to continue. "
+                                    "Start a new chat to continue."
+                                ),
+                            },
+                        )
+                        break
                     if isinstance(message, ResultMessage):
                         state["result_seen"] = True
                     async for event in _translate(message, model, model_provenance):
                         state["emitted"] = True
                         yield event
+                if state.get("context_exhausted"):
+                    return
                 try:
                     ctx = await client.get_context_usage()
                     yield ChatEventPayload(
@@ -292,9 +315,17 @@ async def stream_chat(
         except Exception as e:  # noqa: BLE001 — surfaced/handled by the caller
             state["error"] = e
 
-    state: dict = {"emitted": False, "result_seen": False, "error": None}
+    state: dict = {
+        "emitted": False,
+        "result_seen": False,
+        "error": None,
+        "context_exhausted": False,
+    }
     async for event in _attempt(sdk_session_id, state):
         yield event
+
+    if state["context_exhausted"]:
+        return
 
     err = state["error"]
     if err is None:
@@ -338,9 +369,16 @@ async def stream_chat(
             sdk_session_id,
             type(err).__name__,
         )
-        retry: dict = {"emitted": False, "result_seen": False, "error": None}
+        retry: dict = {
+            "emitted": False,
+            "result_seen": False,
+            "error": None,
+            "context_exhausted": False,
+        }
         async for event in _attempt(None, retry):
             yield event
+        if retry["context_exhausted"]:
+            return
         rerr = retry["error"]
         if rerr is None or retry["result_seen"]:
             if rerr is not None:
@@ -424,6 +462,20 @@ async def _translate(
         return
 
     if isinstance(message, ResultMessage):
+        if _is_context_exhausted_result(message):
+            # Normally intercepted by stream_chat before reaching here. Keep
+            # the translator safe for direct callers as well.
+            yield ChatEventPayload(
+                type="error",
+                data={
+                    "code": "session_context_exhausted",
+                    "message": (
+                        "This session's context is too large to continue. "
+                        "Start a new chat to continue."
+                    ),
+                },
+            )
+            return
         if getattr(message, "is_error", False):
             log.warning(
                 "ResultMessage has is_error=True: subtype=%s errors=%s",
@@ -446,6 +498,17 @@ async def _translate(
             },
         )
         return
+
+
+def _is_context_exhausted_result(message: Any) -> bool:
+    """Recognize the CLI's otherwise silent context-window terminal event."""
+
+    return (
+        isinstance(message, ResultMessage)
+        and bool(getattr(message, "is_error", False))
+        and getattr(message, "subtype", None) == "success"
+        and not str(getattr(message, "result", "") or "").strip()
+    )
 
 
 def _safe_input(value: Any) -> Any:

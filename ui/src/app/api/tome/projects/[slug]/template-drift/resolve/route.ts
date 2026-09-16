@@ -81,6 +81,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       await store.writePages(tctx.projectId, toWrite, {
         message: "resolve template drift: bump template_version (metadata only, content confirmed current)",
         author: tctx.user.email || "tome-ui",
+        origin: "manual",
       });
     }
   }

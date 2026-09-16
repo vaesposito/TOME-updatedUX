@@ -179,17 +179,55 @@ export function WikiPageView({
     author: string;
     created_at: string;
   } | null>(null);
+
+  // Editing must capture the revision that exists when the editor opens. The
+  // history request is asynchronous, so auto-opening a newly-created page can
+  // otherwise start with a null base revision and produce a false conflict.
+  const historyRequestRef = useRef<{
+    key: string;
+    promise: Promise<{
+      id: string;
+      author: string;
+      created_at: string;
+    } | null>;
+  } | null>(null);
+
+  const refreshLastRevision = useCallback(async () => {
+    const key = `${slug}:${path}`;
+    const inFlight = historyRequestRef.current;
+    if (inFlight?.key === key) return inFlight.promise;
+
+    const promise = (async () => {
+      const response = await fetch(`/api/tome/projects/${slug}/history/${path}`);
+      if (!response.ok) throw new Error(`history load failed (${response.status})`);
+      const payload = await response.json();
+      return (payload?.data?.revisions?.[0] ?? null) as {
+        id: string;
+        author: string;
+        created_at: string;
+      } | null;
+    })();
+    historyRequestRef.current = { key, promise };
+
+    try {
+      const revision = await promise;
+      // A page switch may have started another request while this one was in
+      // flight. Only apply the result belonging to the active page.
+      if (historyRequestRef.current?.promise === promise) {
+        setLastRevision(revision);
+      }
+      return revision;
+    } finally {
+      if (historyRequestRef.current?.promise === promise) {
+        historyRequestRef.current = null;
+      }
+    }
+  }, [path, slug]);
+
   useEffect(() => {
     setLastRevision(null);
-    let cancelled = false;
-    fetch(`/api/tome/projects/${slug}/history/${path}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (!cancelled) setLastRevision(j?.data?.revisions?.[0] ?? null);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [slug, path]);
+    void refreshLastRevision().catch(() => undefined);
+  }, [refreshLastRevision]);
 
   const { frontmatter, body, kind, title } = useMemo(() => {
     const [fm, b] = parseFrontmatter(markdown);
@@ -354,10 +392,9 @@ export function WikiPageView({
         : draftBody;
       const md = serializeFrontmatter(fmToWrite, bodyContent);
       await onWrite(path, md, `edit ${path}`, { baseRevisionId });
-      void fetch(`/api/tome/projects/${slug}/history/${path}`)
-        .then((response) => response.json())
-        .then((payload) => setLastRevision(payload?.data?.revisions?.[0] ?? null))
-        .catch(() => {});
+      // Refresh before closing the editor so the next edit starts from the
+      // revision just written, rather than the previous in-memory snapshot.
+      await refreshLastRevision().catch(() => undefined);
       window.localStorage.removeItem(draftStorageKey);
       setIsEditing(false);
       setEditorMode("rich");
@@ -385,7 +422,7 @@ export function WikiPageView({
     } finally {
       setSaving(false);
     }
-  }, [baseRevisionId, draftBody, draftStorageKey, editorMode, isGlossary, isEdgeEntry, isTrackedEntry, fmDraft, onWrite, path, slug]);
+  }, [baseRevisionId, draftBody, draftStorageKey, editorMode, isGlossary, isEdgeEntry, isTrackedEntry, fmDraft, onWrite, path, refreshLastRevision]);
 
   const handleCancel = useCallback(() => {
     setIsEditing(false);
@@ -500,9 +537,23 @@ export function WikiPageView({
     editorRef.current?.replaceSelection(markdown);
   }, [editorMode]);
 
-  const startEditing = useCallback(() => {
+  const startEditing = useCallback(async () => {
+    let currentRevision: {
+      id: string;
+      author: string;
+      created_at: string;
+    } | null;
+    try {
+      // Always refresh on entry. This handles both the initial auto-edit race
+      // and a revision written in another tab while this page was open.
+      currentRevision = await refreshLastRevision();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load page history");
+      return;
+    }
+
     let initialMarkdown = markdown;
-    let initialBase = lastRevision?.id ?? null;
+    let initialBase = currentRevision?.id ?? null;
     setDraftStatus(null);
     setDraftSavedAt(null);
     try {
@@ -536,11 +587,11 @@ export function WikiPageView({
     setEditorMode("rich");
     setEditorEpoch((n) => n + 1);
     setIsEditing(true);
-  }, [draftStorageKey, lastRevision?.id, markdown]);
+  }, [draftStorageKey, markdown, refreshLastRevision]);
 
   useEffect(() => {
     if (!autoStartEditing || isEditing || !canEdit || locked) return;
-    startEditing();
+    void startEditing();
     onAutoStartEditing?.();
   }, [autoStartEditing, canEdit, isEditing, locked, onAutoStartEditing, startEditing]);
 
@@ -557,6 +608,7 @@ export function WikiPageView({
         `resolve edit conflict on ${path}`,
         { baseRevisionId: conflict.currentRevisionId, force: true },
       );
+      await refreshLastRevision().catch(() => undefined);
       window.localStorage.removeItem(draftStorageKey);
       setConflict(null);
       setIsEditing(false);
@@ -568,7 +620,7 @@ export function WikiPageView({
     } finally {
       setSaving(false);
     }
-  }, [conflict, draftBody, draftStorageKey, editorMode, fmDraft, onWrite, path]);
+  }, [conflict, draftBody, draftStorageKey, editorMode, fmDraft, onWrite, path, refreshLastRevision]);
 
   const handleChangeKind = useCallback(
     async (newKind: PageKind) => {
@@ -591,8 +643,8 @@ export function WikiPageView({
       : null;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b px-5 py-3">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
         {onClose && (
           <Button variant="ghost" size="icon" onClick={onClose} title="Close">
             <X className="h-4 w-4" />
@@ -913,8 +965,9 @@ export function WikiPageView({
       )}
 
       <ScrollArea
+        data-testid="tome-page-editor-scroll"
         className={cn(
-          "flex-1 transition-shadow",
+          "min-h-0 flex-1 transition-shadow",
           isEditing &&
             "ring-2 ring-inset ring-amber-400/70 dark:ring-amber-700/60",
         )}

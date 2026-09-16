@@ -159,6 +159,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   await store.writePage(tctx.projectId, path, markdown, {
     author: tctx.user.email ?? AGENT_IDENTITIES.default,
     message: `create ${type}: ${title}`,
+    origin: "manual",
   });
   auditTome({
     action: "tome.entity.create",

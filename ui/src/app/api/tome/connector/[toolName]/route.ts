@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getAuthFromBearerOrSession } from "@/lib/api-middleware";
-import { getTomeMcpTool } from "@/app/api/tome/mcp/route";
+import {
+  getTomeMcpTool,
+  isTomeRestReadOnlyTool,
+} from "@/app/api/tome/mcp/route";
 import { isTomeServerEnabled } from "@/lib/tome/guard";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
 import { mcpSseHeaders } from "@/lib/tome/mcp-sse";
@@ -45,7 +48,9 @@ export async function POST(
 
   const { toolName } = await context.params;
   const tool = getTomeMcpTool(toolName);
-  if (!tool) return errorResponse(`Unknown TOME operation: ${toolName}`, 404);
+  if (!tool || !isTomeRestReadOnlyTool(toolName)) {
+    return errorResponse(`Unknown TOME read operation: ${toolName}`, 404);
+  }
 
   try {
     const { session } = await getAuthFromBearerOrSession(request);

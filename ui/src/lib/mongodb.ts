@@ -222,6 +222,19 @@ async function createIndexes(db: Db) {
     safeCreateIndex(db, 'tome_api_keys', { key_id: 1 }, { unique: true }),
     safeCreateIndex(db, 'tome_api_keys', { owner_user_id: 1, status: 1 }),
 
+    // Short-lived distributed leases serialize conditional TOME page writes
+    // across UI replicas and expire automatically after a crashed writer.
+    safeCreateIndex(db, 'tome_page_write_locks', { expires_at: 1 }, { expireAfterSeconds: 0 }),
+    // Tome product analytics. Event ids make client retries idempotent; the
+    // remaining indexes cover time-window, per-page, and distinct-user reads.
+    safeCreateIndex(db, 'tome_usage_events', { event_id: 1 }, { unique: true }),
+    safeCreateIndex(db, 'tome_usage_events', { occurred_at: -1 }),
+    safeCreateIndex(db, 'tome_usage_events', { project_id: 1, view_kind: 1, page_path: 1, occurred_at: -1 }),
+    safeCreateIndex(db, 'tome_usage_events', { subject_hash: 1, occurred_at: -1 }),
+    // Organization-wide budget and prompt-based adoption windows.
+    safeCreateIndex(db, 'tome_ingest_runs', { started_at: -1 }),
+    safeCreateIndex(db, 'tome_chat_messages', { project_id: 1, role: 1, created_at: -1 }),
+
     // TOME MCP API keys — key lookup on every connector request and active-key
     // replacement/status operations per Keycloak subject.
     safeCreateIndex(db, 'tome_api_keys', { key_id: 1 }, { unique: true }),

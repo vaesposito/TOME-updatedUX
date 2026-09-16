@@ -24,7 +24,8 @@ export function GET(request: NextRequest): NextResponse {
     {
       name: "tome",
       version: "0.1.0",
-      description: "REST operations for TOME projects, wikis, feeds, ingests, and gists.",
+      description:
+        "Read-only REST operations for TOME projects, wikis, feeds, ingest status, and gists.",
       openapi_url: `${publicOrigin(request)}/api/tome/connector/openapi.json`,
     },
     { headers: CORS_HEADERS },

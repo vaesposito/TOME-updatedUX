@@ -124,6 +124,7 @@ export const PATCH = withErrorHandler(async (request: NextRequest, ctx: Ctx) => 
   await store.writePage(tctx.projectId, path, updatedMarkdown, {
     author: tctx.user.email ?? AGENT_IDENTITIES.default,
     message: `update ${entityType} lifecycle`,
+    origin: "manual",
   });
   auditTome({
     action: "tome.entity.update",

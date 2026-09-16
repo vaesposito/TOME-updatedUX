@@ -88,6 +88,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   await store.writePages(tctx.projectId, pages, {
     author: tctx.user.email ?? AGENT_IDENTITIES.default,
     message: `import ${converted.length} document${converted.length === 1 ? "" : "s"}`,
+    origin: "import",
   });
 
   auditTome({

@@ -132,6 +132,7 @@ export async function promoteExperimentWinner(input: {
       author: input.actor,
       reportId,
       status: "draft",
+      origin: "ingest",
     }));
     await setProjectLocked(experiment.project_id, true);
   } catch (error) {

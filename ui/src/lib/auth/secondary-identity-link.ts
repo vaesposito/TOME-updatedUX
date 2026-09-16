@@ -47,6 +47,7 @@ export interface SecondaryOidcLinkInput {
   externalSub: string;
   email?: string;
   emailVerified?: boolean;
+  requireVerifiedEmail?: boolean;
   identity: JWTIdentity;
 }
 
@@ -177,7 +178,7 @@ export async function linkSecondaryOidcIdentity(
     return canonicalIdentity(input.identity, user);
   }
 
-  if (input.emailVerified !== true) {
+  if (input.requireVerifiedEmail !== false && input.emailVerified !== true) {
     throw new SecondaryOidcIdentityLinkError(
       "SECONDARY_OIDC_IDENTITY_EMAIL_UNVERIFIED",
       "The secondary OIDC email must be explicitly verified",

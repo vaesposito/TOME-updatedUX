@@ -184,6 +184,28 @@ describe("secondary OIDC identity linking", () => {
     expect(mockMergeUserAttributes).not.toHaveBeenCalled();
   });
 
+  it("automatically links a trusted provider without email_verified", async () => {
+    mockFindRealmUserIdsByAttribute
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(["keycloak-subject"]);
+
+    const result = await linkSecondaryOidcIdentity({
+      providerId: "example-corporate",
+      issuer: "https://identity.example.test/oauth2",
+      externalSub: "external-subject",
+      email: "user@example.test",
+      emailVerified: false,
+      requireVerifiedEmail: false,
+      identity,
+    });
+
+    expect(mockResolveUserIdentitiesByEmail).toHaveBeenCalledWith([
+      "user@example.test",
+    ]);
+    expect(mockMergeUserAttributes).toHaveBeenCalled();
+    expect(result.sub).toBe("keycloak-subject");
+  });
+
   it("rejects a subject with surrounding whitespace instead of normalizing it", async () => {
     await expect(
       linkSecondaryOidcIdentity({

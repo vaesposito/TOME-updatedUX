@@ -28,7 +28,7 @@ class WriteVerbatimPagesTest(TestCase):
         write_page.assert_awaited_once()
         kwargs = write_page.await_args.kwargs
         self.assertEqual(kwargs["page_path"], "repos/widgets/release-notes.md")
-        self.assertEqual(kwargs["author"], "ttt-pipeline")
+        self.assertEqual(kwargs["author"], "tome-agent-ingest")
         self.assertEqual(kwargs["report_id"], report_id)
         self.assertEqual(kwargs["project_id"], "proj-1")
         self.assertIn("title: Release Notes\n", kwargs["body"])

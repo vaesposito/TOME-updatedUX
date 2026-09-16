@@ -79,6 +79,7 @@ import { WikiPageView } from "@/components/tome/WikiPageView";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
 import type { GlossaryPreview } from "@/components/tome/CrepeEditor";
 import { parseTomeHref } from "@/lib/tome/tome-links";
+import { useTomeViewTracking } from "@/lib/tome/usage-tracking";
 import { BetaBadge } from "@/components/tome/BetaBadge";
 import { StandupView } from "@/components/tome/StandupView";
 import { GithubIssuesPanel } from "@/components/tome/GithubIssuesPanel";
@@ -288,6 +289,8 @@ export function TomeWiki({ slug }: { slug: string }) {
   }, [pathname, base]);
   // The active view is derived from the URL — Agent is the landing view.
   const view = useMemo(() => pathToView(segments), [segments]);
+  const trackedPagePath =
+    view.kind === "page" || view.kind === "pageHistory" ? view.path : undefined;
   const {
     hasUnsavedChanges,
     requestNavigation,
@@ -819,6 +822,8 @@ export function TomeWiki({ slug }: { slug: string }) {
   );
 
   const loading = data === null && !error;
+  useTomeViewTracking(slug, view.kind, trackedPagePath, Boolean(data && !error &&
+    (view.kind !== "page" || data.pages[view.path] !== undefined)));
   const isEmpty = data !== null && Object.keys(data.pages).length === 0 && data.tree.length === 0;
   const knownPagePaths = useMemo(
     () => new Set(Object.keys(data?.pages ?? {})),
@@ -1431,7 +1436,7 @@ export function TomeWiki({ slug }: { slug: string }) {
               ]}
             />
           </HeaderBreadcrumbPortal>
-          <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1">
             {projectMetaLoading ? (
               <div className="flex flex-col gap-2" data-testid="skeleton">
                 <div className="h-5 w-48 animate-pulse rounded bg-muted" />
@@ -1501,7 +1506,7 @@ export function TomeWiki({ slug }: { slug: string }) {
           </p>
         )}
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Side nav: Chat + Ingest destinations, then the wiki page tree. */}
           <aside className="w-80 shrink-0 border-r">
             <ScrollArea className="h-full">
@@ -2029,10 +2034,10 @@ export function TomeWiki({ slug }: { slug: string }) {
           </aside>
 
           {/* Main pane: replaced wholesale by the active view. */}
-          <main className="flex flex-1 overflow-hidden">
+          <main className="flex min-h-0 flex-1 overflow-hidden">
             {view.kind === "agent" ? (
               <>
-                <div className="min-w-0 flex-1">
+                <div className="min-h-0 min-w-0 flex-1">
                   <ChatPanel
                     slug={slug}
                     projectTitle={projectTitle ?? undefined}
@@ -2068,7 +2073,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 )}
               </>
             ) : view.kind === "standup" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <StandupView
                   markdown={data?.pages["standup.md"]}
                   onNavigate={(path) => navigate({ kind: "page", path })}
@@ -2079,7 +2084,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "issues" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <GithubIssuesPanel
                   key={activeTrackedIssueLabel?.id ?? "all"}
                   slug={slug}
@@ -2090,7 +2095,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "feed" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <FeedPanel
                   slug={slug}
                   onOpenPage={(path) => navigate({ kind: "page", path })}
@@ -2099,7 +2104,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "gists" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <GistsPanel
                   slug={slug}
                   canEdit={canEdit}
@@ -2108,7 +2113,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "newGist" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <GistView
                   key="new-gist"
                   slug={slug}
@@ -2118,7 +2123,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "gist" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <GistView
                   key={view.id}
                   slug={slug}
@@ -2128,7 +2133,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "settings" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <ProjectSettingsPanel
                   slug={slug}
                   onSaved={applyProjectMeta}
@@ -2148,7 +2153,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 <EngagementPanel slug={slug} />
               </div>
             ) : view.kind === "ingest" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <IngestPanel
                   slug={slug}
                   canEdit={canEdit}
@@ -2160,7 +2165,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "ingestRun" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <IngestRunView
                   key={view.runId}
                   slug={slug}
@@ -2171,7 +2176,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "draftReview" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <DraftReviewView
                   key={view.runId}
                   slug={slug}
@@ -2253,7 +2258,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 )}
               </div>
             ) : view.kind === "pageHistory" ? (
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 <PageHistoryView
                   slug={slug}
                   path={view.path}
@@ -2265,7 +2270,7 @@ export function TomeWiki({ slug }: { slug: string }) {
               </div>
             ) : (
               // page
-              <div className="min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 {loading ? (
                   <TomeLoading />
                 ) : data && data.pages[view.path] !== undefined ? (

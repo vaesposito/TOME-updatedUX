@@ -10,13 +10,114 @@
 import { ObjectId, type Filter } from "mongodb";
 
 import { AGENT_IDENTITIES } from "./agent-identities";
-import { getTomePageRevisionsCollection } from "./mongo-collections";
-import { safePagePath, type PageStore, type WritePageOpts } from "./page-store";
+import {
+  getTomePageRevisionsCollection,
+  getTomePageWriteLocksCollection,
+} from "./mongo-collections";
+import { currentLiveRevision, hasPageEditConflict } from "./revision-conflict";
+import {
+  safePagePath,
+  type ConditionalPageWriteResult,
+  type PageStore,
+  type WritePageOpts,
+} from "./page-store";
+import { FM_TEMPLATE_PATH, FM_TEMPLATE_SCOPE, FM_TEMPLATE_VERSION, parseFrontmatter } from "./schema";
 import type { PageRevision } from "@/types/tome";
 
 const DEFAULT_AUTHOR = AGENT_IDENTITIES.default;
+const PAGE_WRITE_LOCK_TTL_MS = 30_000;
+const PAGE_WRITE_LOCK_ATTEMPTS = 40;
+const PAGE_WRITE_LOCK_RETRY_MS = 25;
+
+async function withPageWriteLock<T>(
+  projectId: string,
+  path: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const locks = await getTomePageWriteLocksCollection();
+  const lockId = `${projectId}:${safePagePath(path)}`;
+  const ownerToken = new ObjectId().toHexString();
+  let acquired = false;
+
+  for (let attempt = 0; attempt < PAGE_WRITE_LOCK_ATTEMPTS; attempt += 1) {
+    const now = new Date();
+    try {
+      const lock = await locks.findOneAndUpdate(
+        { _id: lockId, expires_at: { $lte: now } },
+        {
+          $set: {
+            owner_token: ownerToken,
+            expires_at: new Date(now.getTime() + PAGE_WRITE_LOCK_TTL_MS),
+          },
+        },
+        { upsert: true, returnDocument: "after" },
+      );
+      if (lock?.owner_token === ownerToken) {
+        acquired = true;
+        break;
+      }
+    } catch (error: unknown) {
+      // Two callers racing to create a lock document: the loser retries after
+      // observing the winner's lease on the next iteration.
+      if ((error as { code?: number }).code !== 11000) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, PAGE_WRITE_LOCK_RETRY_MS));
+  }
+
+  if (!acquired) {
+    throw new Error(`Timed out acquiring page write lock for ${path}`);
+  }
+
+  try {
+    return await work();
+  } finally {
+    await locks.deleteOne({ _id: lockId, owner_token: ownerToken });
+  }
+}
+
+function templateMetadata(markdown: string): Pick<
+  PageRevision,
+  "template_scope" | "template_path" | "template_version"
+> {
+  const [frontmatter] = parseFrontmatter(markdown);
+  const scope = frontmatter[FM_TEMPLATE_SCOPE];
+  const path = frontmatter[FM_TEMPLATE_PATH];
+  const version = frontmatter[FM_TEMPLATE_VERSION];
+  return {
+    ...(scope === null || scope === "null"
+      ? { template_scope: null }
+      : typeof scope === "string"
+        ? { template_scope: scope }
+        : {}),
+    ...(path === null || path === "null"
+      ? { template_path: null }
+      : typeof path === "string"
+        ? { template_path: path }
+        : {}),
+    ...(typeof version === "number" ? { template_version: version } : {}),
+  };
+}
 
 export class MongoPageStore implements PageStore {
+  async writePageIfCurrent(
+    projectId: string,
+    path: string,
+    markdown: string,
+    opts: WritePageOpts,
+    baseRevisionId: string | null,
+  ): Promise<ConditionalPageWriteResult> {
+    return withPageWriteLock(projectId, path, async () => {
+      const history = await this.pageHistory(projectId, path);
+      const current = currentLiveRevision(history);
+      if (hasPageEditConflict(history, baseRevisionId)) {
+        return { written: false, current };
+      }
+
+      await this.writePage(projectId, path, markdown, opts);
+      return { written: true };
+    });
+  }
+
   async writePage(
     projectId: string,
     path: string,
@@ -41,7 +142,9 @@ export class MongoPageStore implements PageStore {
       author: opts.author ?? DEFAULT_AUTHOR,
       message: opts.message,
       created_at: now,
+      ...templateMetadata(md),
       ...(opts.reportId ? { report_id: opts.reportId } : {}),
+      ...(opts.origin ? { origin: opts.origin } : {}),
       ...(opts.status === "draft" ? { status: "draft" as const } : {}),
     }));
     const col = await getTomePageRevisionsCollection();
@@ -93,7 +196,7 @@ export class MongoPageStore implements PageStore {
   async deletePage(
     projectId: string,
     path: string,
-    opts: { author?: string; message?: string } = {},
+    opts: { author?: string; message?: string; origin?: PageRevision["origin"] } = {},
   ): Promise<void> {
     const safe = safePagePath(path);
     const col = await getTomePageRevisionsCollection();
@@ -105,6 +208,7 @@ export class MongoPageStore implements PageStore {
       message: opts.message || `deleted ${safe}`,
       deleted: true,
       created_at: new Date(),
+      ...(opts.origin ? { origin: opts.origin } : {}),
     });
   }
 
@@ -243,7 +347,7 @@ export class MongoPageStore implements PageStore {
     projectId: string,
     path: string,
     revisionId: string,
-    opts: { author?: string; message?: string } = {},
+    opts: { author?: string; message?: string; origin?: PageRevision["origin"] } = {},
   ): Promise<void> {
     const target = await this.readRevision(projectId, revisionId);
     if (!target || target.path !== safePagePath(path)) {
@@ -259,6 +363,8 @@ export class MongoPageStore implements PageStore {
       message: opts.message || `reverted to a previous revision`,
       reverted_from: revisionId,
       created_at: new Date(),
+      ...templateMetadata(target.markdown ?? ""),
+      ...(opts.origin ? { origin: opts.origin } : {}),
     });
   }
 }

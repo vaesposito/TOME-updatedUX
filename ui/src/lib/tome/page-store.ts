@@ -19,8 +19,16 @@ export interface WritePageOpts {
   message: string;
   author?: string;
   reportId?: string;
+  origin?: PageRevision["origin"];
   /** "draft" holds this write pending review; omitted/undefined = "live". */
   status?: "live" | "draft";
+}
+
+export interface ConditionalPageWriteResult {
+  /** Whether the write was appended. */
+  written: boolean;
+  /** The current live revision when the base revision was stale. */
+  current?: PageRevision;
 }
 
 /** Backend-agnostic contract for reading/writing wiki page bodies. */
@@ -32,6 +40,19 @@ export interface PageStore {
     markdown: string,
     opts: WritePageOpts,
   ): Promise<void>;
+
+  /**
+   * Append only when `baseRevisionId` is still the current live revision.
+   * Backends that can serialize this check with the write should implement
+   * this method; callers retain a read-then-write fallback for older backends.
+   */
+  writePageIfCurrent?(
+    projectId: string,
+    path: string,
+    markdown: string,
+    opts: WritePageOpts,
+    baseRevisionId: string | null,
+  ): Promise<ConditionalPageWriteResult>;
 
   /** Write many pages atomically-ish under one message/timestamp. */
   writePages(
@@ -57,7 +78,7 @@ export interface PageStore {
   deletePage(
     projectId: string,
     path: string,
-    opts?: { author?: string; message?: string },
+    opts?: { author?: string; message?: string; origin?: PageRevision["origin"] },
   ): Promise<void>;
 
   /** All revisions of a page, newest first. */
@@ -114,7 +135,7 @@ export interface PageStore {
     projectId: string,
     path: string,
     revisionId: string,
-    opts: { author?: string; message?: string },
+    opts: { author?: string; message?: string; origin?: PageRevision["origin"] },
   ): Promise<void>;
 
   /**
@@ -186,6 +207,29 @@ function withStructuredIndexes(store: PageStore): PageStore {
         await reindexTouched(projectId, pages);
       }
     },
+    ...(store.writePageIfCurrent
+      ? {
+          writePageIfCurrent: async (
+            projectId: string,
+            path: string,
+            markdown: string,
+            opts: WritePageOpts,
+            baseRevisionId: string | null,
+          ) => {
+            const result = await store.writePageIfCurrent!(
+              projectId,
+              path,
+              markdown,
+              opts,
+              baseRevisionId,
+            );
+            if (result.written && opts.status !== "draft") {
+              await reindexTouched(projectId, { [path]: markdown });
+            }
+            return result;
+          },
+        }
+      : {}),
     deletePage: async (projectId, path, opts) => {
       await store.deletePage(projectId, path, opts);
       const slug = await projectSlugFor(projectId);

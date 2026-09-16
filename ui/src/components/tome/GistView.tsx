@@ -114,6 +114,9 @@ export function GistView({
   const [richInitialBody, setRichInitialBody] = useState("");
   const [editorEpoch, setEditorEpoch] = useState(0);
   const [title, setTitle] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
+  const [renamingTitle, setRenamingTitle] = useState(false);
+  const [titleSaving, setTitleSaving] = useState(false);
   const [filename, setFilename] = useState("gist.md");
   const [filenameDraft, setFilenameDraft] = useState("gist.md");
   const [filenameCustomized, setFilenameCustomized] = useState(false);
@@ -174,6 +177,8 @@ export function GistView({
       window.localStorage.removeItem(draftStorageKey);
     }
     setTitle(nextTitle);
+    setTitleDraft(nextTitle);
+    setRenamingTitle(false);
     setFilename(nextFilename);
     setFilenameDraft(nextFilename);
     setFilenameCustomized(Boolean(source?.filename) || recoveredFilename);
@@ -201,6 +206,8 @@ export function GistView({
     setGist(null);
     setError(null);
     setDeleting(false);
+    setRenamingTitle(false);
+    setTitleSaving(false);
     setEditorMode("rich");
     setDraftStatus(null);
     setDraftSavedAt(null);
@@ -266,6 +273,7 @@ export function GistView({
     setDraftStatus(null);
     setDraftSavedAt(null);
     setTagDraft("");
+    setRenamingTitle(false);
     setRenamingFilename(false);
     setError(null);
     setEditorMode("rich");
@@ -373,6 +381,58 @@ export function GistView({
     setTagDraft("");
     if (tag && !tags.includes(tag)) setTags((current) => [...current, tag]);
   }, [tagDraft, tags]);
+
+  const startTitleRename = useCallback(() => {
+    const current = editing ? title : gist?.title ?? title;
+    setTitle(current);
+    setTitleDraft(current);
+    setRenamingTitle(true);
+  }, [editing, gist, title]);
+
+  const cancelTitleRename = useCallback(() => {
+    setTitleDraft(editing ? title : gist?.title ?? title);
+    setRenamingTitle(false);
+  }, [editing, gist, title]);
+
+  const commitTitleRename = useCallback(async () => {
+    const nextTitle = titleDraft.trim();
+    if (!nextTitle) {
+      setError("Title must not be empty");
+      return;
+    }
+
+    const currentTitle = editing ? title : gist?.title ?? title;
+    if (nextTitle === currentTitle) {
+      setRenamingTitle(false);
+      return;
+    }
+    if (creating || editing || !id) {
+      setTitle(nextTitle);
+      setTitleDraft(nextTitle);
+      setRenamingTitle(false);
+      setError(null);
+      return;
+    }
+
+    setTitleSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/tome/projects/${slug}/gists/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+      const updatedGist = await readGistResponse(response, "Failed to rename gist");
+      setGist(updatedGist);
+      setTitle(updatedGist.title);
+      setTitleDraft(updatedGist.title);
+      setRenamingTitle(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setTitleSaving(false);
+    }
+  }, [creating, editing, gist, id, slug, title, titleDraft]);
 
   const startFilenameRename = useCallback(() => {
     const current = editing
@@ -610,7 +670,7 @@ export function GistView({
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving || filenameSaving || !title.trim() || !rawDraft.trim()}
+                disabled={saving || titleSaving || filenameSaving || !title.trim() || !rawDraft.trim()}
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
               >
                 {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -668,19 +728,54 @@ export function GistView({
               data-testid="gist-title-tags-row"
             >
               <div className="min-w-48 flex-1">
-                {editing && editorMode !== "preview" ? (
+                {renamingTitle ? (
                   <Input
                     aria-label="Gist title"
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
+                    value={titleDraft}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void commitTitleRename();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelTitleRename();
+                      }
+                    }}
+                    onBlur={() => void commitTitleRename()}
                     placeholder="Untitled gist"
                     className="h-auto w-full border-0 px-0 py-0 text-2xl font-semibold leading-tight shadow-none focus-visible:ring-0"
                     autoFocus
+                    disabled={titleSaving}
                   />
                 ) : (
-                  <h1 className="truncate text-2xl font-semibold leading-tight">
-                    {editing ? title.trim() || "Untitled gist" : gist?.title}
-                  </h1>
+                  <div className="group/title flex min-w-0 items-center gap-1.5">
+                    <h1 className="truncate text-2xl font-semibold leading-tight">
+                      {editing ? title.trim() || "Untitled gist" : gist?.title}
+                    </h1>
+                    {canChange && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={startTitleRename}
+                            disabled={titleSaving}
+                            aria-label="Rename gist title"
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-60 outline-none transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover/title:opacity-100 md:group-focus-within/title:opacity-100 disabled:opacity-40"
+                          >
+                            {titleSaving ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">
+                          Rename gist title
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
                 )}
                 <div
                   className="mt-0.5 flex min-w-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground"
@@ -710,21 +805,31 @@ export function GistView({
                       className="block w-full max-w-md rounded border border-input bg-background px-1 py-0.5 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                       aria-label="Rename gist filename (Enter to save, Esc to cancel)"
                     />
-                  ) : canChange ? (
-                    <button
-                      type="button"
-                      onClick={startFilenameRename}
-                      disabled={filenameSaving}
-                      title="Rename gist filename"
-                      className="min-w-0 truncate font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline disabled:opacity-60"
-                    >
-                      {editing
-                        ? filename
-                        : gist?.filename ?? defaultGistFilename(gist?.title ?? title)}
-                    </button>
                   ) : (
-                    <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-                      {gist?.filename ?? defaultGistFilename(gist?.title ?? title)}
+                    <span className="group/filename flex min-w-0 items-center gap-0.5">
+                      <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+                        {editing
+                          ? filename
+                          : gist?.filename ?? defaultGistFilename(gist?.title ?? title)}
+                      </span>
+                      {canChange && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={startFilenameRename}
+                              disabled={filenameSaving}
+                              aria-label="Rename gist filename"
+                              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 outline-none transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover/filename:opacity-100 md:group-focus-within/filename:opacity-100 disabled:opacity-40"
+                            >
+                              <Pencil className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">
+                            Rename gist filename
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </span>
                   )}
                   {filenameSaving && (

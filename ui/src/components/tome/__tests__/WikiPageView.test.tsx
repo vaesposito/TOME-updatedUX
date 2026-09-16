@@ -267,6 +267,41 @@ describe("WikiPageView", () => {
     expect(warning).toHaveTextContent("Agent rewrites on ingest");
   });
 
+  it("explains every page kind from explicit info buttons", async () => {
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="charter.md"
+        markdown={"---\ntitle: Example charter\nkind: stable\n---\nOriginal markdown"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Change page kind"));
+
+    const stableInfo = screen.getByRole("button", { name: "About Stable pages" });
+    const dynamicInfo = screen.getByRole("button", { name: "About Dynamic pages" });
+    const hiddenInfo = screen.getByRole("button", { name: "About Hidden pages" });
+
+    fireEvent.focus(stableInfo);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Human-curated. Written once on greenfield ingest, then preserved across every reingest. Edit freely; your changes stick.",
+    );
+    fireEvent.blur(stableInfo);
+
+    fireEvent.focus(dynamicInfo);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Agent rewrites this page on every reingest. Your edits feed in as prior context; they may or may not survive verbatim.",
+    );
+    fireEvent.blur(dynamicInfo);
+
+    fireEvent.focus(hiddenInfo);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Agent-only memory. Read by the synthesizers and chat, not surfaced in the wiki.",
+    );
+  });
+
   it("uses the full editing canvas in Rich mode", async () => {
     render(
       <WikiPageView

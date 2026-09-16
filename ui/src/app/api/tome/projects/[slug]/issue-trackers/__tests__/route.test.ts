@@ -5,6 +5,8 @@ import { NextRequest } from "next/server";
 const mockLoadTomeProject = jest.fn();
 const mockRequireTomeEditor = jest.fn();
 const mockAddTracker = jest.fn();
+const mockRemoveTracker = jest.fn();
+const mockReadCustomTrackers = jest.fn();
 const mockListTrackedLabels = jest.fn();
 const mockReadLabelSettings = jest.fn();
 
@@ -14,11 +16,13 @@ jest.mock("@/lib/tome/tome-api", () => ({
 }));
 jest.mock("@/lib/tome/issue-tracker-store", () => ({
   addTomeCustomIssueTracker: (...args: unknown[]) => mockAddTracker(...args),
+  removeTomeCustomIssueTracker: (...args: unknown[]) => mockRemoveTracker(...args),
   listTomeTrackedIssueLabels: (...args: unknown[]) => mockListTrackedLabels(...args),
+  readTomeCustomIssueTrackers: (...args: unknown[]) => mockReadCustomTrackers(...args),
   readTomeIssueLabelSettings: (...args: unknown[]) => mockReadLabelSettings(...args),
 }));
 
-import { GET, POST } from "../route";
+import { DELETE, GET, POST } from "../route";
 
 const endpoint = "http://example.test/api/tome/projects/example-project/issue-trackers";
 const context = { params: Promise.resolve({ slug: "example-project" }) };
@@ -41,6 +45,7 @@ describe("TOME issue trackers", () => {
       { id: "decision", label: "decision", title: "Decisions" },
       { id: "security-review", label: "security-review", title: "Security Review" },
     ]);
+    mockReadCustomTrackers.mockResolvedValue(["security-review"]);
   });
 
   it("returns project-wide custom trackers to readable users", async () => {
@@ -69,6 +74,32 @@ describe("TOME issue trackers", () => {
     expect(mockAddTracker).toHaveBeenCalledWith("project-1", "security-review");
     expect(mockListTrackedLabels).toHaveBeenCalledWith(["project-1"]);
     expect(response.status).toBe(200);
+  });
+
+  it("removes a custom project tracker", async () => {
+    const response = await DELETE(new NextRequest(endpoint, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "security-review" }),
+    }), context);
+
+    expect(mockRequireTomeEditor).toHaveBeenCalled();
+    expect(mockReadCustomTrackers).toHaveBeenCalledWith("project-1");
+    expect(mockRemoveTracker).toHaveBeenCalledWith("project-1", "security-review");
+    expect(response.status).toBe(200);
+  });
+
+  it("does not remove a built-in tracker through the project endpoint", async () => {
+    mockReadCustomTrackers.mockResolvedValue([]);
+
+    const response = await DELETE(new NextRequest(endpoint, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "critical" }),
+    }), context);
+
+    expect(response.status).toBe(404);
+    expect(mockRemoveTracker).not.toHaveBeenCalled();
   });
 
   it("rejects prefixes and unsupported label characters", async () => {

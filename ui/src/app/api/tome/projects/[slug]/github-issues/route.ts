@@ -229,7 +229,9 @@ export const PATCH = withErrorHandler(async (request: NextRequest, ctx: Ctx) => 
   const trackedLabels = await listTomeTrackedIssueLabels(
     rollup.map((project) => String(project._id)),
   );
-  if (labelUpdate && !trackedLabels.some((tracked) => tracked.label === label.toLowerCase())) {
+  if (labelUpdate && !trackedLabels.some((tracked) =>
+    [tracked.label, ...(tracked.aliases ?? [])].some((candidate) => candidate.toLowerCase() === label.toLowerCase()),
+  )) {
     throw new ApiError(
       "This label is not configured as a TOME issue tracker",
       400,

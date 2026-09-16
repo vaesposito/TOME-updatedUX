@@ -226,6 +226,34 @@ export async function addTomeCustomIssueTracker(
   return readTomeCustomIssueTrackers(projectId);
 }
 
+export async function removeTomeCustomIssueTracker(
+  projectId: string,
+  label: string,
+): Promise<string[]> {
+  const trackers = await trackersCollection();
+  const document = await trackers.findOne(
+    { project_id: projectId },
+    { projection: { _id: 0, labels: 1 } },
+  );
+  const normalizedLabel = label.trim().toLowerCase();
+  const labels = document?.labels ?? [];
+  const labelsToRemove = labels.filter((candidate) =>
+    normalizeCustomTomeTrackerLabels([candidate], "").includes(normalizedLabel),
+  );
+  if (labelsToRemove.length > 0) {
+    await trackers.updateOne(
+      { project_id: projectId },
+      {
+        $set: {
+          labels: labels.filter((candidate) => !labelsToRemove.includes(candidate)),
+          updated_at: new Date(),
+        },
+      },
+    );
+  }
+  return readTomeCustomIssueTrackers(projectId);
+}
+
 export async function listTomeTrackedIssueLabels(
   projectIds: string[],
 ): Promise<TomeTrackedIssueLabel[]> {

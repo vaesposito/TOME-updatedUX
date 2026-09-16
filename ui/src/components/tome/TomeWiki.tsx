@@ -106,6 +106,7 @@ import {
 } from "@/lib/tome/document-import-formats";
 import {
   matchesTomeTrackedIssueLabel,
+  TOME_ISSUE_LABEL_KEYS,
   TOME_TRACKED_ISSUE_LABELS,
   type TomeTrackedIssueLabel,
 } from "@/lib/tome/issue-filter-views";
@@ -353,7 +354,9 @@ export function TomeWiki({ slug }: { slug: string }) {
   const [trackerDialogOpen, setTrackerDialogOpen] = useState(false);
   const [trackerSuffix, setTrackerSuffix] = useState("");
   const [trackerError, setTrackerError] = useState<string | null>(null);
+  const [trackerRemovalError, setTrackerRemovalError] = useState<string | null>(null);
   const [creatingTracker, setCreatingTracker] = useState(false);
+  const [removingTracker, setRemovingTracker] = useState<string | null>(null);
   const activeTrackedIssueLabel = useMemo(() => {
     if (view.kind !== "issues" || !view.label) return undefined;
     return issueTrackers.find(
@@ -407,6 +410,36 @@ export function TomeWiki({ slug }: { slug: string }) {
       setCreatingTracker(false);
     }
   }, [slug, trackerSuffix]);
+
+  const removeIssueTracker = useCallback(async (tracked: TomeTrackedIssueLabel) => {
+    if (removingTracker) return;
+    setRemovingTracker(tracked.label);
+    setTrackerRemovalError(null);
+    try {
+      const response = await fetch(
+        `/api/tome/projects/${encodeURIComponent(slug)}/issue-trackers`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: tracked.label }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(body?.data?.trackers)) {
+        throw new Error(body?.error ?? "Could not remove tracked label");
+      }
+      setIssueTrackers(body.data.trackers);
+      if (view.kind === "issues" && view.label && matchesTomeTrackedIssueLabel([view.label], tracked)) {
+        navigate({ kind: "issues" });
+      }
+    } catch (removeError) {
+      setTrackerRemovalError(
+        removeError instanceof Error ? removeError.message : "Could not remove tracked label",
+      );
+    } finally {
+      setRemovingTracker(null);
+    }
+  }, [navigate, removingTracker, slug, view]);
   // For a BHAG/Area: its own name (the label children are tagged with) and
   // the child projects that resolve from it — surfaced as down-links in the nav.
   const [projectName, setProjectName] = useState("");
@@ -1686,7 +1719,14 @@ export function TomeWiki({ slug }: { slug: string }) {
                       labels={issueTrackers}
                       activeLabel={activeTrackedIssueLabel?.label}
                       onSelect={(label) => navigate({ kind: "issues", label })}
+                      onRemove={canEdit ? removeIssueTracker : undefined}
+                      isRemovable={(tracked) => !TOME_ISSUE_LABEL_KEYS.some((key) => key === tracked.id)}
                     />
+                    {trackerRemovalError && (
+                      <p className="ml-5 mt-1 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                        {trackerRemovalError}
+                      </p>
+                    )}
                   </IssueLabelDisclosure>
                 </div>
 

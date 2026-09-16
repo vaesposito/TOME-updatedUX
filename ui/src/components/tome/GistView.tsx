@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent as ReactClipboardEvent,
 } from "react";
 import {
   ArrowLeft,
@@ -45,7 +44,6 @@ import { CrepeEditor, type CrepeEditorHandle } from "@/components/tome/CrepeEdit
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import { TomeMediaInsertDialog } from "@/components/tome/TomeMediaInsertDialog";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
-import { matchTomeEmbedUrl } from "@/lib/tome/embeds";
 import { defaultGistFilename, normalizeGistFilename } from "@/lib/tome/gists";
 import { diagnoseTomeMarkdown } from "@/lib/tome/markdown-diagnostics";
 import { readJsonOrError } from "@/lib/safe-json";
@@ -307,18 +305,6 @@ export function GistView({
       setRawDraft((current) => `${current}${embedMarkdown}`);
     }
   }, [editorMode]);
-
-  const handleSourcePaste = useCallback(
-    (event: ReactClipboardEvent<HTMLDivElement>) => {
-      if (event.clipboardData.files.length) return;
-      const match = matchTomeEmbedUrl(event.clipboardData.getData("text/plain"));
-      if (!match) return;
-      event.preventDefault();
-      event.stopPropagation();
-      insertMediaMarkdown(match.markdown);
-    },
-    [insertMediaMarkdown],
-  );
 
   const handleInlineAiOpenChange = useCallback((open: boolean) => {
     if (open) {
@@ -868,7 +854,7 @@ export function GistView({
               data-testid="gist-editor-canvas"
             >
               {editing && editorMode === "source" ? (
-                <div className="h-full min-h-[28rem] p-3" onPasteCapture={handleSourcePaste}>
+                <div className="h-full min-h-[28rem] p-3">
                   <RichCodeEditor
                     editorRef={sourceEditorRef}
                     value={rawDraft}

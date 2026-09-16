@@ -55,7 +55,6 @@ import {
 import {
   MAX_EMBED_WIDTH_PERCENT,
   MIN_EMBED_WIDTH_PERCENT,
-  matchTomeEmbedUrl,
   type TomeMediaAlignment,
 } from "@/lib/tome/embeds";
 import { setVidcastBlockPlaylistExpanded } from "@/lib/tome/vidcast";
@@ -1606,8 +1605,9 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     };
   }, []);
 
-  // Treat a supported URL pasted by itself as an embed. Mixed prose and
-  // ordinary links deliberately keep Crepe's normal paste behavior.
+  // Preserve multiline text pasted into a single table cell. All other
+  // content, including supported media URLs, keeps Crepe's normal paste
+  // behavior. Users opt into an inline preview through Insert media.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -1616,24 +1616,8 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
       const target = event.target;
       if (!(target instanceof Element) || !target.closest(".ProseMirror")) return;
       const clipboardText = event.clipboardData?.getData("text/plain") ?? "";
-      const match = matchTomeEmbedUrl(clipboardText);
       const crepe = crepeRef.current;
       if (!crepe) return;
-      if (match) {
-        event.preventDefault();
-        event.stopPropagation();
-        crepe.editor.action(insert(match.markdown));
-        const label =
-          match.provider === "youtube"
-            ? "YouTube"
-            : match.provider === "vidcast"
-              ? "Vidcast"
-              : match.provider === "arxiv"
-                ? "arXiv"
-                : "PDF";
-        toast(`${label} link converted to an embed`, "success");
-        return;
-      }
 
       // Keep a multiline plain-text paste inside one cell. Tabs and HTML
       // tables remain delegated to Crepe's native multi-cell paste handling.
@@ -1655,7 +1639,7 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     };
     host.addEventListener("paste", onPaste, true);
     return () => host.removeEventListener("paste", onPaste, true);
-  }, [toast]);
+  }, []);
 
   // Deep-linking: scroll to the heading named by the URL hash once it exists.
   useEffect(() => {

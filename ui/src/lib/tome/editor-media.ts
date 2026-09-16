@@ -249,7 +249,12 @@ export function hydrateEmbedPreviews(root: ParentNode): void {
       iframe.src = parsed.value.src;
       iframe.title = parsed.value.title;
       iframe.setAttribute("loading", "lazy");
-      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+      // Chromium blocks its built-in PDF viewer in a sandboxed frame. arXiv is
+      // strictly allowlisted and normalized above, so let that PDF use the
+      // browser viewer while keeping every other external provider sandboxed.
+      if (parsed.value.provider !== "arxiv") {
+        iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+      }
       if (parsed.value.provider === "youtube") {
         iframe.setAttribute(
           "allow",

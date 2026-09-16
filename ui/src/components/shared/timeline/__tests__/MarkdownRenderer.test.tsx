@@ -244,6 +244,9 @@ describe("MarkdownRenderer links", () => {
       "src",
       "https://arxiv.org/pdf/2607.12662v1",
     );
+    expect(enabled.container.querySelector(".tome-arxiv-iframe")).not.toHaveAttribute(
+      "sandbox",
+    );
     expect(enabled.container.querySelector(".tome-pdf-iframe")).toHaveAttribute(
       "sandbox",
       "allow-scripts allow-same-origin allow-presentation",

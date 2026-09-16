@@ -538,6 +538,32 @@ describe("GistView", () => {
     );
   });
 
+  it("leaves a supported URL as a normal paste in Markdown source mode", async () => {
+    render(
+      <GistView
+        slug="example-project"
+        id="gist-1"
+        canEdit
+        onBack={jest.fn()}
+      />,
+    );
+
+    await screen.findByText("Example gist");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    const editor = screen.getByRole("textbox", { name: "Markdown gist body" });
+
+    const wasNotCancelled = fireEvent.paste(editor, {
+      clipboardData: {
+        files: [],
+        getData: () => "https://arxiv.org/abs/1706.03762",
+      },
+    });
+
+    expect(wasNotCancelled).toBe(true);
+    expect((editor as HTMLTextAreaElement).value).not.toContain("```arxiv");
+  });
+
   it("opens a blank full editor and creates a gist without a dialog", async () => {
     const onCreated = jest.fn();
     const createdGist = {

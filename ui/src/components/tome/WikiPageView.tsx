@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent as ReactClipboardEvent,
 } from "react";
 import { AlertTriangle, ArrowLeftRight, ChevronDown, ImagePlus, Loader2, X } from "lucide-react";
 
@@ -73,7 +72,6 @@ import {
 } from "@/lib/tome/schema";
 import { cn } from "@/lib/utils";
 import { diagnoseTomeMarkdown } from "@/lib/tome/markdown-diagnostics";
-import { matchTomeEmbedUrl } from "@/lib/tome/embeds";
 import type { PageKind } from "@/types/tome";
 
 /** User-flippable kinds (report is system-managed via path). */
@@ -462,18 +460,6 @@ export function WikiPageView({
       setRawDraft((current) => `${current}${embedMarkdown}`);
     }
   }, [editorMode]);
-
-  const handleSourcePaste = useCallback(
-    (event: ReactClipboardEvent<HTMLDivElement>) => {
-      if (event.clipboardData.files.length) return;
-      const match = matchTomeEmbedUrl(event.clipboardData.getData("text/plain"));
-      if (!match) return;
-      event.preventDefault();
-      event.stopPropagation();
-      insertMediaMarkdown(match.markdown);
-    },
-    [insertMediaMarkdown],
-  );
 
   const handleInlineAiOpenChange = useCallback((open: boolean) => {
     if (open) {
@@ -979,10 +965,7 @@ export function WikiPageView({
           )}
         >
           {isEditing && editorMode === "source" ? (
-            <div
-              className="h-full min-h-[28rem] p-3"
-              onPasteCapture={handleSourcePaste}
-            >
+            <div className="h-full min-h-[28rem] p-3">
               <RichCodeEditor
                 editorRef={sourceEditorRef}
                 value={rawDraft}

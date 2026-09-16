@@ -283,6 +283,7 @@ describe("TOME editor media", () => {
     const iframe = root.querySelector("iframe");
     expect(iframe).toHaveAttribute("src", "https://arxiv.org/pdf/1706.03762");
     expect(iframe).toHaveAttribute("title", "Example paper");
+    expect(iframe).not.toHaveAttribute("sandbox");
     expect(iframe).not.toHaveAttribute("allow");
     expect(root.querySelector(".tome-embed-link")).toHaveAttribute(
       "href",

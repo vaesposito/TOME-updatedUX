@@ -102,6 +102,8 @@ function embedMarkdown(marker: string): string {
     "url: https://arxiv.org/abs/1706.03762",
     "  title: Attention Is All You Need",
     "```",
+    "",
+    "[Open the arXiv paper without a preview](https://arxiv.org/abs/1706.03762)",
   ].join("\n");
 }
 
@@ -377,7 +379,11 @@ test.describe("GRID TAP TOME live release regression", () => {
       );
       await expect(page.locator(`iframe[src*="youtube-nocookie.com/embed/${YOUTUBE_ID}"]`)).toBeVisible();
       await expect(page.locator(`iframe[src*="app.vidcast.io/share/embed/${VIDCAST_ID}"]`)).toBeVisible();
-      await expect(page.locator('iframe[src*="arxiv.org/pdf/1706.03762"]')).toBeVisible();
+      const wikiArxivFrame = page.locator('iframe[src*="arxiv.org/pdf/1706.03762"]');
+      await expect(wikiArxivFrame).toHaveCount(1);
+      await expect(wikiArxivFrame).toBeVisible();
+      await expect(wikiArxivFrame).not.toHaveAttribute("sandbox", /.+/);
+      await expect(page.getByRole("link", { name: "Open the arXiv paper without a preview" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Remove YouTube embed" })).toHaveCount(0);
 
       await page.getByRole("button", { name: "Edit", exact: true }).click();
@@ -393,7 +399,11 @@ test.describe("GRID TAP TOME live release regression", () => {
       );
       await expect(page.locator(`iframe[src*="youtube-nocookie.com/embed/${YOUTUBE_ID}"]`)).toBeVisible();
       await expect(page.locator(`iframe[src*="app.vidcast.io/share/embed/${VIDCAST_ID}"]`)).toBeVisible();
-      await expect(page.locator('iframe[src*="arxiv.org/pdf/1706.03762"]')).toBeVisible();
+      const gistArxivFrame = page.locator('iframe[src*="arxiv.org/pdf/1706.03762"]');
+      await expect(gistArxivFrame).toHaveCount(1);
+      await expect(gistArxivFrame).toBeVisible();
+      await expect(gistArxivFrame).not.toHaveAttribute("sandbox", /.+/);
+      await expect(page.getByRole("link", { name: "Open the arXiv paper without a preview" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Remove YouTube embed" })).toHaveCount(0);
 
       await attachEvidence(testInfo, "tome-embeds", {

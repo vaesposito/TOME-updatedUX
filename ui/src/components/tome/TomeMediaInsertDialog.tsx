@@ -74,8 +74,8 @@ export function TomeMediaInsertDialog({ open, onOpenChange, onInsert }: Props) {
         <DialogHeader>
           <DialogTitle>Insert media</DialogTitle>
           <DialogDescription>
-            Paste a YouTube, Vidcast, arXiv, or direct PDF link. Tome recognizes the provider and
-            saves a portable Markdown block with a validated preview and source link.
+            Add a YouTube, Vidcast, arXiv, or direct PDF preview. To keep a URL as a regular link
+            without a preview, paste it directly into the document instead.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">

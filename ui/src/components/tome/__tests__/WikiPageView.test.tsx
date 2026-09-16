@@ -517,7 +517,7 @@ describe("WikiPageView", () => {
     expect(screen.getByRole("textbox", { name: "Markdown source editor" })).toHaveValue(source);
   });
 
-  it("converts a supported URL pasted into Markdown source mode", async () => {
+  it("leaves a supported URL as a normal paste in Markdown source mode", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -531,15 +531,14 @@ describe("WikiPageView", () => {
     await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     const editor = screen.getByRole("textbox", { name: "Markdown source editor" });
-    fireEvent.paste(editor, {
+    const wasNotCancelled = fireEvent.paste(editor, {
       clipboardData: {
         files: [],
         getData: () => "https://arxiv.org/pdf/1706.03762.pdf",
       },
     });
 
-    expect((editor as HTMLTextAreaElement).value).toContain(
-      "```arxiv\nurl: https://arxiv.org/pdf/1706.03762.pdf\n```",
-    );
+    expect(wasNotCancelled).toBe(true);
+    expect((editor as HTMLTextAreaElement).value).not.toContain("```arxiv");
   });
 });

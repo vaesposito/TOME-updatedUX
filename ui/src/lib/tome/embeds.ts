@@ -284,12 +284,7 @@ export function serializeTomeEmbedBlock(
   return `\`\`\`${provider}\n${lines.join("\n")}\n\`\`\``;
 }
 
-/**
- * Recognize a standalone, safe media URL and convert it to Tome's portable
- * fenced-block representation. This is intentionally URL-only: ordinary
- * prose, Markdown links, and provider-like text must retain normal paste
- * behavior.
- */
+/** Build Tome's portable fenced-block representation for a standalone, safe media URL. */
 export function matchTomeEmbedUrl(value: string): TomeEmbedUrlMatch | null {
   const url = value.trim();
   if (!url || /\s/.test(url)) return null;

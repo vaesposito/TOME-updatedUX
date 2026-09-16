@@ -303,8 +303,10 @@ describe("GistView", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: "example-gist.md" });
-    fireEvent.click(screen.getByRole("button", { name: "example-gist.md" }));
+    await screen.findByRole("heading", { name: "Example gist" });
+    const renameButton = screen.getByRole("button", { name: "Rename gist filename" });
+    expect(renameButton).toHaveClass("md:opacity-0", "md:group-hover/filename:opacity-100");
+    fireEvent.click(renameButton);
     const filenameInput = screen.getByRole("textbox", {
       name: "Rename gist filename (Enter to save, Esc to cancel)",
     });
@@ -318,7 +320,9 @@ describe("GistView", () => {
         body: JSON.stringify({ filename: "renamed.md" }),
       }),
     ));
-    expect(await screen.findByRole("button", { name: "renamed.md" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("renamed.md");
+    });
   });
 
   it("keeps gist metadata compact and reveals audit details in a tooltip", async () => {
@@ -396,8 +400,8 @@ describe("GistView", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: "example-gist.md" });
-    fireEvent.click(screen.getByRole("button", { name: "example-gist.md" }));
+    await screen.findByRole("heading", { name: "Example gist" });
+    fireEvent.click(screen.getByRole("button", { name: "Rename gist filename" }));
     const filenameInput = screen.getByRole("textbox", {
       name: "Rename gist filename (Enter to save, Esc to cancel)",
     });
@@ -411,7 +415,54 @@ describe("GistView", () => {
         body: JSON.stringify({ filename: "renamed.md" }),
       }),
     ));
-    expect(await screen.findByRole("button", { name: "renamed.md" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("renamed.md");
+    });
+  });
+
+  it("renames the gist title inline without opening the full editor", async () => {
+    const original = {
+      id: "gist-1",
+      title: "Example gist",
+      filename: "example-gist.md",
+      body: "Original markdown",
+      author: "test-user",
+      created_at: "2026-08-14T12:00:00.000Z",
+      tags: [],
+    };
+    (global.fetch as jest.Mock)
+      .mockReset()
+      .mockResolvedValueOnce(jsonResponse({ data: { gist: original } }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { gist: { ...original, title: "Renamed gist" } } }),
+      );
+
+    render(
+      <GistView
+        slug="example-project"
+        id="gist-1"
+        canEdit
+        onBack={jest.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Example gist" });
+    const renameButton = screen.getByRole("button", { name: "Rename gist title" });
+    expect(renameButton).toHaveClass("md:opacity-0", "md:group-hover/title:opacity-100");
+    fireEvent.click(renameButton);
+    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.change(titleInput, { target: { value: "Renamed gist" } });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenLastCalledWith(
+      "/api/tome/projects/example-project/gists/gist-1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ title: "Renamed gist" }),
+      }),
+    ));
+    expect(await screen.findByRole("heading", { name: "Renamed gist" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
   it("lets editors update a gist with the shared Rich, Markdown, and Preview modes", async () => {
@@ -456,7 +507,7 @@ describe("GistView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const titleTagsRow = screen.getByTestId("gist-title-tags-row");
-    expect(titleTagsRow).toContainElement(screen.getByRole("textbox", { name: "Gist title" }));
+    expect(titleTagsRow).toContainElement(screen.getByRole("button", { name: "Rename gist title" }));
     expect(titleTagsRow).toContainElement(screen.getByTestId("gist-author-meta"));
     expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("test-user");
     expect(titleTagsRow).toContainElement(screen.getByRole("textbox", { name: "Add tag" }));
@@ -500,9 +551,12 @@ describe("GistView", () => {
     expect(
       screen.getByRole("textbox", { name: "Gist body" }).closest(".tome-rich-editor-full-width"),
     ).toBeNull();
-    fireEvent.change(screen.getByRole("textbox", { name: "Gist title" }), {
+    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
+    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.change(titleInput, {
       target: { value: "Updated gist" },
     });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
     fireEvent.change(screen.getByRole("textbox", { name: "Gist body" }), {
       target: { value: "Updated markdown" },
     });
@@ -598,9 +652,12 @@ describe("GistView", () => {
     expect(metadata).not.toHaveTextContent("saved outside the curated wiki");
     expect(global.fetch).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Gist title" }), {
+    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
+    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.change(titleInput, {
       target: { value: "New context" },
     });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
     fireEvent.change(screen.getByRole("textbox", { name: "Gist body" }), {
       target: { value: "Useful markdown" },
     });
@@ -674,9 +731,12 @@ describe("GistView", () => {
     );
 
     expect(screen.queryByTestId("gist-draft-status")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByRole("textbox", { name: "Gist title" }), {
+    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
+    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.change(titleInput, {
       target: { value: "Local draft" },
     });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
     act(() => jest.advanceTimersByTime(500));
 
     const titleRow = screen.getByTestId("gist-title-tags-row");
@@ -696,6 +756,59 @@ describe("GistView", () => {
       "dateTime",
       new Date(savedAt.getTime() + 500).toISOString(),
     );
+
+    unmount();
+    jest.useRealTimers();
+  });
+
+  it("keeps title and filename rename controls available after autosave in Preview", () => {
+    const savedAt = new Date(2026, 8, 16, 14, 0, 0);
+    jest.useFakeTimers();
+    jest.setSystemTime(savedAt);
+
+    const { unmount } = render(
+      <GistView
+        slug="example-project"
+        canEdit
+        onBack={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
+    const firstTitleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.change(firstTitleInput, { target: { value: "Saved draft" } });
+    fireEvent.keyDown(firstTitleInput, { key: "Enter" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Gist body" }), {
+      target: { value: "Draft body" },
+    });
+    act(() => jest.advanceTimersByTime(500));
+
+    expect(screen.getByTestId("gist-draft-status")).toHaveTextContent("Saved locally");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("heading", { name: "Saved draft" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
+    const renamedTitleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.change(renamedTitleInput, { target: { value: "Renamed after autosave" } });
+    fireEvent.keyDown(renamedTitleInput, { key: "Enter" });
+    expect(screen.getByRole("heading", { name: "Renamed after autosave" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename gist filename" }));
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Rename gist filename (Enter to save, Esc to cancel)",
+    });
+    fireEvent.change(filenameInput, { target: { value: "renamed-draft" } });
+    fireEvent.keyDown(filenameInput, { key: "Enter" });
+    act(() => jest.advanceTimersByTime(500));
+
+    expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("renamed-draft.md");
+    expect(JSON.parse(
+      window.localStorage.getItem("tome:gist-draft:example-project:new") ?? "{}",
+    )).toEqual(expect.objectContaining({
+      title: "Renamed after autosave",
+      filename: "renamed-draft.md",
+      body: "Draft body",
+    }));
 
     unmount();
     jest.useRealTimers();

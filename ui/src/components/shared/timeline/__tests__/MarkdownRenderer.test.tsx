@@ -9,6 +9,7 @@ const mockMermaidRender = jest.fn(async (_id: string, _content: string) => ({
     "<title>Example architecture</title>",
     "<style>#tome-mermaid-test .nodeLabel{fill:#f8fafc}</style>",
     '<text class="nodeLabel">Visible label</text>',
+    '<foreignObject><div class="nodeLabel" onclick="alert(unsafe)">Saved label</div></foreignObject>',
     '<script>alert("unsafe")</script>',
     "</svg>",
   ].join(""),
@@ -135,6 +136,8 @@ describe("MarkdownRenderer links", () => {
     );
     expect(enabled.container.querySelector("svg")).not.toHaveAttribute("onload");
     expect(enabled.container.querySelector(".nodeLabel")).toHaveTextContent("Visible label");
+    expect(enabled.container.querySelector("foreignObject")).toHaveTextContent("Saved label");
+    expect(enabled.container.querySelector("[onclick]")).toBeNull();
     expect(enabled.container.querySelector(".md-code-block")).toBeNull();
     expect(enabled.container).not.toHaveTextContent("plain text");
 

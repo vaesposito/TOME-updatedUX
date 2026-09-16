@@ -93,9 +93,15 @@ describe("TOME editor media", () => {
   });
 
   it("returns a text-only alert when Mermaid rejects invalid syntax", async () => {
-    mockedMermaid.render.mockRejectedValue(
-      new Error('<img src=x onerror="globalThis.compromised=true">'),
-    );
+    let orphanId = "";
+    mockedMermaid.render.mockImplementation(async (renderId) => {
+      orphanId = `d${renderId}`;
+      const orphan = document.createElement("div");
+      orphan.id = orphanId;
+      orphan.innerHTML = '<svg aria-roledescription="error"></svg>';
+      document.body.append(orphan);
+      throw new Error('<img src=x onerror="globalThis.compromised=true">');
+    });
     const applyPreview = jest.fn();
 
     renderTomeCodePreview("mermaid", "not valid", applyPreview);
@@ -107,6 +113,8 @@ describe("TOME editor media", () => {
     expect(alert).toHaveAttribute("role", "alert");
     expect(alert.textContent).toContain("<img src=x");
     expect(alert.querySelector("img")).toBeNull();
+    expect(orphanId).not.toBe("");
+    expect(document.getElementById(orphanId)).toBeNull();
   });
 
   it("renders and hydrates a validated Vidcast block", () => {

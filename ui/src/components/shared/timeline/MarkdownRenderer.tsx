@@ -310,6 +310,12 @@ function decorateExternalEmbeds(root: HTMLElement) {
 
 const mermaidPurifyConfig = {
   USE_PROFILES: { html: true, svg: true, svgFilters: true },
+  // Mermaid uses SVG <foreignObject> nodes for flowchart and ER labels. The
+  // SVG profile drops that element by default, leaving only boxes/connectors.
+  // Explicitly retain the container; its HTML descendants are still sanitized
+  // by the enabled HTML profile below.
+  ADD_TAGS: ["foreignObject"] as string[],
+  HTML_INTEGRATION_POINTS: { foreignobject: true },
   // Mermaid's strict renderer emits an ID-scoped stylesheet that supplies
   // virtually all diagram labels, rows, connectors, and theme colors. Keep
   // that stylesheet in saved/read views while DOMPurify removes executable

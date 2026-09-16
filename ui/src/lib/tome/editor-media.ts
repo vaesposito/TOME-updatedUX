@@ -216,6 +216,11 @@ export function renderTomeCodePreview(
       applyPreview(mermaidPreviewMarkup(svg));
     })
     .catch((error: unknown) => {
+      // Mermaid appends a temporary `d<renderId>` container to <body>. On a
+      // parser failure it leaves its own large error SVG behind, outside the
+      // editor/reader that requested the preview. Remove only that render's
+      // temporary node and show our scoped, text-only error instead.
+      document.getElementById(`d${renderId}`)?.remove();
       const message = error instanceof Error ? error.message : "Invalid Mermaid diagram";
       const node = document.createElement("div");
       node.className = "tome-mermaid-error";

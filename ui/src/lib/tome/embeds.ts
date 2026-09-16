@@ -317,7 +317,7 @@ function normalizeArxivId(value: string): string | null {
   return candidate;
 }
 
-/** Normalize an arXiv identifier or abs, HTML, or PDF URL to its PDF. */
+/** Normalize an arXiv identifier or abs, HTML, or PDF URL to its HTML reader. */
 export function normalizeArxivUrl(value: string): {
   src: string;
   watchUrl: string;
@@ -325,7 +325,7 @@ export function normalizeArxivUrl(value: string): {
   const directId = normalizeArxivId(value);
   if (directId) {
     return {
-      src: `https://arxiv.org/pdf/${directId}`,
+      src: `https://arxiv.org/html/${directId}`,
       watchUrl: `https://arxiv.org/abs/${directId}`,
     };
   }
@@ -358,7 +358,7 @@ export function normalizeArxivUrl(value: string): {
   const id = normalizeArxivId(decodedPath);
   if (!id) return null;
   return {
-    src: `https://arxiv.org/pdf/${id}`,
+    src: `https://arxiv.org/html/${id}`,
     watchUrl: `https://arxiv.org/abs/${id}`,
   };
 }

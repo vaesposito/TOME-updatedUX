@@ -338,7 +338,7 @@ describe("TOME editor media", () => {
     ).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("renders arXiv papers as embedded PDFs", () => {
+  it("renders arXiv papers with the sandboxed HTML reader", () => {
     const applyPreview = jest.fn();
 
     renderTomeCodePreview(
@@ -351,9 +351,12 @@ describe("TOME editor media", () => {
     hydrateEmbedPreviews(root);
 
     const iframe = root.querySelector("iframe");
-    expect(iframe).toHaveAttribute("src", "https://arxiv.org/pdf/1706.03762");
+    expect(iframe).toHaveAttribute("src", "https://arxiv.org/html/1706.03762");
     expect(iframe).toHaveAttribute("title", "Example paper");
-    expect(iframe).not.toHaveAttribute("sandbox");
+    expect(iframe).toHaveAttribute(
+      "sandbox",
+      "allow-scripts allow-same-origin allow-presentation",
+    );
     expect(iframe).not.toHaveAttribute("allow");
     expect(root.querySelector(".tome-embed-link")).toHaveAttribute(
       "href",

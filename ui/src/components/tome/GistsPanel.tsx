@@ -1,12 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Link2, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { PanelHeader } from "@/components/tome/PanelHeader";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import { cn } from "@/lib/utils";
@@ -35,11 +44,25 @@ export function GistsPanel({
   slug: string;
   canEdit: boolean;
   onOpenGist: (id: string) => void;
-  onNewGist: () => void;
+  onNewGist: (title: string) => void;
 }) {
   const [gists, setGists] = useState<GistRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [newGistOpen, setNewGistOpen] = useState(false);
+  const [newGistName, setNewGistName] = useState("");
+  const newGistInputRef = useRef<HTMLInputElement | null>(null);
+
+  const existingDraftTitle = useCallback((): string => {
+    try {
+      const stored = window.localStorage.getItem(`tome:gist-draft:${slug}:new`);
+      if (!stored) return "";
+      const parsed = JSON.parse(stored) as { title?: unknown };
+      return typeof parsed.title === "string" ? parsed.title : "";
+    } catch {
+      return "";
+    }
+  }, [slug]);
 
   const load = useCallback(async () => {
     try {
@@ -92,10 +115,66 @@ export function GistsPanel({
           title="Gists"
           description="Quick, non-committal context saved outside the wiki."
           action={(
-            <Button size="sm" className="gap-1.5" onClick={onNewGist}>
-              <Plus className="h-3.5 w-3.5" />
-              New gist
-            </Button>
+            <Dialog
+              open={newGistOpen}
+              onOpenChange={(open) => {
+                setNewGistOpen(open);
+                if (open) {
+                  setNewGistName(existingDraftTitle());
+                  setTimeout(() => newGistInputRef.current?.focus(), 0);
+                } else {
+                  setNewGistName("");
+                }
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button size="sm" className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  New gist
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>New gist</DialogTitle>
+                  <DialogDescription>
+                    Enter a gist name, then draft it in the editor.
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = newGistName.trim();
+                    if (!name) return;
+                    onNewGist(name);
+                    setNewGistOpen(false);
+                    setNewGistName("");
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="tome-new-gist-input"
+                      className="block text-sm font-medium text-foreground"
+                    >
+                      Gist name
+                    </label>
+                    <Input
+                      id="tome-new-gist-input"
+                      ref={newGistInputRef}
+                      value={newGistName}
+                      onChange={(event) => setNewGistName(event.target.value)}
+                      placeholder="Deployment notes"
+                      aria-label="New gist name"
+                    />
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <Button type="submit" size="sm" disabled={!newGistName.trim()}>
+                      Write in editor
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           )}
         />
       </div>

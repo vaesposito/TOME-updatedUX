@@ -104,6 +104,7 @@ import {
   isSupportedTomeImportPath,
   TOME_IMPORT_ACCEPT,
 } from "@/lib/tome/document-import-formats";
+import { defaultGistFilename } from "@/lib/tome/gists";
 import {
   TOME_TRACKED_ISSUE_LABELS,
   TOME_TRACKER_PREFIX,
@@ -1002,6 +1003,39 @@ export function TomeWiki({ slug }: { slug: string }) {
     setNewPageParentFolder(null);
     navigate({ kind: "agent" });
   }, [data?.folders, navigate, newPageParentFolder, slug]);
+
+  const openNewGist = useCallback((rawTitle: string) => {
+    const title = rawTitle.trim();
+    if (!title) return;
+    const storageKey = `tome:gist-draft:${slug}:new`;
+    let existing: {
+      title?: unknown;
+      filename?: unknown;
+      body?: unknown;
+      tags?: unknown;
+    } = {};
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored) existing = JSON.parse(stored) as typeof existing;
+    } catch {
+      // Replace an unreadable browser draft with a valid name-first draft.
+    }
+
+    const previousTitle = typeof existing.title === "string" ? existing.title : "";
+    const previousFilename = typeof existing.filename === "string" ? existing.filename : "";
+    const filenameWasCustomized = Boolean(
+      previousFilename && previousFilename !== defaultGistFilename(previousTitle),
+    );
+    const updatedAt = new Date().toISOString();
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      title,
+      filename: filenameWasCustomized ? previousFilename : defaultGistFilename(title),
+      body: typeof existing.body === "string" ? existing.body : "",
+      tags: Array.isArray(existing.tags) ? existing.tags : [],
+      updatedAt,
+    }));
+    navigate({ kind: "newGist" });
+  }, [navigate, slug]);
 
   const deletePage = useCallback((path: string) => {
     setPagePendingDelete(path);
@@ -2109,7 +2143,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                   slug={slug}
                   canEdit={canEdit}
                   onOpenGist={(id) => navigate({ kind: "gist", id })}
-                  onNewGist={() => navigate({ kind: "newGist" })}
+                  onNewGist={openNewGist}
                 />
               </div>
             ) : view.kind === "newGist" ? (

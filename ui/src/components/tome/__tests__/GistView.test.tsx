@@ -619,7 +619,7 @@ describe("GistView", () => {
     expect((editor as HTMLTextAreaElement).value).not.toContain("```arxiv");
   });
 
-  it("opens a blank full editor and creates a gist without a dialog", async () => {
+  it("opens the full editor with the name collected by the Gists UI", async () => {
     const onCreated = jest.fn();
     const createdGist = {
       id: "gist-new",
@@ -632,6 +632,16 @@ describe("GistView", () => {
     (global.fetch as jest.Mock)
       .mockReset()
       .mockResolvedValue(jsonResponse({ data: { gist: createdGist } }));
+    window.localStorage.setItem(
+      "tome:gist-draft:example-project:new",
+      JSON.stringify({
+        title: "New context",
+        filename: "new-context.md",
+        body: "",
+        tags: [],
+        updatedAt: "2026-08-14T12:00:00.000Z",
+      }),
+    );
 
     render(
       <GistView
@@ -647,17 +657,12 @@ describe("GistView", () => {
     expect(screen.getByRole("button", { name: "Markdown" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument();
     const metadata = screen.getByTestId("gist-author-meta");
-    expect(metadata).toHaveTextContent("gist.md");
+    expect(screen.getByRole("heading", { name: "New context" })).toBeInTheDocument();
+    expect(metadata).toHaveTextContent("new-context.md");
     expect(metadata).toHaveTextContent("New gist");
     expect(metadata).not.toHaveTextContent("saved outside the curated wiki");
     expect(global.fetch).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
-    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
-    fireEvent.change(titleInput, {
-      target: { value: "New context" },
-    });
-    fireEvent.keyDown(titleInput, { key: "Enter" });
     fireEvent.change(screen.getByRole("textbox", { name: "Gist body" }), {
       target: { value: "Useful markdown" },
     });

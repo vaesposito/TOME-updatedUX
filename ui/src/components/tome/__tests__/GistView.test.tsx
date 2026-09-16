@@ -489,7 +489,10 @@ describe("GistView", () => {
     expect(screen.getByRole("button", { name: "Rich" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Markdown" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument();
-    expect(screen.getByText("New gist · saved outside the curated wiki")).toBeInTheDocument();
+    const metadata = screen.getByTestId("gist-author-meta");
+    expect(metadata).toHaveTextContent("gist.md");
+    expect(metadata).toHaveTextContent("New gist");
+    expect(metadata).not.toHaveTextContent("saved outside the curated wiki");
     expect(global.fetch).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Gist title" }), {
@@ -554,7 +557,7 @@ describe("GistView", () => {
     expect(screen.queryByText(/Unexpected token/)).not.toBeInTheDocument();
   });
 
-  it("keeps the local-draft timestamp beside the gist title", () => {
+  it("shows one concise local-draft status after content is entered", () => {
     const savedAt = new Date(2026, 8, 11, 20, 22, 36);
     jest.useFakeTimers();
     jest.setSystemTime(savedAt);
@@ -567,13 +570,25 @@ describe("GistView", () => {
       />,
     );
 
+    expect(screen.queryByTestId("gist-draft-status")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "Gist title" }), {
+      target: { value: "Local draft" },
+    });
     act(() => jest.advanceTimersByTime(500));
 
     const titleRow = screen.getByTestId("gist-title-tags-row");
     const status = screen.getByTestId("gist-draft-status");
+    expect(screen.getAllByTestId("gist-author-meta")).toHaveLength(1);
+    expect(screen.getAllByTestId("gist-draft-status")).toHaveLength(1);
     expect(titleRow).toContainElement(status);
     expect(screen.getByTestId("gist-editor-header")).not.toContainElement(status);
-    expect(status).toHaveTextContent("Draft saved locally · Last saved");
+    expect(status).toHaveTextContent("Saved locally · Last saved");
+    expect(status).toHaveAttribute("role", "status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveAttribute(
+      "title",
+      "Saved in this browser until you create the gist.",
+    );
     expect(status.querySelector("time")).toHaveAttribute(
       "dateTime",
       new Date(savedAt.getTime() + 500).toISOString(),

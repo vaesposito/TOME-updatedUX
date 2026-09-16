@@ -238,16 +238,26 @@ export function GistView({
   useEffect(() => {
     if (!editing) return;
     const timer = window.setTimeout(() => {
+      const hasDraftContent = Boolean(
+        title.trim() || rawDraft.trim() || tags.length ||
+          (filenameCustomized && filename !== defaultGistFilename(title)),
+      );
+      if (!hasDraftContent) {
+        window.localStorage.removeItem(draftStorageKey);
+        setDraftStatus(null);
+        setDraftSavedAt(null);
+        return;
+      }
       const updatedAt = new Date().toISOString();
       window.localStorage.setItem(
         draftStorageKey,
         JSON.stringify({ title, filename, body: rawDraft, tags, updatedAt }),
       );
-      setDraftStatus("Draft saved locally");
+      setDraftStatus("Saved locally");
       setDraftSavedAt(updatedAt);
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [draftStorageKey, editing, filename, rawDraft, tags, title]);
+  }, [draftStorageKey, editing, filename, filenameCustomized, rawDraft, tags, title]);
 
   const beginEditing = useCallback(() => {
     if (gist) loadEditorDraft(gist);
@@ -737,7 +747,7 @@ export function GistView({
                   {creating ? (
                     <>
                       <span aria-hidden="true">·</span>
-                      <span>New gist · saved outside the curated wiki</span>
+                      <span title="Gists are saved separately from the curated wiki">New gist</span>
                     </>
                   ) : gist ? (
                     <>
@@ -785,46 +795,15 @@ export function GistView({
               </div>
               {editing && draftStatus && (
                 <p
-                  className="min-w-0 truncate rounded bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300"
+                  className="min-w-0 truncate rounded bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-700 dark:text-emerald-300"
                   data-testid="gist-draft-status"
-                >
-                  <span>{draftStatus}</span>
-                  {draftSavedAt && (
-                    <>
-                      {" · Last saved "}
-                      <time dateTime={draftSavedAt}>
-                        {new Date(draftSavedAt).toLocaleTimeString(undefined, {
-                          hour: "numeric",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </time>
-                    </>
-                  )}
-                </p>
-              )}
-              <p
-                className="shrink-0 whitespace-nowrap text-sm text-muted-foreground"
-                data-testid="gist-author-meta"
-              >
-                {creating ? (
-                  "New gist · saved outside the curated wiki"
-                ) : gist ? (
-                  <>
-                    {gist.author} · {timeLabel(gist.created_at)}
-                    {gist.updated_at && (
-                      <>
-                        {" · edited "}{timeLabel(gist.updated_at)}
-                        {gist.updated_by ? ` by ${gist.updated_by}` : ""}
-                      </>
-                    )}
-                  </>
-                ) : null}
-              </p>
-              {editing && draftStatus && (
-                <p
-                  className="min-w-0 truncate rounded bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300"
-                  data-testid="gist-draft-status"
+                  role="status"
+                  aria-live="polite"
+                  title={
+                    creating
+                      ? "Saved in this browser until you create the gist."
+                      : "Saved in this browser as a local edit."
+                  }
                 >
                   <span>{draftStatus}</span>
                   {draftSavedAt && (

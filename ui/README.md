@@ -168,3 +168,33 @@ ui/src/types/               Shared TypeScript types
 - [Tome Webex manual and recurring meeting ingest](src/lib/tome/auto-ingest/README.md)
 - [Dynamic Agents API](../docs/docs/api/dynamic-agents-mcp.md)
 - [Helm chart reference](../docs/docs/installation/helm-charts/ai-platform-engineering/caipe-ui.md)
+
+## Tome analytics and ingestion budget
+
+The Projects admin analytics page has three sections:
+
+- **Usage:** distinct authenticated chat session owners who sent user prompts in
+  trailing 24-hour, 7-day, and 30-day windows. An active Project, Area, or BHAG
+  received a prompt directly; child activity and scheduled ingestion do not count.
+  Catalog denominators include all non-archived entities, including drafts.
+  **Reading and discovery:** successfully rendered Tome navigations, wiki page
+  views, unique readers, Agent opens, and top pages. Background polling does not
+  count. Views start when this instrumentation is deployed; coverage is shown.
+  Returning viewers visited on at least two UTC dates in the selected 30-day
+  window. Browser sessions use a per-tab session-storage identifier.
+- **Content:** freshness, technical ingestion failures, review outcomes, current
+  template bindings, revision sources, and feedback/service diagnostics. Missing
+  legacy template metadata falls back to frontmatter; explicit null stays unbound.
+  Historical manual edits are recovered only where revision metadata supports it.
+- **Budget:** an optional organization-wide monthly USD limit, stored in MongoDB
+  `tome_budget_config`. Only Tome admins can change it; changes are audited.
+  The limit and warning threshold provide dashboard monitoring, not enforcement
+  or external notifications. No limit is configured by default.
+
+Budget spend includes reported non-negative `cost_usd` from source ingestion and
+Area/BHAG synthesis, attributed to the UTC calendar month of `started_at`.
+Archived/removed entities and failed runs with reported cost remain included.
+Runs without reported cost are counted separately; remaining budget can be
+overstated until those costs arrive. In-flight costs may increase. This is an
+operational estimate, not a provider invoice; chat and separate evaluation costs
+are excluded. No historical data migration is required.

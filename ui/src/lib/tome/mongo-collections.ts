@@ -17,6 +17,7 @@ import {
   type ChatSession,
   type ChatMessage,
   type ChatRun,
+  type TomeUsageEvent,
   type EdgeIndexRow,
   type TrackedEntityIndexRow,
   type Gist,
@@ -68,6 +69,12 @@ export async function getTomeChatRunsCollection(): Promise<
   Collection<ChatRun>
 > {
   return getCollection<ChatRun>(TOME_COLLECTIONS.CHAT_RUNS);
+}
+
+export async function getTomeUsageEventsCollection(): Promise<
+  Collection<TomeUsageEvent>
+> {
+  return getCollection<TomeUsageEvent>(TOME_COLLECTIONS.USAGE_EVENTS);
 }
 
 export async function getTomeEdgesIndexCollection(): Promise<

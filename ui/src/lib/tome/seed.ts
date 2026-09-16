@@ -88,6 +88,7 @@ export async function seedGreenfieldIfEmpty(
   await store.writePages(projectId, pages, {
     message: "seed: greenfield wiki",
     author,
+    origin: "template",
   });
   return Object.keys(pages).length;
 }

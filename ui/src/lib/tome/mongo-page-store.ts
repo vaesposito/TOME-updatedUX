@@ -21,6 +21,7 @@ import {
   type PageStore,
   type WritePageOpts,
 } from "./page-store";
+import { FM_TEMPLATE_PATH, FM_TEMPLATE_SCOPE, FM_TEMPLATE_VERSION, parseFrontmatter } from "./schema";
 import type { PageRevision } from "@/types/tome";
 
 const DEFAULT_AUTHOR = AGENT_IDENTITIES.default;
@@ -74,6 +75,29 @@ async function withPageWriteLock<T>(
   }
 }
 
+function templateMetadata(markdown: string): Pick<
+  PageRevision,
+  "template_scope" | "template_path" | "template_version"
+> {
+  const [frontmatter] = parseFrontmatter(markdown);
+  const scope = frontmatter[FM_TEMPLATE_SCOPE];
+  const path = frontmatter[FM_TEMPLATE_PATH];
+  const version = frontmatter[FM_TEMPLATE_VERSION];
+  return {
+    ...(scope === null || scope === "null"
+      ? { template_scope: null }
+      : typeof scope === "string"
+        ? { template_scope: scope }
+        : {}),
+    ...(path === null || path === "null"
+      ? { template_path: null }
+      : typeof path === "string"
+        ? { template_path: path }
+        : {}),
+    ...(typeof version === "number" ? { template_version: version } : {}),
+  };
+}
+
 export class MongoPageStore implements PageStore {
   async writePageIfCurrent(
     projectId: string,
@@ -118,7 +142,9 @@ export class MongoPageStore implements PageStore {
       author: opts.author ?? DEFAULT_AUTHOR,
       message: opts.message,
       created_at: now,
+      ...templateMetadata(md),
       ...(opts.reportId ? { report_id: opts.reportId } : {}),
+      ...(opts.origin ? { origin: opts.origin } : {}),
       ...(opts.status === "draft" ? { status: "draft" as const } : {}),
     }));
     const col = await getTomePageRevisionsCollection();
@@ -170,7 +196,7 @@ export class MongoPageStore implements PageStore {
   async deletePage(
     projectId: string,
     path: string,
-    opts: { author?: string; message?: string } = {},
+    opts: { author?: string; message?: string; origin?: PageRevision["origin"] } = {},
   ): Promise<void> {
     const safe = safePagePath(path);
     const col = await getTomePageRevisionsCollection();
@@ -182,6 +208,7 @@ export class MongoPageStore implements PageStore {
       message: opts.message || `deleted ${safe}`,
       deleted: true,
       created_at: new Date(),
+      ...(opts.origin ? { origin: opts.origin } : {}),
     });
   }
 
@@ -296,7 +323,7 @@ export class MongoPageStore implements PageStore {
     projectId: string,
     path: string,
     revisionId: string,
-    opts: { author?: string; message?: string } = {},
+    opts: { author?: string; message?: string; origin?: PageRevision["origin"] } = {},
   ): Promise<void> {
     const target = await this.readRevision(projectId, revisionId);
     if (!target || target.path !== safePagePath(path)) {
@@ -312,6 +339,8 @@ export class MongoPageStore implements PageStore {
       message: opts.message || `reverted to a previous revision`,
       reverted_from: revisionId,
       created_at: new Date(),
+      ...templateMetadata(target.markdown ?? ""),
+      ...(opts.origin ? { origin: opts.origin } : {}),
     });
   }
 }

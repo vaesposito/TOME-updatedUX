@@ -255,6 +255,7 @@ async function seedGreenfieldStablePages(
     message: "seed stable pages (founding templates)",
     author: AGENT_IDENTITIES.ingestor,
     reportId,
+    origin: "ingest",
   });
   await appendLog(
     runId,

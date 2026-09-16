@@ -1,10 +1,4 @@
-// GET /api/tome/admin/analytics — org-wide TOME consumption: which projects
-// are actively ingesting, wiki size, ingest cadence/token usage. Gated the
-// same way as /api/tome/admin (can_manage on admin_surface:tome).
-//
-// Per-project engagement is aggregate-only (sessions/messages/repeat-user
-// counts). User identities remain scoped to no admin response.
-
+// TOME admin analytics. Independent sources report unavailability explicitly.
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
@@ -12,85 +6,68 @@ import { authOptions } from "@/lib/auth-config";
 import { isTomeAdmin } from "@/lib/rbac/tome-admin";
 import {
   getOrgTomeConsumption,
-  getTomeAdoption,
-  getTomeAdoptionTrend,
   getTomeFreshness,
-  getTomeFreshnessTrend,
-  getTomeIngestActivityTrend,
   getTomeLeadershipKpis,
-  getTomeProjectOnboardingTrend,
   getTomeQueryLatencyP95,
-  getTomeQueryLatencyTrend,
   getTomeUptime,
-  getTomeUptimeTrend,
 } from "@/lib/tome/analytics";
+import type { TomeAnalyticsSnapshot } from "@/lib/tome/analytics-types";
+import { getTomeChatAnalytics } from "@/lib/tome/chat-analytics";
+import { getIngestionBudget } from "@/lib/tome/ingestion-budget";
+import { getTomeUsageAnalytics } from "@/lib/tome/usage-analytics";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = (await getServerSession(authOptions)) as {
-    sub?: string;
-    user?: { email?: string | null };
-  } | null;
-
-  if (!session?.user?.email) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const admin = await isTomeAdmin(session);
-  if (!admin) {
+  if (!(await isTomeAdmin(session)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
-  // Each KPI/trend source is independent (Mongo vs. Prometheus) and
-  // best-effort — one failing must not take down the others or the
-  // consumption table. 30-day window for the daily trends mirrors the KPI
-  // cards' default `windowDays`; the performance trend uses a shorter 7-day
-  // window since Prometheus retention is typically much shorter than Mongo's.
+  const errors: TomeAnalyticsSnapshot["errors"] = {};
+  async function read<T>(
+    section: keyof typeof errors,
+    load: () => Promise<T>,
+  ): Promise<T | null> {
+    try {
+      return await load();
+    } catch (error) {
+      console.error(`[tome-analytics] ${section} unavailable`, error);
+      errors[section] = `${section} analytics are temporarily unavailable.`;
+      return null;
+    }
+  }
   const [
-    { rows, totals },
-    adoption,
+    chat,
+    budget,
+    usage,
+    leadership,
     freshness,
     performance,
     uptime,
-    adoptionTrend,
-    freshnessTrend,
-    ingestActivityTrend,
-    performanceTrend,
-    uptimeTrend,
-    leadership,
-    onboardingTrend,
+    consumption,
   ] = await Promise.all([
-    getOrgTomeConsumption(),
-    getTomeAdoption(),
-    getTomeFreshness(),
-    getTomeQueryLatencyP95(),
-    getTomeUptime(),
-    getTomeAdoptionTrend(),
-    getTomeFreshnessTrend(),
-    getTomeIngestActivityTrend(),
-    getTomeQueryLatencyTrend(),
-    getTomeUptimeTrend(),
-    getTomeLeadershipKpis(),
-    getTomeProjectOnboardingTrend(),
+    read("chat", () => getTomeChatAnalytics()),
+    read("budget", () => getIngestionBudget()),
+    read("usage", () => getTomeUsageAnalytics()),
+    read("leadership", () => getTomeLeadershipKpis()),
+    read("freshness", () => getTomeFreshness()),
+    read("performance", () => getTomeQueryLatencyP95()),
+    read("uptime", () => getTomeUptime()),
+    read("consumption", () => getOrgTomeConsumption()),
   ]);
   return NextResponse.json({
     data: {
-      projects: rows,
-      totals,
-      adoption,
+      chat,
+      budget,
+      usage,
+      leadership,
       freshness,
       performance,
       uptime,
-      leadership,
-      trends: {
-        adoption: adoptionTrend,
-        freshness: freshnessTrend,
-        ingestActivity: ingestActivityTrend,
-        performance: performanceTrend,
-        uptime: uptimeTrend,
-        onboarding: onboardingTrend,
-      },
+      projects: consumption?.rows ?? [],
+      errors,
     },
   });
 }

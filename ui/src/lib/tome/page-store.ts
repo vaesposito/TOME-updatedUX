@@ -19,6 +19,7 @@ export interface WritePageOpts {
   message: string;
   author?: string;
   reportId?: string;
+  origin?: PageRevision["origin"];
   /** "draft" holds this write pending review; omitted/undefined = "live". */
   status?: "live" | "draft";
 }
@@ -77,7 +78,7 @@ export interface PageStore {
   deletePage(
     projectId: string,
     path: string,
-    opts?: { author?: string; message?: string },
+    opts?: { author?: string; message?: string; origin?: PageRevision["origin"] },
   ): Promise<void>;
 
   /** All revisions of a page, newest first. */
@@ -124,7 +125,7 @@ export interface PageStore {
     projectId: string,
     path: string,
     revisionId: string,
-    opts: { author?: string; message?: string },
+    opts: { author?: string; message?: string; origin?: PageRevision["origin"] },
   ): Promise<void>;
 
   /**

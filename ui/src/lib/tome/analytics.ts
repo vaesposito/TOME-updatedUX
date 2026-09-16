@@ -537,7 +537,7 @@ export async function getTomeLeadershipKpis(windowDays = 30): Promise<TomeLeader
     const cutoff = new Date(Date.now() - windowDays * DAY_MS);
     const [projectRows, chatRows, ingestRows, synthesisRows, sessionCount, messageCount, repeatRows, projectSessionRows, projectMessageRows, runRows, reliabilityRows] = await Promise.all([
       projects
-        .find({ status: "active" })
+        .find(ANALYTICS_PROJECT_MATCH)
         .project({ type: 1, slug: 1, name: 1, data_steward: 1, sources: 1, labels: 1, last_source_event_at: 1, created_at: 1 })
         .toArray(),
       sessions
@@ -694,6 +694,12 @@ export async function getTomeLeadershipKpis(windowDays = 30): Promise<TomeLeader
 // ---------------------------------------------------------------------------
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Analytics describes the catalog, not only projects that have completed an
+// activation workflow. Draft and onboarding records are still valid catalog
+// entities and must remain visible in coverage, source health, and onboarding
+// denominators. Archived/deleted records are excluded.
+const ANALYTICS_PROJECT_MATCH = { status: { $ne: "archived" as const } };
 
 export interface TomeAdoption {
   /** Distinct users with a chat message in the trailing 24h. */
@@ -1044,7 +1050,7 @@ export async function getTomeProjectOnboardingTrend(days = 30): Promise<DailyPoi
     const cutoff = new Date(Date.now() - days * DAY_MS);
     const rows = await projects
       .aggregate<{ _id: string; projects: number }>([
-        { $match: { status: "active", created_at: { $gte: cutoff }, type: { $nin: ["bhag", "area"] } } },
+        { $match: { ...ANALYTICS_PROJECT_MATCH, created_at: { $gte: cutoff }, type: { $nin: ["bhag", "area"] } } },
         { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$created_at" } }, projects: { $sum: 1 } } },
       ])
       .toArray();

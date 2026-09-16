@@ -79,6 +79,7 @@ import { WikiPageView } from "@/components/tome/WikiPageView";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
 import type { GlossaryPreview } from "@/components/tome/CrepeEditor";
 import { parseTomeHref } from "@/lib/tome/tome-links";
+import { useTomeViewTracking } from "@/lib/tome/usage-tracking";
 import { BetaBadge } from "@/components/tome/BetaBadge";
 import { StandupView } from "@/components/tome/StandupView";
 import { GithubIssuesPanel } from "@/components/tome/GithubIssuesPanel";
@@ -288,6 +289,8 @@ export function TomeWiki({ slug }: { slug: string }) {
   }, [pathname, base]);
   // The active view is derived from the URL — Agent is the landing view.
   const view = useMemo(() => pathToView(segments), [segments]);
+  const trackedPagePath =
+    view.kind === "page" || view.kind === "pageHistory" ? view.path : undefined;
   const {
     hasUnsavedChanges,
     requestNavigation,
@@ -819,6 +822,8 @@ export function TomeWiki({ slug }: { slug: string }) {
   );
 
   const loading = data === null && !error;
+  useTomeViewTracking(slug, view.kind, trackedPagePath, Boolean(data && !error &&
+    (view.kind !== "page" || data.pages[view.path] !== undefined)));
   const isEmpty = data !== null && Object.keys(data.pages).length === 0 && data.tree.length === 0;
   const knownPagePaths = useMemo(
     () => new Set(Object.keys(data?.pages ?? {})),

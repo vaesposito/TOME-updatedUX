@@ -46,7 +46,7 @@ export interface TomeAuditInput {
 
 const SUBJECT_SALT = process.env.AUDIT_SUBJECT_SALT ?? "caipe-098-audit";
 
-function hashSubject(id: string): string {
+export function hashTomeSubject(id: string): string {
   return "sha256:" + createHash("sha256").update(`${SUBJECT_SALT}:${id}`).digest("hex");
 }
 
@@ -94,7 +94,7 @@ export function auditTome(input: TomeAuditInput): void {
       component: "tome",
       source: input.actor.type === "agent" ? "agent_callback" : "webui_backend",
       tenant_id: input.tenantId ?? process.env.TENANT_ID ?? "default",
-      subject_hash: hashSubject(input.actor.id),
+      subject_hash: hashTomeSubject(input.actor.id),
       outcome: input.outcome ?? "success",
       correlation_id: input.correlationId ?? randomUUID(),
       resource_ref: resourceRef,

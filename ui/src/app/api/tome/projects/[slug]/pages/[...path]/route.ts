@@ -77,6 +77,7 @@ export const PUT = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
 
   const store = await getPageStore();
   const writeOpts = {
+    origin: "manual" as const,
     message: body.message || `edit ${pagePath}`,
     author: tctx.user.email ?? AGENT_IDENTITIES.default,
   };
@@ -153,6 +154,7 @@ export const DELETE = withErrorHandler(async (request: NextRequest, ctx: Ctx) =>
   const store = await getPageStore();
   await store.deletePage(tctx.projectId, pagePath, {
     author: tctx.user.email ?? AGENT_IDENTITIES.default,
+    origin: "manual",
   });
 
   auditTome({

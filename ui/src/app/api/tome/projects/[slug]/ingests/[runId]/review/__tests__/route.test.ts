@@ -84,6 +84,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockLoadTomeProject.mockResolvedValue({
     projectId: "project-example",
+    project: { _id: "project-example", slug: "example-area", review_mode: "stable_only" },
     user: { email: "reviewer@example.test" },
     session: {},
   });
@@ -115,6 +116,7 @@ describe("GET ingest review baseline", () => {
           oldBody: "",
           newBody: "# Current draft",
           isNewPage: true,
+          requiresDecision: true,
           decision: null,
           reviewedBy: null,
           reviewedAt: null,
@@ -135,6 +137,7 @@ describe("GET ingest review baseline", () => {
       oldBody: "# Live before ingest",
       newBody: "# Final draft",
       isNewPage: false,
+      requiresDecision: true,
       decision: null,
       reviewedBy: null,
       reviewedAt: null,
@@ -153,6 +156,7 @@ describe("GET ingest review baseline", () => {
       oldBody: "# Legacy live page",
       newBody: "# Current draft",
       isNewPage: false,
+      requiresDecision: true,
       decision: null,
       reviewedBy: null,
       reviewedAt: null,
@@ -171,6 +175,7 @@ describe("GET ingest review baseline", () => {
       oldBody: "",
       newBody: "# Recreated draft",
       isNewPage: true,
+      requiresDecision: true,
       decision: null,
       reviewedBy: null,
       reviewedAt: null,
@@ -198,6 +203,44 @@ describe("GET ingest review baseline", () => {
       decision: "accept",
       reviewedBy: "reviewer@example.test",
     }));
+  });
+
+  it("shows every file touched by a pending ingest, including files already published by policy", async () => {
+    const publishedPath = "updates/example.md";
+    mockListTouchedPaths.mockResolvedValue([publishedPath, PATH]);
+    mockListDraftPaths.mockResolvedValue([PATH]);
+    mockPageHistory.mockImplementation(async (_projectId: string, path: string) => (
+      path === publishedPath
+        ? [
+            revision("# Published update", {
+              path: publishedPath,
+              report_id: CURRENT_REPORT,
+              status: "live",
+            }),
+            revision("# Previous update", { path: publishedPath, status: "live" }),
+          ]
+        : [revision("# Current draft", { report_id: CURRENT_REPORT, status: "draft" })]
+    ));
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/tome/projects/example-area/ingests/run-current/review",
+      ),
+      context,
+    );
+    const body = await response.json();
+
+    expect(body.status).toBe("awaiting_review");
+    expect(body.reviewMode).toBe("stable_only");
+    expect(body.pages).toEqual([
+      expect.objectContaining({ path: PATH, requiresDecision: true }),
+      expect.objectContaining({
+        path: publishedPath,
+        requiresDecision: false,
+        oldBody: "# Previous update",
+        newBody: "# Published update",
+      }),
+    ]);
   });
 });
 

@@ -25,17 +25,24 @@ Open http://localhost:3000.
 
 ## Tome ingest review
 
-When an ingest produces draft pages, editors review the run one file at a
-time:
+The review screen lists every file an ingest created or modified. Files held
+by the entity's review policy are reviewed one at a time; files that the
+policy already published remain visible and are labeled **Published**.
 
 - **Accept file** publishes that file when the review is finalized.
 - **Reject file** keeps the prior live file and retains the rejected revision
   in history.
-- **Done** becomes available after every changed file has a decision, then
-  applies the complete review and unlocks the Tome project.
+- **Finish review** becomes available after every required file has a decision,
+  then applies the complete review and unlocks the Tome project. The screen
+  always displays the reason while this action is unavailable.
+
+The default **Stable pages only** policy holds stable files for decisions and
+publishes dynamic files immediately. Choose **Review everything** under
+Project settings → Review to require an Accept/Reject decision for every file
+on future ingests.
 
 Decisions are persisted as they are made, but do not change live pages before
-**Done**. Starting a file-level review disables that run's unattended draft
+**Finish review**. Starting a file-level review disables that run's unattended draft
 auto-promotion so an explicit rejection cannot later be published by timeout.
 Runs with no file-level decisions retain the existing auto-promotion behavior.
 

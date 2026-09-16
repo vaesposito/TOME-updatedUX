@@ -19,24 +19,36 @@ type Ctx = { params: Promise<{ slug: string; runId: string }> };
 
 export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug, runId } = await ctx.params;
-  const { projectId } = await loadTomeProject(request, slug);
+  const tctx = await loadTomeProject(request, slug);
+  const { projectId } = tctx;
 
   const runs = await getTomeIngestRunsCollection();
   const run = await runs.findOne({ _id: runId, project_id: projectId });
   if (!run) throw new ApiError("Ingest run not found", 404, "RUN_NOT_FOUND");
-  if (!run.report_id) return successResponse({ pages: [] });
+  if (!run.report_id) {
+    return successResponse({
+      pages: [],
+      status: run.status,
+      reviewMode: tctx.project.review_mode ?? "stable_only",
+    });
+  }
 
   const store = await getPageStore();
-  // While review is open, show only files that are actually held as drafts.
-  // A stable-only run can also touch dynamic files that were published live;
-  // presenting those here would leave the reviewer unable to decide them.
-  const paths = run.status === "awaiting_review"
-    ? await store.listDraftPaths(projectId, run.report_id)
-    : await store.listTouchedPaths(projectId, run.report_id);
+  // A review is a diff for the whole ingest, not merely its pending subset.
+  // In stable-only mode some dynamic files publish immediately; they still
+  // belong in the changed-file list, clearly marked as not requiring a
+  // decision, so reviewers never get a misleading one-file view of a run.
+  const [paths, draftPaths] = await Promise.all([
+    store.listTouchedPaths(projectId, run.report_id),
+    run.status === "awaiting_review"
+      ? store.listDraftPaths(projectId, run.report_id)
+      : Promise.resolve([]),
+  ]);
+  const decisionRequired = new Set(draftPaths);
   const decisions = new Map((run.file_reviews ?? []).map((review) => [review.path, review]));
 
   const pages = await Promise.all(
-    paths.map(async (path) => {
+    [...paths].sort().map(async (path) => {
       const history = await store.pageHistory(projectId, path);
       // Newest first. The run's own write: the newest revision for this report.
       const runRev = history.find((r) => r.report_id === run.report_id);
@@ -65,6 +77,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         oldBody: priorLiveRev && !priorLiveRev.deleted ? priorLiveRev.markdown ?? "" : "",
         newBody: runRev && !runRev.deleted ? runRev.markdown ?? "" : "",
         isNewPage,
+        requiresDecision: decisionRequired.has(path),
         decision: recorded?.decision ?? historicalDecision ?? null,
         reviewedBy: recorded?.reviewed_by ?? null,
         reviewedAt: recorded?.reviewed_at ?? null,
@@ -72,7 +85,11 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     }),
   );
 
-  return successResponse({ pages });
+  return successResponse({
+    pages,
+    status: run.status,
+    reviewMode: tctx.project.review_mode ?? "stable_only",
+  });
 });
 
 export const PATCH = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {

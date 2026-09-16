@@ -43,6 +43,38 @@ describe("Tome page creation paths", () => {
     ).toBe("testing/Test Folder/Foo/Bar/foo.md");
   });
 
+  it("preserves exact case, spaces, hyphens, and underscores in new paths", () => {
+    const exactFolders = [
+      { id: "upper", parent_id: null, name: "IOC EXPERIMENTS", source_path: null },
+      { id: "hyphen", parent_id: "upper", name: "child-folder", source_path: null },
+      { id: "underscore", parent_id: "hyphen", name: "child_folder", source_path: null },
+    ];
+
+    expect(resolvePageCreationPath("New Page", "underscore", exactFolders)).toEqual({
+      path: "IOC EXPERIMENTS/child-folder/child_folder/New Page.md",
+      folderBreadcrumb: "IOC EXPERIMENTS / child-folder / child_folder",
+    });
+  });
+
+  it("normalizes a leading slash and leaves an unknown folder at the root", () => {
+    expect(resolvePageCreationPath("/guide/start.MDX", "missing", folders)).toEqual({
+      path: "guide/start.MDX",
+      folderBreadcrumb: null,
+    });
+  });
+
+  it("bounds malformed parent cycles instead of looping", () => {
+    const cyclicFolders = [
+      { id: "one", parent_id: "two", name: "One", source_path: null },
+      { id: "two", parent_id: "one", name: "Two", source_path: null },
+    ];
+
+    expect(resolveFolderPagePath("one", cyclicFolders)).toEqual({
+      path: "Two/One",
+      breadcrumb: "Two / One",
+    });
+  });
+
   it("gives the agent an exact authoritative target", () => {
     const prompt = buildPageCreationAgentPrompt({
       projectSlug: "example-project",

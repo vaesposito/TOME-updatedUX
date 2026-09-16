@@ -60,8 +60,12 @@ export interface TomeFolder {
   parent_id: string | null;
   /** Display name; renaming does not rewrite page content or URLs. */
   name: string;
-  /** Case-folded key used to enforce sibling-name uniqueness. */
+  /** Legacy case-folded sibling key retained during the v2 compatibility window. */
   name_key: string;
+  /** Exact, case-sensitive sibling key used by the v2 folder schema. */
+  display_name_key?: string;
+  /** Folder schema version. Missing means the legacy name-key schema. */
+  folder_schema_version?: 2;
   /** Original path association used to place existing path-based pages. */
   source_path: string | null;
   order: number;

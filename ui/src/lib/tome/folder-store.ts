@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "crypto";
 
-import { getTomeFoldersCollection } from "@/lib/tome/mongo-collections";
+import {
+  getTomeFoldersCollection,
+  getTomePagePlacementsCollection,
+} from "@/lib/tome/mongo-collections";
 import type { TomeFolder } from "@/types/tome";
 
 const MAX_FOLDER_NAME = 120;
@@ -43,9 +46,27 @@ function nameKey(name: string): string {
   return name.toLocaleLowerCase();
 }
 
-function titleFromPath(path: string): string {
+function nameFromPath(path: string): string {
   const leaf = path.split("/").pop() ?? path;
-  return leaf.replace(/[-_]/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+  return leaf;
+}
+
+function displayNameKey(name: string): string {
+  return name;
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ("code" in error && error.code === 11000) return true;
+  return "message" in error && typeof error.message === "string" && /E11000|duplicate key/i.test(error.message);
+}
+
+function duplicateFolderNameError(name: string): FolderValidationError {
+  return new FolderValidationError(
+    `A folder named “${name}” already exists here.`,
+    "DUPLICATE_FOLDER_NAME",
+    409,
+  );
 }
 
 async function collection() {
@@ -57,16 +78,12 @@ async function collection() {
       { project_id: 1, source_path: 1 },
       { unique: true, partialFilterExpression: { source_path: { $type: "string" } } },
     ),
-    folders.createIndex(
-      { project_id: 1, parent_id: 1, name_key: 1 },
-      { unique: true, partialFilterExpression: { name_key: { $type: "string" } } },
-    ),
   ]);
   await indexesReady;
   return folders;
 }
 
-/** Lazily migrates path-derived folders without changing any page content or URL. */
+/** Lazily materializes exact source paths without changing page content or URLs. */
 export async function ensureFoldersForPages(
   projectId: string,
   pagePaths: readonly string[],
@@ -94,19 +111,31 @@ export async function ensureFoldersForPages(
       ? sourcePath.slice(0, sourcePath.lastIndexOf("/"))
       : null;
     const parentId = parentPath ? bySourcePath.get(parentPath)?.id ?? null : null;
-    const name = titleFromPath(sourcePath);
+    const name = nameFromPath(sourcePath);
     const reusable = existing.find((folder) =>
       folder.parent_id === parentId &&
       folder.source_path === null &&
-      (folder.name_key ?? nameKey(folder.name)) === nameKey(name),
+      folder.name === name,
     );
     const now = new Date();
     if (reusable) {
       await folders.updateOne(
         { project_id: projectId, id: reusable.id },
-        { $set: { source_path: sourcePath, updated_at: now, updated_by: actor } },
+        {
+          $set: {
+            source_path: sourcePath,
+            name_key: nameKey(name),
+            display_name_key: displayNameKey(name),
+            folder_schema_version: 2,
+            updated_at: now,
+            updated_by: actor,
+          },
+        },
       );
       reusable.source_path = sourcePath;
+      reusable.name_key = nameKey(name);
+      reusable.display_name_key = displayNameKey(name);
+      reusable.folder_schema_version = 2;
       bySourcePath.set(sourcePath, reusable);
       continue;
     }
@@ -118,6 +147,8 @@ export async function ensureFoldersForPages(
       parent_id: parentId,
       name,
       name_key: nameKey(name),
+      display_name_key: displayNameKey(name),
+      folder_schema_version: 2,
       source_path: sourcePath,
       order: 999,
       owner_subject: actor,
@@ -150,12 +181,8 @@ async function assertUniqueSiblingName(
   exceptId?: string,
 ): Promise<void> {
   const siblings = await (await collection()).find({ project_id: projectId, parent_id: parentId }).toArray();
-  if (siblings.some((folder) => folder.id !== exceptId && folder.name.localeCompare(name, undefined, { sensitivity: "accent" }) === 0)) {
-    throw new FolderValidationError(
-      `A folder named “${name}” already exists here.`,
-      "DUPLICATE_FOLDER_NAME",
-      409,
-    );
+  if (siblings.some((folder) => folder.id !== exceptId && folder.name === name)) {
+    throw duplicateFolderNameError(name);
   }
 }
 
@@ -180,6 +207,8 @@ export async function createFolder(input: {
     parent_id: input.parentId,
     name,
     name_key: nameKey(name),
+    display_name_key: displayNameKey(name),
+    folder_schema_version: 2,
     source_path: null,
     order: Math.max(-1, ...siblings.map((sibling) => sibling.order)) + 1,
     owner_subject: input.actor,
@@ -188,7 +217,12 @@ export async function createFolder(input: {
     updated_at: now,
     updated_by: input.actor,
   };
-  await folders.insertOne(folder);
+  try {
+    await folders.insertOne(folder);
+  } catch (error) {
+    if (isDuplicateKeyError(error)) throw duplicateFolderNameError(name);
+    throw error;
+  }
   return folder;
 }
 
@@ -250,23 +284,32 @@ export async function updateFolder(input: {
     throw new FolderValidationError("Folder order must be a non-negative integer.", "INVALID_FOLDER_ORDER");
   }
   const now = new Date();
-  await folders.updateOne(
-    { project_id: input.projectId, id: current.id },
-    {
-      $set: {
-        name,
-        name_key: nameKey(name),
-        parent_id: parentId,
-        order,
-        updated_at: now,
-        updated_by: input.actor,
+  try {
+    await folders.updateOne(
+      { project_id: input.projectId, id: current.id },
+      {
+        $set: {
+          name,
+          name_key: nameKey(name),
+          display_name_key: displayNameKey(name),
+          folder_schema_version: 2,
+          parent_id: parentId,
+          order,
+          updated_at: now,
+          updated_by: input.actor,
+        },
       },
-    },
-  );
+    );
+  } catch (error) {
+    if (isDuplicateKeyError(error)) throw duplicateFolderNameError(name);
+    throw error;
+  }
   return {
     ...current,
     name,
     name_key: nameKey(name),
+    display_name_key: displayNameKey(name),
+    folder_schema_version: 2,
     parent_id: parentId,
     order,
     updated_at: now,
@@ -318,11 +361,15 @@ export async function deleteFolder(
   const folders = await collection();
   const folder = await folders.findOne({ project_id: projectId, id: folderId });
   if (!folder) throw new FolderValidationError("Folder was not found.", "FOLDER_NOT_FOUND", 404);
-  const child = await folders.findOne({ project_id: projectId, parent_id: folderId });
+  const placements = await getTomePagePlacementsCollection();
+  const [child, placedPage] = await Promise.all([
+    folders.findOne({ project_id: projectId, parent_id: folderId }),
+    placements.findOne({ project_id: projectId, folder_id: folderId }),
+  ]);
   const hasPages = Boolean(
     folder.source_path && pagePaths.some((path) => path.startsWith(`${folder.source_path}/`)),
   );
-  if (child || hasPages) {
+  if (child || placedPage || hasPages) {
     throw new FolderValidationError(
       "Move or delete this folder’s pages and child folders first.",
       "FOLDER_NOT_EMPTY",

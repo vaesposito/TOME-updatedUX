@@ -2,7 +2,12 @@ jest.mock("@/lib/tome/mongo-collections", () => ({
   getTomeFoldersCollection: jest.fn(),
 }));
 
-import { folderMoveWouldCycle } from "@/lib/tome/folder-store";
+import { getTomeFoldersCollection } from "@/lib/tome/mongo-collections";
+import {
+  createFolder,
+  ensureFoldersForPages,
+  folderMoveWouldCycle,
+} from "@/lib/tome/folder-store";
 import { buildTree } from "@/lib/tome/schema";
 import type { TomeFolder, TomePagePlacement } from "@/types/tome";
 
@@ -41,6 +46,78 @@ function placement(
 }
 
 describe("first-class Tome folders", () => {
+  it.each([
+    ["", "FOLDER_NAME_REQUIRED"],
+    ["   ", "FOLDER_NAME_REQUIRED"],
+    ["parent/child", "INVALID_FOLDER_NAME"],
+    ["parent\0child", "INVALID_FOLDER_NAME"],
+    [".", "INVALID_FOLDER_NAME"],
+    ["..", "INVALID_FOLDER_NAME"],
+    ["x".repeat(121), "FOLDER_NAME_TOO_LONG"],
+  ])("rejects an invalid manual folder name %#", async (name, code) => {
+    await expect(createFolder({
+      projectId: "project-primary",
+      parentId: null,
+      name,
+      actor: "test-user@example.com",
+    })).rejects.toMatchObject({ code, status: 400 });
+  });
+
+  it("keeps exact source path distinctions when materializing folders", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const folders: TomeFolder[] = [
+      {
+        id: "folder-uppercase",
+        project_id: "project-primary",
+        parent_id: null,
+        name: "Ioc Experiments",
+        name_key: "ioc experiments",
+        source_path: "IOC EXPERIMENTS",
+        order: 999,
+        owner_subject: "test-user@example.com",
+        permission_scope: "project",
+        created_at: now,
+        updated_at: now,
+        updated_by: "test-user@example.com",
+      },
+    ];
+    const createIndex = jest.fn().mockResolvedValue("index");
+    const find = jest.fn(() => ({
+      toArray: jest.fn(async () => [...folders]),
+    }));
+    const updateOne = jest.fn(async (
+      filter: { id: string },
+      update: { $set?: Partial<TomeFolder>; $setOnInsert?: TomeFolder },
+      options?: { upsert?: boolean },
+    ) => {
+      const current = folders.find((folder) => folder.id === filter.id);
+      if (current && update.$set) Object.assign(current, update.$set);
+      if (!current && options?.upsert && update.$setOnInsert) folders.push(update.$setOnInsert);
+      return { acknowledged: true };
+    });
+    (getTomeFoldersCollection as jest.Mock).mockResolvedValue({ createIndex, find, updateOne });
+
+    await ensureFoldersForPages(
+      "project-primary",
+      ["IOC EXPERIMENTS/overview.md", "ioc-experiments/overview.md"],
+      "test-user@example.com",
+    );
+
+    expect(folders.map((folder) => [
+      folder.name,
+      folder.source_path,
+      folder.name_key,
+      folder.display_name_key,
+    ])).toEqual([
+      ["Ioc Experiments", "IOC EXPERIMENTS", "ioc experiments", undefined],
+      ["ioc-experiments", "ioc-experiments", "ioc-experiments", "ioc-experiments"],
+    ]);
+    expect(createIndex).toHaveBeenLastCalledWith(
+      { project_id: 1, source_path: 1 },
+      { unique: true, partialFilterExpression: { source_path: { $type: "string" } } },
+    );
+  });
+
   it("keeps a stable folder identity while its display name changes", () => {
     const pages = { "guides/start.md": "# Start\n" };
     const tree = buildTree(pages, [

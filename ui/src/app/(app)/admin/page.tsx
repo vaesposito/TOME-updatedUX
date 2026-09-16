@@ -363,13 +363,34 @@ function OverviewStatsCards({
   error,
   loading,
   overview,
+  visitorError,
+  visitorLoading,
+  visitors,
 }: {
   error?: string | null;
   loading: boolean;
   overview?: AdminStats['overview'];
+  visitorError?: string | null;
+  visitorLoading: boolean;
+  visitors?: AdminStats['app_visitors'];
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <AsyncStatsCard error={visitorError} loading={visitorLoading} testId="stats-card-overview-visitors">
+        {visitors ? <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">App Visitors</CardTitle>
+            <Eye className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{visitors.range}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Selected range · Last 24h: {visitors.last_24h}
+            </p>
+          </CardContent>
+        </Card> : undefined}
+      </AsyncStatsCard>
+
       <AsyncStatsCard error={error} loading={loading} testId="stats-card-overview-users">
         {overview ? <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -379,7 +400,7 @@ function OverviewStatsCards({
           <CardContent>
             <div className="text-2xl font-bold">{overview.total_users}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Up to 24h: {overview.dau} | Up to 30d: {overview.mau}
+              Selected range · Last 24h: {overview.dau}
             </p>
           </CardContent>
         </Card> : undefined}
@@ -388,13 +409,13 @@ function OverviewStatsCards({
       <AsyncStatsCard error={error} loading={loading} testId="stats-card-overview-conversations">
         {overview ? <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Conversations</CardTitle>
+            <CardTitle className="text-sm font-medium">Conversations Started</CardTitle>
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{overview.total_conversations}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Today: +{overview.conversations_today}
+              Last 24h: +{overview.conversations_today}
             </p>
           </CardContent>
         </Card> : undefined}
@@ -403,13 +424,13 @@ function OverviewStatsCards({
       <AsyncStatsCard error={error} loading={loading} testId="stats-card-overview-messages">
         {overview ? <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Messages</CardTitle>
+            <CardTitle className="text-sm font-medium">AI Responses</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{overview.total_messages}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Today: +{overview.messages_today}
+              Last 24h: +{overview.messages_today}
             </p>
           </CardContent>
         </Card> : undefined}
@@ -865,6 +886,11 @@ function AdminPage() {
     .map((id) => statsAgents.find((agent) => agent.id === id)?.name)
     .filter((name): name is string => Boolean(name));
   const rangeLabel = datePreset === "1h" ? "1 Hour" : datePreset === "12h" ? "12 Hours" : datePreset === "24h" ? "24 Hours" : datePreset === "7d" ? "7 Days" : datePreset === "90d" ? "90 Days" : datePreset === "custom" ? "Custom Range" : "30 Days";
+  const usesSubdailyStatsBuckets = new Date(dateRange.to).getTime() - new Date(dateRange.from).getTime() <= 24 * 60 * 60 * 1000;
+  const statsBucketNoun = usesSubdailyStatsBuckets ? "time interval" : "day";
+  const statsAverageLabel = usesSubdailyStatsBuckets ? "Average per interval" : "Average per day";
+  const visitorActiveBucketLabel = usesSubdailyStatsBuckets ? "Intervals with visits" : "Days with visits";
+  const chatActiveBucketLabel = usesSubdailyStatsBuckets ? "Intervals with prompts" : "Days with prompts";
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const selectedStatsFilters = useMemo(() => {
@@ -959,6 +985,16 @@ function AdminPage() {
   useEffect(() => {
     if (stats.available_agents) setStatsAgents(stats.available_agents);
   }, [stats.available_agents]);
+
+  const statsUserOptions = useMemo(() => {
+    const options = new Set(feedbackUsers);
+    for (const user of stats.top_users?.by_conversations ?? []) options.add(user._id);
+    for (const user of stats.top_users?.by_messages ?? []) options.add(user._id);
+    for (const selection of userFilter) {
+      if (!selection.startsWith('team:')) options.add(selection);
+    }
+    return [...options].sort((a, b) => a.localeCompare(b));
+  }, [feedbackUsers, stats.top_users, userFilter]);
 
   const visitedTabsRef = useRef<Set<string>>(new Set());
   const previousSimulationScopeKeyRef = useRef(simulationScopeKey);
@@ -2355,7 +2391,7 @@ function AdminPage() {
                     <MultiSelect
                       options={[
                         ...teams.map((t) => `team:${t.name}`),
-                        ...feedbackUsers,
+                        ...statsUserOptions,
                       ]}
                       selected={userFilter}
                       onChange={(selected) => {
@@ -2398,10 +2434,61 @@ function AdminPage() {
                       error={statsSectionStatuses.overview.error}
                       loading={statsSectionStatuses.overview.loading}
                       overview={stats.overview}
+                      visitorError={statsSectionStatuses.visitors.error}
+                      visitorLoading={statsSectionStatuses.visitors.loading}
+                      visitors={stats.app_visitors}
                     />
 
-                    {/* DAU and MAU Trend Charts */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Visitor, chat-user, and conversation trends */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                      <AsyncStatsCard
+                        error={statsSectionStatuses.visitors.error}
+                        loading={statsSectionStatuses.visitors.loading}
+                        minHeightClassName="min-h-96"
+                        testId="stats-card-daily-app-visitors"
+                      >
+                        {stats.app_visitors ? <Card>
+                          <CardHeader>
+                            <CardTitle>{usesSubdailyStatsBuckets ? "App Visitors Over Time" : "Daily App Visitors"}</CardTitle>
+                            <CardDescription>Signed-in people who opened the web app in each {statsBucketNoun}, whether or not they chatted. Date and user/team filters apply.</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <SimpleLineChart
+                              data={stats.app_visitors.daily
+                                .filter((point): point is { date: string; visitors: number } => point.visitors !== null)
+                                .map((point) => ({
+                                  label: formatBucketLabel(point.date),
+                                  value: point.visitors,
+                                }))}
+                              height={250}
+                              color="rgb(20, 184, 166)"
+                            />
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Each person is counted once per {statsBucketNoun}.
+                              {stats.app_visitors.tracking_started_at
+                                ? ` Tracking began ${new Date(stats.app_visitors.tracking_started_at).toLocaleDateString()}.`
+                                : " Tracking begins with the first recorded visit."}
+                            </p>
+                            <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                              <div>
+                                <p className="text-2xl font-bold text-teal-500">{stats.app_visitors.last_24h}</p>
+                                <p className="text-xs text-muted-foreground">Last 24h</p>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-bold">{stats.app_visitors.range}</p>
+                                <p className="text-xs text-muted-foreground">Selected range</p>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-bold text-green-500">
+                                  {stats.app_visitors.daily.filter((point) => (point.visitors ?? 0) > 0).length}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{visitorActiveBucketLabel}</p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card> : undefined}
+                      </AsyncStatsCard>
+
                       <AsyncStatsCard
                         error={statsSectionStatuses.activity.error ?? statsSectionStatuses.overview.error}
                         loading={statsSectionStatuses.activity.loading || statsSectionStatuses.overview.loading}
@@ -2410,8 +2497,8 @@ function AdminPage() {
                       >
                         {stats.daily_activity && stats.overview ? <Card>
                         <CardHeader>
-                          <CardTitle>Daily Active Users (DAU)</CardTitle>
-                          <CardDescription>Recorded prompt senders ({rangeLabel}); excludes automated and API traffic. Older messages use the conversation owner when sender data is missing.</CardDescription>
+                          <CardTitle>{usesSubdailyStatsBuckets ? "Active Chat Users Over Time" : "Daily Active Chat Users"}</CardTitle>
+                          <CardDescription>People who sent at least one chat prompt in each {statsBucketNoun}. Automated activity is excluded.</CardDescription>
                         </CardHeader>
                         <CardContent>
                           <SimpleLineChart
@@ -2422,21 +2509,21 @@ function AdminPage() {
                             height={250}
                             color="rgb(59, 130, 246)"
                           />
-                          <p className="mt-2 text-xs text-muted-foreground">Windows end at the selected range end and are limited to that range. Counts cover recorded messages only.</p>
+                          <p className="mt-2 text-xs text-muted-foreground">Each person is counted once per {statsBucketNoun}. The latest interval may still be in progress.</p>
                           <div className="mt-4 grid grid-cols-3 gap-4 text-center">
                             <div>
                               <p className="text-2xl font-bold text-blue-500">{stats.overview.dau}</p>
-                              <p className="text-xs text-muted-foreground">Up to 24h</p>
+                              <p className="text-xs text-muted-foreground">Last 24h</p>
                             </div>
                             <div>
-                              <p className="text-2xl font-bold">{stats.overview.mau}</p>
-                              <p className="text-xs text-muted-foreground">Up to 30d</p>
+                              <p className="text-2xl font-bold">{stats.overview.total_users}</p>
+                              <p className="text-xs text-muted-foreground">Selected range</p>
                             </div>
                             <div>
                               <p className="text-2xl font-bold text-green-500">
-                                {Math.round(stats.daily_activity.reduce((sum, d) => sum + d.active_users, 0) / Math.max(stats.daily_activity.length, 1))}
+                                {stats.daily_activity.filter((day) => day.active_users > 0).length}
                               </p>
-                              <p className="text-xs text-muted-foreground">Avg/bucket</p>
+                              <p className="text-xs text-muted-foreground">{chatActiveBucketLabel}</p>
                             </div>
                           </div>
                         </CardContent>
@@ -2451,8 +2538,8 @@ function AdminPage() {
                       >
                         {stats.daily_activity && stats.overview ? <Card>
                         <CardHeader>
-                          <CardTitle>Conversation Activity</CardTitle>
-                          <CardDescription>New conversations created daily</CardDescription>
+                          <CardTitle>Conversations Started</CardTitle>
+                          <CardDescription>New conversations in each {statsBucketNoun}. One person can start more than one conversation.</CardDescription>
                         </CardHeader>
                         <CardContent>
                           <SimpleLineChart
@@ -2466,17 +2553,17 @@ function AdminPage() {
                           <div className="mt-4 grid grid-cols-3 gap-4 text-center">
                             <div>
                               <p className="text-2xl font-bold text-green-500">{stats.overview.conversations_today}</p>
-                              <p className="text-xs text-muted-foreground">Today</p>
+                              <p className="text-xs text-muted-foreground">Last 24h</p>
                             </div>
                             <div>
                               <p className="text-2xl font-bold">{stats.overview.total_conversations}</p>
-                              <p className="text-xs text-muted-foreground">Total</p>
+                              <p className="text-xs text-muted-foreground">Selected range</p>
                             </div>
                             <div>
                               <p className="text-2xl font-bold text-purple-500">
                                 {Math.round(stats.daily_activity.reduce((sum, d) => sum + d.conversations, 0) / Math.max(stats.daily_activity.length, 1))}
                               </p>
-                              <p className="text-xs text-muted-foreground">Avg/Day</p>
+                              <p className="text-xs text-muted-foreground">{statsAverageLabel}</p>
                             </div>
                           </div>
                         </CardContent>
@@ -2493,8 +2580,8 @@ function AdminPage() {
                     >
                       {stats.daily_activity && stats.overview ? <Card>
                       <CardHeader>
-                        <CardTitle>Message Activity ({rangeLabel})</CardTitle>
-                        <CardDescription>Messages sent per day</CardDescription>
+                        <CardTitle>AI Response Activity ({rangeLabel})</CardTitle>
+                        <CardDescription>Responses generated by AI in each {statsBucketNoun}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <SimpleLineChart
@@ -2508,7 +2595,7 @@ function AdminPage() {
                         <div className="mt-4 grid grid-cols-4 gap-4 text-center">
                           <div>
                             <p className="text-2xl font-bold text-purple-500">{stats.overview.messages_today}</p>
-                            <p className="text-xs text-muted-foreground">Today</p>
+                            <p className="text-xs text-muted-foreground">Last 24h</p>
                           </div>
                           <div>
                             <p className="text-2xl font-bold">{stats.overview.total_messages}</p>
@@ -2518,13 +2605,13 @@ function AdminPage() {
                             <p className="text-2xl font-bold text-orange-500">
                               {Math.round(stats.daily_activity.reduce((sum, d) => sum + d.messages, 0) / Math.max(stats.daily_activity.length, 1))}
                             </p>
-                            <p className="text-xs text-muted-foreground">Avg/Day</p>
+                            <p className="text-xs text-muted-foreground">{statsAverageLabel}</p>
                           </div>
                           <div>
                             <p className="text-2xl font-bold text-blue-500">
                               {stats.overview.avg_messages_per_conversation.toFixed(1)}
                             </p>
-                            <p className="text-xs text-muted-foreground">Msgs/Chat</p>
+                            <p className="text-xs text-muted-foreground">Responses/Chat</p>
                           </div>
                         </div>
                       </CardContent>
@@ -2603,7 +2690,7 @@ function AdminPage() {
                       >
                         {stats.top_users ? <Card>
                         <CardHeader>
-                          <CardTitle>Top Users by Messages</CardTitle>
+                          <CardTitle>Top Users by AI Responses</CardTitle>
                         </CardHeader>
                         <CardContent>
                           <div className="space-y-2">
@@ -2619,13 +2706,13 @@ function AdminPage() {
                                   <OwnerTypeBadge ownerType={u.owner_type} />
                                   <div className="text-sm truncate max-w-[200px] text-primary hover:underline cursor-pointer" onClick={() => setSelectedUserEmail(u._id)} title={u._id}>{u.name || u._id}</div>
                                 </div>
-                                <div className="text-sm font-medium shrink-0">{u.count} messages</div>
+                                <div className="text-sm font-medium shrink-0">{u.count} responses</div>
                               </div>
                             ))}
                           </div>
                           {stats.top_users.pagination?.by_messages && (
                             <CardPagination
-                              label="top users by messages"
+                              label="top users by AI responses"
                               disabled={topMessagesLoading}
                               page={stats.top_users.pagination.by_messages.page}
                               pageSize={stats.top_users.pagination.by_messages.limit}
@@ -2847,8 +2934,9 @@ function AdminPage() {
                                   <p className="text-sm text-muted-foreground text-center py-4">Not enough data to plot yet</p>
                                 );
                               }
-                              // Average computed here (client-side) from the raw samples.
-                              const avgMs = samples.reduce((sum, s) => sum + s.latency_ms, 0) / samples.length;
+                              // The API average is weighted by every response. The plotted
+                              // samples are bucket averages and must not be averaged again.
+                              const avgMs = stats.response_time.avg_ms;
                               return (
                                 <SimpleLineChart
                                   data={samples.map((s) => ({

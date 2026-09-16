@@ -1367,6 +1367,43 @@ describe('GET /api/admin/stats — Custom Date Range (from/to)', () => {
 // Tests: Platform Summary
 // ============================================================================
 
+describe('GET /api/admin/stats — App Visitors', () => {
+  beforeEach(resetMocks);
+
+  it('returns distinct authenticated visitors without counting them as chat users', async () => {
+    setupAdminWithCollections();
+    const appVisits = createMockCollection();
+    appVisits.findOne.mockResolvedValue({ occurred_at: new Date('2026-09-14T09:00:00.000Z') });
+    appVisits.aggregate.mockReturnValue({
+      toArray: jest.fn().mockResolvedValue([
+        { _id: '2026-09-14', visitors: 2 },
+        { _id: '2026-09-15', visitors: 1 },
+      ]),
+    });
+    appVisits.distinct
+      .mockResolvedValueOnce(['alpha@example.com', 'beta@example.com'])
+      .mockResolvedValueOnce(['alpha@example.com']);
+    mockCollections.app_usage_events = appVisits;
+
+    const res = await GET(makeRequest(
+      '/api/admin/stats?section=visitors&from=2026-09-14T00:00:00.000Z&to=2026-09-16T00:00:00.000Z',
+    ));
+    const body = await res.json();
+
+    expect(body.data.app_visitors).toMatchObject({
+      range: 2,
+      last_24h: 1,
+      tracking_started_at: '2026-09-14T09:00:00.000Z',
+    });
+    expect(body.data.app_visitors.daily).toEqual([
+      { date: '2026-09-14', visitors: 2 },
+      { date: '2026-09-15', visitors: 1 },
+      { date: '2026-09-16', visitors: 0 },
+    ]);
+    expect(body.data).not.toHaveProperty('overview');
+  });
+});
+
 describe('GET /api/admin/stats — Platform Summary', () => {
   beforeEach(resetMocks);
 
@@ -2509,6 +2546,27 @@ describeMongo('GET /api/admin/stats — real Mongo prompt activity', () => {
     await db.collection('users').insertOne({ email: 'visitor@example.com', last_login: new Date(to) });
     await db.collection('conversations').insertOne(conversation('empty') as never);
     expect((await stats()).overview).toMatchObject({ total_users: 0, dau: 0, mau: 0 });
+  });
+  it('reports authenticated app visitors separately from chat activity', async () => {
+    await db.collection('app_usage_events').insertMany([
+      { user_email: 'alpha@example.com', occurred_at: new Date('2026-05-01T13:00:00Z') },
+      { user_email: 'alpha@example.com', occurred_at: new Date('2026-05-01T14:00:00Z') },
+      { user_email: 'beta@example.com', occurred_at: new Date('2026-05-01T15:00:00Z') },
+      { user_email: 'alpha@example.com', occurred_at: new Date('2026-05-02T13:00:00Z') },
+    ]);
+
+    const visitors = (await stats('visitors')).app_visitors;
+    expect(visitors).toMatchObject({ range: 2, last_24h: 1 });
+    expect(visitors.tracking_started_at).toBe('2026-05-01T13:00:00.000Z');
+    expect(visitors.daily.map((row: { visitors: number | null }) => row.visitors)).toEqual([2, 1, 0]);
+
+    const filtered = (await stats('visitors', '&user=alpha%40example.com')).app_visitors;
+    expect(filtered.range).toBe(1);
+    expect(filtered.daily.map((row: { visitors: number | null }) => row.visitors)).toEqual([1, 1, 0]);
+
+    const slack = (await stats('visitors', '&source=slack')).app_visitors;
+    expect(slack).toMatchObject({ range: 2, last_24h: 1 });
+    expect(slack.daily.map((row: { visitors: number | null }) => row.visitors)).toEqual([2, 1, 0]);
   });
   it('counts senders on every day in a reused chat and anchors historical windows to the selected end', async () => {
     await db.collection('conversations').insertOne(conversation('shared') as never);

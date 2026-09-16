@@ -214,6 +214,9 @@ async function createIndexes(db: Db) {
     safeCreateIndex(db, 'users', { 'metadata.sso_id': 1 }),
     safeCreateIndex(db, 'users', { last_login: -1 }),
 
+    // Authenticated application visits back the visitor trend in Insights.
+    safeCreateIndex(db, 'app_usage_events', { occurred_at: -1, user_email: 1 }),
+
     // Teams are resolved by slug throughout RBAC and connector discovery.
     safeCreateIndex(db, 'teams', { slug: 1 }),
 

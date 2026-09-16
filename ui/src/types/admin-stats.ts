@@ -1,5 +1,6 @@
 export const ADMIN_STATS_SECTIONS = [
   'overview',
+  'visitors',
   'filters',
   'activity',
   'top_users',
@@ -113,6 +114,15 @@ export interface AdminStats {
     conversations_today: number;
     messages_today: number;
     avg_messages_per_conversation: number;
+  };
+  app_visitors: {
+    range: number;
+    last_24h: number;
+    tracking_started_at: string | null;
+    daily: Array<{
+      date: string;
+      visitors: number | null;
+    }>;
   };
   daily_activity: Array<{
     date: string;

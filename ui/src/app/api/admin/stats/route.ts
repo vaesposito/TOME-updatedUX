@@ -722,6 +722,9 @@ async function getAdminStats(request: NextRequest) {
     const conversations = await getCollection('conversations');
     const messages = await getCollection('messages');
     const workflowRuns = await getCollection('workflow_runs');
+    const appUsageEvents = includesSection('visitors')
+      ? await getCollection('app_usage_events')
+      : null;
 
     // Bot/service exclusion for the whole "Top Users" section — the block that
     // spans both Top-Users leaderboards, Top Agents, Response Time, and Activity
@@ -890,6 +893,91 @@ async function getAdminStats(request: NextRequest) {
           })()
         ),
       ]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // AUTHENTICATED APP VISITORS — separate from prompt-based chat DAU
+    // ═══════════════════════════════════════════════════════════════
+    let appVisitors: {
+      range: number;
+      last_24h: number;
+      tracking_started_at: string | null;
+      daily: Array<{ date: string; visitors: number | null }>;
+    } | null = null;
+
+    if (includesSection('visitors') && appUsageEvents) {
+      const normalizedUserEmails = userEmails.map((email) => email.toLowerCase());
+      const visitorIdentityFilter: Document = {};
+      let visitorScopeAvailable = true;
+
+      if (nonAdminScope) {
+        const callerEmail = nonAdminScope.ownerEmail.toLowerCase();
+        if (hasUserFilter && !normalizedUserEmails.includes(callerEmail)) {
+          visitorScopeAvailable = false;
+        }
+        visitorIdentityFilter.user_email = callerEmail;
+      } else if (hasUserFilter) {
+        visitorIdentityFilter.user_email = normalizedUserEmails.length === 1
+          ? normalizedUserEmails[0]
+          : { $in: normalizedUserEmails };
+      }
+
+      const trackingStartRow = await appUsageEvents.findOne(
+        {},
+        { projection: { occurred_at: 1 }, sort: { occurred_at: 1 } },
+      );
+      const trackingStartedAt = trackingStartRow?.occurred_at instanceof Date
+        ? trackingStartRow.occurred_at
+        : trackingStartRow?.occurred_at
+          ? new Date(trackingStartRow.occurred_at)
+          : null;
+      const trackingBucket = trackingStartedAt && !Number.isNaN(trackingStartedAt.getTime())
+        ? bucketDateKey(floorToBucket(trackingStartedAt, bucketUnit), bucketUnit)
+        : null;
+
+      let dailyVisitorRows: Array<{ _id: string; visitors: number }> = [];
+      let rangeVisitors = 0;
+      let last24hVisitors = 0;
+      if (visitorScopeAvailable) {
+        const [dailyRows, rangeUserEmails, last24hUserEmails] = await Promise.all([
+          appUsageEvents.aggregate<{ _id: string; visitors: number }>([
+            { $match: { occurred_at: rangeDateMatch, ...visitorIdentityFilter } },
+            {
+              $group: {
+                _id: {
+                  date: { $dateToString: {
+                    format: BUCKET_DATE_FORMAT[bucketUnit],
+                    date: { $dateTrunc: { date: '$occurred_at', unit: bucketUnit, binSize: bucketUnit === 'minute' ? 5 : 1, timezone: 'UTC' } },
+                  } },
+                  user: '$user_email',
+                },
+              },
+            },
+            { $group: { _id: '$_id.date', visitors: { $sum: 1 } } },
+          ]).toArray(),
+          appUsageEvents.distinct('user_email', { occurred_at: rangeDateMatch, ...visitorIdentityFilter }),
+          appUsageEvents.distinct('user_email', {
+            occurred_at: { $gte: todayRangeStart, $lte: rangeEnd },
+            ...visitorIdentityFilter,
+          }),
+        ]);
+        dailyVisitorRows = dailyRows;
+        rangeVisitors = rangeUserEmails.length;
+        last24hVisitors = last24hUserEmails.length;
+      }
+
+      const visitorMap = new Map(dailyVisitorRows.map((row) => [row._id, row.visitors]));
+      appVisitors = {
+        range: rangeVisitors,
+        last_24h: last24hVisitors,
+        tracking_started_at: trackingStartedAt && !Number.isNaN(trackingStartedAt.getTime())
+          ? trackingStartedAt.toISOString()
+          : null,
+        daily: generateBucketKeys(rangeEnd, bucketCount, bucketUnit).map((date) => ({
+          date,
+          visitors: trackingBucket && date >= trackingBucket ? visitorMap.get(date) ?? 0 : null,
+        })),
+      };
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1937,6 +2025,7 @@ async function getAdminStats(request: NextRequest) {
           avg_messages_per_conversation: avgMsgsPerConv,
         },
       } : {}),
+      ...(appVisitors ? { app_visitors: appVisitors } : {}),
       ...(includesSection('activity') ? { daily_activity: dailyActivity } : {}),
       ...(includesSection('top_users') ? {
         top_users: {

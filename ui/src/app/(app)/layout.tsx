@@ -2,10 +2,11 @@ import {
   APPLICATION_NAVIGATION_COLLAPSED_COOKIE,
   isWorkspaceRailCollapsed,
 } from "@/lib/workspace-rail";
+import { recordAppVisit } from "@/lib/app-usage";
 import { authOptions } from "@/lib/auth-config";
 import { getConfig } from "@/lib/config";
 import { cookies } from "next/headers";
-import { getServerSession } from "next-auth";
+import { getServerSession,type Session } from "next-auth";
 import { redirect } from "next/navigation";
 import React from "react";
 import { AppLayoutClient } from "./layout-client";
@@ -15,7 +16,13 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }): Promise<React.ReactElement> {
-  await requireApplicationSession();
+  const session = await requireApplicationSession();
+  const email = session?.user?.email;
+  if (typeof email === "string" && email.trim()) {
+    await recordAppVisit(email).catch((error: unknown) => {
+      console.warn("[app-usage] Failed to record authenticated app visit", error);
+    });
+  }
 
   const cookieStore = await cookies();
   const initialNavigationCollapsed = isWorkspaceRailCollapsed(
@@ -40,9 +47,9 @@ export default async function AppLayout({
  * preserves the deliberately opt-in local anonymous development provider;
  * production always fails closed, even if SSO_ENABLED is accidentally false.
  */
-async function requireApplicationSession(): Promise<void> {
+async function requireApplicationSession(): Promise<Session | null> {
   const authRequired = process.env.NODE_ENV === "production" || getConfig("ssoEnabled");
-  if (!authRequired) return;
+  if (!authRequired) return null;
 
   const session = await getServerSession(authOptions);
   if (!session) {
@@ -51,4 +58,5 @@ async function requireApplicationSession(): Promise<void> {
   if (session.isAuthorized === false) {
     redirect("/unauthorized");
   }
+  return session;
 }

@@ -6,6 +6,7 @@ import AppLayout from "../layout";
 
 const mockGetCookie = jest.fn();
 const mockGetConfig = jest.fn();
+const mockRecordAppVisit = jest.fn();
 
 jest.mock("next/headers", () => ({
   cookies: jest.fn(async () => ({ get: mockGetCookie })),
@@ -27,6 +28,10 @@ jest.mock("@/lib/auth-config", () => ({
 
 jest.mock("@/lib/config", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
+}));
+
+jest.mock("@/lib/app-usage", () => ({
+  recordAppVisit: (...args: unknown[]) => mockRecordAppVisit(...args),
 }));
 
 jest.mock("../layout-client", () => ({
@@ -51,6 +56,7 @@ describe("AppLayout", () => {
       user: { email: "user@example.com" },
       isAuthorized: true,
     });
+    mockRecordAppVisit.mockResolvedValue(undefined);
   });
 
   it("passes the persisted collapsed state into the first application render", async () => {
@@ -65,6 +71,7 @@ describe("AppLayout", () => {
     expect(mockGetCookie).toHaveBeenCalledWith(
       "caipe-application-navigation-collapsed",
     );
+    expect(mockRecordAppVisit).toHaveBeenCalledWith("user@example.com");
   });
 
   it("defaults to an expanded rail when no preference exists", async () => {
@@ -86,6 +93,7 @@ describe("AppLayout", () => {
     ).rejects.toThrow("redirect");
 
     expect(redirect).toHaveBeenCalledWith("/login");
+    expect(mockRecordAppVisit).not.toHaveBeenCalled();
   });
 
   it("redirects users rejected by the SSO admission gate", async () => {
@@ -99,6 +107,7 @@ describe("AppLayout", () => {
     ).rejects.toThrow("redirect");
 
     expect(redirect).toHaveBeenCalledWith("/unauthorized");
+    expect(mockRecordAppVisit).not.toHaveBeenCalled();
   });
 
   it("fails closed in production even when SSO is misconfigured off", async () => {

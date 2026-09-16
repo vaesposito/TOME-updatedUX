@@ -68,7 +68,19 @@ jest.mock('@/components/ui/scroll-area', () => ({
 }));
 
 jest.mock('@/components/admin/shared/SimpleLineChart', () => ({
-  SimpleLineChart: () => <div data-testid="line-chart" />,
+  SimpleLineChart: ({
+    avgLabel,
+    avgLine,
+  }: {
+    avgLabel?: string;
+    avgLine?: number;
+  }) => (
+    <div
+      data-avg-label={avgLabel}
+      data-avg-line={avgLine}
+      data-testid="line-chart"
+    />
+  ),
 }));
 
 jest.mock('@/components/admin/shared/FeedbackTrendChart', () => ({
@@ -255,6 +267,15 @@ const mockStatsResponse = {
       conversations_today: 8,
       messages_today: 65,
       avg_messages_per_conversation: 8,
+    },
+    app_visitors: {
+      range: 48,
+      last_24h: 12,
+      tracking_started_at: '2026-09-01T00:00:00.000Z',
+      daily: [
+        { date: '2026-09-14', visitors: 9 },
+        { date: '2026-09-15', visitors: 12 },
+      ],
     },
     daily_activity: [],
     top_users: { by_conversations: [], by_messages: [] },
@@ -1490,7 +1511,7 @@ describe('Admin Dashboard Page', () => {
       const fetchMock = setupFetchMock();
 
       render(<AdminPage />);
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       const statsUrls = fetchMock.mock.calls
         .map(([url]) => new URL(url, 'http://localhost'))
@@ -1573,7 +1594,7 @@ describe('Admin Dashboard Page', () => {
       });
 
       render(<AdminPage />);
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       const sourceSelect = await screen.findByDisplayValue('All Sources');
       expect(within(sourceSelect as HTMLElement).getByRole('option', { name: 'Webex' })).toBeInTheDocument();
@@ -1597,7 +1618,7 @@ describe('Admin Dashboard Page', () => {
       });
 
       render(<AdminPage />);
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       const sourceSelect = await screen.findByDisplayValue('All Sources');
       expect(within(sourceSelect as HTMLElement).queryByRole('option', { name: 'Webex' })).not.toBeInTheDocument();
@@ -1624,7 +1645,7 @@ describe('Admin Dashboard Page', () => {
       });
 
       render(<AdminPage />);
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       const sourceSelect = await screen.findByDisplayValue('All Sources');
       expect(within(sourceSelect as HTMLElement).getByRole('option', { name: 'API' })).toBeInTheDocument();
@@ -1665,7 +1686,7 @@ describe('Admin Dashboard Page', () => {
       render(<AdminPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('42')).toBeInTheDocument();
+        expect(screen.getAllByText('42').length).toBeGreaterThan(0);
       });
 
       expect(
@@ -1676,17 +1697,98 @@ describe('Admin Dashboard Page', () => {
         'page',
       );
       expect(screen.getByText('Active Chat Users')).toBeInTheDocument();
-      expect(screen.getByText('Conversations')).toBeInTheDocument();
-      expect(screen.getByText('Messages')).toBeInTheDocument();
-      expect(screen.getByText('Daily Active Users (DAU)')).toBeInTheDocument();
+      expect(screen.getByText('App Visitors')).toBeInTheDocument();
+      expect(screen.getByText('Daily App Visitors')).toBeInTheDocument();
+      expect(screen.getByText(/whether or not they chatted/i)).toBeInTheDocument();
+      expect(screen.getAllByText('Conversations Started')).toHaveLength(2);
+      expect(screen.getByText('AI Responses')).toBeInTheDocument();
+      expect(screen.getByText('Daily Active Chat Users')).toBeInTheDocument();
       expect(screen.queryByText('NaN')).not.toBeInTheDocument();
+    });
+
+    it('uses exact activity summaries and the response-weighted latency average', async () => {
+      setupFetchMock({
+        stats: {
+          ...mockStatsResponse,
+          data: {
+            ...mockStatsResponse.data,
+            daily_activity: [
+              { date: '2026-09-13', active_users: 1, conversations: 2, messages: 4 },
+              { date: '2026-09-14', active_users: 0, conversations: 0, messages: 0 },
+              { date: '2026-09-15', active_users: 2, conversations: 1, messages: 3 },
+            ],
+            response_time: {
+              avg_ms: 6307.8,
+              min_ms: 1416,
+              max_ms: 34151,
+              sample_count: 59,
+              samples: [
+                { ts: '2026-09-13', latency_ms: 17000 },
+                { ts: '2026-09-15', latency_ms: 1416 },
+              ],
+            },
+          },
+        },
+      });
+
+      render(<AdminPage />);
+
+      const activityCard = await screen.findByTestId('stats-card-daily-active-users');
+      expect(within(activityCard).getByText('Days with prompts')).toBeInTheDocument();
+      expect(within(activityCard).getByText('Selected range')).toBeInTheDocument();
+      expect(within(activityCard).queryByText('Last 30d')).not.toBeInTheDocument();
+      expect(within(activityCard).getByText('2')).toBeInTheDocument();
+      expect(screen.queryByText('Avg/bucket')).not.toBeInTheDocument();
+
+      const visitorsCard = screen.getByTestId('stats-card-daily-app-visitors');
+      expect(within(visitorsCard).getByText('Days with visits')).toBeInTheDocument();
+
+      const conversationsCard = screen.getByTestId('stats-card-conversation-activity');
+      expect(within(conversationsCard).getByText('Conversations Started')).toBeInTheDocument();
+      expect(within(conversationsCard).getByText('Selected range')).toBeInTheDocument();
+      expect(within(conversationsCard).getByText('Average per day')).toBeInTheDocument();
+
+      const responseChart = within(screen.getByTestId('stats-card-response-time'))
+        .getByTestId('line-chart');
+      expect(responseChart).toHaveAttribute('data-avg-line', '6307.8');
+      expect(responseChart).toHaveAttribute('data-avg-label', 'avg 6.3s');
+    });
+
+    it('offers active Statistics users without requiring a prior Feedback visit', async () => {
+      setupFetchMock({
+        stats: {
+          ...mockStatsResponse,
+          data: {
+            ...mockStatsResponse.data,
+            top_users: {
+              by_conversations: [
+                { _id: 'active-user@example.com', count: 3, name: 'Active User' },
+              ],
+              by_messages: [
+                { _id: 'active-user@example.com', count: 8, name: 'Active User' },
+              ],
+            },
+          },
+        },
+      });
+
+      render(<AdminPage />);
+
+      expect((await screen.findAllByText('Active User')).length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole('button', { name: 'All Users & Teams' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'active-user@example.com' }));
+
+      expect(replaceMock).toHaveBeenCalledWith(
+        expect.stringContaining('users=active-user%40example.com'),
+        { scroll: false },
+      );
     });
 
     it('does not refresh the default 30-day stats after entering Statistics', async () => {
       const fetchMock = setupFetchMock();
       render(<AdminPage />);
 
-      await screen.findByText('42');
+      await screen.findAllByText('42');
       await act(async () => {
         await new Promise((resolve) => window.setTimeout(resolve, 200));
       });
@@ -1694,8 +1796,8 @@ describe('Admin Dashboard Page', () => {
       const statsUrls = fetchMock.mock.calls
         .map(([url]) => new URL(url, 'http://localhost'))
         .filter((url) => url.pathname === '/api/admin/stats');
-      expect(statsUrls).toHaveLength(12);
-      expect(new Set(statsUrls.map((url) => url.searchParams.get('section'))).size).toBe(12);
+      expect(statsUrls).toHaveLength(13);
+      expect(new Set(statsUrls.map((url) => url.searchParams.get('section'))).size).toBe(13);
       expect(statsUrls.every((url) => url.searchParams.get('range') === '30d')).toBe(true);
     });
 
@@ -1997,14 +2099,14 @@ describe('Admin Dashboard Page', () => {
         .slice(callsBeforeFilter)
         .map(([url]) => new URL(url, 'http://localhost').searchParams.get('section'))
         .filter(Boolean);
-      expect(refreshCalls).toHaveLength(11);
-      expect(new Set(refreshCalls).size).toBe(11);
+      expect(refreshCalls).toHaveLength(12);
+      expect(new Set(refreshCalls).size).toBe(12);
       expect(refreshCalls).not.toContain('filters');
       const refreshUrls = fetchMock.mock.calls
         .slice(callsBeforeFilter)
         .map(([url]) => new URL(url, 'http://localhost'))
         .filter((url) => url.pathname === '/api/admin/stats');
-      expect(refreshUrls).toHaveLength(11);
+      expect(refreshUrls).toHaveLength(12);
       expect(refreshUrls.every((url) => url.searchParams.get('source') === 'web')).toBe(true);
       await waitFor(() => {
         expect(fetchMock.mock.calls.slice(callsBeforeFilter).some(([url]) => {
@@ -2063,7 +2165,7 @@ describe('Admin Dashboard Page', () => {
 
       render(<AdminPage />);
       fireEvent.click(await screen.findByRole('button', { name: 'Insights' }));
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       const callsBeforeFilter = fetchMock.mock.calls.length;
       fireEvent.click(await screen.findByRole('button', { name: 'All Agents' }));
@@ -2078,7 +2180,7 @@ describe('Admin Dashboard Page', () => {
         .slice(callsBeforeFilter)
         .map(([url]) => new URL(url, 'http://localhost'))
         .filter((url) => url.pathname === '/api/admin/stats');
-      expect(refreshUrls).toHaveLength(11);
+      expect(refreshUrls).toHaveLength(12);
       expect(refreshUrls.every((url) => url.searchParams.get('agent') === 'agent-primary')).toBe(true);
       expect(refreshUrls.find((url) => url.searchParams.get('section') === 'overview'))
         .toBeDefined();
@@ -2088,7 +2190,7 @@ describe('Admin Dashboard Page', () => {
       const fetchMock = setupFetchMock();
       render(<AdminPage />);
       fireEvent.click(await screen.findByRole('button', { name: 'Insights' }));
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       fireEvent.change(screen.getByDisplayValue('All Sources'), { target: { value: 'slack' } });
       await waitFor(() => {
@@ -2111,7 +2213,7 @@ describe('Admin Dashboard Page', () => {
           .slice(callsBeforeChannel)
           .map(([url]) => new URL(url, 'http://localhost'))
           .filter((url) => url.pathname === '/api/admin/stats');
-        expect(channelRefreshes).toHaveLength(11);
+        expect(channelRefreshes).toHaveLength(12);
         expect(channelRefreshes.every((url) => (
           url.searchParams.get('source') === 'slack'
           && url.searchParams.get('channel') === 'primary-channel'
@@ -2123,7 +2225,7 @@ describe('Admin Dashboard Page', () => {
       const fetchMock = setupFetchMock();
       render(<AdminPage />);
       fireEvent.click(await screen.findByRole('button', { name: 'Insights' }));
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       fireEvent.click(screen.getByRole('button', { name: 'All Users & Teams' }));
       const callsBeforeTeam = fetchMock.mock.calls.length;
@@ -2134,7 +2236,7 @@ describe('Admin Dashboard Page', () => {
           .slice(callsBeforeTeam)
           .map(([url]) => new URL(url, 'http://localhost'))
           .filter((url) => url.pathname === '/api/admin/stats');
-        expect(teamRefreshes).toHaveLength(11);
+        expect(teamRefreshes).toHaveLength(12);
         expect(teamRefreshes.every((url) => (
           url.searchParams.get('team') === 'platform-team'
           && url.searchParams.has('user') === false
@@ -2215,17 +2317,16 @@ describe('Admin Dashboard Page', () => {
 
       render(<AdminPage />);
       fireEvent.click(await screen.findByRole('button', { name: 'Insights' }));
-      await screen.findByText('42');
+      await screen.findAllByText('42');
 
       fireEvent.click(screen.getByRole('button', { name: '1h' }));
 
       await waitFor(() => {
-        const usersCard = screen.getByText('Active Chat Users').closest('.rounded-lg');
-        const conversationsCard = screen.getByText('Conversations').closest('.rounded-lg');
-        const messagesCard = screen.getByText('Messages').closest('.rounded-lg');
-        expect(within(usersCard as HTMLElement).getByText('2')).toBeInTheDocument();
-        expect(within(conversationsCard as HTMLElement).getByText('3')).toBeInTheDocument();
-        expect(within(messagesCard as HTMLElement).getByText('4')).toBeInTheDocument();
+        expect(within(screen.getByTestId('stats-card-overview-users')).getByText('2')).toBeInTheDocument();
+        expect(within(screen.getByTestId('stats-card-overview-conversations')).getByText('3')).toBeInTheDocument();
+        expect(within(screen.getByTestId('stats-card-overview-messages')).getByText('4')).toBeInTheDocument();
+        expect(screen.getByText('Active Chat Users Over Time')).toBeInTheDocument();
+        expect(screen.getAllByText('Average per interval')).toHaveLength(2);
       });
       await waitFor(() => {
         expect((global.fetch as jest.Mock).mock.calls.some(([url]) => {

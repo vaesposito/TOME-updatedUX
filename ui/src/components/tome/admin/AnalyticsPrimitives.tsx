@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import {
   Area,
   CartesianGrid,
@@ -61,6 +62,54 @@ export const dateLabel = (value: string) =>
     timeZone: "UTC",
   });
 
+export type SortDirection = "asc" | "desc";
+
+export function SortableTableHeader({
+  label,
+  active,
+  direction,
+  onSort,
+  className = "p-3",
+}: {
+  label: string;
+  active: boolean;
+  direction: SortDirection;
+  onSort: () => void;
+  className?: string;
+}) {
+  const nextDirection =
+    active && direction === "desc" ? "ascending" : "descending";
+  return (
+    <th
+      className={className}
+      aria-sort={
+        active ? (direction === "asc" ? "ascending" : "descending") : "none"
+      }
+    >
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onSort}
+        aria-label={`Sort by ${label} ${nextDirection}`}
+      >
+        <span>{label}</span>
+        {active ? (
+          direction === "asc" ? (
+            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+          )
+        ) : (
+          <ChevronsUpDown
+            className="h-3.5 w-3.5 opacity-50"
+            aria-hidden="true"
+          />
+        )}
+      </button>
+    </th>
+  );
+}
+
 export function TomeActivityChart({
   daily,
 }: {
@@ -75,7 +124,7 @@ export function TomeActivityChart({
     <div
       className="rounded-lg border bg-card p-4"
       role="img"
-      aria-label="Daily Tome active users, visitors, and chat users for the last 30 UTC dates"
+      aria-label="Tome users, visitors, and chat users by day for the last 30 days"
     >
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart
@@ -98,26 +147,37 @@ export function TomeActivityChart({
           <Area
             type="monotone"
             dataKey="activeUsers"
-            name="Tome active users"
+            name="All users"
             stroke="hsl(210,90%,55%)"
             fill="hsl(210,90%,55%)"
             fillOpacity={0.12}
             strokeWidth={2}
+            dot={{
+              r: 5,
+              fill: "hsl(210,90%,55%)",
+              stroke: "var(--card)",
+              strokeWidth: 2,
+            }}
             connectNulls={false}
           />
           <Line
             type="monotone"
             dataKey="tomeUsers"
-            name="Tome visitors"
+            name="Visitors"
             stroke="hsl(175,70%,42%)"
             strokeWidth={2}
-            dot={false}
+            dot={{
+              r: 3,
+              fill: "hsl(175,70%,42%)",
+              stroke: "var(--card)",
+              strokeWidth: 1,
+            }}
             connectNulls={false}
           />
           <Line
             type="monotone"
             dataKey="chatUsers"
-            name="Tome chat users"
+            name="Chat users"
             stroke="hsl(275,75%,62%)"
             strokeWidth={2}
             dot={false}

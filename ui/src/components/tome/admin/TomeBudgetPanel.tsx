@@ -1,17 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { IngestionBudgetAnalytics } from "@/lib/tome/ingestion-budget";
 import {
   AnalyticsSection,
-  count,
   dateLabel,
   Metric,
   money,
+  type SortDirection,
+  SortableTableHeader,
 } from "./AnalyticsPrimitives";
+
+type SpendSortKey = "ingestionUsd" | "synthesisUsd" | "coverage";
+
+const updateCount = (value: number) =>
+  `${value.toLocaleString("en-US")} update${value === 1 ? "" : "s"}`;
 
 export function TomeBudgetPanel({
   budget,
@@ -27,6 +33,24 @@ export function TomeBudgetPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [spendSort, setSpendSort] = useState<{
+    key: SpendSortKey;
+    direction: SortDirection;
+  } | null>(null);
+  const sortedEntities = useMemo(() => {
+    const rows = budget?.byEntity ?? [];
+    if (!spendSort) return rows;
+    const direction = spendSort.direction === "asc" ? 1 : -1;
+    const value = (row: IngestionBudgetAnalytics["byEntity"][number]) => {
+      if (spendSort.key === "coverage")
+        return row.runs === 0 ? 0 : row.measuredRuns / row.runs;
+      return row[spendSort.key];
+    };
+    return [...rows].sort(
+      (a, b) =>
+        direction * (value(a) - value(b)) || a.name.localeCompare(b.name),
+    );
+  }, [budget?.byEntity, spendSort]);
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -59,41 +83,52 @@ export function TomeBudgetPanel({
     );
   const status =
     budget.status === "over_budget"
-      ? "Monthly budget reached"
+      ? "This month's budget has been reached"
       : budget.status === "near_limit"
-        ? "Approaching monthly budget"
+        ? "Spending is close to this month's budget"
         : budget.status === "not_configured"
-          ? "No monthly budget configured"
-          : "Recorded spend is within budget";
+          ? "No monthly budget is set"
+          : "Spending is within this month's budget";
+  const month = new Date(budget.periodStart).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  const sortSpendBy = (key: SpendSortKey) => {
+    setSpendSort((current) => ({
+      key,
+      direction:
+        current?.key === key && current.direction === "desc" ? "asc" : "desc",
+    }));
+  };
   return (
     <div className="space-y-6">
       <AnalyticsSection
-        title="Ingestion budget"
-        description={`${budget.month} · Runs started ${dateLabel(budget.periodStart)}–${dateLabel(new Date(new Date(budget.periodEnd).getTime() - 1).toISOString())} (UTC). Includes source ingestion and Area/BHAG synthesis.`}
+        title="Monthly content budget"
+        description={`${month} · Covers source updates and Area or BHAG summaries started from ${dateLabel(budget.periodStart)} through ${dateLabel(new Date(new Date(budget.periodEnd).getTime() - 1).toISOString())}.`}
       >
         <div
           role="status"
           className={`rounded-lg border p-3 text-sm ${budget.status === "over_budget" || budget.status === "near_limit" ? "border-amber-500/60 bg-amber-500/10" : "bg-muted/30"}`}
         >
-          {status}. Monitoring only: exceeding the limit does not stop
-          ingestion.
+          {status}. Content updates continue when the budget is reached.
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <Metric
-            label="Monthly budget"
+            label="Monthly limit"
             value={
               budget.monthlyLimitUsd === null
-                ? "Not configured"
+                ? "Not set"
                 : money(budget.monthlyLimitUsd)
             }
           />
           <Metric
-            label="Recorded spend"
+            label="Spent so far"
             value={money(budget.spentUsd)}
-            detail={`${budget.measuredRuns} of ${budget.runs} runs report cost`}
+            detail={`${budget.measuredRuns} of ${budget.runs} updates include cost`}
           />
           <Metric
-            label="Remaining budget"
+            label="Available"
             value={
               budget.remainingUsd === null ? "—" : money(budget.remainingUsd)
             }
@@ -114,25 +149,26 @@ export function TomeBudgetPanel({
         )}
         <p className="text-sm text-muted-foreground">
           {budget.unmeasuredRuns > 0
-            ? `${budget.unmeasuredRuns} runs have unknown cost; spend is incomplete and remaining budget may be overstated.`
-            : "All current-month runs report cost."}{" "}
-          {budget.pendingRuns} runs are queued, running, or awaiting review.
-          In-flight cost may increase.
+            ? `${updateCount(budget.unmeasuredRuns)} ${budget.unmeasuredRuns === 1 ? "does" : "do"} not include cost yet, so the total and available amount may change.`
+            : "All updates this month include cost."}{" "}
+          {updateCount(budget.pendingRuns)}{" "}
+          {budget.pendingRuns === 1 ? "is" : "are"} still in progress or waiting
+          for review, so the total may increase.
         </p>
       </AnalyticsSection>
       <AnalyticsSection
-        title="Budget settings"
-        description="Organization-wide monthly USD limit. Leave blank to remove it. Warnings appear here at the configured threshold."
+        title="Set a monthly budget"
+        description="Choose a spending target for Tome content updates and when to show a warning. The budget sends warnings but does not pause updates. Leave the limit blank to track spending without a budget."
       >
         <form onSubmit={save} className="flex flex-wrap items-end gap-3">
           <label className="space-y-1 text-sm">
-            Monthly budget (USD)
+            Monthly limit (USD)
             <Input
               type="number"
               min="0.01"
               max="1000000000"
               step="0.01"
-              placeholder="Not configured"
+              placeholder="No limit"
               value={limit}
               disabled={saving}
               onChange={(event) => {
@@ -142,7 +178,7 @@ export function TomeBudgetPanel({
             />
           </label>
           <label className="space-y-1 text-sm">
-            Warn at (%)
+            Show warning at (%)
             <Input
               type="number"
               min="1"
@@ -158,7 +194,7 @@ export function TomeBudgetPanel({
             />
           </label>
           <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save budget"}
+            {saving ? "Saving…" : "Save"}
           </Button>
         </form>
         {error && (
@@ -168,26 +204,44 @@ export function TomeBudgetPanel({
         )}
         {saved && (
           <p role="status" className="text-sm text-emerald-600">
-            Budget saved.
+            Budget updated.
           </p>
         )}
       </AnalyticsSection>
       <AnalyticsSection
-        title="Spend by entity"
-        description="Recorded agent costs, including failed runs when cost is known. Archived and removed entities remain in budget accounting."
+        title="Spending by project, Area, and BHAG"
+        description="See where content update costs came from this month. Archived or removed items remain here so the monthly total stays accurate."
       >
         <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
+          <table
+            className="w-full text-sm"
+            aria-label="Spending by project, Area, and BHAG"
+          >
             <thead className="bg-muted/40 text-left">
               <tr>
-                <th className="p-3">Entity</th>
-                <th className="p-3">Source ingestion</th>
-                <th className="p-3">Synthesis</th>
-                <th className="p-3">Cost coverage</th>
+                <th className="p-3">Name</th>
+                <SortableTableHeader
+                  label="Source updates"
+                  active={spendSort?.key === "ingestionUsd"}
+                  direction={spendSort?.direction ?? "desc"}
+                  onSort={() => sortSpendBy("ingestionUsd")}
+                />
+                <SortableTableHeader
+                  label="Area and BHAG summaries"
+                  active={spendSort?.key === "synthesisUsd"}
+                  direction={spendSort?.direction ?? "desc"}
+                  onSort={() => sortSpendBy("synthesisUsd")}
+                />
+                <SortableTableHeader
+                  label="Updates with costs"
+                  active={spendSort?.key === "coverage"}
+                  direction={spendSort?.direction ?? "desc"}
+                  onSort={() => sortSpendBy("coverage")}
+                />
               </tr>
             </thead>
             <tbody>
-              {budget.byEntity.map((row) => (
+              {sortedEntities.map((row) => (
                 <tr key={row.projectId} className="border-t">
                   <td className="p-3">
                     {row.slug ? (
@@ -201,7 +255,11 @@ export function TomeBudgetPanel({
                       row.name
                     )}
                     <span className="ml-2 text-xs text-muted-foreground">
-                      {row.type}
+                      {row.type === "bhag"
+                        ? "BHAG"
+                        : row.type === "area"
+                          ? "Area"
+                          : "Project"}
                     </span>
                   </td>
                   <td className="p-3 tabular-nums">
@@ -211,7 +269,7 @@ export function TomeBudgetPanel({
                     {money(row.synthesisUsd)}
                   </td>
                   <td className="p-3">
-                    {row.measuredRuns}/{row.runs} runs
+                    {row.measuredRuns} of {row.runs}
                   </td>
                 </tr>
               ))}
@@ -221,7 +279,7 @@ export function TomeBudgetPanel({
                     colSpan={4}
                     className="p-6 text-center text-muted-foreground"
                   >
-                    No ingestion runs started this month.
+                    No content updates started this month.
                   </td>
                 </tr>
               )}
@@ -229,10 +287,9 @@ export function TomeBudgetPanel({
           </table>
         </div>
         <p className="text-xs text-muted-foreground">
-          {count(budget.inputTokens)} input tokens ·{" "}
-          {count(budget.outputTokens)} output tokens. Costs are attributed to
-          the month the run started; this is not a provider invoice. Chat and
-          separate evaluation costs are excluded.
+          Totals are estimates for content updates started this month. Your
+          provider bill may differ. Chat and model evaluation costs are not
+          included.
         </p>
       </AnalyticsSection>
     </div>

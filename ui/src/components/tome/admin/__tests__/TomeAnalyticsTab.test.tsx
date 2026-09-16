@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { TomeAnalyticsTab } from "../TomeAnalyticsTab";
@@ -232,56 +232,234 @@ describe("TomeAnalyticsTab", () => {
     });
   });
 
-  it("shows deduplicated Tome activity and prompt-based DAU/MAU", async () => {
+  it("aligns daily Tome activity to UTC while retaining trailing windows", async () => {
     const user = userEvent.setup();
     render(<TomeAnalyticsTab />);
-    expect(await screen.findByText("Tome DAU")).toBeInTheDocument();
+    expect(await screen.findByText("Tome users today")).toBeInTheDocument();
     expect(screen.getByText("Tome visitors today")).toBeInTheDocument();
-    expect(screen.getByText("Daily Tome users")).toBeInTheDocument();
+    expect(screen.getByText("Tome use over time")).toBeInTheDocument();
     expect(
       screen.getByRole("img", {
-        name: /Daily Tome active users, visitors, and chat users/i,
+        name: /Tome users, visitors, and chat users by day/i,
       }),
     ).toBeInTheDocument();
-    expect(await screen.findByText("Chat DAU")).toBeInTheDocument();
-    expect(screen.getByText("Chat MAU")).toBeInTheDocument();
     expect(
-      screen.getByText("Active Areas").closest("div.rounded-lg"),
-    ).toHaveTextContent("1 / 1");
-    await user.selectOptions(screen.getByLabelText("Activity window"), "day");
+      await screen.findByText("Tome chat users today"),
+    ).toBeInTheDocument();
     expect(
-      screen.getByText("Active Areas").closest("div.rounded-lg"),
-    ).toHaveTextContent("0 / 1");
+      screen.getByText("Tome chat users today").closest("div.rounded-lg"),
+    ).toHaveTextContent("0");
     expect(
-      screen.getByText("Active BHAGs").closest("div.rounded-lg"),
-    ).toHaveTextContent("0 / 1");
-    await user.click(screen.getByText("Reading and discovery"));
-    expect(screen.getByText("Opened Agent")).toBeVisible();
+      screen.getByText("Tome chat users today").closest("div.rounded-lg"),
+    ).toHaveTextContent("People who chatted with Tome today");
+    expect(
+      screen.getByText(
+        /Today's numbers may still change.*Visitor data is available from Sep 13/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Chat MAU")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Areas used").closest("div.rounded-lg"),
+    ).toHaveTextContent("1 of 1");
+    await user.selectOptions(screen.getByLabelText("Time period"), "day");
+    expect(
+      screen.getByText("Areas used").closest("div.rounded-lg"),
+    ).toHaveTextContent("0 of 1");
+    expect(
+      screen.getByText("BHAGs used").closest("div.rounded-lg"),
+    ).toHaveTextContent("0 of 1");
+    await user.click(screen.getByText("Reading activity"));
+    expect(screen.getByText("Opened Tome chat")).toBeVisible();
     expect(screen.queryByText(/conversion/i)).not.toBeInTheDocument();
   });
 
-  it("offers a direct ingestion-history action alongside failures and preserves revision sources", async () => {
+  it("offers update history alongside failures and explains how pages changed", async () => {
     const user = userEvent.setup();
     render(<TomeAnalyticsTab />);
-    await screen.findByText("Chat DAU");
+    await screen.findByText("Tome chat users today");
     await user.click(screen.getByRole("tab", { name: "Content" }));
-    expect(screen.getByText("Ingestion failures")).toBeVisible();
-    expect(screen.getByRole("link", { name: "View runs" })).toHaveAttribute(
-      "href",
-      "/projects/alpha/tome/ingest",
-    );
-    await user.click(screen.getByText("Templates and revision sources"));
-    expect(screen.getByText("Manual edits: 2")).toBeVisible();
+    expect(screen.getByText("Update failures")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "View update history" }),
+    ).toHaveAttribute("href", "/projects/alpha/tome/ingest");
+    await user.click(screen.getByText("Templates and page changes"));
+    expect(screen.getByText("Edited by people: 2")).toBeVisible();
+    expect(screen.queryByText(/revision sources/i)).not.toBeInTheDocument();
   });
 
-  it("saves an admin budget and shows updated usage with incomplete cost coverage", async () => {
+  it("sorts every numeric content and spending column", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          ...response,
+          chat: {
+            ...response.chat,
+            entities: [
+              {
+                ...response.chat.entities[0],
+                id: "project-alpha",
+                name: "Alpha",
+                slug: "alpha",
+                activity: {
+                  day: { users: 1, prompts: 10 },
+                  week: { users: 1, prompts: 10 },
+                  month: { users: 1, prompts: 10 },
+                },
+              },
+              {
+                ...response.chat.entities[0],
+                id: "project-beta",
+                name: "Beta",
+                slug: "beta",
+                activity: {
+                  day: { users: 5, prompts: 2 },
+                  week: { users: 5, prompts: 2 },
+                  month: { users: 5, prompts: 2 },
+                },
+              },
+            ],
+          },
+          projects: [
+            {
+              ...response.projects[0],
+              projectId: "project-fewer-pages",
+              slug: "fewer-pages",
+              title: "Fewer pages",
+              pageCount: 2,
+            },
+            {
+              ...response.projects[0],
+              projectId: "project-more-pages",
+              slug: "more-pages",
+              title: "More pages",
+              pageCount: 20,
+            },
+          ],
+          budget: {
+            ...response.budget,
+            byEntity: [
+              {
+                projectId: "project-alpha",
+                name: "Alpha",
+                slug: "alpha",
+                type: "project",
+                ingestionUsd: 10,
+                synthesisUsd: 50,
+                measuredRuns: 1,
+                runs: 4,
+              },
+              {
+                projectId: "project-beta",
+                name: "Beta",
+                slug: "beta",
+                type: "project",
+                ingestionUsd: 40,
+                synthesisUsd: 5,
+                measuredRuns: 4,
+                runs: 4,
+              },
+            ],
+          },
+        },
+      }),
+    });
     const user = userEvent.setup();
     render(<TomeAnalyticsTab />);
-    await screen.findByText("Chat DAU");
+    await screen.findByText("Tome chat users today");
+
+    const usageTable = screen.getByRole("table", {
+      name: "Chat activity by project, Area, and BHAG",
+    });
+    expect(within(usageTable).getAllByRole("row")[1]).toHaveTextContent("Beta");
+    await user.click(
+      within(usageTable).getByRole("button", {
+        name: "Sort by People ascending",
+      }),
+    );
+    expect(within(usageTable).getAllByRole("row")[1]).toHaveTextContent(
+      "Alpha",
+    );
+    await user.click(
+      within(usageTable).getByRole("button", {
+        name: "Sort by Messages descending",
+      }),
+    );
+    expect(within(usageTable).getAllByRole("row")[1]).toHaveTextContent(
+      "Alpha",
+    );
+    await user.click(
+      within(usageTable).getByRole("button", {
+        name: "Sort by Messages ascending",
+      }),
+    );
+    expect(within(usageTable).getAllByRole("row")[1]).toHaveTextContent("Beta");
+
+    await user.click(screen.getByRole("tab", { name: "Content" }));
+    const ingestionTable = screen.getByRole("table", {
+      name: "Content by project, Area, and BHAG",
+    });
+    await user.click(
+      within(ingestionTable).getByRole("button", {
+        name: "Sort by Pages descending",
+      }),
+    );
+    expect(within(ingestionTable).getAllByRole("row")[1]).toHaveTextContent(
+      "More pages",
+    );
+    await user.click(
+      within(ingestionTable).getByRole("button", {
+        name: "Sort by Pages ascending",
+      }),
+    );
+    expect(within(ingestionTable).getAllByRole("row")[1]).toHaveTextContent(
+      "Fewer pages",
+    );
+
     await user.click(screen.getByRole("tab", { name: "Budget" }));
-    expect(screen.getByText(/1 runs have unknown cost/)).toBeVisible();
-    expect(screen.getByText(/does not stop ingestion/)).toBeVisible();
-    await user.type(screen.getByLabelText("Monthly budget (USD)"), "100");
+    const spendTable = screen.getByRole("table", {
+      name: "Spending by project, Area, and BHAG",
+    });
+    await user.click(
+      within(spendTable).getByRole("button", {
+        name: "Sort by Source updates descending",
+      }),
+    );
+    expect(within(spendTable).getAllByRole("row")[1]).toHaveTextContent("Beta");
+    await user.click(
+      within(spendTable).getByRole("button", {
+        name: "Sort by Area and BHAG summaries descending",
+      }),
+    );
+    expect(within(spendTable).getAllByRole("row")[1]).toHaveTextContent(
+      "Alpha",
+    );
+    await user.click(
+      within(spendTable).getByRole("button", {
+        name: "Sort by Updates with costs descending",
+      }),
+    );
+    expect(within(spendTable).getAllByRole("row")[1]).toHaveTextContent("Beta");
+    await user.click(
+      within(spendTable).getByRole("button", {
+        name: "Sort by Updates with costs ascending",
+      }),
+    );
+    expect(within(spendTable).getAllByRole("row")[1]).toHaveTextContent(
+      "Alpha",
+    );
+  });
+
+  it("saves a budget and explains incomplete cost reporting", async () => {
+    const user = userEvent.setup();
+    render(<TomeAnalyticsTab />);
+    await screen.findByText("Tome chat users today");
+    await user.click(screen.getByRole("tab", { name: "Budget" }));
+    expect(
+      screen.getByText(/1 update does not include cost yet/),
+    ).toBeVisible();
+    expect(screen.getByText(/does not pause updates/)).toBeVisible();
+    await user.type(screen.getByLabelText("Monthly limit (USD)"), "100");
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -294,8 +472,8 @@ describe("TomeAnalyticsTab", () => {
         },
       }),
     });
-    await user.click(screen.getByRole("button", { name: "Save budget" }));
-    expect(await screen.findByText("Budget saved.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Budget updated.")).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/tome/admin/analytics/budget",
       expect.objectContaining({
@@ -303,7 +481,9 @@ describe("TomeAnalyticsTab", () => {
         body: JSON.stringify({ monthlyLimitUsd: 100, alertAtPercent: 80 }),
       }),
     );
-    expect(screen.getByText(/Approaching monthly budget/)).toBeVisible();
+    expect(
+      screen.getByText(/Spending is close to this month's budget/),
+    ).toBeVisible();
     expect(screen.getByText("$15.00")).toBeVisible();
   });
 
@@ -323,8 +503,8 @@ describe("TomeAnalyticsTab", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Chat analytics unavailable.",
     );
-    expect(screen.queryByText("Chat DAU")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tome chat users today")).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Budget" }));
-    expect(screen.getByText("Recorded spend")).toBeVisible();
+    expect(screen.getByText("Spent so far")).toBeVisible();
   });
 });

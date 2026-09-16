@@ -38,8 +38,8 @@ export function TomeAnalyticsTab() {
         <div>
           <h2 className="text-lg font-semibold">Tome analytics</h2>
           <p className="text-sm text-muted-foreground">
-            Chat adoption, active entities, and the cost of keeping knowledge
-            current.
+            See how people use Tome, what they read, and where conversations
+            happen.
           </p>
         </div>
         <Button
@@ -104,8 +104,8 @@ export function TomeAnalyticsTab() {
           </Tabs>
           {data.chat && (
             <p className="text-xs text-muted-foreground">
-              Updated {new Date(data.chat.asOf).toLocaleString()}. Chat users
-              are deduplicated across entities.
+              Updated {new Date(data.chat.asOf).toLocaleString()}. People are
+              counted once even if they use more than one project.
             </p>
           )}
         </>

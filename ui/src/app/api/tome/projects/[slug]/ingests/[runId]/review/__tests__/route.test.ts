@@ -7,7 +7,11 @@ import type { PageRevision } from "@/types/tome";
 const mockLoadTomeProject = jest.fn();
 const mockFindRun = jest.fn();
 const mockListTouchedPaths = jest.fn();
+const mockListDraftPaths = jest.fn();
 const mockPageHistory = jest.fn();
+const mockRequireTomeEditor = jest.fn();
+const mockReviewDraftFile = jest.fn();
+const mockAuditTome = jest.fn();
 
 jest.mock("@/lib/api-middleware", () => ({
   ApiError: class ApiError extends Error {},
@@ -17,6 +21,7 @@ jest.mock("@/lib/api-middleware", () => ({
 
 jest.mock("@/lib/tome/tome-api", () => ({
   loadTomeProject: (...args: unknown[]) => mockLoadTomeProject(...args),
+  requireTomeEditor: (...args: unknown[]) => mockRequireTomeEditor(...args),
 }));
 
 jest.mock("@/lib/tome/mongo-collections", () => ({
@@ -26,8 +31,18 @@ jest.mock("@/lib/tome/mongo-collections", () => ({
 jest.mock("@/lib/tome/page-store", () => ({
   getPageStore: async () => ({
     listTouchedPaths: (...args: unknown[]) => mockListTouchedPaths(...args),
+    listDraftPaths: (...args: unknown[]) => mockListDraftPaths(...args),
     pageHistory: (...args: unknown[]) => mockPageHistory(...args),
   }),
+}));
+
+jest.mock("@/lib/tome/ingest-runner", () => ({
+  reviewDraftFile: (...args: unknown[]) => mockReviewDraftFile(...args),
+}));
+
+jest.mock("@/lib/tome/audit", () => ({
+  auditTome: (...args: unknown[]) => mockAuditTome(...args),
+  tomeActorFromAuth: () => ({ type: "user", id: "reviewer@example.test" }),
 }));
 
 import { GET } from "../route";
@@ -67,13 +82,20 @@ async function review(history: PageRevision[]) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockLoadTomeProject.mockResolvedValue({ projectId: "project-example" });
+  mockLoadTomeProject.mockResolvedValue({
+    projectId: "project-example",
+    project: { _id: "project-example", slug: "example-area", review_mode: "stable_only" },
+    user: { email: "reviewer@example.test" },
+    session: {},
+  });
   mockFindRun.mockResolvedValue({
     _id: "run-current",
     project_id: "project-example",
     report_id: CURRENT_REPORT,
+    status: "awaiting_review",
   });
   mockListTouchedPaths.mockResolvedValue([PATH]);
+  mockListDraftPaths.mockResolvedValue([PATH]);
 });
 
 describe("GET ingest review baseline", () => {
@@ -94,6 +116,10 @@ describe("GET ingest review baseline", () => {
           oldBody: "",
           newBody: "# Current draft",
           isNewPage: true,
+          requiresDecision: true,
+          decision: null,
+          reviewedBy: null,
+          reviewedAt: null,
         },
       ]);
     },
@@ -111,6 +137,10 @@ describe("GET ingest review baseline", () => {
       oldBody: "# Live before ingest",
       newBody: "# Final draft",
       isNewPage: false,
+      requiresDecision: true,
+      decision: null,
+      reviewedBy: null,
+      reviewedAt: null,
     });
   });
 
@@ -126,6 +156,10 @@ describe("GET ingest review baseline", () => {
       oldBody: "# Legacy live page",
       newBody: "# Current draft",
       isNewPage: false,
+      requiresDecision: true,
+      decision: null,
+      reviewedBy: null,
+      reviewedAt: null,
     });
   });
 
@@ -141,6 +175,101 @@ describe("GET ingest review baseline", () => {
       oldBody: "",
       newBody: "# Recreated draft",
       isNewPage: true,
+      requiresDecision: true,
+      decision: null,
+      reviewedBy: null,
+      reviewedAt: null,
     });
+  });
+
+  it("returns a persisted decision with the diff", async () => {
+    mockFindRun.mockResolvedValue({
+      _id: "run-current",
+      project_id: "project-example",
+      report_id: CURRENT_REPORT,
+      status: "awaiting_review",
+      file_reviews: [{
+        path: PATH,
+        decision: "accept",
+        reviewed_by: "reviewer@example.test",
+        reviewed_at: new Date("2026-01-02T00:00:00Z"),
+      }],
+    });
+    const body = await review([
+      revision("# Current draft", { report_id: CURRENT_REPORT, status: "draft" }),
+    ]);
+
+    expect(body.pages[0]).toEqual(expect.objectContaining({
+      decision: "accept",
+      reviewedBy: "reviewer@example.test",
+    }));
+  });
+
+  it("shows every file touched by a pending ingest, including files already published by policy", async () => {
+    const publishedPath = "updates/example.md";
+    mockListTouchedPaths.mockResolvedValue([publishedPath, PATH]);
+    mockListDraftPaths.mockResolvedValue([PATH]);
+    mockPageHistory.mockImplementation(async (_projectId: string, path: string) => (
+      path === publishedPath
+        ? [
+            revision("# Published update", {
+              path: publishedPath,
+              report_id: CURRENT_REPORT,
+              status: "live",
+            }),
+            revision("# Previous update", { path: publishedPath, status: "live" }),
+          ]
+        : [revision("# Current draft", { report_id: CURRENT_REPORT, status: "draft" })]
+    ));
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/tome/projects/example-area/ingests/run-current/review",
+      ),
+      context,
+    );
+    const body = await response.json();
+
+    expect(body.status).toBe("awaiting_review");
+    expect(body.reviewMode).toBe("stable_only");
+    expect(body.pages).toEqual([
+      expect.objectContaining({ path: PATH, requiresDecision: true }),
+      expect.objectContaining({
+        path: publishedPath,
+        requiresDecision: false,
+        oldBody: "# Previous update",
+        newBody: "# Published update",
+      }),
+    ]);
+  });
+});
+
+describe("PATCH ingest file review", () => {
+  it("persists and audits one file decision", async () => {
+    const { PATCH } = await import("../route");
+    const response = await PATCH(
+      new NextRequest(
+        "http://localhost/api/tome/projects/example-area/ingests/run-current/review",
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path: PATH, decision: "reject" }),
+        },
+      ),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockRequireTomeEditor).toHaveBeenCalled();
+    expect(mockReviewDraftFile).toHaveBeenCalledWith(
+      "run-current",
+      PATH,
+      "reject",
+      "reviewer@example.test",
+    );
+    expect(mockAuditTome).toHaveBeenCalledWith(expect.objectContaining({
+      action: "tome.ingest.file_review",
+      page: PATH,
+    }));
   });
 });

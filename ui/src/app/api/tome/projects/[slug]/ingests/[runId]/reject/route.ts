@@ -24,6 +24,13 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   if (run.status !== "awaiting_review") {
     throw new ApiError("Run is not awaiting review", 409, "RUN_NOT_AWAITING_REVIEW");
   }
+  if ((run.file_reviews?.length ?? 0) > 0) {
+    throw new ApiError(
+      "A file-level review is in progress. Complete it with Done.",
+      409,
+      "FILE_REVIEW_IN_PROGRESS",
+    );
+  }
 
   const reviewedBy = tctx.user.email ?? "unknown";
   await rejectDraftRun(runId, reviewedBy);

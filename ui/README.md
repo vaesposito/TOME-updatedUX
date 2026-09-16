@@ -23,6 +23,34 @@ npm run dev
 
 Open http://localhost:3000.
 
+## Tome ingest review
+
+The review screen lists every file an ingest created or modified. Files held
+by the entity's review policy are reviewed one at a time; files that the
+policy already published remain visible and are labeled **Published**.
+
+- **Accept file** publishes that file when the review is finalized.
+- **Reject file** keeps the prior live file and retains the rejected revision
+  in history.
+- **Accept all** / **Reject all** resolves every draft and finishes the ingest
+  review in one click, replacing any individual file choices. No separate
+  **Finish review** click is needed. Accept all still enforces the quality gate;
+  Reject all never publishes files. Already-published files are unchanged.
+- **Finish review** becomes available after every required file has a decision,
+  then applies the complete review and unlocks the Tome project. The screen
+  always displays the reason while this action is unavailable.
+
+The default **Stable pages only** policy holds stable files for decisions and
+publishes dynamic files immediately. Choose **Review everything** under
+Project settings → Review to require an Accept/Reject decision for every file
+on future ingests.
+
+Individual decisions are persisted as they are made, but do not change live pages
+before **Finish review** (or an explicit **Accept all** / **Reject all** action).
+Starting a file-level review disables that run's unattended draft
+auto-promotion so an explicit rejection cannot later be published by timeout.
+Runs with no file-level decisions retain the existing auto-promotion behavior.
+
 ## Runtime Configuration
 
 | Variable | Default | Purpose |

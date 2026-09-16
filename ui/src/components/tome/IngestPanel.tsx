@@ -48,7 +48,7 @@ interface RunSummary {
   log_lines: number;
   error: string | null;
   review_deadline?: string | null;
-  review_outcome?: "approved" | "rejected" | "auto_promoted" | null;
+  review_outcome?: "approved" | "partially_approved" | "rejected" | "auto_promoted" | null;
   reviewed_by?: string | null;
   report_id?: string | null;
 }
@@ -326,7 +326,11 @@ function RunsDialog({
                               : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
                           )}
                         >
-                          {r.review_outcome === "auto_promoted" ? "auto-promoted" : r.review_outcome}
+                          {r.review_outcome === "auto_promoted"
+                            ? "auto-promoted"
+                            : r.review_outcome === "partially_approved"
+                              ? "partially approved"
+                              : r.review_outcome}
                         </span>
                       </span>
                     )}

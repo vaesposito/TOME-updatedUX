@@ -317,11 +317,21 @@ export interface WebexMeetingOccurrenceSummary {
   runStatus?: IngestRunStatus;
   reportId?: string;
   logLines: number;
-  reviewOutcome?: "approved" | "rejected" | "auto_promoted";
+  reviewOutcome?: "approved" | "partially_approved" | "rejected" | "auto_promoted";
   reviewedBy?: string;
   blockedByRunId?: string;
   blockedByRunStatus?: IngestRunStatus;
   lastError?: string;
+}
+
+export type IngestFileReviewDecision = "accept" | "reject";
+
+/** A reviewer's latest decision for one file in a draft ingest. */
+export interface IngestFileReview {
+  path: string;
+  decision: IngestFileReviewDecision;
+  reviewed_by: string;
+  reviewed_at: Date;
 }
 
 /** Immutable record of how an effective model was selected for a run/turn. */
@@ -420,7 +430,10 @@ export interface IngestRun {
    */
   review_deadline?: Date;
   /** How the run left `awaiting_review`, for the Feed/audit trail. */
-  review_outcome?: "approved" | "rejected" | "auto_promoted";
+  review_outcome?: "approved" | "partially_approved" | "rejected" | "auto_promoted";
+  /** Latest per-file decisions. Draft revisions remain pending until the
+   * reviewer explicitly finalizes the complete review. */
+  file_reviews?: IngestFileReview[];
   /** Who resolved the review — email of the approving/rejecting user. Absent
    * when `review_outcome === "auto_promoted"` (no reviewer showed up). */
   reviewed_by?: string;

@@ -102,6 +102,16 @@ export interface PageStore {
    */
   rejectDraftReport(projectId: string, reportId: string): Promise<void>;
 
+  /**
+   * Resolve every draft in a report in one backend operation. Drafts whose
+   * paths are accepted become live; all remaining drafts become rejected.
+   */
+  finalizeDraftReport(
+    projectId: string,
+    reportId: string,
+    acceptedPaths: string[],
+  ): Promise<void>;
+
   /** Resolve one report-less legacy draft. Publish makes it the live head. */
   resolveOrphanDraft(
     projectId: string,
@@ -242,6 +252,18 @@ function withStructuredIndexes(store: PageStore): PageStore {
       await reindexTouched(projectId, touched);
     },
     rejectDraftReport: (projectId, reportId) => store.rejectDraftReport(projectId, reportId),
+    finalizeDraftReport: async (projectId, reportId, acceptedPaths) => {
+      await store.finalizeDraftReport(projectId, reportId, acceptedPaths);
+      if (acceptedPaths.length === 0) return;
+      const live = await store.listPages(projectId);
+      const touched: Record<string, string> = {};
+      for (const path of acceptedPaths) {
+        if ((path.startsWith("edges/") || isTrackedPath(path)) && path in live) {
+          touched[path] = live[path];
+        }
+      }
+      await reindexTouched(projectId, touched);
+    },
     resolveOrphanDraft: async (projectId, revisionId, resolution, reviewedBy) => {
       const revision = await store.resolveOrphanDraft(
         projectId,

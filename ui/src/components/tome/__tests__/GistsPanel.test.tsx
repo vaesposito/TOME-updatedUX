@@ -5,13 +5,14 @@ import { GistsPanel } from "../GistsPanel";
 describe("GistsPanel", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    window.localStorage.clear();
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: { gists: [] } }),
     }) as jest.Mock;
   });
 
-  it("lets project readers start a new gist without steward access", async () => {
+  it("asks project readers for a gist name before opening the editor", async () => {
     const onNewGist = jest.fn();
     render(
       <GistsPanel
@@ -23,8 +24,66 @@ describe("GistsPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "New gist" }));
-    expect(onNewGist).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog", { name: "New gist" })).toBeInTheDocument();
+    expect(onNewGist).not.toHaveBeenCalled();
+    const writeButton = screen.getByRole("button", { name: "Write in editor" });
+    expect(writeButton).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "New gist name" }), {
+      target: { value: "  Deployment notes  " },
+    });
+    expect(writeButton).toBeEnabled();
+    fireEvent.click(writeButton);
+
+    expect(onNewGist).toHaveBeenCalledWith("Deployment notes");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("prefills the name when a browser-local gist draft already exists", async () => {
+    window.localStorage.setItem(
+      "tome:gist-draft:example-project:new",
+      JSON.stringify({ title: "Recovered context" }),
+    );
+
+    render(
+      <GistsPanel
+        slug="example-project"
+        canEdit
+        onOpenGist={jest.fn()}
+        onNewGist={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New gist" }));
+    expect(screen.getByRole("textbox", { name: "New gist name" })).toHaveValue(
+      "Recovered context",
+    );
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not open the editor when naming is cancelled", async () => {
+    const onNewGist = jest.fn();
+    render(
+      <GistsPanel
+        slug="example-project"
+        canEdit
+        onOpenGist={jest.fn()}
+        onNewGist={onNewGist}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New gist" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "New gist name" }), {
+      target: { value: "Discarded name" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onNewGist).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "New gist" }));
+    expect(screen.getByRole("textbox", { name: "New gist name" })).toHaveValue("");
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
   });
 });

@@ -149,6 +149,39 @@ describe("MarkdownRenderer links", () => {
     );
   });
 
+  it("shows actionable Mermaid syntax errors in saved views", async () => {
+    mockMermaidRender.mockRejectedValueOnce(
+      new Error("Parse error on line 2: Unexpected token"),
+    );
+    const { container } = render(
+      <MarkdownRenderer
+        content={[
+          "```mermaid",
+          "flowchart LR",
+          "  API --> Broken[",
+          "```",
+        ].join("\n")}
+        enableMermaid
+      />,
+    );
+
+    await waitFor(() =>
+      expect(container.querySelector(".tome-mermaid-error")).toBeInTheDocument(),
+    );
+    const alert = container.querySelector(".tome-mermaid-error");
+    expect(alert).toHaveAttribute("role", "alert");
+    expect(alert?.querySelector(".tome-mermaid-error-title")).toHaveTextContent(
+      "Mermaid syntax error",
+    );
+    expect(alert?.querySelector(".tome-mermaid-error-summary")).toHaveTextContent(
+      "Line 2 · Parse error · Unexpected token",
+    );
+    expect(alert?.querySelector(".tome-mermaid-error-excerpt")).toHaveTextContent(
+      "2 | API --> Broken[",
+    );
+    expect(container.querySelector(".md-code-block")).toBeNull();
+  });
+
   it("re-renders saved Mermaid diagrams when the app theme changes", async () => {
     const root = document.documentElement;
     root.setAttribute("data-theme-preference", "dark");

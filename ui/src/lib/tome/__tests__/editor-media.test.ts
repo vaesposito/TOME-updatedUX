@@ -92,7 +92,7 @@ describe("TOME editor media", () => {
     expect(applyPreview).not.toHaveBeenCalled();
   });
 
-  it("returns a text-only alert when Mermaid rejects invalid syntax", async () => {
+  it("explains Mermaid syntax errors with the source line and safe details", async () => {
     let orphanId = "";
     mockedMermaid.render.mockImplementation(async (renderId) => {
       orphanId = `d${renderId}`;
@@ -100,21 +100,63 @@ describe("TOME editor media", () => {
       orphan.id = orphanId;
       orphan.innerHTML = '<svg aria-roledescription="error"></svg>';
       document.body.append(orphan);
-      throw new Error('<img src=x onerror="globalThis.compromised=true">');
+      throw new Error(
+        'Lexical error on line 2. Unrecognized text.\n<img src=x onerror="globalThis.compromised=true">',
+      );
     });
     const applyPreview = jest.fn();
 
-    renderTomeCodePreview("mermaid", "not valid", applyPreview);
+    renderTomeCodePreview(
+      "mermaid",
+      "flowchart LR\nAPI --> WS[/project/project-id/canonical-path]",
+      applyPreview,
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const alert = applyPreview.mock.calls[0]?.[0] as HTMLElement;
     expect(alert).toBeInstanceOf(HTMLElement);
     expect(alert).toHaveClass("tome-mermaid-error");
     expect(alert).toHaveAttribute("role", "alert");
+    expect(alert.querySelector(".tome-mermaid-error-title")).toHaveTextContent(
+      "Mermaid syntax error",
+    );
+    expect(alert.querySelector(".tome-mermaid-error-summary")).toHaveTextContent(
+      "Line 2 · Lexical error · Unrecognized text.",
+    );
+    expect(alert.querySelector(".tome-mermaid-error-excerpt")).toHaveTextContent(
+      "2 | API --> WS[/project/project-id/canonical-path]",
+    );
+    expect(alert.querySelector(".tome-mermaid-error-hint")).toHaveTextContent(
+      "Check brackets, quotes, arrows, and diagram keywords, then preview again.",
+    );
+    expect(alert.querySelector("details")).not.toHaveAttribute("open");
     expect(alert.textContent).toContain("<img src=x");
     expect(alert.querySelector("img")).toBeNull();
     expect(orphanId).not.toBe("");
     expect(document.getElementById(orphanId)).toBeNull();
+  });
+
+  it("uses a helpful fallback for non-parser Mermaid failures", async () => {
+    mockedMermaid.render.mockRejectedValue(new Error("Renderer unavailable"));
+    const applyPreview = jest.fn();
+
+    renderTomeCodePreview("mermaid", "flowchart LR; A-->B", applyPreview);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const alert = applyPreview.mock.calls[0]?.[0] as HTMLElement;
+    expect(alert.querySelector(".tome-mermaid-error-title")).toHaveTextContent(
+      "Could not render Mermaid diagram",
+    );
+    expect(alert.querySelector(".tome-mermaid-error-summary")).toHaveTextContent(
+      "Mermaid could not render this diagram.",
+    );
+    expect(alert.querySelector(".tome-mermaid-error-excerpt")).toBeNull();
+    expect(alert.querySelector(".tome-mermaid-error-hint")).toHaveTextContent(
+      "Try editing the Mermaid source and previewing again.",
+    );
+    expect(alert.querySelector(".tome-mermaid-error-details pre")).toHaveTextContent(
+      "Renderer unavailable",
+    );
   });
 
   it("renders and hydrates a validated Vidcast block", () => {

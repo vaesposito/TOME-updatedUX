@@ -1007,6 +1007,7 @@ export function WikiPageView({
               onInternalLink={onNavigate}
               glossaryPreview={glossaryPreview}
               enableExternalEmbeds
+              enableMermaid
               enableTomeColumns
             />
           ) : !isEditing ? (
@@ -1017,6 +1018,7 @@ export function WikiPageView({
               onInternalLink={onNavigate}
               glossaryPreview={glossaryPreview}
               enableExternalEmbeds
+              enableMermaid
               enableTomeColumns
             />
           ) : (

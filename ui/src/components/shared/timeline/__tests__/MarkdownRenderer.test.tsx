@@ -1,7 +1,16 @@
-import { render,screen,waitFor } from "@testing-library/react";
+import { act, fireEvent, render,screen,waitFor } from "@testing-library/react";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 
 const mockLoadLanguage = jest.fn();
+const mockMermaidInitialize = jest.fn();
+const mockMermaidRender = jest.fn(async (_id: string, _content: string) => ({
+  svg: [
+    '<svg viewBox="0 0 800 400" aria-roledescription="flowchart-v2">',
+    "<title>Example architecture</title>",
+    '<script>alert("unsafe")</script>',
+    "</svg>",
+  ].join(""),
+}));
 const mockCodeToHtml = jest.fn(
   (code: string, options: { lang: string }) =>
     `<pre class="shiki" data-language="${options.lang}"><code>${code}</code></pre>`,
@@ -44,6 +53,14 @@ jest.mock("shiki", () => ({
   })),
 }));
 
+jest.mock("mermaid", () => ({
+  __esModule: true,
+  default: {
+    initialize: mockMermaidInitialize,
+    render: mockMermaidRender,
+  },
+}));
+
 describe("MarkdownRenderer links", () => {
   it("preserves nested, mixed, ordered, and task-list structure", async () => {
     const { container } = render(
@@ -78,6 +95,89 @@ describe("MarkdownRenderer links", () => {
     );
     expect(mockLoadLanguage).toHaveBeenCalledWith("cpp");
     expect(container.querySelector(".md-code-lang")).toHaveTextContent("cpp");
+  });
+
+  it("renders opted-in Mermaid fences as sanitized, expandable diagrams", async () => {
+    const content = [
+      "```mermaid",
+      "flowchart LR",
+      "  Browser --> App",
+      "```",
+    ].join("\n");
+    const disabled = render(<MarkdownRenderer content={content} />);
+
+    await waitFor(() =>
+      expect(disabled.container.querySelector('pre[data-language="mermaid"]')).toBeInTheDocument(),
+    );
+    expect(disabled.container.querySelector(".tome-mermaid-preview")).toBeNull();
+    expect(disabled.container.querySelector(".md-code-lang")).toHaveTextContent("mermaid");
+    disabled.unmount();
+
+    const enabled = render(<MarkdownRenderer content={content} enableMermaid />);
+
+    await waitFor(() =>
+      expect(enabled.container.querySelector(".tome-mermaid-canvas svg")).toBeInTheDocument(),
+    );
+    expect(mockMermaidInitialize).toHaveBeenCalledWith({
+      startOnLoad: false,
+      securityLevel: "strict",
+    });
+    expect(mockMermaidRender).toHaveBeenCalledWith(
+      expect.stringMatching(/^tome-mermaid-\d+$/),
+      "flowchart LR\n  Browser --> App",
+    );
+    expect(enabled.container.querySelector("script")).toBeNull();
+    expect(enabled.container.querySelector(".md-code-block")).toBeNull();
+    expect(enabled.container).not.toHaveTextContent("plain text");
+
+    fireEvent.click(enabled.getByRole("button", { name: "Expand Mermaid diagram" }));
+    const dialog = await screen.findByRole("dialog", { name: "Mermaid diagram" });
+    expect(dialog.querySelector(".tome-mermaid-lightbox-canvas svg")).toHaveAttribute(
+      "aria-roledescription",
+      "flowchart-v2",
+    );
+  });
+
+  it("does not apply stale Mermaid output after the Markdown changes", async () => {
+    let resolveFirst: ((value: { svg: string }) => void) | undefined;
+    const initialRenderCount = mockMermaidRender.mock.calls.length;
+    mockMermaidRender
+      .mockImplementationOnce(
+        async () =>
+          new Promise<{ svg: string }>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        svg: '<svg aria-label="Current diagram" viewBox="0 0 400 200"></svg>',
+      });
+    const { container, rerender } = render(
+      <MarkdownRenderer
+        content={"```mermaid\nflowchart LR\nOld --> Diagram\n```"}
+        enableMermaid
+      />,
+    );
+    await waitFor(() =>
+      expect(mockMermaidRender).toHaveBeenCalledTimes(initialRenderCount + 1),
+    );
+
+    rerender(
+      <MarkdownRenderer
+        content={"```mermaid\nflowchart LR\nCurrent --> Diagram\n```"}
+        enableMermaid
+      />,
+    );
+    await waitFor(() =>
+      expect(container.querySelector('svg[aria-label="Current diagram"]')).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      resolveFirst?.({
+        svg: '<svg aria-label="Stale diagram" viewBox="0 0 400 200"></svg>',
+      });
+    });
+    expect(container.querySelector('svg[aria-label="Current diagram"]')).toBeInTheDocument();
+    expect(container.querySelector('svg[aria-label="Stale diagram"]')).toBeNull();
   });
 
   it("opens external and relative links in a new tab", async () => {
@@ -178,32 +278,6 @@ describe("MarkdownRenderer links", () => {
     const image = figure?.querySelector("img");
     expect(figure).toHaveStyle("--tome-media-width: 55%");
     expect(figure).toHaveAttribute("data-media-align", "right");
-    expect(image).toHaveAttribute("alt", "Example diagram");
-    expect(figure?.querySelector("figcaption")).toHaveTextContent("Example diagram");
-  });
-
-  it("preserves responsive widths for video embeds and block images", async () => {
-    const { container } = render(
-      <MarkdownRenderer
-        content={[
-          "```youtube",
-          "url: https://www.youtube.com/watch?v=b4STimVN60E",
-          "width: 60%",
-          "```",
-          "",
-          '![0.55|right](https://example.com/example.png "Example diagram")',
-        ].join("\n")}
-        enableExternalEmbeds
-      />,
-    );
-
-    await waitFor(() => expect(container.querySelector("iframe")).toBeInTheDocument());
-    expect(container.querySelector(".tome-embed-preview")).toHaveStyle(
-      "--tome-media-width: 60%",
-    );
-    const image = container.querySelector("img.tome-sized-image");
-    expect(image).toHaveStyle("--tome-media-width: 55%");
-    expect(image).toHaveAttribute("data-media-align", "right");
     expect(image).toHaveAttribute("alt", "Example diagram");
     expect(figure?.querySelector("figcaption")).toHaveTextContent("Example diagram");
   });

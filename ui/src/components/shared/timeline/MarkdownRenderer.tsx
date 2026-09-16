@@ -8,7 +8,13 @@ import {
   createEmbedError,
   createEmbedPreview,
   hydrateEmbedPreviews,
+  renderTomeCodePreview,
 } from "@/lib/tome/editor-media";
+import {
+  expandedMermaidDiagramFrom,
+  MermaidLightbox,
+  type ExpandedMermaidDiagram,
+} from "@/components/tome/MermaidLightbox";
 import {
   feedMessageRoute,
   parseFeedHref,
@@ -21,7 +27,7 @@ import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import markedShiki from "marked-shiki";
 import morphdom from "morphdom";
-import { useCallback,useEffect,useRef } from "react";
+import { useCallback,useEffect,useRef,useState } from "react";
 import remend from "remend";
 import { bundledLanguages,createHighlighter,type BundledLanguage,type Highlighter } from "shiki";
 import "./streaming-markdown.css";
@@ -100,9 +106,9 @@ md.use(
       // Preserve their original language before Shiki downgrades unknown
       // languages to `text`; decorateExternalEmbeds() validates the payload
       // and replaces this inert block with an allowlisted iframe later.
-      const embedLanguage = lang.trim().toLowerCase();
-      if (parseTomeEmbed(embedLanguage, code)) {
-        return `<pre data-language="${embedLanguage}"><code>${escapeHtml(code)}</code></pre>`;
+      const previewLanguage = lang.trim().toLowerCase();
+      if (previewLanguage === "mermaid" || parseTomeEmbed(previewLanguage, code)) {
+        return `<pre data-language="${previewLanguage}"><code>${escapeHtml(code)}</code></pre>`;
       }
 
       const hl = await getHighlighter();
@@ -301,6 +307,66 @@ function decorateExternalEmbeds(root: HTMLElement) {
   }
 }
 
+const mermaidPurifyConfig = {
+  USE_PROFILES: { html: true, svg: true, svgFilters: true },
+  FORBID_TAGS: ["style"] as string[],
+  FORBID_CONTENTS: ["style", "script"] as string[],
+};
+
+let mermaidHydrationId = 0;
+
+function decorateMermaidDiagrams(root: HTMLElement) {
+  for (const pre of root.querySelectorAll("pre")) {
+    const code = pre.querySelector("code");
+    const language =
+      pre.getAttribute("data-language") ||
+      code?.className.match(/(?:^|\s)language-([A-Za-z0-9_-]+)/)?.[1] ||
+      "";
+    if (language.trim().toLowerCase() !== "mermaid") continue;
+    const source = code?.textContent ?? pre.textContent ?? "";
+    if (!source.trim()) continue;
+
+    const placeholder = document.createElement("div");
+    placeholder.className = "tome-mermaid-pending";
+    placeholder.setAttribute("role", "status");
+    placeholder.dataset.mermaidSource = source;
+    placeholder.textContent = "Rendering Mermaid diagram…";
+    pre.replaceWith(placeholder);
+  }
+}
+
+function hydrateMermaidDiagrams(root: HTMLElement) {
+  for (const placeholder of root.querySelectorAll<HTMLElement>(
+    ".tome-mermaid-pending:not([data-mermaid-hydration])",
+  )) {
+    const hydrationId = String(mermaidHydrationId++);
+    placeholder.dataset.mermaidHydration = hydrationId;
+    renderTomeCodePreview(
+      "mermaid",
+      placeholder.dataset.mermaidSource ?? "",
+      (preview) => {
+        if (
+          !preview ||
+          !placeholder.isConnected ||
+          placeholder.dataset.mermaidHydration !== hydrationId
+        ) {
+          return;
+        }
+        if (preview instanceof HTMLElement) {
+          placeholder.replaceWith(preview);
+          return;
+        }
+
+        const sanitized = DOMPurify.sanitize(preview, mermaidPurifyConfig);
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = sanitized;
+        const rendered = wrapper.firstElementChild;
+        if (rendered) placeholder.replaceWith(rendered);
+      },
+    );
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Click handler for copy buttons — uses event delegation on root
 // ═══════════════════════════════════════════════════════════════
@@ -380,6 +446,8 @@ interface MarkdownRendererProps {
   glossaryPreview?: GlossaryResolver;
   /** Enable allowlisted Vidcast, YouTube, arXiv, and PDF fenced blocks. */
   enableExternalEmbeds?: boolean;
+  /** Render Mermaid fences as diagrams instead of syntax-highlighted code. */
+  enableMermaid?: boolean;
   /** Render Tome column markers as responsive two- or three-column sections. */
   enableTomeColumns?: boolean;
 }
@@ -403,10 +471,13 @@ export function MarkdownRenderer({
   onInternalLink,
   glossaryPreview,
   enableExternalEmbeds = false,
+  enableMermaid = false,
   enableTomeColumns = false,
 }: MarkdownRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const [expandedMermaid, setExpandedMermaid] =
+    useState<ExpandedMermaidDiagram | null>(null);
   // Latest callbacks, read by the (set-up-once) delegated DOM handlers.
   const onInternalLinkRef = useRef(onInternalLink);
   useEffect(() => {
@@ -448,6 +519,7 @@ export function MarkdownRenderer({
     temp.innerHTML = html;
     decorateLinks(temp);
     if (enableExternalEmbeds) decorateExternalEmbeds(temp);
+    if (enableMermaid && !streamingRef.current) decorateMermaidDiagrams(temp);
     decorateCopyButtons(temp);
     decorateTables(temp);
     decorateSizedImages(temp);
@@ -495,6 +567,7 @@ export function MarkdownRenderer({
       },
     });
     if (enableExternalEmbeds) hydrateEmbedPreviews(container);
+    if (enableMermaid && !streamingRef.current) hydrateMermaidDiagrams(container);
 
     // Set up event delegation once
     if (!cleanupRef.current) {
@@ -524,6 +597,17 @@ export function MarkdownRenderer({
           e.preventDefault();
           onInternalLinkRef.current(internal.path);
         }
+      };
+      const handleMermaidExpand = (e: MouseEvent) => {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+        const expandButton = target.closest("button.tome-mermaid-expand");
+        if (!expandButton) return;
+        const diagram = expandedMermaidDiagramFrom(expandButton);
+        if (!diagram) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setExpandedMermaid(diagram);
       };
       // Glossary hover card: look up the term's definition and float a card
       // below the link. The card markup + styles match the wiki body surface.
@@ -603,18 +687,20 @@ export function MarkdownRenderer({
         if (anchor) hideCard();
       };
       container.addEventListener("click", handleCopyClick);
+      container.addEventListener("click", handleMermaidExpand);
       container.addEventListener("click", handleInternalLinkClick);
       container.addEventListener("mouseover", handleGlossaryOver);
       container.addEventListener("mouseout", handleGlossaryOut);
       cleanupRef.current = () => {
         container.removeEventListener("click", handleCopyClick);
+        container.removeEventListener("click", handleMermaidExpand);
         container.removeEventListener("click", handleInternalLinkClick);
         container.removeEventListener("mouseover", handleGlossaryOver);
         container.removeEventListener("mouseout", handleGlossaryOut);
         hideCard();
       };
     }
-  }, [enableExternalEmbeds, enableTomeColumns]);
+  }, [enableExternalEmbeds, enableMermaid, enableTomeColumns]);
 
   // Parse + morph on content changes
   useEffect(() => {
@@ -673,9 +759,15 @@ export function MarkdownRenderer({
   const variantClass = variantClasses[variant] || "md-final";
 
   return (
-    <div
-      ref={containerRef}
-      className={cn("streaming-markdown", variantClass, isStreaming && "md-streaming", className)}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className={cn("streaming-markdown", variantClass, isStreaming && "md-streaming", className)}
+      />
+      <MermaidLightbox
+        diagram={expandedMermaid}
+        onClose={() => setExpandedMermaid(null)}
+      />
+    </>
   );
 }

@@ -887,6 +887,7 @@ export function GistView({
                   variant="final"
                   className="tome-document-preview px-8 py-6"
                   enableExternalEmbeds
+                  enableMermaid
                   enableTomeColumns
                 />
               ) : editing ? (
@@ -905,6 +906,7 @@ export function GistView({
                   variant="final"
                   className="tome-document-preview px-8 py-6"
                   enableExternalEmbeds
+                  enableMermaid
                   enableTomeColumns
                 />
               ) : null}

@@ -41,7 +41,8 @@ export function DraftReviewView({
   const [pages, setPages] = useState<DraftPage[] | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [reviewMode, setReviewMode] = useState<"none" | "stable_only" | "all">("stable_only");
-  const [finalizing, setFinalizing] = useState(false);
+  const [finalizingAction, setFinalizingAction] = useState<"accept" | "reject" | "files" | null>(null);
+  const finalizing = finalizingAction !== null;
   const [savingPath, setSavingPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Approve/Reject only make sense while the run is actually awaiting review —
@@ -126,27 +127,33 @@ export function DraftReviewView({
     }
   };
 
-  const finalize = async () => {
-    setFinalizing(true);
+  const finalize = async (decision?: "accept" | "reject") => {
+    setFinalizingAction(decision ?? "files");
     setError(null);
     try {
       const res = await fetch(`/api/tome/projects/${slug}/ingests/${runId}/finalize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(overrideReason.trim()
-          ? { override_reason: overrideReason.trim() }
-          : {}),
+        body: JSON.stringify({
+          ...(decision ? { decision } : {}),
+          ...(overrideReason.trim() ? { override_reason: overrideReason.trim() } : {}),
+        }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || `Finalizing review failed (${res.status})`);
+      }
+      if (decision) {
+        setPages((current) => current?.map((page) => (
+          page.requiresDecision ? { ...page, decision } : page
+        )) ?? current);
       }
       setReviewable(false);
       onResolved?.();
     } catch (e) {
       setError(String((e as Error)?.message ?? e));
     } finally {
-      setFinalizing(false);
+      setFinalizingAction(null);
     }
   };
 
@@ -167,11 +174,13 @@ export function DraftReviewView({
   const pendingCount = decisionPages.length - reviewedCount;
   const publishedCount = pages?.filter((page) => !page.requiresDecision).length ?? 0;
   const allFilesReviewed = pages !== null && decisionPages.length > 0 && pendingCount === 0;
-  const qualityBlocksDone = acceptedCount > 0 && gateBlocked && !overrideReady;
+  const qualityBlocksAccept = gateBlocked && !overrideReady;
+  const qualityBlocksDone = acceptedCount > 0 && qualityBlocksAccept;
+  const bulkDisabled = finalizing || savingPath !== null || pages === null || decisionPages.length === 0;
   const finishMessage = pages === null
     ? "Loading the changed files…"
     : pendingCount > 0
-      ? `Choose Accept or Reject for ${pendingCount} remaining file${pendingCount === 1 ? "" : "s"}.`
+      ? `Choose Accept or Reject for ${pendingCount} remaining file${pendingCount === 1 ? "" : "s"}, or use Accept all / Reject all to finish now.`
       : qualityBlocksDone
         ? "Resolve the quality gate below before finishing."
         : decisionPages.length === 0
@@ -186,7 +195,7 @@ export function DraftReviewView({
   return (
     <div className="flex h-full flex-col">
       <div className="border-b bg-background px-5 py-4">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-base font-semibold">
               {reviewable ? "Review ingest changes" : "Changed files"}
@@ -200,20 +209,40 @@ export function DraftReviewView({
             </p>
           </div>
           {reviewable && canEdit && (
-            <button
-              type="button"
-              onClick={() => void finalize()}
-              disabled={finalizing || savingPath !== null || !allFilesReviewed || qualityBlocksDone}
-              className="flex min-h-10 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              title={finishMessage}
-            >
-              {finalizing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4" />
-              )}
-              Finish review
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void finalize("accept")}
+                disabled={bulkDisabled || qualityBlocksAccept}
+                className="flex min-h-10 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                title={qualityBlocksAccept
+                  ? "Resolve the quality gate below before accepting all files."
+                  : "Accept every draft file and finish this ingest review immediately, replacing individual choices."}
+              >
+                {finalizingAction === "accept" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Accept all
+              </button>
+              <button
+                type="button"
+                onClick={() => void finalize("reject")}
+                disabled={bulkDisabled}
+                className="flex min-h-10 items-center gap-2 rounded-md border border-destructive/40 px-4 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Reject every draft file and finish this ingest review immediately, replacing individual choices."
+              >
+                {finalizingAction === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                Reject all
+              </button>
+              <button
+                type="button"
+                onClick={() => void finalize()}
+                disabled={finalizing || savingPath !== null || !allFilesReviewed || qualityBlocksDone}
+                className="flex min-h-10 items-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                title={finishMessage}
+              >
+                {finalizingAction === "files" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Finish review
+              </button>
+            </div>
           )}
           {reviewable && !canEdit && (
             <p className="text-xs text-muted-foreground">
@@ -233,7 +262,7 @@ export function DraftReviewView({
             <span className="font-medium">{finishMessage}</span>
             {publishedCount > 0 && (
               <span className="ml-1">
-                {publishedCount} other changed file{publishedCount === 1 ? " was" : "s were"} already published by the “{reviewModeLabel}” policy and remain visible below.{" "}
+                {publishedCount} other changed file{publishedCount === 1 ? " was" : "s were"} already published by the “{reviewModeLabel}” policy and remain visible below. Accept all / Reject all only affects draft files; published files stay unchanged.{" "}
                 <a
                   href={`/projects/${slug}/tome/settings?tab=review`}
                   className="font-semibold underline underline-offset-2"
@@ -242,6 +271,7 @@ export function DraftReviewView({
                 </a>
               </span>
             )}
+            <p className="mt-1">Accept all / Reject all finishes immediately and replaces any individual file choices.</p>
           </div>
         )}
       </div>
@@ -295,7 +325,7 @@ export function DraftReviewView({
               </div>
             </details>
           )}
-          {gateBlocked && acceptedCount > 0 && qualityPolicy.allow_steward_override && canEdit && (
+          {reviewable && gateBlocked && decisionPages.length > 0 && qualityPolicy.allow_steward_override && canEdit && (
             <label className="block font-medium">
               Required override reason
               <textarea
@@ -306,7 +336,7 @@ export function DraftReviewView({
               />
             </label>
           )}
-          {gateBlocked && acceptedCount > 0 && !qualityPolicy.allow_steward_override && (
+          {reviewable && gateBlocked && decisionPages.length > 0 && !qualityPolicy.allow_steward_override && (
             <p className="text-destructive">Promotion is blocked by the enforced quality policy.</p>
           )}
         </div>

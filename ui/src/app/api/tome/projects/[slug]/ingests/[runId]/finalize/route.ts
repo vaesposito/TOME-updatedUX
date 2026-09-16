@@ -16,6 +16,7 @@ import { getTomeIngestRunsCollection } from "@/lib/tome/mongo-collections";
 import { getPageStore } from "@/lib/tome/page-store";
 import { qualityGateDecision } from "@/lib/tome/rubric-evaluator";
 import { loadTomeProject, requireTomeEditor } from "@/lib/tome/tome-api";
+import type { IngestFileReviewDecision } from "@/types/tome";
 import type { TomeRubricId } from "@/types/tome-evaluation";
 
 export const dynamic = "force-dynamic";
@@ -37,10 +38,20 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     throw new ApiError("Run has no draft report", 409, "RUN_HAS_NO_DRAFT_REPORT");
   }
 
+  const body = (await request.json().catch(() => ({}))) as {
+    decision?: IngestFileReviewDecision;
+    override_reason?: string;
+  } | null;
+  const decision = body?.decision;
+  if (decision !== undefined && decision !== "accept" && decision !== "reject") {
+    throw new ApiError("Decision must be accept or reject", 400, "INVALID_REVIEW_DECISION");
+  }
+
   const store = await getPageStore();
   const summary = summarizeDraftFileReviews(
     await store.listDraftPaths(tctx.projectId, run.report_id),
     run.file_reviews,
+    decision,
   );
   if (summary.pendingPaths.length > 0) {
     throw new ApiError(
@@ -50,9 +61,6 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     );
   }
 
-  const body = (await request.json().catch(() => ({}))) as {
-    override_reason?: string;
-  };
   // A quality gate controls publication. An all-rejected review publishes
   // nothing, so it does not require a quality override.
   if (summary.acceptedPaths.length > 0) {
@@ -68,7 +76,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     };
     const gate = qualityGateDecision(policy, evaluation);
     if (!gate.allowed) {
-      const reason = body.override_reason?.trim() || "";
+      const reason = typeof body?.override_reason === "string" ? body.override_reason.trim() : "";
       if (!gate.requires_override || reason.length < 10) {
         throw new ApiError(
           gate.requires_override
@@ -99,12 +107,12 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   }
 
   const reviewedBy = tctx.user.email ?? "unknown";
-  const result = await finalizeDraftFileReview(runId, reviewedBy);
+  const result = await finalizeDraftFileReview(runId, reviewedBy, decision);
   auditTome({
     action: "tome.ingest.finalize_review",
     actor: tomeActorFromAuth({ user: tctx.user, session: tctx.session }),
     projectSlug: slug,
-    metadata: { run_id: runId, reviewed_by: reviewedBy, ...result },
+    metadata: { run_id: runId, reviewed_by: reviewedBy, ...(decision ? { decision } : {}), ...result },
   });
 
   return successResponse({ ok: true, ...result });

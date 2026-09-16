@@ -10,6 +10,7 @@ const mockFinalize = jest.fn();
 const mockGetEvaluation = jest.fn();
 const mockQualityGateDecision = jest.fn();
 const mockAuditTome = jest.fn();
+const mockInsertOverride = jest.fn();
 
 jest.mock("@/lib/api-middleware", () => ({
   ApiError: class ApiError extends Error {},
@@ -42,7 +43,7 @@ jest.mock("@/lib/tome/evaluation-store", () => ({
     require_human_review: true,
   }),
   getArtifactEvaluation: (...args: unknown[]) => mockGetEvaluation(...args),
-  insertQualityGateOverride: jest.fn(),
+  insertQualityGateOverride: (...args: unknown[]) => mockInsertOverride(...args),
 }));
 
 jest.mock("@/lib/tome/rubric-evaluator", () => ({
@@ -91,6 +92,71 @@ beforeEach(() => {
 });
 
 describe("POST finalize file-level ingest review", () => {
+  const bulkRequest = (decision: unknown, override_reason?: string) => new NextRequest(
+    "http://localhost/api/tome/projects/example-project/ingests/run-example/finalize",
+    { method: "POST", body: JSON.stringify({ decision, override_reason }) },
+  );
+
+  it.each(["accept", "reject"])("allows bulk %s with unreviewed files and mixed saved choices", async (decision) => {
+    mockListDraftPaths.mockResolvedValue(["accepted.md", "rejected.md", "pending.md"]);
+    const { POST } = await import("../route");
+    const response = await POST(bulkRequest(decision), context);
+    expect(response.status).toBe(200);
+    expect(mockFinalize).toHaveBeenCalledWith("run-example", "reviewer@example.test", decision);
+    expect(mockRequireTomeEditor).toHaveBeenCalled();
+    if (decision === "reject") expect(mockQualityGateDecision).not.toHaveBeenCalled();
+    else expect(mockQualityGateDecision).toHaveBeenCalled();
+  });
+
+  it("enforces the publication quality gate for bulk accept", async () => {
+    mockQualityGateDecision.mockReturnValue({ allowed: false, requires_override: false });
+    const { POST } = await import("../route");
+    await expect(POST(bulkRequest("accept"), context)).rejects.toThrow("Quality gate failed");
+    expect(mockFinalize).not.toHaveBeenCalled();
+  });
+
+  it("requires and records a permitted quality override before bulk accept", async () => {
+    mockQualityGateDecision.mockReturnValue({ allowed: false, requires_override: true });
+    const { POST } = await import("../route");
+    await expect(POST(bulkRequest("accept", "short"), context)).rejects.toThrow("at least 10 characters");
+    expect(mockFinalize).not.toHaveBeenCalled();
+    expect(mockInsertOverride).not.toHaveBeenCalled();
+    await POST(bulkRequest("accept", "Reviewed and verified the source evidence"), context);
+    expect(mockInsertOverride).toHaveBeenCalledWith(expect.objectContaining({
+      actor: "reviewer@example.test",
+      reason: "Reviewed and verified the source evidence",
+    }));
+    expect(mockFinalize).toHaveBeenCalledWith("run-example", "reviewer@example.test", "accept");
+  });
+
+  it("lets bulk rejection finish even when publication is blocked", async () => {
+    mockQualityGateDecision.mockReturnValue({ allowed: false, requires_override: false });
+    const { POST } = await import("../route");
+    await POST(bulkRequest("reject"), context);
+    expect(mockQualityGateDecision).not.toHaveBeenCalled();
+    expect(mockFinalize).toHaveBeenCalledWith("run-example", "reviewer@example.test", "reject");
+  });
+
+  it.each(["approve", "", null, 1, {}])("rejects invalid bulk decision %p", async (decision) => {
+    const { POST } = await import("../route");
+    await expect(POST(bulkRequest(decision), context)).rejects.toThrow("Decision must be accept or reject");
+    expect(mockFinalize).not.toHaveBeenCalled();
+  });
+
+  it("does not resolve a completed run again", async () => {
+    mockFindRun.mockResolvedValue({ status: "succeeded" });
+    const { POST } = await import("../route");
+    await expect(POST(bulkRequest("reject"), context)).rejects.toThrow("Run is not awaiting review");
+    expect(mockFinalize).not.toHaveBeenCalled();
+  });
+
+  it("refuses bulk review without editor permission", async () => {
+    mockRequireTomeEditor.mockImplementationOnce(() => { throw new Error("Forbidden"); });
+    const { POST } = await import("../route");
+    await expect(POST(bulkRequest("accept"), context)).rejects.toThrow("Forbidden");
+    expect(mockFinalize).not.toHaveBeenCalled();
+  });
+
   it("finalizes once every draft file has a decision", async () => {
     const { POST } = await import("../route");
     const response = await POST(
@@ -102,7 +168,7 @@ describe("POST finalize file-level ingest review", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockFinalize).toHaveBeenCalledWith("run-example", "reviewer@example.test");
+    expect(mockFinalize).toHaveBeenCalledWith("run-example", "reviewer@example.test", undefined);
     expect(mockAuditTome).toHaveBeenCalledWith(expect.objectContaining({
       action: "tome.ingest.finalize_review",
       metadata: expect.objectContaining({ accepted: 1, rejected: 1 }),

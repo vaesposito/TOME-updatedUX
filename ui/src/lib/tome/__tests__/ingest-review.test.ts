@@ -30,6 +30,29 @@ describe("shouldAwaitIngestReview", () => {
 });
 
 describe("summarizeDraftFileReviews", () => {
+  it.each(["accept", "reject"] as const)("applies explicit bulk %s to every draft, replacing partial choices", (decision) => {
+    const paths = ["first.md", "second.md"];
+    expect(summarizeDraftFileReviews(
+      ["second.md", "first.md", "first.md"],
+      [{
+        path: "first.md",
+        decision: decision === "accept" ? "reject" : "accept",
+        reviewed_by: "reviewer@example.test",
+        reviewed_at: new Date("2026-01-01T00:00:00Z"),
+      }, {
+        path: "published.md",
+        decision: "accept",
+        reviewed_by: "reviewer@example.test",
+        reviewed_at: new Date("2026-01-01T00:00:00Z"),
+      }],
+      decision,
+    )).toEqual({
+      acceptedPaths: decision === "accept" ? paths : [],
+      rejectedPaths: decision === "reject" ? paths : [],
+      pendingPaths: [],
+    });
+  });
+
   it("separates accepted, rejected, and pending files", () => {
     expect(summarizeDraftFileReviews(
       ["pending.md", "accepted.md", "rejected.md"],

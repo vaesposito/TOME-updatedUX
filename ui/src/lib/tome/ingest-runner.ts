@@ -1070,6 +1070,7 @@ export async function reviewDraftFile(
 export async function finalizeDraftFileReview(
   runId: string,
   reviewedBy: string,
+  bulkDecision?: IngestFileReviewDecision,
 ): Promise<{ accepted: number; rejected: number }> {
   const runs = await getTomeIngestRunsCollection();
   const run = await runs.findOne({ _id: runId });
@@ -1083,6 +1084,7 @@ export async function finalizeDraftFileReview(
   const summary = summarizeDraftFileReviews(
     await store.listDraftPaths(run.project_id, run.report_id),
     run.file_reviews,
+    bulkDecision,
   );
   if (summary.pendingPaths.length > 0) {
     throw new Error(
@@ -1099,6 +1101,7 @@ export async function finalizeDraftFileReview(
       ? "approved"
       : "partially_approved";
   const status = accepted === 0 ? "failed" : "succeeded";
+  const reviewedAt = new Date();
   await runs.updateOne(
     { _id: runId, status: "awaiting_review" },
     {
@@ -1106,8 +1109,17 @@ export async function finalizeDraftFileReview(
         status,
         review_outcome: reviewOutcome,
         reviewed_by: reviewedBy,
-        reviewed_at: new Date(),
-        finished_at: new Date(),
+        reviewed_at: reviewedAt,
+        finished_at: reviewedAt,
+        // A one-click review explicitly replaces any earlier per-file choices.
+        ...(bulkDecision ? {
+          file_reviews: [...summary.acceptedPaths, ...summary.rejectedPaths].map((path) => ({
+            path,
+            decision: bulkDecision,
+            reviewed_by: reviewedBy,
+            reviewed_at: reviewedAt,
+          })),
+        } : {}),
         ...(accepted === 0 ? { error: "all draft files rejected by reviewer" } : {}),
       },
       ...(accepted > 0 ? { $unset: { error: "" } } : {}),

@@ -1,4 +1,4 @@
-import type { IngestFileReview } from "@/types/tome";
+import type { IngestFileReview, IngestFileReviewDecision } from "@/types/tome";
 
 /**
  * Decide whether a completed ingest must stop at the human-review gate.
@@ -18,13 +18,21 @@ export interface DraftFileReviewSummary {
   pendingPaths: string[];
 }
 
-/** Resolve the latest persisted decision for every currently drafted path. */
+/** Resolve draft decisions, optionally replacing them with an explicit bulk choice. */
 export function summarizeDraftFileReviews(
   draftPaths: string[],
   reviews: IngestFileReview[] = [],
+  bulkDecision?: IngestFileReviewDecision,
 ): DraftFileReviewSummary {
   const decisions = new Map(reviews.map((review) => [review.path, review.decision]));
   const paths = [...new Set(draftPaths)].sort();
+  if (bulkDecision) {
+    return {
+      acceptedPaths: bulkDecision === "accept" ? paths : [],
+      rejectedPaths: bulkDecision === "reject" ? paths : [],
+      pendingPaths: [],
+    };
+  }
   return {
     acceptedPaths: paths.filter((path) => decisions.get(path) === "accept"),
     rejectedPaths: paths.filter((path) => decisions.get(path) === "reject"),

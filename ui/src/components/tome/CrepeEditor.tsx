@@ -774,7 +774,7 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
       featureConfigs: {
         [Crepe.Feature.CodeMirror]: {
           renderPreview: renderTomeCodePreview,
-          previewLoading: "Rendering Mermaid diagram…",
+          previewLoading: "Rendering diagram…",
         },
         [Crepe.Feature.ImageBlock]: {
           onUpload: async (file: File) => {
@@ -1318,7 +1318,9 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
         deleteTopLevelBlockAtDom(crepe, block);
         return;
       }
-      const expandButton = target?.closest?.("button.tome-mermaid-expand");
+      const expandButton = target?.closest?.(
+        "button.tome-diagram-expand, button.tome-mermaid-expand, button.tome-excalidraw-expand",
+      );
       if (expandButton) {
         const diagram = expandedMermaidDiagramFrom(expandButton);
         if (!diagram) return;
@@ -1534,7 +1536,10 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
       const mediaButton = mediaIcon?.closest("button");
       if (mediaButton) {
         mediaButton.setAttribute("aria-label", "Insert media");
-        mediaButton.setAttribute("title", "Insert media (video, paper, or PDF)");
+        mediaButton.setAttribute(
+          "title",
+          "Insert media (video, paper, PDF, or Excalidraw)",
+        );
         mediaButton.setAttribute("data-tome-media-button", "true");
       }
       const columnsButton = host.querySelector("[data-tome-columns-icon]")?.closest("button");

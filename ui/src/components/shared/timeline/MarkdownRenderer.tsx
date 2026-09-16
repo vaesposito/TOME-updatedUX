@@ -108,7 +108,11 @@ md.use(
       // languages to `text`; decorateExternalEmbeds() validates the payload
       // and replaces this inert block with an allowlisted iframe later.
       const previewLanguage = lang.trim().toLowerCase();
-      if (previewLanguage === "mermaid" || parseTomeEmbed(previewLanguage, code)) {
+      if (
+        previewLanguage === "mermaid" ||
+        previewLanguage === "excalidraw" ||
+        parseTomeEmbed(previewLanguage, code)
+      ) {
         return `<pre data-language="${previewLanguage}"><code>${escapeHtml(code)}</code></pre>`;
       }
 
@@ -324,7 +328,17 @@ const mermaidPurifyConfig = {
   FORBID_CONTENTS: ["script"] as string[],
 };
 
+const excalidrawPurifyConfig = {
+  USE_PROFILES: { html: true, svg: true, svgFilters: true },
+  // Excalidraw emits SVG styles needed for labels, connectors, and theme
+  // colors. Keep those styles while removing executable and interactive HTML
+  // content from the generated static drawing.
+  FORBID_TAGS: ["script", "foreignObject", "iframe"] as string[],
+  FORBID_CONTENTS: ["script", "foreignObject", "iframe"] as string[],
+};
+
 let mermaidHydrationId = 0;
+let excalidrawHydrationId = 0;
 
 function decorateMermaidDiagrams(root: HTMLElement) {
   for (const pre of root.querySelectorAll("pre")) {
@@ -369,6 +383,59 @@ function hydrateMermaidDiagrams(root: HTMLElement, theme?: string) {
         }
 
         const sanitized = DOMPurify.sanitize(preview, mermaidPurifyConfig);
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = sanitized;
+        const rendered = wrapper.firstElementChild;
+        if (rendered) placeholder.replaceWith(rendered);
+      },
+      theme,
+    );
+  }
+}
+
+function decorateExcalidrawDrawings(root: HTMLElement) {
+  for (const pre of root.querySelectorAll("pre")) {
+    const code = pre.querySelector("code");
+    const language =
+      pre.getAttribute("data-language") ||
+      code?.className.match(/(?:^|\s)language-([A-Za-z0-9_-]+)/)?.[1] ||
+      "";
+    if (language.trim().toLowerCase() !== "excalidraw") continue;
+    const source = code?.textContent ?? pre.textContent ?? "";
+    if (!source.trim()) continue;
+
+    const placeholder = document.createElement("div");
+    placeholder.className = "tome-excalidraw-pending";
+    placeholder.setAttribute("role", "status");
+    placeholder.dataset.excalidrawSource = source;
+    placeholder.textContent = "Rendering Excalidraw drawing…";
+    pre.replaceWith(placeholder);
+  }
+}
+
+function hydrateExcalidrawDrawings(root: HTMLElement, theme?: string) {
+  for (const placeholder of root.querySelectorAll<HTMLElement>(
+    ".tome-excalidraw-pending:not([data-excalidraw-hydration])",
+  )) {
+    const hydrationId = String(excalidrawHydrationId++);
+    placeholder.dataset.excalidrawHydration = hydrationId;
+    renderTomeCodePreview(
+      "excalidraw",
+      placeholder.dataset.excalidrawSource ?? "",
+      (preview) => {
+        if (
+          !preview ||
+          !placeholder.isConnected ||
+          placeholder.dataset.excalidrawHydration !== hydrationId
+        ) {
+          return;
+        }
+        if (preview instanceof HTMLElement) {
+          placeholder.replaceWith(preview);
+          return;
+        }
+
+        const sanitized = DOMPurify.sanitize(preview, excalidrawPurifyConfig);
         const wrapper = document.createElement("div");
         wrapper.innerHTML = sanitized;
         const rendered = wrapper.firstElementChild;
@@ -460,6 +527,8 @@ interface MarkdownRendererProps {
   enableExternalEmbeds?: boolean;
   /** Render Mermaid fences as diagrams instead of syntax-highlighted code. */
   enableMermaid?: boolean;
+  /** Render Excalidraw JSON fences as static drawings instead of code. */
+  enableExcalidraw?: boolean;
   /** Render Tome column markers as responsive two- or three-column sections. */
   enableTomeColumns?: boolean;
 }
@@ -484,6 +553,7 @@ export function MarkdownRenderer({
   glossaryPreview,
   enableExternalEmbeds = false,
   enableMermaid = false,
+  enableExcalidraw = false,
   enableTomeColumns = false,
 }: MarkdownRendererProps) {
   const { resolvedTheme } = useTheme();
@@ -533,6 +603,7 @@ export function MarkdownRenderer({
     decorateLinks(temp);
     if (enableExternalEmbeds) decorateExternalEmbeds(temp);
     if (enableMermaid && !streamingRef.current) decorateMermaidDiagrams(temp);
+    if (enableExcalidraw && !streamingRef.current) decorateExcalidrawDrawings(temp);
     decorateCopyButtons(temp);
     decorateTables(temp);
     decorateSizedImages(temp);
@@ -583,6 +654,9 @@ export function MarkdownRenderer({
     if (enableMermaid && !streamingRef.current) {
       hydrateMermaidDiagrams(container, resolvedTheme);
     }
+    if (enableExcalidraw && !streamingRef.current) {
+      hydrateExcalidrawDrawings(container, resolvedTheme);
+    }
 
     // Set up event delegation once
     if (!cleanupRef.current) {
@@ -616,7 +690,9 @@ export function MarkdownRenderer({
       const handleMermaidExpand = (e: MouseEvent) => {
         const target = e.target;
         if (!(target instanceof Element)) return;
-        const expandButton = target.closest("button.tome-mermaid-expand");
+        const expandButton = target.closest(
+          "button.tome-diagram-expand, button.tome-mermaid-expand, button.tome-excalidraw-expand",
+        );
         if (!expandButton) return;
         const diagram = expandedMermaidDiagramFrom(expandButton);
         if (!diagram) return;
@@ -715,7 +791,13 @@ export function MarkdownRenderer({
         hideCard();
       };
     }
-  }, [enableExternalEmbeds, enableMermaid, enableTomeColumns, resolvedTheme]);
+  }, [
+    enableExcalidraw,
+    enableExternalEmbeds,
+    enableMermaid,
+    enableTomeColumns,
+    resolvedTheme,
+  ]);
 
   // Parse + morph on content changes
   useEffect(() => {

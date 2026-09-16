@@ -197,6 +197,7 @@ describe("WikiPageView", () => {
     expect(mockMarkdownRenderer).toHaveBeenLastCalledWith(
       expect.objectContaining({
         content: "```mermaid\nflowchart LR\nA --> B\n```",
+        enableExcalidraw: true,
         enableMermaid: true,
       }),
     );

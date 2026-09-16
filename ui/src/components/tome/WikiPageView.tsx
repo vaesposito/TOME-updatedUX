@@ -990,6 +990,7 @@ export function WikiPageView({
               onInternalLink={onNavigate}
               glossaryPreview={glossaryPreview}
               enableExternalEmbeds
+              enableExcalidraw
               enableMermaid
               enableTomeColumns
             />
@@ -1001,6 +1002,7 @@ export function WikiPageView({
               onInternalLink={onNavigate}
               glossaryPreview={glossaryPreview}
               enableExternalEmbeds
+              enableExcalidraw
               enableMermaid
               enableTomeColumns
             />

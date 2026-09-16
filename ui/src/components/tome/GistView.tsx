@@ -873,6 +873,7 @@ export function GistView({
                   variant="final"
                   className="tome-document-preview px-8 py-6"
                   enableExternalEmbeds
+                  enableExcalidraw
                   enableMermaid
                   enableTomeColumns
                 />
@@ -892,6 +893,7 @@ export function GistView({
                   variant="final"
                   className="tome-document-preview px-8 py-6"
                   enableExternalEmbeds
+                  enableExcalidraw
                   enableMermaid
                   enableTomeColumns
                 />

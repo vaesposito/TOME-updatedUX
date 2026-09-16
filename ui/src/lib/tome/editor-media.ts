@@ -5,6 +5,7 @@ import {
   type TomeEmbed,
   type TomeMediaAlignment,
 } from "@/lib/tome/embeds";
+import { renderExcalidrawSvg } from "@/lib/tome/excalidraw";
 
 const MAX_EMBEDDED_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -24,7 +25,7 @@ function mermaidTheme(theme?: string): "default" | "dark" {
 function mermaidPreviewMarkup(svg: string): string {
   return [
     '<div class="tome-mermaid-preview">',
-    '<button type="button" class="tome-mermaid-expand" aria-label="Expand Mermaid diagram" title="Expand diagram">',
+    '<button type="button" class="tome-diagram-expand tome-mermaid-expand" aria-label="Expand Mermaid diagram" title="Expand diagram">',
     '<span aria-hidden="true">⛶</span>',
     "<span>Expand</span>",
     "</button>",
@@ -99,6 +100,20 @@ function createMermaidError(error: unknown, source: string): HTMLElement {
   node.append(details);
 
   return node;
+}
+
+function excalidrawPreviewMarkup(svg: string): string {
+  return [
+    '<div class="tome-excalidraw-preview">',
+    '<button type="button" class="tome-diagram-expand tome-excalidraw-expand" aria-label="Expand Excalidraw drawing" title="Expand drawing">',
+    '<span aria-hidden="true">⛶</span>',
+    "<span>Expand</span>",
+    "</button>",
+    '<div class="tome-excalidraw-canvas">',
+    svg,
+    "</div>",
+    "</div>",
+  ].join("");
 }
 
 function embedToolbarMarkup(embed: TomeEmbed): string {
@@ -235,7 +250,7 @@ export function createEmbedError(
 }
 
 /**
- * Render Mermaid fenced code blocks through Crepe's async preview hook.
+ * Render diagram fenced code blocks through Crepe's async preview hook.
  * Returning null leaves every other fenced language as a normal code block.
  */
 export function renderTomeCodePreview(
@@ -262,6 +277,21 @@ export function renderTomeCodePreview(
     // Emit inert data here; CrepeEditor re-validates it and creates the iframe
     // after the sanitizer has completed.
     applyPreview(createEmbedPreview(embed.value));
+    return;
+  }
+
+  if (normalizedLanguage === "excalidraw" && content.trim()) {
+    void renderExcalidrawSvg(content, theme)
+      .then((svg) => applyPreview(excalidrawPreviewMarkup(svg)))
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : "Invalid Excalidraw document";
+        const node = document.createElement("div");
+        node.className = "tome-excalidraw-error";
+        node.setAttribute("role", "alert");
+        node.textContent = `Could not render Excalidraw drawing: ${message}`;
+        applyPreview(node);
+      });
     return;
   }
 

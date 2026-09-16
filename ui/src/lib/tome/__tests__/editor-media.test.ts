@@ -8,6 +8,33 @@ import {
 
 const VIDEO_ID = "de4fc0eb-7146-4044-86a3-60c3cbd976a3";
 const PLAYLIST_ID = "daa5d80c-9272-4587-989b-91d6c5f35b93";
+const EXCALIDRAW_DOCUMENT = JSON.stringify({
+  type: "excalidraw",
+  version: 2,
+  elements: [
+    {
+      id: "shape-1",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 80,
+      link: "https://example.com",
+    },
+    { id: "embed-1", type: "iframe", x: 0, y: 0, width: 100, height: 80 },
+  ],
+  appState: { viewBackgroundColor: "#ffffff" },
+  files: {},
+});
+
+const mockExcalidrawExportToSvg = jest.fn(async () => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 100 80");
+  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  text.textContent = "Native drawing";
+  svg.append(text);
+  return svg;
+});
 
 jest.mock("mermaid", () => ({
   __esModule: true,
@@ -15,6 +42,10 @@ jest.mock("mermaid", () => ({
     initialize: jest.fn(),
     render: jest.fn(),
   },
+}));
+
+jest.mock("@excalidraw/utils", () => ({
+  exportToSvg: mockExcalidrawExportToSvg,
 }));
 
 const mockedMermaid = mermaid as jest.Mocked<typeof mermaid>;
@@ -157,6 +188,89 @@ describe("TOME editor media", () => {
     expect(alert.querySelector(".tome-mermaid-error-details pre")).toHaveTextContent(
       "Renderer unavailable",
     );
+  });
+
+  it("renders an Excalidraw JSON fence as a native static SVG", async () => {
+    const applyPreview = jest.fn();
+
+    expect(
+      renderTomeCodePreview("excalidraw", EXCALIDRAW_DOCUMENT, applyPreview, "light"),
+    ).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockExcalidrawExportToSvg).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          elements: [expect.objectContaining({ id: "shape-1", link: null })],
+          appState: expect.objectContaining({
+            exportBackground: true,
+            exportWithDarkMode: false,
+          }),
+        }),
+        config: expect.objectContaining({
+          renderEmbeddables: false,
+          skipInliningFonts: true,
+          theme: "light",
+        }),
+      }),
+    );
+    const markup = applyPreview.mock.calls[0][0] as string;
+    const container = document.createElement("div");
+    container.innerHTML = markup;
+    expect(container.querySelector(".tome-excalidraw-canvas svg")).toHaveAttribute(
+      "aria-label",
+      "Excalidraw drawing",
+    );
+    expect(
+      container.querySelector("button.tome-excalidraw-expand"),
+    ).toHaveAccessibleName("Expand Excalidraw drawing");
+  });
+
+  it("exports Excalidraw with the selected light or dark palette", async () => {
+    renderTomeCodePreview(
+      "excalidraw",
+      EXCALIDRAW_DOCUMENT,
+      jest.fn(),
+      "legacy-light",
+    );
+    renderTomeCodePreview("excalidraw", EXCALIDRAW_DOCUMENT, jest.fn(), "nord");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockExcalidrawExportToSvg).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          appState: expect.objectContaining({ exportWithDarkMode: false }),
+        }),
+        config: expect.objectContaining({ theme: "light" }),
+      }),
+    );
+    expect(mockExcalidrawExportToSvg).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          appState: expect.objectContaining({ exportWithDarkMode: true }),
+        }),
+        config: expect.objectContaining({ theme: "dark" }),
+      }),
+    );
+  });
+
+  it("returns a text-only alert for invalid Excalidraw JSON", async () => {
+    const applyPreview = jest.fn();
+
+    renderTomeCodePreview(
+      "excalidraw",
+      '{"type":"excalidraw","version":2,"elements":',
+      applyPreview,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const alert = applyPreview.mock.calls[0][0] as HTMLElement;
+    expect(alert).toHaveClass("tome-excalidraw-error");
+    expect(alert).toHaveAttribute("role", "alert");
+    expect(alert).toHaveTextContent(/valid JSON/i);
+    expect(alert.querySelector("script")).toBeNull();
   });
 
   it("renders and hydrates a validated Vidcast block", () => {

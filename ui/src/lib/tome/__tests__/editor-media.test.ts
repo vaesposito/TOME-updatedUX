@@ -33,10 +33,11 @@ describe("TOME editor media", () => {
     expect(renderTomeCodePreview(" MERMAID ", "flowchart LR; C-->D", secondPreview)).toBeUndefined();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(mockedMermaid.initialize).toHaveBeenCalledTimes(1);
+    expect(mockedMermaid.initialize).toHaveBeenCalledTimes(2);
     expect(mockedMermaid.initialize).toHaveBeenCalledWith({
       startOnLoad: false,
       securityLevel: "strict",
+      theme: "dark",
     });
     expect(mockedMermaid.render).toHaveBeenNthCalledWith(1, "tome-mermaid-0", "graph TD; A-->B");
     expect(mockedMermaid.render).toHaveBeenNthCalledWith(
@@ -55,6 +56,25 @@ describe("TOME editor media", () => {
         "diagram",
       );
     }
+  });
+
+  it("renders Mermaid with the selected light or dark palette", async () => {
+    mockedMermaid.render.mockResolvedValue({ svg: "<svg>diagram</svg>" } as never);
+
+    renderTomeCodePreview("mermaid", "graph TD; A-->B", jest.fn(), "legacy-light");
+    renderTomeCodePreview("mermaid", "graph TD; A-->B", jest.fn(), "nord");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockedMermaid.initialize).toHaveBeenNthCalledWith(1, {
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "default",
+    });
+    expect(mockedMermaid.initialize).toHaveBeenNthCalledWith(2, {
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "dark",
+    });
   });
 
   it("leaves non-Mermaid code blocks unchanged", () => {

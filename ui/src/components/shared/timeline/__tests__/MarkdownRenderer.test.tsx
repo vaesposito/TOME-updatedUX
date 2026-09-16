@@ -5,8 +5,10 @@ const mockLoadLanguage = jest.fn();
 const mockMermaidInitialize = jest.fn();
 const mockMermaidRender = jest.fn(async (_id: string, _content: string) => ({
   svg: [
-    '<svg viewBox="0 0 800 400" aria-roledescription="flowchart-v2">',
+    '<svg id="tome-mermaid-test" viewBox="0 0 800 400" aria-roledescription="flowchart-v2" onload="alert(unsafe)">',
     "<title>Example architecture</title>",
+    "<style>#tome-mermaid-test .nodeLabel{fill:#f8fafc}</style>",
+    '<text class="nodeLabel">Visible label</text>',
     '<script>alert("unsafe")</script>',
     "</svg>",
   ].join(""),
@@ -121,12 +123,18 @@ describe("MarkdownRenderer links", () => {
     expect(mockMermaidInitialize).toHaveBeenCalledWith({
       startOnLoad: false,
       securityLevel: "strict",
+      theme: "dark",
     });
     expect(mockMermaidRender).toHaveBeenCalledWith(
       expect.stringMatching(/^tome-mermaid-\d+$/),
       "flowchart LR\n  Browser --> App",
     );
     expect(enabled.container.querySelector("script")).toBeNull();
+    expect(enabled.container.querySelector("style")?.textContent).toContain(
+      "#tome-mermaid-test .nodeLabel",
+    );
+    expect(enabled.container.querySelector("svg")).not.toHaveAttribute("onload");
+    expect(enabled.container.querySelector(".nodeLabel")).toHaveTextContent("Visible label");
     expect(enabled.container.querySelector(".md-code-block")).toBeNull();
     expect(enabled.container).not.toHaveTextContent("plain text");
 
@@ -136,6 +144,46 @@ describe("MarkdownRenderer links", () => {
       "aria-roledescription",
       "flowchart-v2",
     );
+  });
+
+  it("re-renders saved Mermaid diagrams when the app theme changes", async () => {
+    const root = document.documentElement;
+    root.setAttribute("data-theme-preference", "dark");
+    root.setAttribute("data-theme", "dark");
+    const initialRenderCount = mockMermaidRender.mock.calls.length;
+    const { container, unmount } = render(
+      <MarkdownRenderer
+        content={"```mermaid\nflowchart LR\n  Browser --> App\n```"}
+        enableMermaid
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockMermaidRender).toHaveBeenCalledTimes(initialRenderCount + 1),
+    );
+    expect(mockMermaidInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "dark" }),
+    );
+
+    act(() => {
+      root.setAttribute("data-theme-preference", "light");
+      root.setAttribute("data-theme", "light");
+      window.dispatchEvent(new Event("caipe:theme-change"));
+    });
+
+    await waitFor(() =>
+      expect(mockMermaidRender).toHaveBeenCalledTimes(initialRenderCount + 2),
+    );
+    expect(mockMermaidInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ theme: "default" }),
+    );
+    expect(container.querySelector("style")?.textContent).toContain(
+      "#tome-mermaid-test .nodeLabel",
+    );
+
+    unmount();
+    root.removeAttribute("data-theme-preference");
+    root.removeAttribute("data-theme");
   });
 
   it("does not apply stale Mermaid output after the Markdown changes", async () => {

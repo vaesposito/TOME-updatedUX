@@ -15,6 +15,7 @@ import {
   MermaidLightbox,
   type ExpandedMermaidDiagram,
 } from "@/components/tome/MermaidLightbox";
+import { useTheme } from "@/components/theme-provider";
 import {
   feedMessageRoute,
   parseFeedHref,
@@ -309,8 +310,12 @@ function decorateExternalEmbeds(root: HTMLElement) {
 
 const mermaidPurifyConfig = {
   USE_PROFILES: { html: true, svg: true, svgFilters: true },
-  FORBID_TAGS: ["style"] as string[],
-  FORBID_CONTENTS: ["style", "script"] as string[],
+  // Mermaid's strict renderer emits an ID-scoped stylesheet that supplies
+  // virtually all diagram labels, rows, connectors, and theme colors. Keep
+  // that stylesheet in saved/read views while DOMPurify removes executable
+  // content and event-handler attributes.
+  FORBID_TAGS: ["script"] as string[],
+  FORBID_CONTENTS: ["script"] as string[],
 };
 
 let mermaidHydrationId = 0;
@@ -335,7 +340,7 @@ function decorateMermaidDiagrams(root: HTMLElement) {
   }
 }
 
-function hydrateMermaidDiagrams(root: HTMLElement) {
+function hydrateMermaidDiagrams(root: HTMLElement, theme?: string) {
   for (const placeholder of root.querySelectorAll<HTMLElement>(
     ".tome-mermaid-pending:not([data-mermaid-hydration])",
   )) {
@@ -363,6 +368,7 @@ function hydrateMermaidDiagrams(root: HTMLElement) {
         const rendered = wrapper.firstElementChild;
         if (rendered) placeholder.replaceWith(rendered);
       },
+      theme,
     );
   }
 }
@@ -474,6 +480,7 @@ export function MarkdownRenderer({
   enableMermaid = false,
   enableTomeColumns = false,
 }: MarkdownRendererProps) {
+  const { resolvedTheme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const [expandedMermaid, setExpandedMermaid] =
@@ -567,7 +574,9 @@ export function MarkdownRenderer({
       },
     });
     if (enableExternalEmbeds) hydrateEmbedPreviews(container);
-    if (enableMermaid && !streamingRef.current) hydrateMermaidDiagrams(container);
+    if (enableMermaid && !streamingRef.current) {
+      hydrateMermaidDiagrams(container, resolvedTheme);
+    }
 
     // Set up event delegation once
     if (!cleanupRef.current) {
@@ -700,7 +709,7 @@ export function MarkdownRenderer({
         hideCard();
       };
     }
-  }, [enableExternalEmbeds, enableMermaid, enableTomeColumns]);
+  }, [enableExternalEmbeds, enableMermaid, enableTomeColumns, resolvedTheme]);
 
   // Parse + morph on content changes
   useEffect(() => {

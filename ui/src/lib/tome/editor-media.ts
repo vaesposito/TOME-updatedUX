@@ -8,8 +8,18 @@ import {
 
 const MAX_EMBEDDED_IMAGE_BYTES = 2 * 1024 * 1024;
 
-let mermaidInitialized = false;
 let mermaidRenderId = 0;
+
+const LIGHT_TOME_THEMES = new Set(["light", "legacy-light"]);
+
+function mermaidTheme(theme?: string): "default" | "dark" {
+  const currentTheme =
+    theme ??
+    (typeof document === "undefined"
+      ? undefined
+      : document.documentElement.getAttribute("data-theme") ?? undefined);
+  return currentTheme && LIGHT_TOME_THEMES.has(currentTheme) ? "default" : "dark";
+}
 
 function mermaidPreviewMarkup(svg: string): string {
   return [
@@ -166,6 +176,7 @@ export function renderTomeCodePreview(
   language: string,
   content: string,
   applyPreview: (value: null | string | HTMLElement) => void,
+  theme?: string,
 ): null | void {
   const normalizedLanguage = language.trim().toLowerCase();
   const embed = parseTomeEmbed(normalizedLanguage, content);
@@ -193,13 +204,14 @@ export function renderTomeCodePreview(
   const renderId = `tome-mermaid-${mermaidRenderId++}`;
   void import("mermaid")
     .then(async ({ default: mermaid }) => {
-      if (!mermaidInitialized) {
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-        });
-        mermaidInitialized = true;
-      }
+      // Mermaid emits concrete colors into its SVG. Initialize for every
+      // render so diagrams created after a theme change use the active CAIPE
+      // palette instead of retaining the first theme seen by the module.
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: mermaidTheme(theme),
+      });
       const { svg } = await mermaid.render(renderId, content);
       applyPreview(mermaidPreviewMarkup(svg));
     })

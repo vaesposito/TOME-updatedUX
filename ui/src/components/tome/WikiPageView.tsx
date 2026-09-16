@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, ArrowLeftRight, ChevronDown, ImagePlus, Loader2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, ChevronDown, ImagePlus, Info, Loader2, X } from "lucide-react";
 
 import {
   MARKDOWN_DOCUMENT_EDITOR_MODES,
@@ -41,7 +41,10 @@ import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import { GlossaryFields } from "@/components/tome/GlossaryFields";
 import { EdgeFields } from "@/components/tome/EdgeFields";
 import { TrackedEntityFields } from "@/components/tome/TrackedEntityFields";
-import { KindBadge } from "@/components/tome/KindBadge";
+import {
+  KindBadge,
+  PAGE_KIND_DESCRIPTIONS,
+} from "@/components/tome/KindBadge";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
 import {
@@ -1116,28 +1119,52 @@ function KindToggle({
         </p>
         <div className="grid gap-1">
           {FLIPPABLE_KINDS.map((o) => (
-            <button
+            <div
               key={o.key}
-              type="button"
-              onClick={() => {
-                onChange(o.key);
-                setOpen(false);
-              }}
               className={cn(
-                "flex items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-muted",
+                "flex items-center rounded text-sm transition-colors hover:bg-muted",
                 o.key === currentKind && "bg-muted",
               )}
             >
-              <span className="flex items-center gap-2">
-                <KindBadge kind={o.key} iconOnly />
-                <span>{o.label}</span>
-              </span>
-              {o.key === currentKind && (
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  current
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(o.key);
+                  setOpen(false);
+                }}
+                className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-left"
+              >
+                <span className="flex items-center gap-2">
+                  <KindBadge kind={o.key} iconOnly />
+                  <span>{o.label}</span>
                 </span>
-              )}
-            </button>
+                {o.key === currentKind && (
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    current
+                  </span>
+                )}
+              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={`About ${o.label} pages`}
+                    className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  className="w-72 whitespace-normal text-[11px] font-normal leading-relaxed"
+                >
+                  <span className="font-semibold">{o.label}</span>
+                  <span className="ml-1 opacity-80">
+                    {PAGE_KIND_DESCRIPTIONS[o.key]}
+                  </span>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           ))}
         </div>
       </PopoverContent>

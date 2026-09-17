@@ -50,6 +50,7 @@ import type {
   ProjectDocument,
   ProjectSources,
   ProjectType,
+  TomeReportVisibility,
   TomeReviewMode,
 } from "@/types/projects";
 import { dataStewardUserEmail, isSynthesizedType } from "@/types/projects";
@@ -61,6 +62,10 @@ import {
   scheduleToCron,
   type ScheduleFormState,
 } from "@/lib/tome/auto-ingest/schedule-presets";
+import {
+  DEFAULT_TOME_REPORT_VISIBILITY,
+  resolveTomeReportVisibility,
+} from "@/lib/tome/report-visibility";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
 
 const BLAST_RADIUS_OPTIONS = [
@@ -114,6 +119,7 @@ interface ProjectSettingsSnapshot {
   stewardEmail: string;
   stewardTeamId: string;
   feedEnabled: boolean;
+  reportVisibility: TomeReportVisibility;
   blastRadius: "small" | "large" | "";
   optionality: string[];
   reviewMode: TomeReviewModeSelection;
@@ -142,6 +148,7 @@ function snapshotFromProject(project: ProjectDocument): ProjectSettingsSnapshot 
         ? project.data_steward.id
         : "",
     feedEnabled: project.sources_feed_enabled !== false,
+    reportVisibility: resolveTomeReportVisibility(project),
     blastRadius: (project.decision_blast_radius as "small" | "large" | "") ?? "",
     optionality: project.optionality ?? [],
     reviewMode: project.review_mode ?? "",
@@ -239,6 +246,8 @@ export function ProjectSettingsPanel({
   const { data: session } = useSession();
   const currentUserEmail = session?.user?.email ?? undefined;
   const [feedEnabled, setFeedEnabled] = useState(true);
+  const [reportVisibility, setReportVisibility] =
+    useState<TomeReportVisibility>(DEFAULT_TOME_REPORT_VISIBILITY);
   const [stewardType, setStewardType] = useState<"user" | "team">("user");
   const [stewardEmail, setStewardEmail] = useState("");
   const [stewardTeamId, setStewardTeamId] = useState("");
@@ -335,6 +344,7 @@ export function ProjectSettingsPanel({
         }
 
         setFeedEnabled(project.sources_feed_enabled !== false);
+        setReportVisibility(resolveTomeReportVisibility(project));
         if (typeof project.data_steward === "object" && project.data_steward.type === "team") {
           setStewardType("team");
           setStewardTeamId(project.data_steward.id);
@@ -529,6 +539,7 @@ export function ProjectSettingsPanel({
     stewardEmail,
     stewardTeamId,
     feedEnabled,
+    reportVisibility,
     blastRadius,
     optionality,
     reviewMode,
@@ -545,6 +556,7 @@ export function ProjectSettingsPanel({
     stewardEmail,
     stewardTeamId,
     feedEnabled,
+    reportVisibility,
     blastRadius,
     optionality,
     reviewMode,
@@ -646,6 +658,7 @@ export function ProjectSettingsPanel({
         decision_blast_radius: blastRadius || null,
         optionality: optionality.length ? optionality : [],
         review_mode: reviewMode || null,
+        report_visibility: reportVisibility,
       };
       if (canManageSteward) {
         payload.data_steward =
@@ -713,6 +726,7 @@ export function ProjectSettingsPanel({
         setStewardTeamId("");
       }
       setFeedEnabled(project.sources_feed_enabled !== false);
+      setReportVisibility(resolveTomeReportVisibility(project));
       setBlastRadius((project.decision_blast_radius as "small" | "large" | "") ?? "");
       setOptionality(project.optionality ?? []);
       setReviewMode(project.review_mode ?? "");
@@ -747,6 +761,7 @@ export function ProjectSettingsPanel({
     canEdit,
     canManageSteward,
     feedEnabled,
+    reportVisibility,
     blastRadius,
     optionality,
     reviewMode,
@@ -808,7 +823,7 @@ export function ProjectSettingsPanel({
             <Tabs value={settingsTab} onValueChange={setSettingsTab}>
               <div className="border-b border-border">
                 <TabsList
-                  className="h-auto w-full justify-start gap-4 overflow-x-auto bg-transparent p-0"
+                  className="h-auto w-full justify-start gap-4 overflow-x-auto overflow-y-hidden bg-transparent p-0 pb-px"
                   indicator="underline"
                 >
                   <TabsTrigger value="general" className={TAB_TRIGGER_CLASS}>
@@ -842,6 +857,9 @@ export function ProjectSettingsPanel({
                       Activity Feed
                     </TabsTrigger>
                   )}
+                  <TabsTrigger value="reports" className={TAB_TRIGGER_CLASS}>
+                    Sidebar
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
@@ -920,6 +938,75 @@ export function ProjectSettingsPanel({
                     </div>
                   )}
                 </div> : null}
+              </TabsContent>
+
+              <TabsContent value="reports" className="space-y-6 pt-6">
+                <div className="space-y-6">
+                  <p className="text-xs text-muted-foreground">
+                    Choose which report surfaces readers see in this {entityLabel}&apos;s sidebar.
+                    Hiding a report removes it from navigation without deleting its data.
+                  </p>
+                  <Field label="Sidebar reports">
+                    <div className="space-y-3 rounded-lg border border-border/60 p-4">
+                      <label className="flex cursor-pointer items-start gap-3 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={reportVisibility.enabled}
+                          onChange={(event) => setReportVisibility((current) => ({
+                            ...current,
+                            enabled: event.target.checked,
+                          }))}
+                          className="mt-0.5 h-4 w-4 rounded border-border"
+                        />
+                        <span>
+                          <span className="block font-medium">Show Reports</span>
+                          <span className="block text-xs text-muted-foreground">
+                            Show or hide the entire Reports group.
+                          </span>
+                        </span>
+                      </label>
+                      <fieldset
+                        disabled={!reportVisibility.enabled}
+                        className="ml-7 space-y-3 border-l pl-4 disabled:opacity-50"
+                      >
+                        <label className="flex cursor-pointer items-start gap-3 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={reportVisibility.standup}
+                            onChange={(event) => setReportVisibility((current) => ({
+                              ...current,
+                              standup: event.target.checked,
+                            }))}
+                            className="mt-0.5 h-4 w-4 rounded border-border"
+                          />
+                          <span>
+                            <span className="block font-medium">Stand-up</span>
+                            <span className="block text-xs text-muted-foreground">
+                              Show the agent-written standup.md report.
+                            </span>
+                          </span>
+                        </label>
+                        <label className="flex cursor-pointer items-start gap-3 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={reportVisibility.issues}
+                            onChange={(event) => setReportVisibility((current) => ({
+                              ...current,
+                              issues: event.target.checked,
+                            }))}
+                            className="mt-0.5 h-4 w-4 rounded border-border"
+                          />
+                          <span>
+                            <span className="block font-medium">Issues</span>
+                            <span className="block text-xs text-muted-foreground">
+                              Show tracked GitHub issues and label views.
+                            </span>
+                          </span>
+                        </label>
+                      </fieldset>
+                    </div>
+                  </Field>
+                </div>
               </TabsContent>
 
               <TabsContent value="organization" className="space-y-6 pt-6">

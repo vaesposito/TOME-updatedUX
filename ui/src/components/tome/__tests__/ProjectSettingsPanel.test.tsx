@@ -72,6 +72,7 @@ function installEntitySettingsFetch(
           project: {
             ...project,
             review_mode: patchPayload.review_mode ?? undefined,
+            report_visibility: patchPayload.report_visibility ?? undefined,
           },
         },
       });
@@ -313,6 +314,30 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
 
     await waitFor(() => {
       expect(getPatchPayload()).toEqual(expect.objectContaining({ review_mode: null }));
+    });
+  });
+
+  it("puts sidebar controls last and lets a data steward choose which reports readers see", async () => {
+    const { getPatchPayload } = installEntitySettingsFetch("project");
+    renderSettings({ slug: "example-project" });
+
+    const sidebarTab = await screen.findByRole("tab", { name: "Sidebar" });
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[tabs.length - 1]).toBe(sidebarTab);
+    expect(screen.getByRole("tablist")).toHaveClass("overflow-y-hidden", "pb-px");
+
+    fireEvent.mouseDown(sidebarTab, { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Stand-up/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(getPatchPayload()).toEqual(expect.objectContaining({
+        report_visibility: {
+          enabled: true,
+          standup: false,
+          issues: true,
+        },
+      }));
     });
   });
 

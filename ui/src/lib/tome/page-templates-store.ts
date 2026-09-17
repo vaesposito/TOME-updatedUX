@@ -78,12 +78,14 @@ const FALLBACK_TEMPLATES: Record<TemplateScope, readonly PageSpec[]> = {
 const DEFAULT_GUIDANCE: Record<TemplateScope, Record<string, string>> = {
   "top-level": {
     "standup.md":
-      "Report card — keep this EXACT Markdown structure; it is parsed by the UI. Under ~200 words.\n" +
+      "A real stand-up update — keep this EXACT Markdown structure; it is parsed by the UI. Under 160 words total.\n" +
       "Put every heading on its own line with a blank line after it. Do not use bold labels as headings.\n" +
-      "## What is this\nOne or two plain sentences.\n\n" +
-      "## Headline\nOne concise sentence: the single most important thing this period.\n\n" +
-      "## Asks / Blockers\n- One blocker or ask per real Markdown bullet; cite when useful.\n\n" +
-      "## Up next\n- One milestone or deadline per real Markdown bullet.",
+      "Describe only the delta since the previous stand-up; on the first run, summarize the current state. Never write a source digest or commit log.\n" +
+      "## What is this\nOne plain sentence naming the effort and the reporting window.\n\n" +
+      "## Headline\nOne plain-language sentence of 12 words or fewer with the most important outcome, risk, or decision. Do not use Markdown formatting.\n\n" +
+      "## Progress\n- Up to three completed outcomes or meaningful advances; say why each matters.\n\n" +
+      "## Asks / Blockers\n- Active blockers or decisions needed, with owner when known. If none: - None right now.\n\n" +
+      "## Up next\n- Up to three concrete commitments for the next reporting period, with owner or date when known.",
     "activity.md":
       "The significant recent work across ALL attached sources, interpreted and " +
       "organized by theme/goal — not a feed. Cite the few items that matter.",

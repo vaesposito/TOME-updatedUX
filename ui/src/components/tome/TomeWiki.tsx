@@ -30,6 +30,8 @@ import {
   MessagesSquare,
   Minimize2,
   Newspaper,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
   Search,
@@ -81,6 +83,7 @@ import type { GlossaryPreview } from "@/components/tome/CrepeEditor";
 import { parseTomeHref } from "@/lib/tome/tome-links";
 import { useTomeViewTracking } from "@/lib/tome/usage-tracking";
 import { BetaBadge } from "@/components/tome/BetaBadge";
+import { ReportsDisclosure } from "@/components/tome/ReportsDisclosure";
 import { StandupView } from "@/components/tome/StandupView";
 import { GithubIssuesPanel } from "@/components/tome/GithubIssuesPanel";
 import { IssueLabelDisclosure } from "@/components/tome/IssueLabelDisclosure";
@@ -111,9 +114,14 @@ import {
   TOME_TRACKED_ISSUE_LABELS,
   type TomeTrackedIssueLabel,
 } from "@/lib/tome/issue-filter-views";
+import { useResponsiveProjectSidebar } from "@/lib/tome/responsive-project-sidebar";
 import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
 import { buildPageCreationAgentPrompt } from "@/lib/tome/page-creation";
+import {
+  DEFAULT_TOME_REPORT_VISIBILITY,
+  resolveTomeReportVisibility,
+} from "@/lib/tome/report-visibility";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
 import type { PageTreeNode, TomeFolder } from "@/types/tome";
 import {
@@ -121,6 +129,7 @@ import {
   isSynthesizedType,
   type ProjectDocument,
   type ProjectType,
+  type TomeReportVisibility,
 } from "@/types/projects";
 
 interface PagesResponse {
@@ -284,6 +293,12 @@ export function TomeWiki({ slug }: { slug: string }) {
   // syncs pushState into `usePathname`, so direct loads and popstate still work.
   const pathname = usePathname();
   const base = `/projects/${slug}/tome`;
+  const {
+    open: projectSidebarOpen,
+    toggle: toggleProjectSidebar,
+    close: closeProjectSidebar,
+    closeOnCompact: closeProjectSidebarOnCompact,
+  } = useResponsiveProjectSidebar();
   const segments = useMemo(() => {
     if (!pathname) return [];
     const rest = pathname.startsWith(base) ? pathname.slice(base.length) : "";
@@ -300,6 +315,7 @@ export function TomeWiki({ slug }: { slug: string }) {
   } = useUnsavedChangesStore();
   const navigate = useCallback(
     (next: MainView) => {
+      closeProjectSidebarOnCompact();
       const url = viewToPath(slug, next);
       if (url === pathname) return;
       const action = () => window.history.pushState(null, "", url);
@@ -309,7 +325,14 @@ export function TomeWiki({ slug }: { slug: string }) {
       }
       action();
     },
-    [slug, pathname, view.kind, hasUnsavedChanges, requestDeferredAction],
+    [
+      slug,
+      pathname,
+      view.kind,
+      hasUnsavedChanges,
+      requestDeferredAction,
+      closeProjectSidebarOnCompact,
+    ],
   );
   const interceptHrefNavigation = useCallback((href: string): boolean => {
     if (view.kind !== "settings" || !hasUnsavedChanges) return false;
@@ -332,6 +355,9 @@ export function TomeWiki({ slug }: { slug: string }) {
     dataSteward: string | null;
   }>({ description: null, status: null, teamName: null, tags: [], dataSteward: null });
   const [projectMetaLoading, setProjectMetaLoading] = useState(true);
+  const [reportVisibility, setReportVisibility] = useState<TomeReportVisibility>(
+    DEFAULT_TOME_REPORT_VISIBILITY,
+  );
   // BHAG/Area awareness: this project's kind, the initiatives it's tagged
   // with, and the BHAG entities those initiatives resolve to (for the up-link
   // chip).
@@ -575,6 +601,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     setProjectType(p.type ?? "project");
     setInitiatives(Array.isArray(p.labels?.initiatives) ? p.labels.initiatives : []);
     setAreaTags(Array.isArray(p.labels?.areas) ? p.labels.areas : []);
+    setReportVisibility(resolveTomeReportVisibility(p));
     setProjectMeta({
       description: typeof p.description === "string" ? p.description : null,
       status: typeof p.status === "string" ? p.status : null,
@@ -602,6 +629,20 @@ export function TomeWiki({ slug }: { slug: string }) {
       cancelled = true;
     };
   }, [slug, applyProjectMeta]);
+
+  const showStandupReport = reportVisibility.enabled && reportVisibility.standup;
+  const showIssuesReport = reportVisibility.enabled && reportVisibility.issues;
+  const showReports = showStandupReport || showIssuesReport;
+
+  useEffect(() => {
+    if (projectMetaLoading) return;
+    if (
+      (view.kind === "standup" && !showStandupReport)
+      || (view.kind === "issues" && !showIssuesReport)
+    ) {
+      navigate({ kind: "agent" });
+    }
+  }, [navigate, projectMetaLoading, showIssuesReport, showStandupReport, view.kind]);
 
   // Fetch every BHAG entity once (unconditionally, unless this page IS a
   // BHAG) — used both to resolve this project's direct BHAG tags below and,
@@ -1505,7 +1546,7 @@ export function TomeWiki({ slug }: { slug: string }) {
               ]}
             />
           </HeaderBreadcrumbPortal>
-                  <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1">
             {projectMetaLoading ? (
               <div className="flex flex-col gap-2" data-testid="skeleton">
                 <div className="h-5 w-48 animate-pulse rounded bg-muted" />
@@ -1575,10 +1616,69 @@ export function TomeWiki({ slug }: { slug: string }) {
           </p>
         )}
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {projectSidebarOpen && (
+            <button
+              type="button"
+              aria-label="Close project sidebar"
+              className="absolute inset-0 z-10 bg-background/60 backdrop-blur-sm md:hidden"
+              onClick={closeProjectSidebar}
+            />
+          )}
+          {!projectSidebarOpen && (
+            <div className="flex w-10 shrink-0 items-start justify-center border-r bg-background/60 pt-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    onClick={toggleProjectSidebar}
+                    aria-label="Show project sidebar"
+                    aria-controls={`tome-project-sidebar-${slug}`}
+                    aria-expanded={false}
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Show project sidebar</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
           {/* Side nav: Chat + Ingest destinations, then the wiki page tree. */}
-          <aside className="w-80 shrink-0 border-r">
-            <ScrollArea className="h-full">
+          <aside
+            id={`tome-project-sidebar-${slug}`}
+            aria-hidden={!projectSidebarOpen}
+            inert={projectSidebarOpen ? undefined : true}
+            className={cn(
+              "absolute inset-y-0 left-0 z-20 flex w-[calc(100%-3rem)] max-w-xs flex-col overflow-hidden border-r bg-background shadow-xl transition-[transform,width] duration-200 md:relative md:inset-auto md:z-auto md:shrink-0 md:shadow-none",
+              projectSidebarOpen
+                ? "translate-x-0 md:w-80"
+                : "pointer-events-none -translate-x-full md:w-0 md:translate-x-0 md:border-r-0",
+            )}
+          >
+            <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Navigation
+              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    onClick={toggleProjectSidebar}
+                    aria-label="Collapse project sidebar"
+                    aria-controls={`tome-project-sidebar-${slug}`}
+                    aria-expanded
+                  >
+                    <PanelLeftClose className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Collapse project sidebar</TooltipContent>
+              </Tooltip>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col p-3">
                 <div className="flex flex-col gap-1">
                   <NavItem
@@ -1648,25 +1748,21 @@ export function TomeWiki({ slug }: { slug: string }) {
                   />
                 </div>
 
-                <div className="mt-6 flex items-center justify-between gap-1 px-2 pb-1.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Reports
-                  </span>
-                  <BetaBadge showTooltip={false} />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <NavItem
-                    icon={<Newspaper className="h-4 w-4" />}
-                    label="Standup"
-                    active={navActive.standup}
-                    onClick={() => navigate({ kind: "standup" })}
-                    tipTitle="Standup"
-                    tipDescription="The project's report card: headline, blockers, and what's next. Rewritten by the agent on every ingest. (This feature is still in testing.)"
-                  />
+                {showReports && (
+                  <ReportsDisclosure slug={slug}>
+                    {showStandupReport && (
+                      <NavItem
+                        icon={<Newspaper className="h-4 w-4" />}
+                        label="Standup"
+                        active={navActive.standup}
+                        onClick={() => navigate({ kind: "standup" })}
+                        tipTitle="Standup"
+                        tipDescription="The project's report card: headline, blockers, and what's next. Rewritten by the agent on every ingest. (This feature is still in testing.)"
+                      />
+                    )}
+                    {showIssuesReport && (
                   <IssueLabelDisclosure
-                    expanded
-                    collapsible={false}
-                    onExpandedChange={() => undefined}
+                    slug={slug}
                     controlsId={`tome-issue-label-views-${slug}`}
                     header={
                       <NavItem
@@ -1787,7 +1883,9 @@ export function TomeWiki({ slug }: { slug: string }) {
                       </p>
                     )}
                   </IssueLabelDisclosure>
-                </div>
+                    )}
+                  </ReportsDisclosure>
+                )}
 
                 <div className="mt-6 flex items-center justify-between gap-1 px-2 pb-1.5">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2119,7 +2217,7 @@ export function TomeWiki({ slug }: { slug: string }) {
           </aside>
 
           {/* Main pane: replaced wholesale by the active view. */}
-          <main className="flex min-h-0 flex-1 overflow-hidden">
+          <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             {view.kind === "agent" ? (
               <>
                 <div className="min-h-0 min-w-0 flex-1">

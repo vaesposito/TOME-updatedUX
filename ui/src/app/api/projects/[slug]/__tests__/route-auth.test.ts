@@ -237,3 +237,72 @@ describe("PATCH /api/projects/[slug] review policy", () => {
     );
   });
 });
+
+describe("PATCH /api/projects/[slug] report visibility", () => {
+  const project = {
+    _id: "project-id",
+    slug: "example-project",
+    name: "Example Project",
+    title: "Example Project",
+    type: "project",
+    team_id: "example-team-id",
+    team_slug: "example-team",
+    team_name: "Example Team",
+    report_visibility: { enabled: false, standup: true, issues: true },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetTomeProjectPermissions.mockResolvedValue({
+      canRead: true,
+      canEdit: true,
+      canManageSteward: false,
+    });
+    mockFindBySlug.mockReturnValue({
+      limit: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([project]),
+      }),
+    });
+  });
+
+  it("allows a data steward to update report visibility and preserves omitted fields", async () => {
+    mockFindOne.mockResolvedValue({
+      ...project,
+      report_visibility: { enabled: false, standup: false, issues: true },
+    });
+
+    const response = await PATCH(
+      patchRequest("example-project", {
+        report_visibility: { standup: false },
+      }),
+      { params: Promise.resolve({ slug: "example-project" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: "project-id" },
+      {
+        $set: {
+          updated_at: expect.any(Date),
+          report_visibility: {
+            enabled: false,
+            standup: false,
+            issues: true,
+          },
+        },
+      },
+    );
+  });
+
+  it("rejects non-boolean report visibility fields", async () => {
+    const response = await PATCH(
+      patchRequest("example-project", {
+        report_visibility: { issues: "sometimes" },
+      }),
+      { params: Promise.resolve({ slug: "example-project" }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});

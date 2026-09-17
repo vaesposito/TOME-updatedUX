@@ -1103,7 +1103,7 @@ export function ProjectsHub() {
       {isTomeAdmin && <OpenFgaModelRepairBanner />}
 
       <section className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <h2 className="whitespace-nowrap text-xl font-semibold">
               {loading
@@ -1114,8 +1114,8 @@ export function ProjectsHub() {
             </h2>
             <ActiveIngestsIndicator runs={activeIngests} />
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative w-44 sm:w-56">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            <div className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="search"
@@ -1182,7 +1182,8 @@ export function ProjectsHub() {
             <select
               value={groupBy}
               onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-              className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              aria-label="Group projects"
+              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 sm:w-auto"
             >
               <option value="initiative">Group by BHAG</option>
               <option value="area">Group by Area</option>

@@ -1546,30 +1546,6 @@ export function TomeWiki({ slug }: { slug: string }) {
               ]}
             />
           </HeaderBreadcrumbPortal>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 text-muted-foreground"
-                onClick={toggleProjectSidebar}
-                aria-label={
-                  projectSidebarOpen ? "Collapse project sidebar" : "Show project sidebar"
-                }
-                aria-controls={`tome-project-sidebar-${slug}`}
-                aria-expanded={projectSidebarOpen}
-              >
-                {projectSidebarOpen ? (
-                  <PanelLeftClose className="h-4 w-4" />
-                ) : (
-                  <PanelLeftOpen className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {projectSidebarOpen ? "Collapse project sidebar" : "Show project sidebar"}
-            </TooltipContent>
-          </Tooltip>
           <div className="min-w-0 flex-1">
             {projectMetaLoading ? (
               <div className="flex flex-col gap-2" data-testid="skeleton">
@@ -1649,19 +1625,60 @@ export function TomeWiki({ slug }: { slug: string }) {
               onClick={closeProjectSidebar}
             />
           )}
+          {!projectSidebarOpen && (
+            <div className="flex w-10 shrink-0 justify-center border-r bg-background/60 pt-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    onClick={toggleProjectSidebar}
+                    aria-label="Show project sidebar"
+                    aria-controls={`tome-project-sidebar-${slug}`}
+                    aria-expanded={false}
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Show project sidebar</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
           {/* Side nav: Chat + Ingest destinations, then the wiki page tree. */}
           <aside
             id={`tome-project-sidebar-${slug}`}
             aria-hidden={!projectSidebarOpen}
             inert={projectSidebarOpen ? undefined : true}
             className={cn(
-              "absolute inset-y-0 left-0 z-20 w-[calc(100%-3rem)] max-w-xs overflow-hidden border-r bg-background shadow-xl transition-[transform,width] duration-200 md:relative md:inset-auto md:z-auto md:shrink-0 md:shadow-none",
+              "absolute inset-y-0 left-0 z-20 flex w-[calc(100%-3rem)] max-w-xs flex-col overflow-hidden border-r bg-background shadow-xl transition-[transform,width] duration-200 md:relative md:inset-auto md:z-auto md:shrink-0 md:shadow-none",
               projectSidebarOpen
                 ? "translate-x-0 md:w-80"
                 : "pointer-events-none -translate-x-full md:w-0 md:translate-x-0 md:border-r-0",
             )}
           >
-            <ScrollArea className="h-full">
+            <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Navigation
+              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    onClick={toggleProjectSidebar}
+                    aria-label="Collapse project sidebar"
+                    aria-controls={`tome-project-sidebar-${slug}`}
+                    aria-expanded
+                  >
+                    <PanelLeftClose className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Collapse project sidebar</TooltipContent>
+              </Tooltip>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col p-3">
                 <div className="flex flex-col gap-1">
                   <NavItem

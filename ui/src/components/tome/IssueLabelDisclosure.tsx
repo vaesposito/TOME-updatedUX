@@ -3,25 +3,31 @@
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 
+import { usePersistentDisclosure } from "@/lib/tome/use-persistent-disclosure";
 import { cn } from "@/lib/utils";
 
+const ISSUE_LABEL_VIEWS_EXPANDED_KEY_PREFIX = "tome.issue-label-views.expanded.";
+
 export function IssueLabelDisclosure({
-  expanded,
-  onExpandedChange,
+  slug,
   controlsId,
   header,
   actions,
   collapsible = true,
   children,
 }: {
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
+  slug: string;
   controlsId: string;
   header: ReactNode;
   actions: ReactNode;
   collapsible?: boolean;
   children: ReactNode;
 }) {
+  const [storedExpanded, setExpanded] = usePersistentDisclosure(
+    `${ISSUE_LABEL_VIEWS_EXPANDED_KEY_PREFIX}${slug}`,
+  );
+  const expanded = collapsible ? storedExpanded : true;
+
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-1">
@@ -33,7 +39,7 @@ export function IssueLabelDisclosure({
             aria-expanded={expanded}
             aria-controls={controlsId}
             title={expanded ? "Collapse issue label views" : "Expand issue label views"}
-            onClick={() => onExpandedChange(!expanded)}
+            onClick={() => setExpanded(!expanded)}
             className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <ChevronRight

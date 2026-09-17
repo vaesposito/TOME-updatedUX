@@ -1762,9 +1762,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                     )}
                     {showIssuesReport && (
                   <IssueLabelDisclosure
-                    expanded
-                    collapsible={false}
-                    onExpandedChange={() => undefined}
+                    slug={slug}
                     controlsId={`tome-issue-label-views-${slug}`}
                     header={
                       <NavItem

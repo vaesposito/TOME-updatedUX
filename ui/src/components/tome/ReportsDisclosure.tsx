@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useSyncExternalStore, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { BetaBadge } from "@/components/tome/BetaBadge";
+import { usePersistentDisclosure } from "@/lib/tome/use-persistent-disclosure";
 import { cn } from "@/lib/utils";
 
 const REPORTS_EXPANDED_KEY_PREFIX = "tome.reports.expanded.";
-const REPORTS_EXPANDED_EVENT = "tome-reports-expanded-change";
 
 export function ReportsDisclosure({
   slug,
@@ -17,43 +17,13 @@ export function ReportsDisclosure({
   children: ReactNode;
 }) {
   const storageKey = `${REPORTS_EXPANDED_KEY_PREFIX}${slug}`;
-
-  const subscribe = useCallback(
-    (onStoreChange: () => void) => {
-      const onStorage = (event: StorageEvent) => {
-        if (event.key === storageKey) onStoreChange();
-      };
-      const onLocalChange = (event: Event) => {
-        if ((event as CustomEvent<string>).detail === storageKey)
-          onStoreChange();
-      };
-      window.addEventListener("storage", onStorage);
-      window.addEventListener(REPORTS_EXPANDED_EVENT, onLocalChange);
-      return () => {
-        window.removeEventListener("storage", onStorage);
-        window.removeEventListener(REPORTS_EXPANDED_EVENT, onLocalChange);
-      };
-    },
-    [storageKey],
-  );
-  const getSnapshot = useCallback(() => {
-    const stored = window.localStorage.getItem(storageKey);
-    return stored === null ? true : stored === "true";
-  }, [storageKey]);
-  const expanded = useSyncExternalStore(subscribe, getSnapshot, () => true);
-
-  const toggle = () => {
-    window.localStorage.setItem(storageKey, String(!expanded));
-    window.dispatchEvent(
-      new CustomEvent(REPORTS_EXPANDED_EVENT, { detail: storageKey }),
-    );
-  };
+  const [expanded, setExpanded] = usePersistentDisclosure(storageKey);
 
   return (
     <div className="mt-6">
       <button
         type="button"
-        onClick={toggle}
+        onClick={() => setExpanded(!expanded)}
         aria-label={expanded ? "Collapse Reports" : "Expand Reports"}
         aria-expanded={expanded}
         aria-controls={`tome-reports-${slug}`}

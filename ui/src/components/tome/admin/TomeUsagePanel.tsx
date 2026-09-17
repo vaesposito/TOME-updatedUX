@@ -8,6 +8,7 @@ import type { TomeAnalyticsSnapshot } from "@/lib/tome/analytics-types";
 import type { ActivityPeriod } from "@/lib/tome/chat-analytics";
 import {
   AnalyticsSection,
+  compareOptionalDates,
   count,
   dateLabel,
   Metric,
@@ -16,7 +17,7 @@ import {
   TomeActivityChart,
 } from "./AnalyticsPrimitives";
 
-type UsageSortKey = "users" | "prompts";
+type UsageSortKey = "users" | "prompts" | "lastActivity";
 
 export function TomeUsagePanel({
   chat,
@@ -37,13 +38,18 @@ export function TomeUsagePanel({
           (type === "all" || entity.type === type) &&
           entity.name.toLowerCase().includes(query.toLowerCase()),
       )
-      .sort(
-        (a, b) =>
-          direction *
+      .sort((a, b) => {
+        const comparison = usageSort.key === "lastActivity"
+          ? compareOptionalDates(
+            a.lastPromptAt,
+            b.lastPromptAt,
+            usageSort.direction,
+          )
+          : direction *
             (a.activity[period][usageSort.key] -
-              b.activity[period][usageSort.key]) ||
-          a.name.localeCompare(b.name),
-      );
+              b.activity[period][usageSort.key]);
+        return comparison || a.name.localeCompare(b.name);
+      });
   }, [chat, type, query, period, usageSort]);
   const sortUsageBy = (key: UsageSortKey) => {
     setUsageSort((current) => ({
@@ -191,7 +197,12 @@ export function TomeUsagePanel({
                   direction={usageSort.direction}
                   onSort={() => sortUsageBy("prompts")}
                 />
-                <th className="p-3">Last activity</th>
+                <SortableTableHeader
+                  label="Last activity"
+                  active={usageSort.key === "lastActivity"}
+                  direction={usageSort.direction}
+                  onSort={() => sortUsageBy("lastActivity")}
+                />
               </tr>
             </thead>
             <tbody>

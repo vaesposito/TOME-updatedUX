@@ -64,6 +64,21 @@ export const dateLabel = (value: string) =>
 
 export type SortDirection = "asc" | "desc";
 
+export function compareOptionalDates(
+  left: string | null | undefined,
+  right: string | null | undefined,
+  direction: SortDirection,
+): number {
+  const leftTime = left ? Date.parse(left) : Number.NaN;
+  const rightTime = right ? Date.parse(right) : Number.NaN;
+  const leftMissing = Number.isNaN(leftTime);
+  const rightMissing = Number.isNaN(rightTime);
+  if (leftMissing && rightMissing) return 0;
+  if (leftMissing) return 1;
+  if (rightMissing) return -1;
+  return (direction === "asc" ? 1 : -1) * (leftTime - rightTime);
+}
+
 export function SortableTableHeader({
   label,
   active,

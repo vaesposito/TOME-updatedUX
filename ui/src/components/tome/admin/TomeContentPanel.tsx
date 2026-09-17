@@ -5,12 +5,15 @@ import Link from "next/link";
 import type { TomeAnalyticsSnapshot } from "@/lib/tome/analytics-types";
 import {
   AnalyticsSection,
+  compareOptionalDates,
   count,
   dateLabel,
   Metric,
   type SortDirection,
   SortableTableHeader,
 } from "./AnalyticsPrimitives";
+
+type ContentSortKey = "pages" | "lastUpdated";
 
 const originLabels: Record<string, string> = {
   manual: "Edited by people",
@@ -31,16 +34,31 @@ const templateLabels: Record<string, string> = {
 
 export function TomeContentPanel({ data }: { data: TomeAnalyticsSnapshot }) {
   const { usage, leadership, freshness, projects, performance, uptime } = data;
-  const [pageSort, setPageSort] = useState<SortDirection | null>(null);
+  const [contentSort, setContentSort] = useState<{
+    key: ContentSortKey;
+    direction: SortDirection;
+  } | null>(null);
   const sortedProjects = useMemo(() => {
-    if (!pageSort) return projects;
-    const direction = pageSort === "asc" ? 1 : -1;
-    return [...projects].sort(
-      (a, b) =>
-        direction * (a.pageCount - b.pageCount) ||
-        a.title.localeCompare(b.title),
-    );
-  }, [pageSort, projects]);
+    if (!contentSort) return projects;
+    const direction = contentSort.direction === "asc" ? 1 : -1;
+    return [...projects].sort((a, b) => {
+      const comparison = contentSort.key === "pages"
+        ? direction * (a.pageCount - b.pageCount)
+        : compareOptionalDates(
+          a.lastIngestedAt,
+          b.lastIngestedAt,
+          contentSort.direction,
+        );
+      return comparison || a.title.localeCompare(b.title);
+    });
+  }, [contentSort, projects]);
+  const sortContentBy = (key: ContentSortKey) => {
+    setContentSort((current) => ({
+      key,
+      direction:
+        current?.key === key && current.direction === "desc" ? "asc" : "desc",
+    }));
+  };
   return (
     <div className="space-y-6">
       <AnalyticsSection
@@ -100,15 +118,16 @@ export function TomeContentPanel({ data }: { data: TomeAnalyticsSnapshot }) {
                 <th className="p-3">Name</th>
                 <SortableTableHeader
                   label="Pages"
-                  active={pageSort !== null}
-                  direction={pageSort ?? "desc"}
-                  onSort={() =>
-                    setPageSort((current) =>
-                      current === "desc" ? "asc" : "desc",
-                    )
-                  }
+                  active={contentSort?.key === "pages"}
+                  direction={contentSort?.direction ?? "desc"}
+                  onSort={() => sortContentBy("pages")}
                 />
-                <th className="p-3">Last updated</th>
+                <SortableTableHeader
+                  label="Last updated"
+                  active={contentSort?.key === "lastUpdated"}
+                  direction={contentSort?.direction ?? "desc"}
+                  onSort={() => sortContentBy("lastUpdated")}
+                />
                 <th className="p-3">History</th>
               </tr>
             </thead>

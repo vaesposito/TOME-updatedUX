@@ -8,28 +8,28 @@ import {
 } from "@/lib/tome/issue-filter-views";
 
 describe("TOME tracked issue labels", () => {
-  it("uses a fixed product-owned label set", () => {
+  it("uses unprefixed default labels", () => {
     expect(TOME_TRACKED_ISSUE_LABELS).toEqual([
-      { id: "critical", label: "tome:critical", title: "Critical" },
-      { id: "needs-attention", label: "tome:needs attention", title: "Needs Attention" },
-      { id: "decision", label: "tome:decision", title: "Decisions" },
+      { id: "critical", label: "critical", title: "Critical" },
+      { id: "needs-attention", label: "needs attention", title: "Needs Attention" },
+      { id: "decision", label: "decision", title: "Decisions" },
     ]);
   });
 
   it("does not treat arbitrary GitHub labels as tracked", () => {
-    expect(isTomeTrackedIssueLabel("TOME:CRITICAL")).toBe(true);
+    expect(isTomeTrackedIssueLabel("TOME:CRITICAL")).toBe(false);
+    expect(isTomeTrackedIssueLabel("critical")).toBe(true);
     expect(isTomeTrackedIssueLabel("bug")).toBe(false);
   });
 
-  it("reserves the tome prefix for valid custom tracker suffixes", () => {
-    expect(customTomeTrackerLabel("security-review")).toBe("tome:security-review");
+  it("uses unprefixed custom tracker labels", () => {
+    expect(customTomeTrackerLabel("security-review")).toBe("security-review");
     expect(customTomeTrackerLabel("tome:security-review")).toBeNull();
     expect(customTomeTrackerLabel("security review")).toBeNull();
   });
 
   it("materializes configurable labels with or without the prefix", () => {
     const settings: TomeIssueLabelSettings = {
-      use_prefix: false,
       labels: {
         critical: { title: "Urgent", suffix: "urgent" },
         "needs-attention": { title: "Follow Up", suffix: "follow-up" },
@@ -41,6 +41,19 @@ describe("TOME tracked issue labels", () => {
       { id: "critical", label: "urgent", title: "Urgent" },
       { id: "needs-attention", label: "follow-up", title: "Follow Up" },
       { id: "decision", label: "decision-record", title: "Decision Records" },
+    ]);
+  });
+
+  it("omits disabled optional labels", () => {
+    expect(materializeTomeIssueLabels({
+      labels: {
+        critical: { title: "Critical", suffix: "critical", enabled: false },
+        "needs-attention": { title: "Needs Attention", suffix: "needs attention" },
+        decision: { title: "Decisions", suffix: "decision" },
+      },
+    })).toEqual([
+      { id: "needs-attention", label: "needs attention", title: "Needs Attention" },
+      { id: "decision", label: "decision", title: "Decisions" },
     ]);
   });
 

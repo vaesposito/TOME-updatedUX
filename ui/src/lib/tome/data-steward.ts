@@ -124,6 +124,17 @@ async function resolveCanEdit(
   return (await check()).allowed;
 }
 
+async function hasTomeWriteGrant(
+  sub: string,
+  project: ProjectDocument,
+): Promise<boolean> {
+  return (await checkOpenFgaTuple({
+    user: `user:${sub}`,
+    relation: WRITE_RELATION,
+    object: tomeDataObject(project),
+  })).allowed;
+}
+
 /**
  * Returns true when `sub` is allowed to write pages for `project` — either
  * because they are a Tome admin (admin shortcut, no per-project tuple needed)
@@ -151,23 +162,55 @@ export async function canWriteAs(
  */
 export async function getTomeProjectPermissions(
   input: TomePermissionInput,
-): Promise<{ canRead: boolean; canEdit: boolean; canManageSteward: boolean }> {
+): Promise<{
+  canRead: boolean;
+  canEdit: boolean;
+  canManageSteward: boolean;
+  isDataSteward: boolean;
+}> {
   requireInteractiveTomePrincipal(input.session);
   const canManageSteward = await isTomeAdmin(adminSession(input));
+  const sub = tomeSessionSubject(input.session);
   if (canManageSteward) {
-    return { canRead: true, canEdit: true, canManageSteward: true };
+    let isDataSteward = false;
+    if (sub) {
+      try {
+        // Admin privileges are independent from the project writer relation.
+        // Keep checking the latter so an admin who is also the assigned
+        // steward retains steward-only controls.
+        isDataSteward = await hasTomeWriteGrant(sub, input.project);
+      } catch {
+        // Admin read/edit access remains available when OpenFGA is unhealthy,
+        // but steward-only operations fail closed.
+      }
+    }
+    return { canRead: true, canEdit: true, canManageSteward: true, isDataSteward };
   }
 
-  const sub = tomeSessionSubject(input.session);
   if (!sub) {
-    return { canRead: false, canEdit: false, canManageSteward: false };
+    return {
+      canRead: false,
+      canEdit: false,
+      canManageSteward: false,
+      isDataSteward: false,
+    };
   }
 
   try {
     const canRead = await canReadTomeProject(sub, input.project);
     const canEdit = await resolveCanEdit(sub, input.project, input.user.email);
-    return { canRead: canRead || canEdit, canEdit, canManageSteward: false };
+    return {
+      canRead: canRead || canEdit,
+      canEdit,
+      canManageSteward: false,
+      isDataSteward: canEdit,
+    };
   } catch {
-    return { canRead: false, canEdit: false, canManageSteward: false };
+    return {
+      canRead: false,
+      canEdit: false,
+      canManageSteward: false,
+      isDataSteward: false,
+    };
   }
 }

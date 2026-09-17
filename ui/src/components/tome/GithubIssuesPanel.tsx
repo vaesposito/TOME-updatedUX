@@ -415,7 +415,7 @@ export function GithubIssuesPanel({
     () => (
       trackedLabel && trackedLabels.some(({ label }) => label === trackedLabel)
         ? [trackedLabel]
-        : [trackedLabels[0]?.label ?? TOME_TRACKED_ISSUE_LABELS[0].label]
+        : trackedLabels.length > 0 ? [trackedLabels[0].label] : []
     ),
     [trackedLabel, trackedLabels],
   );
@@ -850,7 +850,7 @@ export function GithubIssuesPanel({
                 disabled={!canMoveIssues}
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Add issue</span>
+                <span className="hidden sm:inline">Add label to issue</span>
               </Button>
               <Dialog
                 open={trackingDialogOpen}
@@ -1139,15 +1139,12 @@ export function GithubIssuesPanel({
                     const summary = issueSummary(issue.body);
                     const labelUpdatePending = updatingLabelKeys.has(issueKey(issue));
                     const availableTrackedLabels = trackedLabels.filter(
-                      (tracked) => !issue.labels.some(
-                        (candidate) => candidate.toLowerCase() === tracked.label,
-                      ),
+                      (tracked) => !actualIssueLabel(issue, tracked),
                     );
-                    const removableTrackedLabels = issue.labels.filter((label) =>
-                      trackedLabels.some(
-                        (tracked) => tracked.label === label.toLowerCase(),
-                      ),
-                    );
+                    const removableTrackedLabels = trackedLabels.flatMap((tracked) => {
+                      const actual = actualIssueLabel(issue, tracked);
+                      return actual ? [actual] : [];
+                    });
                     return (
                       <article
                         key={issueKey(issue)}

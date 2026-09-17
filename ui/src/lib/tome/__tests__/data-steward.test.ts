@@ -167,7 +167,12 @@ describe("Tome data-steward authorization", () => {
         user: { email: "user@example.com" },
         session: { sub: "user-sub", user: { email: "user@example.com" } },
       }),
-    ).resolves.toEqual({ canRead: true, canEdit: true, canManageSteward: false });
+    ).resolves.toEqual({
+      canRead: true,
+      canEdit: true,
+      canManageSteward: false,
+      isDataSteward: true,
+    });
 
     expect(mockCheckOpenFgaTuple).toHaveBeenCalledWith({
       user: "user:user-sub",
@@ -176,8 +181,9 @@ describe("Tome data-steward authorization", () => {
     });
   });
 
-  it("lets Tome admins edit without a per-entity writer tuple", async () => {
+  it("lets Tome admins edit without treating admin access as stewardship", async () => {
     mockIsTomeAdmin.mockResolvedValue(true);
+    mockCheckOpenFgaTuple.mockResolvedValue({ allowed: false });
 
     await expect(
       getTomeProjectPermissions({
@@ -185,8 +191,35 @@ describe("Tome data-steward authorization", () => {
         user: { email: "admin@example.com" },
         session: { sub: "admin-sub" },
       }),
-    ).resolves.toEqual({ canRead: true, canEdit: true, canManageSteward: true });
-    expect(mockCheckOpenFgaTuple).not.toHaveBeenCalled();
+    ).resolves.toEqual({
+      canRead: true,
+      canEdit: true,
+      canManageSteward: true,
+      isDataSteward: false,
+    });
+    expect(mockCheckOpenFgaTuple).toHaveBeenCalledWith({
+      user: "user:admin-sub",
+      relation: "can_write",
+      object: "document:tome/project/project-id",
+    });
+  });
+
+  it("preserves steward-only permissions for a Tome admin who is also the steward", async () => {
+    mockIsTomeAdmin.mockResolvedValue(true);
+    mockCheckOpenFgaTuple.mockResolvedValue({ allowed: true });
+
+    await expect(
+      getTomeProjectPermissions({
+        project: project(),
+        user: { email: "admin@example.com" },
+        session: { sub: "admin-sub" },
+      }),
+    ).resolves.toEqual({
+      canRead: true,
+      canEdit: true,
+      canManageSteward: true,
+      isDataSteward: true,
+    });
   });
 
   it.each(["catalog_api_key", "skills_api_key"])(
@@ -221,7 +254,12 @@ describe("Tome data-steward authorization", () => {
         user: { email: "member@example.com" },
         session: { sub: "member-sub" },
       }),
-    ).resolves.toEqual({ canRead: true, canEdit: true, canManageSteward: false });
+    ).resolves.toEqual({
+      canRead: true,
+      canEdit: true,
+      canManageSteward: false,
+      isDataSteward: true,
+    });
 
     expect(mockRepairTomeAuthorizationForProject).toHaveBeenCalledWith({
       project: stewardedProject,
@@ -321,6 +359,11 @@ describe("Tome data-steward authorization", () => {
         user: { email: "user@example.com" },
         session: { sub: "user-sub" },
       }),
-    ).resolves.toEqual({ canRead: false, canEdit: false, canManageSteward: false });
+    ).resolves.toEqual({
+      canRead: false,
+      canEdit: false,
+      canManageSteward: false,
+      isDataSteward: false,
+    });
   });
 });

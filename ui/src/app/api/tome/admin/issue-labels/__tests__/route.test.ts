@@ -33,7 +33,6 @@ import { GET, PUT } from "../route";
 
 const settings = {
   _id: "global",
-  use_prefix: true,
   labels: {
     critical: { title: "Critical", suffix: "critical" },
     "needs-attention": { title: "Needs Attention", suffix: "needs attention" },
@@ -63,7 +62,6 @@ describe("TOME issue label settings", () => {
 
   it("saves settings with the current admin identity", async () => {
     const body = {
-      use_prefix: false,
       labels: {
         critical: { title: "Urgent", suffix: "urgent" },
         "needs-attention": { title: "Needs Attention", suffix: "needs attention" },

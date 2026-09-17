@@ -1,24 +1,34 @@
 /** @jest-environment node */
 
 import { NextRequest } from "next/server";
+import { ApiError } from "@/lib/api-middleware";
 
 const mockLoadTomeProject = jest.fn();
 const mockRequireTomeEditor = jest.fn();
+const mockRequireTomeDataSteward = jest.fn();
 const mockAddTracker = jest.fn();
+const mockEnableTracker = jest.fn();
+const mockRemoveTracker = jest.fn();
+const mockReadCustomTrackers = jest.fn();
 const mockListTrackedLabels = jest.fn();
 const mockReadLabelSettings = jest.fn();
 
 jest.mock("@/lib/tome/tome-api", () => ({
   loadTomeProject: (...args: unknown[]) => mockLoadTomeProject(...args),
   requireTomeEditor: (...args: unknown[]) => mockRequireTomeEditor(...args),
+  requireTomeDataSteward: (...args: unknown[]) => mockRequireTomeDataSteward(...args),
 }));
 jest.mock("@/lib/tome/issue-tracker-store", () => ({
   addTomeCustomIssueTracker: (...args: unknown[]) => mockAddTracker(...args),
+  enableTomeIssueTracker: (...args: unknown[]) => mockEnableTracker(...args),
+  removeTomeCustomIssueTracker: (...args: unknown[]) => mockRemoveTracker(...args),
+  removeTomeIssueTracker: (...args: unknown[]) => mockRemoveTracker(...args),
   listTomeTrackedIssueLabels: (...args: unknown[]) => mockListTrackedLabels(...args),
+  readTomeCustomIssueTrackers: (...args: unknown[]) => mockReadCustomTrackers(...args),
   readTomeIssueLabelSettings: (...args: unknown[]) => mockReadLabelSettings(...args),
 }));
 
-import { GET, POST } from "../route";
+import { DELETE, GET, POST } from "../route";
 
 const endpoint = "http://example.test/api/tome/projects/example-project/issue-trackers";
 const context = { params: Promise.resolve({ slug: "example-project" }) };
@@ -26,9 +36,13 @@ const context = { params: Promise.resolve({ slug: "example-project" }) };
 describe("TOME issue trackers", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockLoadTomeProject.mockResolvedValue({ projectId: "project-1", canEdit: true });
+    mockLoadTomeProject.mockResolvedValue({
+      projectId: "project-1",
+      canEdit: true,
+      canManageSteward: false,
+      isDataSteward: true,
+    });
     mockReadLabelSettings.mockResolvedValue({
-      use_prefix: true,
       labels: {
         critical: { title: "Critical", suffix: "critical" },
         "needs-attention": { title: "Needs Attention", suffix: "needs attention" },
@@ -37,11 +51,12 @@ describe("TOME issue trackers", () => {
       legacy_labels: {},
     });
     mockListTrackedLabels.mockResolvedValue([
-      { id: "critical", label: "tome:critical", title: "Critical" },
-      { id: "needs-attention", label: "tome:needs attention", title: "Needs Attention" },
-      { id: "decision", label: "tome:decision", title: "Decisions" },
-      { id: "security-review", label: "tome:security-review", title: "Security Review" },
+      { id: "critical", label: "critical", title: "Critical" },
+      { id: "needs-attention", label: "needs attention", title: "Needs Attention" },
+      { id: "decision", label: "decision", title: "Decisions" },
+      { id: "security-review", label: "security-review", title: "Security Review" },
     ]);
+    mockReadCustomTrackers.mockResolvedValue(["security-review"]);
   });
 
   it("returns project-wide custom trackers to readable users", async () => {
@@ -50,17 +65,20 @@ describe("TOME issue trackers", () => {
     expect(mockListTrackedLabels).toHaveBeenCalledWith(["project-1"]);
     await expect(response.json()).resolves.toMatchObject({
       data: {
+        can_remove: true,
         trackers: expect.arrayContaining([{
           id: "critical",
-          label: "tome:critical",
+          label: "critical",
           title: "Critical",
         }]),
-        prefix: "tome:",
       },
     });
   });
 
   it("creates a tracker from an unprefixed suffix", async () => {
+    mockListTrackedLabels.mockResolvedValue([
+      { id: "critical", label: "critical", title: "Critical" },
+    ]);
     const response = await POST(new NextRequest(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -68,9 +86,87 @@ describe("TOME issue trackers", () => {
     }), context);
 
     expect(mockRequireTomeEditor).toHaveBeenCalled();
-    expect(mockAddTracker).toHaveBeenCalledWith("project-1", "tome:security-review");
+    expect(mockAddTracker).toHaveBeenCalledWith("project-1", "security-review");
     expect(mockListTrackedLabels).toHaveBeenCalledWith(["project-1"]);
     expect(response.status).toBe(200);
+  });
+
+  it("removes a custom project tracker", async () => {
+    const response = await DELETE(new NextRequest(endpoint, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "security-review" }),
+    }), context);
+
+    expect(mockRequireTomeDataSteward).toHaveBeenCalled();
+    expect(mockReadCustomTrackers).toHaveBeenCalledWith("project-1");
+    expect(mockRemoveTracker).toHaveBeenCalledWith("project-1", "security-review");
+    expect(response.status).toBe(200);
+  });
+
+  it("removes a built-in tracker for the project's data steward", async () => {
+
+    const response = await DELETE(new NextRequest(endpoint, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "critical" }),
+    }), context);
+
+    expect(mockRequireTomeDataSteward).toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mockRemoveTracker).toHaveBeenCalledWith("project-1", "critical");
+  });
+
+  it("does not allow a Tome admin to remove a tracker", async () => {
+    mockLoadTomeProject.mockResolvedValue({
+      projectId: "project-1",
+      canEdit: true,
+      canManageSteward: true,
+      isDataSteward: false,
+    });
+    mockRequireTomeDataSteward.mockImplementation(() => {
+      throw new ApiError("data steward required", 403, "DATA_STEWARD_REQUIRED");
+    });
+
+    const response = await DELETE(new NextRequest(endpoint, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "critical" }),
+    }), context);
+
+    expect(response.status).toBe(403);
+    expect(mockRemoveTracker).not.toHaveBeenCalled();
+  });
+
+  it("restores a removed built-in tracker through the add dialog", async () => {
+    mockListTrackedLabels.mockResolvedValue([
+      { id: "security-review", label: "security-review", title: "Security Review" },
+    ]);
+    const response = await POST(new NextRequest(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ suffix: "critical" }),
+    }), context);
+
+    expect(response.status).toBe(200);
+    expect(mockEnableTracker).toHaveBeenCalledWith("project-1", "critical");
+    expect(mockAddTracker).not.toHaveBeenCalled();
+  });
+
+  it("rejects a duplicate tracker case-insensitively", async () => {
+    const response = await POST(new NextRequest(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ suffix: "Security-Review" }),
+    }), context);
+
+    expect(response.status).toBe(409);
+    expect(mockAddTracker).not.toHaveBeenCalled();
+    expect(mockEnableTracker).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: "This project already tracks that GitHub label.",
+      code: "TOME_TRACKER_ALREADY_EXISTS",
+    });
   });
 
   it("rejects prefixes and unsupported label characters", async () => {
@@ -84,9 +180,11 @@ describe("TOME issue trackers", () => {
     expect(mockAddTracker).not.toHaveBeenCalled();
   });
 
-  it("creates an unprefixed custom tracker when the admin setting disables the prefix", async () => {
+  it("creates an unprefixed custom tracker by default", async () => {
+    mockListTrackedLabels.mockResolvedValue([
+      { id: "critical", label: "critical", title: "Critical" },
+    ]);
     mockReadLabelSettings.mockResolvedValue({
-      use_prefix: false,
       labels: {
         critical: { title: "Critical", suffix: "critical" },
         "needs-attention": { title: "Needs Attention", suffix: "needs attention" },
@@ -103,8 +201,6 @@ describe("TOME issue trackers", () => {
 
     expect(response.status).toBe(200);
     expect(mockAddTracker).toHaveBeenCalledWith("project-1", "security-review");
-    await expect(response.json()).resolves.toMatchObject({
-      data: { prefix: "" },
-    });
+    await expect(response.json()).resolves.toMatchObject({ data: { trackers: expect.any(Array) } });
   });
 });

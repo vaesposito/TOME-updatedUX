@@ -106,8 +106,9 @@ import {
 } from "@/lib/tome/document-import-formats";
 import { defaultGistFilename } from "@/lib/tome/gists";
 import {
+  findTomeTrackedIssueLabel,
+  matchesTomeTrackedIssueLabel,
   TOME_TRACKED_ISSUE_LABELS,
-  TOME_TRACKER_PREFIX,
   type TomeTrackedIssueLabel,
 } from "@/lib/tome/issue-filter-views";
 import { cn } from "@/lib/utils";
@@ -348,18 +349,23 @@ export function TomeWiki({ slug }: { slug: string }) {
   const isArea = projectType === "area";
   const isSynthesized = isSynthesizedType(projectType);
   const canEdit = data?.canEdit ?? false;
+  const [canRemoveIssueTrackers, setCanRemoveIssueTrackers] = useState(false);
   const [issueTrackers, setIssueTrackers] = useState<TomeTrackedIssueLabel[]>(
     TOME_TRACKED_ISSUE_LABELS,
   );
-  const [trackerPrefix, setTrackerPrefix] = useState(TOME_TRACKER_PREFIX);
   const [trackerDialogOpen, setTrackerDialogOpen] = useState(false);
   const [trackerSuffix, setTrackerSuffix] = useState("");
   const [trackerError, setTrackerError] = useState<string | null>(null);
+  const [trackerRemovalError, setTrackerRemovalError] = useState<string | null>(null);
   const [creatingTracker, setCreatingTracker] = useState(false);
+  const [removingTracker, setRemovingTracker] = useState<string | null>(null);
+  const duplicateIssueTracker = useMemo(() => {
+    return findTomeTrackedIssueLabel(issueTrackers, trackerSuffix);
+  }, [issueTrackers, trackerSuffix]);
   const activeTrackedIssueLabel = useMemo(() => {
     if (view.kind !== "issues" || !view.label) return undefined;
     return issueTrackers.find(
-      (tracked) => tracked.label === view.label.toLowerCase(),
+      (tracked) => matchesTomeTrackedIssueLabel([view.label], tracked),
     );
   }, [issueTrackers, view]);
   useEffect(() => {
@@ -370,7 +376,7 @@ export function TomeWiki({ slug }: { slug: string }) {
         if (!response.ok || !Array.isArray(body?.data?.trackers)) return;
         if (!cancelled) {
           setIssueTrackers(body.data.trackers);
-          setTrackerPrefix(typeof body.data.prefix === "string" ? body.data.prefix : TOME_TRACKER_PREFIX);
+          setCanRemoveIssueTrackers(body.data.can_remove === true);
         }
       })
       .catch(() => undefined);
@@ -381,7 +387,7 @@ export function TomeWiki({ slug }: { slug: string }) {
 
   const createIssueTracker = useCallback(async () => {
     const suffix = trackerSuffix.trim();
-    if (!suffix) return;
+    if (!suffix || duplicateIssueTracker) return;
     setCreatingTracker(true);
     setTrackerError(null);
     try {
@@ -398,7 +404,6 @@ export function TomeWiki({ slug }: { slug: string }) {
         throw new Error(body?.error ?? "Could not create tracked label");
       }
       setIssueTrackers(body.data.trackers);
-      setTrackerPrefix(typeof body.data.prefix === "string" ? body.data.prefix : TOME_TRACKER_PREFIX);
       setTrackerSuffix("");
       setTrackerDialogOpen(false);
     } catch (createError) {
@@ -410,7 +415,37 @@ export function TomeWiki({ slug }: { slug: string }) {
     } finally {
       setCreatingTracker(false);
     }
-  }, [slug, trackerSuffix]);
+  }, [duplicateIssueTracker, slug, trackerSuffix]);
+
+  const removeIssueTracker = useCallback(async (tracked: TomeTrackedIssueLabel) => {
+    if (removingTracker) return;
+    setRemovingTracker(tracked.label);
+    setTrackerRemovalError(null);
+    try {
+      const response = await fetch(
+        `/api/tome/projects/${encodeURIComponent(slug)}/issue-trackers`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: tracked.label }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(body?.data?.trackers)) {
+        throw new Error(body?.error ?? "Could not remove tracked label");
+      }
+      setIssueTrackers(body.data.trackers);
+      if (view.kind === "issues" && view.label && matchesTomeTrackedIssueLabel([view.label], tracked)) {
+        navigate({ kind: "issues" });
+      }
+    } catch (removeError) {
+      setTrackerRemovalError(
+        removeError instanceof Error ? removeError.message : "Could not remove tracked label",
+      );
+    } finally {
+      setRemovingTracker(null);
+    }
+  }, [navigate, removingTracker, slug, view]);
   // For a BHAG/Area: its own name (the label children are tagged with) and
   // the child projects that resolve from it — surfaced as down-links in the nav.
   const [projectName, setProjectName] = useState("");
@@ -1680,27 +1715,33 @@ export function TomeWiki({ slug }: { slug: string }) {
                               <label htmlFor={`tome-tracker-suffix-${slug}`} className="text-sm font-medium">
                                 GitHub label
                               </label>
-                              <div className="flex rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring">
-                                {trackerPrefix && (
-                                  <code className="flex items-center border-r bg-muted px-3 text-sm text-muted-foreground">
-                                    {trackerPrefix}
-                                  </code>
-                                )}
-                                <Input
-                                  id={`tome-tracker-suffix-${slug}`}
-                                  value={trackerSuffix}
-                                  onChange={(event) => setTrackerSuffix(event.target.value)}
-                                  placeholder="security-review"
-                                  className="border-0 focus-visible:ring-0"
-                                  autoFocus
-                                />
-                              </div>
+                              <Input
+                                id={`tome-tracker-suffix-${slug}`}
+                                value={trackerSuffix}
+                                onChange={(event) => {
+                                  setTrackerSuffix(event.target.value);
+                                  setTrackerError(null);
+                                }}
+                                placeholder="security-review"
+                                aria-invalid={duplicateIssueTracker ? true : undefined}
+                                aria-describedby={duplicateIssueTracker
+                                  ? `tome-tracker-duplicate-${slug}`
+                                  : undefined}
+                                autoFocus
+                              />
                               <p className="text-xs text-muted-foreground">
                                 Use lowercase letters, numbers, and hyphens.
-                                {trackerPrefix
-                                  ? ` The ${trackerPrefix} prefix is reserved for TOME trackers.`
-                                  : " TOME Admin has disabled the shared label prefix."}
                               </p>
+                              {duplicateIssueTracker && (
+                                <p
+                                  id={`tome-tracker-duplicate-${slug}`}
+                                  role="alert"
+                                  className="text-xs text-destructive"
+                                >
+                                  This project already tracks the GitHub label{" "}
+                                  <code>{duplicateIssueTracker.label}</code>.
+                                </p>
+                              )}
                             </div>
                             {trackerError && (
                               <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
@@ -1719,7 +1760,11 @@ export function TomeWiki({ slug }: { slug: string }) {
                               <Button
                                 type="button"
                                 onClick={() => void createIssueTracker()}
-                                disabled={creatingTracker || !trackerSuffix.trim()}
+                                disabled={
+                                  creatingTracker
+                                  || !trackerSuffix.trim()
+                                  || Boolean(duplicateIssueTracker)
+                                }
                               >
                                 {creatingTracker && <Loader2 className="h-4 w-4 animate-spin" />}
                                 Create tracker
@@ -1734,7 +1779,13 @@ export function TomeWiki({ slug }: { slug: string }) {
                       labels={issueTrackers}
                       activeLabel={activeTrackedIssueLabel?.label}
                       onSelect={(label) => navigate({ kind: "issues", label })}
+                      onRemove={canRemoveIssueTrackers ? removeIssueTracker : undefined}
                     />
+                    {trackerRemovalError && (
+                      <p className="ml-5 mt-1 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                        {trackerRemovalError}
+                      </p>
+                    )}
                   </IssueLabelDisclosure>
                 </div>
 

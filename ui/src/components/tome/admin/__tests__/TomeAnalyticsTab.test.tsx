@@ -287,7 +287,7 @@ describe("TomeAnalyticsTab", () => {
     expect(screen.queryByText(/revision sources/i)).not.toBeInTheDocument();
   });
 
-  it("sorts every numeric content and spending column", async () => {
+  it("sorts analytics tables by metrics and dates", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -301,6 +301,7 @@ describe("TomeAnalyticsTab", () => {
                 id: "project-alpha",
                 name: "Alpha",
                 slug: "alpha",
+                lastPromptAt: "2026-09-01T11:00:00Z",
                 activity: {
                   day: { users: 1, prompts: 10 },
                   week: { users: 1, prompts: 10 },
@@ -312,10 +313,23 @@ describe("TomeAnalyticsTab", () => {
                 id: "project-beta",
                 name: "Beta",
                 slug: "beta",
+                lastPromptAt: "2026-09-15T11:00:00Z",
                 activity: {
                   day: { users: 5, prompts: 2 },
                   week: { users: 5, prompts: 2 },
                   month: { users: 5, prompts: 2 },
+                },
+              },
+              {
+                ...response.chat.entities[0],
+                id: "project-no-activity",
+                name: "No activity",
+                slug: "no-activity",
+                lastPromptAt: null,
+                activity: {
+                  day: { users: 3, prompts: 6 },
+                  week: { users: 3, prompts: 6 },
+                  month: { users: 3, prompts: 6 },
                 },
               },
             ],
@@ -327,6 +341,7 @@ describe("TomeAnalyticsTab", () => {
               slug: "fewer-pages",
               title: "Fewer pages",
               pageCount: 2,
+              lastIngestedAt: "2026-09-01T00:00:00.000Z",
             },
             {
               ...response.projects[0],
@@ -334,6 +349,15 @@ describe("TomeAnalyticsTab", () => {
               slug: "more-pages",
               title: "More pages",
               pageCount: 20,
+              lastIngestedAt: "2026-09-15T00:00:00.000Z",
+            },
+            {
+              ...response.projects[0],
+              projectId: "project-never-updated",
+              slug: "never-updated",
+              title: "Never updated",
+              pageCount: 10,
+              lastIngestedAt: null,
             },
           ],
           budget: {
@@ -394,6 +418,27 @@ describe("TomeAnalyticsTab", () => {
       }),
     );
     expect(within(usageTable).getAllByRole("row")[1]).toHaveTextContent("Beta");
+    await user.click(
+      within(usageTable).getByRole("button", {
+        name: "Sort by Last activity descending",
+      }),
+    );
+    expect(within(usageTable).getAllByRole("row")[1]).toHaveTextContent("Beta");
+    expect(within(usageTable).getAllByRole("row").at(-1)).toHaveTextContent(
+      "No activity",
+    );
+    expect(
+      within(usageTable).getByText("Last activity").closest("th"),
+    ).toHaveAttribute("aria-sort", "descending");
+    await user.click(
+      within(usageTable).getByRole("button", {
+        name: "Sort by Last activity ascending",
+      }),
+    );
+    expect(within(usageTable).getAllByRole("row")[1]).toHaveTextContent("Alpha");
+    expect(within(usageTable).getAllByRole("row").at(-1)).toHaveTextContent(
+      "No activity",
+    );
 
     await user.click(screen.getByRole("tab", { name: "Content" }));
     const ingestionTable = screen.getByRole("table", {
@@ -414,6 +459,31 @@ describe("TomeAnalyticsTab", () => {
     );
     expect(within(ingestionTable).getAllByRole("row")[1]).toHaveTextContent(
       "Fewer pages",
+    );
+    await user.click(
+      within(ingestionTable).getByRole("button", {
+        name: "Sort by Last updated descending",
+      }),
+    );
+    expect(within(ingestionTable).getAllByRole("row")[1]).toHaveTextContent(
+      "More pages",
+    );
+    expect(within(ingestionTable).getAllByRole("row").at(-1)).toHaveTextContent(
+      "Never updated",
+    );
+    expect(
+      within(ingestionTable).getByText("Last updated").closest("th"),
+    ).toHaveAttribute("aria-sort", "descending");
+    await user.click(
+      within(ingestionTable).getByRole("button", {
+        name: "Sort by Last updated ascending",
+      }),
+    );
+    expect(within(ingestionTable).getAllByRole("row")[1]).toHaveTextContent(
+      "Fewer pages",
+    );
+    expect(within(ingestionTable).getAllByRole("row").at(-1)).toHaveTextContent(
+      "Never updated",
     );
 
     await user.click(screen.getByRole("tab", { name: "Budget" }));

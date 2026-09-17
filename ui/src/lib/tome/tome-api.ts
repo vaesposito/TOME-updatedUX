@@ -32,6 +32,8 @@ export interface TomeProjectContext {
   canEdit: boolean;
   /** Tome admins may change the steward assignment itself. */
   canManageSteward: boolean;
+  /** Whether OpenFGA grants this caller the project's steward-derived writer relation. */
+  isDataSteward: boolean;
 }
 
 /**
@@ -77,6 +79,7 @@ export async function loadTomeProject(
     canRead: permissions.canRead,
     canEdit: permissions.canEdit,
     canManageSteward: permissions.canManageSteward,
+    isDataSteward: permissions.isDataSteward,
   };
 }
 
@@ -108,6 +111,17 @@ export function requireTomeEditor(ctx: TomeProjectContext): void {
   if (!ctx.canEdit) {
     throw new ApiError(
       "Only this entity's data steward or a Tome admin can modify its data",
+      403,
+      "DATA_STEWARD_REQUIRED",
+    );
+  }
+}
+
+/** Throw 403 unless the caller is the project's data steward, not only a Tome admin. */
+export function requireTomeDataSteward(ctx: TomeProjectContext): void {
+  if (!ctx.isDataSteward) {
+    throw new ApiError(
+      "Only this entity's data steward can remove issue labels",
       403,
       "DATA_STEWARD_REQUIRED",
     );

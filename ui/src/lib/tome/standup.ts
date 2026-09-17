@@ -12,7 +12,7 @@ export interface StandupSections {
 const MIN_HEADLINE_SENTENCE_LENGTH = 20;
 const MAX_HEADLINE_LENGTH = 120;
 
-function toPlainHeadline(headline: string): string {
+export function plainStandupHeadline(headline: string): string {
   return headline
     .replace(/^#{1,6}\s+/, "")
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
@@ -28,7 +28,7 @@ function toPlainHeadline(headline: string): string {
  * sentence. New reports already follow the one-sentence contract.
  */
 export function summarizeStandupHeadline(headline: string): string {
-  const normalized = toPlainHeadline(headline);
+  const normalized = plainStandupHeadline(headline);
   if (!normalized) return "";
 
   const sentenceEnds = normalized.matchAll(

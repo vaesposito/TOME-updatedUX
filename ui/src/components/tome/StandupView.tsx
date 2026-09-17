@@ -14,9 +14,18 @@ import { Button } from "@/components/ui/button";
 import { BetaBadge } from "@/components/tome/BetaBadge";
 import { PanelShell } from "@/components/tome/PanelHeader";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
-import { parseStandup, summarizeStandupHeadline } from "@/lib/tome/standup";
+import {
+  parseStandup,
+  plainStandupHeadline,
+  summarizeStandupHeadline,
+} from "@/lib/tome/standup";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface Props {
   /** Full frontmatter+body markdown of `standup.md`, or undefined if the
@@ -191,6 +200,7 @@ export function StandupView({
 
   const s = parseStandup(markdown);
   const headline = summarizeStandupHeadline(s.headline);
+  const fullHeadline = plainStandupHeadline(s.headline);
 
   return (
     <PanelShell maxWidthClassName="max-w-5xl" contentClassName="space-y-5 pb-10">
@@ -203,11 +213,28 @@ export function StandupView({
             <BetaBadge />
           </span>
           {headline ? (
-            <h1 className="line-clamp-2 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-              {headline}
-            </h1>
+            <Tooltip className="block w-full">
+              <TooltipTrigger asChild>
+                <h1
+                  tabIndex={0}
+                  className="line-clamp-2 cursor-help rounded-sm text-xl font-semibold leading-tight tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-primary/50 sm:text-2xl"
+                >
+                  {headline}
+                </h1>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                sideOffset={8}
+                className="w-[min(32rem,calc(100vw-2rem))] whitespace-normal p-3 text-left text-xs font-normal leading-relaxed"
+              >
+                <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Full headline
+                </span>
+                {fullHeadline}
+              </TooltipContent>
+            </Tooltip>
           ) : (
-            <h1 className="text-2xl font-semibold leading-tight text-muted-foreground sm:text-3xl">
+            <h1 className="text-xl font-semibold leading-tight text-muted-foreground sm:text-2xl">
               No headline yet
             </h1>
           )}

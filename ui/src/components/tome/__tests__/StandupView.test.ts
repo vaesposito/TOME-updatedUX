@@ -1,4 +1,8 @@
-import { parseStandup, summarizeStandupHeadline } from "@/lib/tome/standup";
+import {
+  parseStandup,
+  plainStandupHeadline,
+  summarizeStandupHeadline,
+} from "@/lib/tome/standup";
 
 describe("parseStandup", () => {
   it("preserves structured headings and Markdown lists", () => {
@@ -75,6 +79,14 @@ Delivery is on track.
 });
 
 describe("summarizeStandupHeadline", () => {
+  it("keeps the complete plain headline available for secondary detail", () => {
+    expect(
+      plainStandupHeadline(
+        "**Release complete.** [Validation](https://example.com) passed everywhere.",
+      ),
+    ).toBe("Release complete. Validation passed everywhere.");
+  });
+
   it("keeps a concise headline unchanged", () => {
     expect(summarizeStandupHeadline("The release is ready for production."))
       .toBe("The release is ready for production.");

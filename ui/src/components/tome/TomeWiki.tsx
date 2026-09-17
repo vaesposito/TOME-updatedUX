@@ -30,6 +30,8 @@ import {
   MessagesSquare,
   Minimize2,
   Newspaper,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
   Search,
@@ -112,6 +114,7 @@ import {
   TOME_TRACKED_ISSUE_LABELS,
   type TomeTrackedIssueLabel,
 } from "@/lib/tome/issue-filter-views";
+import { useResponsiveProjectSidebar } from "@/lib/tome/responsive-project-sidebar";
 import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
 import { buildPageCreationAgentPrompt } from "@/lib/tome/page-creation";
@@ -290,6 +293,12 @@ export function TomeWiki({ slug }: { slug: string }) {
   // syncs pushState into `usePathname`, so direct loads and popstate still work.
   const pathname = usePathname();
   const base = `/projects/${slug}/tome`;
+  const {
+    open: projectSidebarOpen,
+    toggle: toggleProjectSidebar,
+    close: closeProjectSidebar,
+    closeOnCompact: closeProjectSidebarOnCompact,
+  } = useResponsiveProjectSidebar();
   const segments = useMemo(() => {
     if (!pathname) return [];
     const rest = pathname.startsWith(base) ? pathname.slice(base.length) : "";
@@ -306,6 +315,7 @@ export function TomeWiki({ slug }: { slug: string }) {
   } = useUnsavedChangesStore();
   const navigate = useCallback(
     (next: MainView) => {
+      closeProjectSidebarOnCompact();
       const url = viewToPath(slug, next);
       if (url === pathname) return;
       const action = () => window.history.pushState(null, "", url);
@@ -315,7 +325,14 @@ export function TomeWiki({ slug }: { slug: string }) {
       }
       action();
     },
-    [slug, pathname, view.kind, hasUnsavedChanges, requestDeferredAction],
+    [
+      slug,
+      pathname,
+      view.kind,
+      hasUnsavedChanges,
+      requestDeferredAction,
+      closeProjectSidebarOnCompact,
+    ],
   );
   const interceptHrefNavigation = useCallback((href: string): boolean => {
     if (view.kind !== "settings" || !hasUnsavedChanges) return false;
@@ -1529,7 +1546,31 @@ export function TomeWiki({ slug }: { slug: string }) {
               ]}
             />
           </HeaderBreadcrumbPortal>
-                  <div className="min-w-0 flex-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-muted-foreground"
+                onClick={toggleProjectSidebar}
+                aria-label={
+                  projectSidebarOpen ? "Collapse project sidebar" : "Show project sidebar"
+                }
+                aria-controls={`tome-project-sidebar-${slug}`}
+                aria-expanded={projectSidebarOpen}
+              >
+                {projectSidebarOpen ? (
+                  <PanelLeftClose className="h-4 w-4" />
+                ) : (
+                  <PanelLeftOpen className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {projectSidebarOpen ? "Collapse project sidebar" : "Show project sidebar"}
+            </TooltipContent>
+          </Tooltip>
+          <div className="min-w-0 flex-1">
             {projectMetaLoading ? (
               <div className="flex flex-col gap-2" data-testid="skeleton">
                 <div className="h-5 w-48 animate-pulse rounded bg-muted" />
@@ -1599,9 +1640,27 @@ export function TomeWiki({ slug }: { slug: string }) {
           </p>
         )}
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {projectSidebarOpen && (
+            <button
+              type="button"
+              aria-label="Close project sidebar"
+              className="absolute inset-0 z-10 bg-background/60 backdrop-blur-sm md:hidden"
+              onClick={closeProjectSidebar}
+            />
+          )}
           {/* Side nav: Chat + Ingest destinations, then the wiki page tree. */}
-          <aside className="w-80 shrink-0 border-r">
+          <aside
+            id={`tome-project-sidebar-${slug}`}
+            aria-hidden={!projectSidebarOpen}
+            inert={projectSidebarOpen ? undefined : true}
+            className={cn(
+              "absolute inset-y-0 left-0 z-20 w-[calc(100%-3rem)] max-w-xs overflow-hidden border-r bg-background shadow-xl transition-[transform,width] duration-200 md:relative md:inset-auto md:z-auto md:shrink-0 md:shadow-none",
+              projectSidebarOpen
+                ? "translate-x-0 md:w-80"
+                : "pointer-events-none -translate-x-full md:w-0 md:translate-x-0 md:border-r-0",
+            )}
+          >
             <ScrollArea className="h-full">
               <div className="flex flex-col p-3">
                 <div className="flex flex-col gap-1">
@@ -2143,7 +2202,7 @@ export function TomeWiki({ slug }: { slug: string }) {
           </aside>
 
           {/* Main pane: replaced wholesale by the active view. */}
-          <main className="flex min-h-0 flex-1 overflow-hidden">
+          <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             {view.kind === "agent" ? (
               <>
                 <div className="min-h-0 min-w-0 flex-1">

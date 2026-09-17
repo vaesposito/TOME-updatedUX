@@ -105,6 +105,7 @@ import {
   TOME_IMPORT_ACCEPT,
 } from "@/lib/tome/document-import-formats";
 import {
+  findTomeTrackedIssueLabel,
   matchesTomeTrackedIssueLabel,
   TOME_TRACKED_ISSUE_LABELS,
   type TomeTrackedIssueLabel,
@@ -357,6 +358,9 @@ export function TomeWiki({ slug }: { slug: string }) {
   const [trackerRemovalError, setTrackerRemovalError] = useState<string | null>(null);
   const [creatingTracker, setCreatingTracker] = useState(false);
   const [removingTracker, setRemovingTracker] = useState<string | null>(null);
+  const duplicateIssueTracker = useMemo(() => {
+    return findTomeTrackedIssueLabel(issueTrackers, trackerSuffix);
+  }, [issueTrackers, trackerSuffix]);
   const activeTrackedIssueLabel = useMemo(() => {
     if (view.kind !== "issues" || !view.label) return undefined;
     return issueTrackers.find(
@@ -382,7 +386,7 @@ export function TomeWiki({ slug }: { slug: string }) {
 
   const createIssueTracker = useCallback(async () => {
     const suffix = trackerSuffix.trim();
-    if (!suffix) return;
+    if (!suffix || duplicateIssueTracker) return;
     setCreatingTracker(true);
     setTrackerError(null);
     try {
@@ -410,7 +414,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     } finally {
       setCreatingTracker(false);
     }
-  }, [slug, trackerSuffix]);
+  }, [duplicateIssueTracker, slug, trackerSuffix]);
 
   const removeIssueTracker = useCallback(async (tracked: TomeTrackedIssueLabel) => {
     if (removingTracker) return;
@@ -1680,13 +1684,30 @@ export function TomeWiki({ slug }: { slug: string }) {
                               <Input
                                 id={`tome-tracker-suffix-${slug}`}
                                 value={trackerSuffix}
-                                onChange={(event) => setTrackerSuffix(event.target.value)}
+                                onChange={(event) => {
+                                  setTrackerSuffix(event.target.value);
+                                  setTrackerError(null);
+                                }}
                                 placeholder="security-review"
+                                aria-invalid={duplicateIssueTracker ? true : undefined}
+                                aria-describedby={duplicateIssueTracker
+                                  ? `tome-tracker-duplicate-${slug}`
+                                  : undefined}
                                 autoFocus
                               />
                               <p className="text-xs text-muted-foreground">
                                 Use lowercase letters, numbers, and hyphens.
                               </p>
+                              {duplicateIssueTracker && (
+                                <p
+                                  id={`tome-tracker-duplicate-${slug}`}
+                                  role="alert"
+                                  className="text-xs text-destructive"
+                                >
+                                  This project already tracks the GitHub label{" "}
+                                  <code>{duplicateIssueTracker.label}</code>.
+                                </p>
+                              )}
                             </div>
                             {trackerError && (
                               <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
@@ -1705,7 +1726,11 @@ export function TomeWiki({ slug }: { slug: string }) {
                               <Button
                                 type="button"
                                 onClick={() => void createIssueTracker()}
-                                disabled={creatingTracker || !trackerSuffix.trim()}
+                                disabled={
+                                  creatingTracker
+                                  || !trackerSuffix.trim()
+                                  || Boolean(duplicateIssueTracker)
+                                }
                               >
                                 {creatingTracker && <Loader2 className="h-4 w-4 animate-spin" />}
                                 Create tracker

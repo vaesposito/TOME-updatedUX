@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { ApiError, successResponse, withErrorHandler } from "@/lib/api-middleware";
 import {
   customTomeTrackerLabel,
+  findTomeTrackedIssueLabel,
   materializeTomeIssueLabels,
 } from "@/lib/tome/issue-filter-views";
 import {
@@ -46,17 +47,32 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const builtIn = configuredLabels.find((tracked) =>
     tracked.label === requestedLabel || tracked.aliases?.includes(requestedLabel),
   );
+  const customLabel = typeof body?.suffix === "string" && !builtIn
+    ? customTomeTrackerLabel(body.suffix)
+    : null;
+  if (!builtIn && (!customLabel || configuredLabels.some((tracked) =>
+    tracked.label === customLabel || tracked.aliases?.includes(customLabel),
+  ))) {
+    throw new ApiError("Use lowercase letters, numbers, and hyphens.", 400, "INVALID_TOME_TRACKER_LABEL");
+  }
+  const label = builtIn?.label ?? customLabel;
+  if (!label) {
+    throw new ApiError("Use lowercase letters, numbers, and hyphens.", 400, "INVALID_TOME_TRACKER_LABEL");
+  }
+  const existingTrackers = await listTomeTrackedIssueLabels([project.projectId]);
+  if (
+    findTomeTrackedIssueLabel(existingTrackers, requestedLabel)
+    || findTomeTrackedIssueLabel(existingTrackers, label)
+  ) {
+    throw new ApiError(
+      "This project already tracks that GitHub label.",
+      409,
+      "TOME_TRACKER_ALREADY_EXISTS",
+    );
+  }
   if (builtIn) {
     await enableTomeIssueTracker(project.projectId, builtIn.label);
     return successResponse({ trackers: await listTomeTrackedIssueLabels([project.projectId]) });
-  }
-  const label = typeof body?.suffix === "string"
-    ? customTomeTrackerLabel(body.suffix)
-    : null;
-  if (!label || configuredLabels.some((tracked) =>
-    tracked.label === label || tracked.aliases?.includes(label),
-  )) {
-    throw new ApiError("Use lowercase letters, numbers, and hyphens.", 400, "INVALID_TOME_TRACKER_LABEL");
   }
   await addTomeCustomIssueTracker(project.projectId, label);
   return successResponse({ trackers: await listTomeTrackedIssueLabels([project.projectId]) });

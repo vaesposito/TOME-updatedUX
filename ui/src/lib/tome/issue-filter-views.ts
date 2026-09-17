@@ -130,3 +130,14 @@ export function matchesTomeTrackedIssueLabel(
     normalized.has(label.toLowerCase()),
   );
 }
+
+export function findTomeTrackedIssueLabel(
+  trackers: readonly TomeTrackedIssueLabel[],
+  label: string,
+): TomeTrackedIssueLabel | undefined {
+  const normalized = label.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return trackers.find((tracked) =>
+    matchesTomeTrackedIssueLabel([normalized], tracked),
+  );
+}

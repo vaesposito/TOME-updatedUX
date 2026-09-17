@@ -76,6 +76,9 @@ describe("TOME issue trackers", () => {
   });
 
   it("creates a tracker from an unprefixed suffix", async () => {
+    mockListTrackedLabels.mockResolvedValue([
+      { id: "critical", label: "critical", title: "Critical" },
+    ]);
     const response = await POST(new NextRequest(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -136,6 +139,9 @@ describe("TOME issue trackers", () => {
   });
 
   it("restores a removed built-in tracker through the add dialog", async () => {
+    mockListTrackedLabels.mockResolvedValue([
+      { id: "security-review", label: "security-review", title: "Security Review" },
+    ]);
     const response = await POST(new NextRequest(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -145,6 +151,22 @@ describe("TOME issue trackers", () => {
     expect(response.status).toBe(200);
     expect(mockEnableTracker).toHaveBeenCalledWith("project-1", "critical");
     expect(mockAddTracker).not.toHaveBeenCalled();
+  });
+
+  it("rejects a duplicate tracker case-insensitively", async () => {
+    const response = await POST(new NextRequest(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ suffix: "Security-Review" }),
+    }), context);
+
+    expect(response.status).toBe(409);
+    expect(mockAddTracker).not.toHaveBeenCalled();
+    expect(mockEnableTracker).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: "This project already tracks that GitHub label.",
+      code: "TOME_TRACKER_ALREADY_EXISTS",
+    });
   });
 
   it("rejects prefixes and unsupported label characters", async () => {
@@ -159,6 +181,9 @@ describe("TOME issue trackers", () => {
   });
 
   it("creates an unprefixed custom tracker by default", async () => {
+    mockListTrackedLabels.mockResolvedValue([
+      { id: "critical", label: "critical", title: "Critical" },
+    ]);
     mockReadLabelSettings.mockResolvedValue({
       labels: {
         critical: { title: "Critical", suffix: "critical" },

@@ -267,6 +267,45 @@ describe("WikiPageView", () => {
     expect(warning).toHaveTextContent("Agent rewrites on ingest");
   });
 
+  it("contains long revision metadata and labels the reading-width control", async () => {
+    (global.fetch as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            revisions: [{
+              id: "revision-header-layout",
+              author: "test-user@example.com",
+              created_at: "2026-09-15T18:18:54.000Z",
+            }],
+          },
+        }),
+      }),
+    );
+
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="activity.md"
+        markdown={"---\ntitle: Activity\nkind: dynamic\n---\nRecent activity"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+        onOpenHistory={jest.fn()}
+      />,
+    );
+
+    const history = await screen.findByRole("button", {
+      name: /Updated .* by test-user@example\.com/,
+    });
+    expect(screen.getByTestId("tome-page-metadata-row")).toHaveClass("overflow-hidden");
+    expect(history).toHaveClass("min-w-0", "truncate", "text-left");
+    expect(screen.getByTestId("tome-page-actions")).toHaveClass("max-w-full", "flex-wrap");
+
+    fireEvent.click(screen.getByRole("button", { name: "Use wide reading width" }));
+    expect(screen.getByRole("button", { name: "Use narrow reading width" })).toBeInTheDocument();
+  });
+
   it("explains every page kind from explicit info buttons", async () => {
     render(
       <WikiPageView

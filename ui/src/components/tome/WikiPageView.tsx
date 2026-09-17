@@ -633,13 +633,13 @@ export function WikiPageView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
+      <div className="flex shrink-0 flex-wrap items-start gap-x-3 gap-y-2 border-b px-5 py-3">
         {onClose && (
           <Button variant="ghost" size="icon" onClick={onClose} title="Close">
             <X className="h-4 w-4" />
           </Button>
         )}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-60 flex-1 overflow-hidden">
           <div className="flex min-w-0 items-center gap-2" data-testid="tome-page-title-row">
             <h2 className="min-w-0 truncate text-base font-semibold leading-tight">{title}</h2>
             {isEditing && draftStatus && (
@@ -680,7 +680,10 @@ export function WikiPageView({
               </Tooltip>
             )}
           </div>
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div
+            className="flex min-w-0 items-center gap-1.5 overflow-hidden"
+            data-testid="tome-page-metadata-row"
+          >
             {renaming ? (
               <input
                 autoFocus
@@ -722,7 +725,7 @@ export function WikiPageView({
                     setChangesSinceOpen(0);
                     onOpenHistory();
                   }}
-                  className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  className="min-w-0 truncate text-left text-[11px] text-muted-foreground hover:text-foreground hover:underline"
                   title="Open revision history"
                 >
                   {changesSinceOpen > 0 && (
@@ -736,7 +739,10 @@ export function WikiPageView({
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div
+          className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2"
+          data-testid="tome-page-actions"
+        >
           <Tooltip>
             <TooltipTrigger asChild>
               <Badge
@@ -800,6 +806,7 @@ export function WikiPageView({
                     type="button"
                     onClick={() => setWideReading((v) => !v)}
                     aria-pressed={wideReading}
+                    aria-label={wideReading ? "Use narrow reading width" : "Use wide reading width"}
                     className={cn(
                       "rounded-md border border-border p-1.5 transition-colors hover:bg-muted hover:text-foreground",
                       wideReading ? "bg-muted text-foreground" : "text-muted-foreground",

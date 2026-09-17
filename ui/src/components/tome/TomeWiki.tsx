@@ -1626,7 +1626,7 @@ export function TomeWiki({ slug }: { slug: string }) {
             />
           )}
           {!projectSidebarOpen && (
-            <div className="flex w-10 shrink-0 justify-center border-r bg-background/60 pt-2">
+            <div className="flex w-10 shrink-0 items-start justify-center border-r bg-background/60 pt-2">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

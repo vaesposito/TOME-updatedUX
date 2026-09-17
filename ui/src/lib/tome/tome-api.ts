@@ -114,6 +114,17 @@ export function requireTomeEditor(ctx: TomeProjectContext): void {
   }
 }
 
+/** Throw 403 unless the caller is the project's data steward, not only a Tome admin. */
+export function requireTomeDataSteward(ctx: TomeProjectContext): void {
+  if (!ctx.canEdit || ctx.canManageSteward) {
+    throw new ApiError(
+      "Only this entity's data steward can remove issue labels",
+      403,
+      "DATA_STEWARD_REQUIRED",
+    );
+  }
+}
+
 /**
  * Reject a human write while the project is locked, with a message that
  * distinguishes "agent is actively ingesting" from "a draft is awaiting

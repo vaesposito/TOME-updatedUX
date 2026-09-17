@@ -20,6 +20,7 @@ const TOME_ISSUE_LABEL_SETTINGS_ID = "global";
 interface TomeIssueTrackerDocument extends Document {
   project_id: string;
   labels: string[];
+  disabled_labels?: string[];
   updated_at: Date;
 }
 
@@ -254,6 +255,52 @@ export async function removeTomeCustomIssueTracker(
   return readTomeCustomIssueTrackers(projectId);
 }
 
+export async function enableTomeIssueTracker(
+  projectId: string,
+  label: string,
+): Promise<void> {
+  const trackers = await trackersCollection();
+  const document = await trackers.findOne(
+    { project_id: projectId },
+    { projection: { _id: 0, disabled_labels: 1 } },
+  );
+  const normalizedLabel = label.trim().toLowerCase();
+  const disabledLabels = (document?.disabled_labels ?? []).filter(
+    (candidate) => candidate !== normalizedLabel,
+  );
+  if (disabledLabels.length !== (document?.disabled_labels ?? []).length) {
+    await trackers.updateOne(
+      { project_id: projectId },
+      { $set: { disabled_labels: disabledLabels, updated_at: new Date() } },
+    );
+  }
+}
+
+export async function removeTomeIssueTracker(
+  projectId: string,
+  label: string,
+): Promise<void> {
+  const settings = await readTomeIssueLabelSettings();
+  const normalizedLabel = label.trim().toLowerCase();
+  const builtIn = materializeTomeIssueLabels(settings, settings.legacy_labels).find(
+    (tracked) => tracked.label === normalizedLabel || tracked.aliases?.includes(normalizedLabel),
+  );
+  if (!builtIn) {
+    await removeTomeCustomIssueTracker(projectId, normalizedLabel);
+    return;
+  }
+
+  const trackers = await trackersCollection();
+  await trackers.updateOne(
+    { project_id: projectId },
+    {
+      $set: { project_id: projectId, updated_at: new Date() },
+      $addToSet: { disabled_labels: builtIn.label },
+    },
+    { upsert: true },
+  );
+}
+
 export async function listTomeTrackedIssueLabels(
   projectIds: string[],
 ): Promise<TomeTrackedIssueLabel[]> {
@@ -263,13 +310,15 @@ export async function listTomeTrackedIssueLabels(
   ]);
   const documents = await trackers.find(
     { project_id: { $in: projectIds } },
-    { projection: { _id: 0, labels: 1 } },
+    { projection: { _id: 0, labels: 1, disabled_labels: 1 } },
   ).toArray();
   const custom = normalizeCustomTomeTrackerLabels(
     documents.flatMap((document) => document.labels),
     "",
   );
-  const builtIn = materializeTomeIssueLabels(settings, settings.legacy_labels);
+  const disabledLabels = new Set(documents.flatMap((document) => document.disabled_labels ?? []));
+  const builtIn = materializeTomeIssueLabels(settings, settings.legacy_labels)
+    .filter((tracked) => !disabledLabels.has(tracked.label));
   const builtInLabels = new Set(
     builtIn.flatMap(({ label, aliases }) => [label, ...(aliases ?? [])]),
   );

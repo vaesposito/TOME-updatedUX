@@ -106,7 +106,6 @@ import {
 } from "@/lib/tome/document-import-formats";
 import {
   matchesTomeTrackedIssueLabel,
-  TOME_ISSUE_LABEL_KEYS,
   TOME_TRACKED_ISSUE_LABELS,
   type TomeTrackedIssueLabel,
 } from "@/lib/tome/issue-filter-views";
@@ -348,6 +347,7 @@ export function TomeWiki({ slug }: { slug: string }) {
   const isArea = projectType === "area";
   const isSynthesized = isSynthesizedType(projectType);
   const canEdit = data?.canEdit ?? false;
+  const [canRemoveIssueTrackers, setCanRemoveIssueTrackers] = useState(false);
   const [issueTrackers, setIssueTrackers] = useState<TomeTrackedIssueLabel[]>(
     TOME_TRACKED_ISSUE_LABELS,
   );
@@ -371,6 +371,7 @@ export function TomeWiki({ slug }: { slug: string }) {
         if (!response.ok || !Array.isArray(body?.data?.trackers)) return;
         if (!cancelled) {
           setIssueTrackers(body.data.trackers);
+          setCanRemoveIssueTrackers(body.data.can_remove === true);
         }
       })
       .catch(() => undefined);
@@ -1719,8 +1720,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                       labels={issueTrackers}
                       activeLabel={activeTrackedIssueLabel?.label}
                       onSelect={(label) => navigate({ kind: "issues", label })}
-                      onRemove={canEdit ? removeIssueTracker : undefined}
-                      isRemovable={(tracked) => !TOME_ISSUE_LABEL_KEYS.some((key) => key === tracked.id)}
+                      onRemove={canRemoveIssueTrackers ? removeIssueTracker : undefined}
                     />
                     {trackerRemovalError && (
                       <p className="ml-5 mt-1 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">

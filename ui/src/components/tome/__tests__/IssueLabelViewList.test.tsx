@@ -43,4 +43,18 @@ describe("IssueLabelViewList", () => {
       title: "Security Review",
     });
   });
+
+  it("offers removal for built-in trackers when the caller grants permission", () => {
+    const onRemove = jest.fn();
+    render(
+      <IssueLabelViewList
+        labels={TOME_TRACKED_ISSUE_LABELS}
+        onSelect={jest.fn()}
+        onRemove={onRemove}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Critical tracker" }));
+    expect(onRemove).toHaveBeenCalledWith(TOME_TRACKED_ISSUE_LABELS[0]);
+  });
 });

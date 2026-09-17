@@ -21,7 +21,7 @@ describe("IssueLabelViewList", () => {
     expect(onSelect).toHaveBeenCalledWith("critical");
   });
 
-  it("offers removal for custom trackers without exposing it for built-ins", () => {
+  it("confirms custom tracker removal inline without exposing removal for built-ins", () => {
     const onRemove = jest.fn();
     render(
       <IssueLabelViewList
@@ -45,6 +45,20 @@ describe("IssueLabelViewList", () => {
       "[@media(hover:none)]:opacity-100",
     );
     fireEvent.click(removeButton);
+    expect(onRemove).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("group", { name: "Confirm removal of Security Review tracker" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel removal of Security Review tracker" }),
+    );
+    expect(onRemove).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Security Review tracker" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm removal of Security Review tracker" }),
+    );
     expect(onRemove).toHaveBeenCalledWith({
       id: "security-review",
       label: "security-review",
@@ -63,6 +77,8 @@ describe("IssueLabelViewList", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Critical tracker" }));
+    expect(onRemove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm removal of Critical tracker" }));
     expect(onRemove).toHaveBeenCalledWith(TOME_TRACKED_ISSUE_LABELS[0]);
   });
 });

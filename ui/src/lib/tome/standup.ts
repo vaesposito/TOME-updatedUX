@@ -3,16 +3,67 @@ import { parseFrontmatter } from "@/lib/tome/schema";
 export interface StandupSections {
   whatIsThis: string;
   headline: string;
+  progress: string;
   blockers: string;
   upNext: string;
   fallback: string;
 }
 
-type StandupSectionKey = "whatIsThis" | "headline" | "blockers" | "upNext";
+const MIN_HEADLINE_SENTENCE_LENGTH = 20;
+const MAX_HEADLINE_LENGTH = 120;
+
+function toPlainHeadline(headline: string): string {
+  return headline
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*\*|__|~~|`/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Legacy standups sometimes put an entire report into `## Headline`. Keep the
+ * report intact in storage while presenting only its first meaningful
+ * sentence. New reports already follow the one-sentence contract.
+ */
+export function summarizeStandupHeadline(headline: string): string {
+  const normalized = toPlainHeadline(headline);
+  if (!normalized) return "";
+
+  const sentenceEnds = normalized.matchAll(
+    /[.!?](?=\s+[A-Z0-9]|\s*$)/g,
+  );
+  for (const match of sentenceEnds) {
+    const end = (match.index ?? 0) + match[0].length;
+    if (end >= MIN_HEADLINE_SENTENCE_LENGTH) {
+      return normalized.slice(0, end);
+    }
+  }
+
+  if (normalized.length <= MAX_HEADLINE_LENGTH) return normalized;
+  const wordBoundary = normalized.lastIndexOf(" ", MAX_HEADLINE_LENGTH);
+  const end = wordBoundary >= MIN_HEADLINE_SENTENCE_LENGTH
+    ? wordBoundary
+    : MAX_HEADLINE_LENGTH;
+  return `${normalized.slice(0, end).replace(/[,:;—-]+$/, "")}…`;
+}
+
+type StandupSectionKey =
+  | "whatIsThis"
+  | "headline"
+  | "progress"
+  | "blockers"
+  | "upNext";
 
 const SECTION_ALIASES: Record<string, StandupSectionKey> = {
   "what is this": "whatIsThis",
   headline: "headline",
+  progress: "progress",
+  "since last update": "progress",
+  "what changed": "progress",
+  accomplishments: "progress",
+  completed: "progress",
   "asks / blockers": "blockers",
   "asks/blockers": "blockers",
   blockers: "blockers",
@@ -31,7 +82,7 @@ function sectionKey(label: string): StandupSectionKey | undefined {
 export function parseStandup(markdown: string): StandupSections {
   const [, body] = parseFrontmatter(markdown);
   const normalizedBody = body.replace(
-    /\*\*\s*(what is this|headline|asks\s*\/?\s*blockers|blockers|up next)\s*:?\s*\*\*/gi,
+    /\*\*\s*(what is this|headline|progress|since last update|what changed|accomplishments|completed|asks\s*\/?\s*blockers|blockers|up next)\s*:?\s*\*\*/gi,
     (_match, label: string) => `\n## ${label}\n`,
   );
   const sections: Partial<Record<StandupSectionKey, string>> = {};
@@ -48,11 +99,16 @@ export function parseStandup(markdown: string): StandupSections {
     sections[key] = normalizedBody.slice(start, end).trim();
   }
   const structured = Boolean(
-    sections.whatIsThis || sections.headline || sections.blockers || sections.upNext,
+    sections.whatIsThis ||
+      sections.headline ||
+      sections.progress ||
+      sections.blockers ||
+      sections.upNext,
   );
   return {
     whatIsThis: sections.whatIsThis ?? "",
     headline: sections.headline ?? "",
+    progress: sections.progress ?? "",
     blockers: sections.blockers ?? "",
     upNext: sections.upNext ?? "",
     fallback: structured ? "" : body.trim(),

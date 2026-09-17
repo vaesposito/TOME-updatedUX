@@ -201,22 +201,28 @@ first.
 #### Report pages render specially
 
 Pages of `kind: report` (e.g. `standup.md`) render specially — the UI parses
-their exact section structure into visual elements (headline banner, bullet
-cards), not raw markdown. Wrong heading text/level or bullet syntax silently
-falls back to inert text — content survives, at-a-glance legibility doesn't.
-Treat the contract as a UI spec: exact headings on their own line, real `- `
-bullets, no bold-label substitutes, no multi-item paragraphs.
+their exact section structure into visual elements (headline banner, progress,
+blockers, and next-step cards), not raw markdown. Wrong heading text/level or
+bullet syntax silently falls back to inert text — content survives,
+at-a-glance legibility doesn't. Treat the contract as a UI spec: exact headings
+on their own line, real `- ` bullets, no bold-label substitutes, no multi-item
+paragraphs. Keep the complete report under 160 words.
 
 `standup.md`'s exact contract:
 
 ```markdown
 ## What is this
 
-One or two plain sentences.
+One plain sentence naming the effort and reporting window.
 
 ## Headline
 
-One concise sentence.
+One plain-language sentence of 12 words or fewer with the most important
+outcome, risk, or decision. Do not use Markdown formatting.
+
+## Progress
+
+- One completed outcome or meaningful advance per bullet.
 
 ## Asks / Blockers
 
@@ -226,6 +232,23 @@ One concise sentence.
 
 - One milestone or next step per bullet.
 ```
+
+This is a stand-up, not a project summary. Compare the new evidence with the
+previous `standup.md` and report the **delta since that update**. On the first
+run, summarize the current state without pretending that older work happened
+recently. Use at most three bullets in each list and one sentence per bullet.
+
+- **Progress**: completed outcomes or work that moved meaningfully forward,
+  plus why it matters. Do not list routine activity, commits, or meetings.
+- **Asks / Blockers**: only active impediments or decisions someone needs to
+  make. Name the owner when the sources do. If there are none, write exactly
+  `- None right now.`
+- **Up next**: concrete commitments for the next reporting period, with an
+  owner or date only when the sources provide one. Avoid vague goals such as
+  "continue working on it."
+- **Headline**: the one outcome, risk, or decision teammates should remember
+  after the stand-up. Use 12 words or fewer with no Markdown formatting. It
+  should synthesize the cards, not repeat a bullet.
 
 **Write for a non-insider, not a commit log.** The reader is leadership, a new
 team member, or an adjacent team — someone who was not in the room for any of

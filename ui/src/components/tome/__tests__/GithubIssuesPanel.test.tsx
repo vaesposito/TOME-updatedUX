@@ -133,20 +133,20 @@ describe("GithubIssuesPanel", () => {
     });
     mockFetch
       .mockResolvedValueOnce(issuesResponse([unlabelledIssue]))
-      .mockResolvedValueOnce(mutationResponse(["tome:critical"]))
+      .mockResolvedValueOnce(mutationResponse(["critical"]))
       .mockResolvedValueOnce(mutationResponse([]));
 
     render(<GithubIssuesPanel slug="example-project" canEdit />);
     expect(await screen.findByText("Tracked work")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Manage tracking labels for Tracked work" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add tome:critical" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add critical" }));
     await waitFor(() => {
       expect(screen.getByRole("button", {
         name: "Manage tracking labels for Tracked work",
       })).not.toBeDisabled();
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Remove tome:critical" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove critical" }));
 
     expect(mockFetch).toHaveBeenNthCalledWith(
       2,
@@ -156,7 +156,7 @@ describe("GithubIssuesPanel", () => {
         body: JSON.stringify({
           repo: "example/service",
           number: 42,
-          label: "tome:critical",
+          label: "critical",
           operation: "add",
         }),
       }),
@@ -170,7 +170,7 @@ describe("GithubIssuesPanel", () => {
           body: JSON.stringify({
             repo: "example/service",
             number: 42,
-            label: "tome:critical",
+            label: "critical",
             operation: "remove",
           }),
         }),
@@ -186,7 +186,7 @@ describe("GithubIssuesPanel", () => {
       labels: [],
       url: "https://github.com/example/service/issues/99",
     };
-    const addedIssue = { ...cachedIssue, labels: ["tome:critical"] };
+    const addedIssue = { ...cachedIssue, labels: ["critical"] };
     mockFetch
       .mockResolvedValueOnce(issuesResponse([], { availableIssues: [cachedIssue] }))
       .mockResolvedValueOnce({
@@ -200,7 +200,7 @@ describe("GithubIssuesPanel", () => {
 
     render(<GithubIssuesPanel slug="example-project" canEdit />);
     await screen.findByLabelText("Search tracked issues");
-    fireEvent.click(screen.getByRole("button", { name: "Add issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add label to issue" }));
     fireEvent.click(screen.getByRole("combobox", { name: "Issue" }));
     fireEvent.click(screen.getByRole("option", { name: /#99 Newly tracked work/ }));
     fireEvent.click(screen.getByRole("button", { name: "Add / remove labels" }));
@@ -214,7 +214,7 @@ describe("GithubIssuesPanel", () => {
         body: JSON.stringify({
           repo: "example/service",
           number: 99,
-          label: "tome:critical",
+          label: "critical",
           operation: "add",
         }),
       }),

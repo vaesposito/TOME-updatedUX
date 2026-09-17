@@ -850,7 +850,7 @@ export function GithubIssuesPanel({
                 disabled={!canMoveIssues}
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Add issue</span>
+                <span className="hidden sm:inline">Add label to issue</span>
               </Button>
               <Dialog
                 open={trackingDialogOpen}

@@ -823,14 +823,11 @@ export function ProjectSettingsPanel({
             <Tabs value={settingsTab} onValueChange={setSettingsTab}>
               <div className="border-b border-border">
                 <TabsList
-                  className="h-auto w-full justify-start gap-4 overflow-x-auto bg-transparent p-0"
+                  className="h-auto w-full justify-start gap-4 overflow-x-auto overflow-y-hidden bg-transparent p-0 pb-px"
                   indicator="underline"
                 >
                   <TabsTrigger value="general" className={TAB_TRIGGER_CLASS}>
                     General
-                  </TabsTrigger>
-                  <TabsTrigger value="reports" className={TAB_TRIGGER_CLASS}>
-                    Reports
                   </TabsTrigger>
                   <TabsTrigger value="organization" className={TAB_TRIGGER_CLASS}>
                     Access Config
@@ -860,6 +857,9 @@ export function ProjectSettingsPanel({
                       Activity Feed
                     </TabsTrigger>
                   )}
+                  <TabsTrigger value="reports" className={TAB_TRIGGER_CLASS}>
+                    Sidebar
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
@@ -943,10 +943,10 @@ export function ProjectSettingsPanel({
               <TabsContent value="reports" className="space-y-6 pt-6">
                 <div className="space-y-6">
                   <p className="text-xs text-muted-foreground">
-                    Choose which report surfaces readers see for this {entityLabel}. Hiding a
-                    report removes it from navigation without deleting its data.
+                    Choose which report surfaces readers see in this {entityLabel}&apos;s sidebar.
+                    Hiding a report removes it from navigation without deleting its data.
                   </p>
-                  <Field label="Reports navigation">
+                  <Field label="Sidebar reports">
                     <div className="space-y-3 rounded-lg border border-border/60 p-4">
                       <label className="flex cursor-pointer items-start gap-3 text-sm">
                         <input
@@ -961,7 +961,7 @@ export function ProjectSettingsPanel({
                         <span>
                           <span className="block font-medium">Show Reports</span>
                           <span className="block text-xs text-muted-foreground">
-                            Show or hide the entire Reports group for this project.
+                            Show or hide the entire Reports group.
                           </span>
                         </span>
                       </label>

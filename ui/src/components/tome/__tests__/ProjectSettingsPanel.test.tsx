@@ -317,12 +317,16 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
     });
   });
 
-  it("lets a data steward choose which project reports readers see", async () => {
+  it("puts sidebar controls last and lets a data steward choose which reports readers see", async () => {
     const { getPatchPayload } = installEntitySettingsFetch("project");
     renderSettings({ slug: "example-project" });
 
-    const reportsTab = await screen.findByRole("tab", { name: "Reports" });
-    fireEvent.mouseDown(reportsTab, { button: 0, ctrlKey: false });
+    const sidebarTab = await screen.findByRole("tab", { name: "Sidebar" });
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[tabs.length - 1]).toBe(sidebarTab);
+    expect(screen.getByRole("tablist")).toHaveClass("overflow-y-hidden", "pb-px");
+
+    fireEvent.mouseDown(sidebarTab, { button: 0, ctrlKey: false });
     fireEvent.click(await screen.findByRole("checkbox", { name: /Stand-up/i }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 

@@ -36,7 +36,15 @@ describe("IssueLabelViewList", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Remove Critical tracker" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Remove Security Review tracker" }));
+    const removeButton = screen.getByRole("button", { name: "Remove Security Review tracker" });
+    expect(removeButton).toHaveClass(
+      "opacity-0",
+      "group-hover:opacity-100",
+      "group-focus-within:opacity-100",
+      "focus-visible:opacity-100",
+      "[@media(hover:none)]:opacity-100",
+    );
+    fireEvent.click(removeButton);
     expect(onRemove).toHaveBeenCalledWith({
       id: "security-review",
       label: "security-review",

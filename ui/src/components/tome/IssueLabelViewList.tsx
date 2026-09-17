@@ -29,7 +29,7 @@ export function IssueLabelViewList({
           <div
             key={tracked.id}
             className={cn(
-              "ml-5 flex min-w-0 items-center rounded-md text-xs transition-colors hover:bg-muted",
+              "group ml-5 flex min-w-0 items-center rounded-md text-xs transition-colors hover:bg-muted",
               active && "bg-muted font-medium text-primary",
             )}
           >
@@ -57,7 +57,7 @@ export function IssueLabelViewList({
                   event.stopPropagation();
                   onRemove?.(tracked);
                 }}
-                className="mr-1 rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                className="mr-1 rounded p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
               >
                 <X className="h-3.5 w-3.5" />
               </button>

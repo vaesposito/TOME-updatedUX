@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import {
   loadTomeProject,
+  requireTomeDataSteward,
   requireTomeEditor,
   type TomeProjectContext,
 } from "@/lib/tome/tome-api";
@@ -81,6 +82,7 @@ describe("loadTomeProject read enforcement", () => {
       canRead: false,
       canEdit: false,
       canManageSteward: false,
+      isDataSteward: false,
     });
 
     await expect(
@@ -96,6 +98,7 @@ describe("loadTomeProject read enforcement", () => {
       canRead: true,
       canEdit: false,
       canManageSteward: false,
+      isDataSteward: false,
     });
 
     await expect(
@@ -125,5 +128,25 @@ describe("loadTomeProject read enforcement", () => {
     expect(() =>
       requireTomeEditor({ canEdit: true } as TomeProjectContext),
     ).not.toThrow();
+  });
+
+  it("allows steward-only operations for an admin who also has the writer grant", () => {
+    expect(() =>
+      requireTomeDataSteward({
+        canEdit: true,
+        canManageSteward: true,
+        isDataSteward: true,
+      } as TomeProjectContext),
+    ).not.toThrow();
+  });
+
+  it("rejects steward-only operations for an admin without the writer grant", () => {
+    expect(() =>
+      requireTomeDataSteward({
+        canEdit: true,
+        canManageSteward: true,
+        isDataSteward: false,
+      } as TomeProjectContext),
+    ).toThrow(expect.objectContaining({ code: "DATA_STEWARD_REQUIRED" }));
   });
 });

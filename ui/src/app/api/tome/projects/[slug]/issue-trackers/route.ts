@@ -29,7 +29,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const trackers = await listTomeTrackedIssueLabels([project.projectId]);
   return successResponse({
     trackers,
-    can_remove: project.canEdit && !project.canManageSteward,
+    can_remove: project.isDataSteward,
   });
 });
 

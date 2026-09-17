@@ -123,6 +123,7 @@ async function maybeFireForProject(
         canRead: true,
         canEdit: true,
         canManageSteward: false,
+        isDataSteward: true,
       },
       { triggeredBy: "auto" },
     );

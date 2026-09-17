@@ -40,6 +40,7 @@ describe("TOME issue trackers", () => {
       projectId: "project-1",
       canEdit: true,
       canManageSteward: false,
+      isDataSteward: true,
     });
     mockReadLabelSettings.mockResolvedValue({
       labels: {
@@ -64,6 +65,7 @@ describe("TOME issue trackers", () => {
     expect(mockListTrackedLabels).toHaveBeenCalledWith(["project-1"]);
     await expect(response.json()).resolves.toMatchObject({
       data: {
+        can_remove: true,
         trackers: expect.arrayContaining([{
           id: "critical",
           label: "critical",
@@ -117,6 +119,7 @@ describe("TOME issue trackers", () => {
       projectId: "project-1",
       canEdit: true,
       canManageSteward: true,
+      isDataSteward: false,
     });
     mockRequireTomeDataSteward.mockImplementation(() => {
       throw new ApiError("data steward required", 403, "DATA_STEWARD_REQUIRED");

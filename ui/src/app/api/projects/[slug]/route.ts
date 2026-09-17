@@ -46,6 +46,7 @@ import {
 import type {
   DataStewardInput,
   ProjectDocument,
+  TomeReportVisibility,
   TomeReviewMode,
   WebexCredentialMode,
   WebexRoomSource,
@@ -283,6 +284,8 @@ export const PATCH = withErrorHandler(
       data_steward?: DataStewardInput | null;
       /** Per-project source-feed on/off. */
       sources_feed_enabled?: boolean;
+      /** Project-scoped visibility for the Reports group and its surfaces. */
+      report_visibility?: Partial<TomeReportVisibility>;
       /** How much draft/HITL review gates agent-written page changes. */
       review_mode?: TomeReviewMode | null;
       decision_blast_radius?: "small" | "large" | null;
@@ -370,6 +373,26 @@ export const PATCH = withErrorHandler(
     }
     if (typeof body.sources_feed_enabled === "boolean") {
       $set["sources_feed_enabled"] = body.sources_feed_enabled;
+    }
+    if ("report_visibility" in body) {
+      const visibility = body.report_visibility;
+      if (!visibility || typeof visibility !== "object" || Array.isArray(visibility)) {
+        throw new ApiError("`report_visibility` must be an object", 400, "BAD_REQUEST");
+      }
+      for (const key of ["enabled", "standup", "issues"] as const) {
+        if (key in visibility && typeof visibility[key] !== "boolean") {
+          throw new ApiError(
+            `\`report_visibility.${key}\` must be a boolean`,
+            400,
+            "BAD_REQUEST",
+          );
+        }
+      }
+      $set["report_visibility"] = {
+        enabled: visibility.enabled ?? project.report_visibility?.enabled ?? true,
+        standup: visibility.standup ?? project.report_visibility?.standup ?? true,
+        issues: visibility.issues ?? project.report_visibility?.issues ?? true,
+      } satisfies TomeReportVisibility;
     }
     if ("review_mode" in body) {
       if (body.review_mode === null) {
@@ -582,6 +605,7 @@ export const PATCH = withErrorHandler(
       "labels.initiatives",
       "labels.areas",
       "team_id",
+      "report_visibility",
     ].some((k) => k in $set);
     if (metaChanged) {
       auditTome({ action: "tome.project.update", actor, projectSlug: slug });

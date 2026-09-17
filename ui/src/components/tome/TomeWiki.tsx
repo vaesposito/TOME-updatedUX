@@ -81,6 +81,7 @@ import type { GlossaryPreview } from "@/components/tome/CrepeEditor";
 import { parseTomeHref } from "@/lib/tome/tome-links";
 import { useTomeViewTracking } from "@/lib/tome/usage-tracking";
 import { BetaBadge } from "@/components/tome/BetaBadge";
+import { ReportsDisclosure } from "@/components/tome/ReportsDisclosure";
 import { StandupView } from "@/components/tome/StandupView";
 import { GithubIssuesPanel } from "@/components/tome/GithubIssuesPanel";
 import { IssueLabelDisclosure } from "@/components/tome/IssueLabelDisclosure";
@@ -114,6 +115,10 @@ import {
 import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
 import { buildPageCreationAgentPrompt } from "@/lib/tome/page-creation";
+import {
+  DEFAULT_TOME_REPORT_VISIBILITY,
+  resolveTomeReportVisibility,
+} from "@/lib/tome/report-visibility";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
 import type { PageTreeNode, TomeFolder } from "@/types/tome";
 import {
@@ -121,6 +126,7 @@ import {
   isSynthesizedType,
   type ProjectDocument,
   type ProjectType,
+  type TomeReportVisibility,
 } from "@/types/projects";
 
 interface PagesResponse {
@@ -332,6 +338,9 @@ export function TomeWiki({ slug }: { slug: string }) {
     dataSteward: string | null;
   }>({ description: null, status: null, teamName: null, tags: [], dataSteward: null });
   const [projectMetaLoading, setProjectMetaLoading] = useState(true);
+  const [reportVisibility, setReportVisibility] = useState<TomeReportVisibility>(
+    DEFAULT_TOME_REPORT_VISIBILITY,
+  );
   // BHAG/Area awareness: this project's kind, the initiatives it's tagged
   // with, and the BHAG entities those initiatives resolve to (for the up-link
   // chip).
@@ -575,6 +584,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     setProjectType(p.type ?? "project");
     setInitiatives(Array.isArray(p.labels?.initiatives) ? p.labels.initiatives : []);
     setAreaTags(Array.isArray(p.labels?.areas) ? p.labels.areas : []);
+    setReportVisibility(resolveTomeReportVisibility(p));
     setProjectMeta({
       description: typeof p.description === "string" ? p.description : null,
       status: typeof p.status === "string" ? p.status : null,
@@ -602,6 +612,20 @@ export function TomeWiki({ slug }: { slug: string }) {
       cancelled = true;
     };
   }, [slug, applyProjectMeta]);
+
+  const showStandupReport = reportVisibility.enabled && reportVisibility.standup;
+  const showIssuesReport = reportVisibility.enabled && reportVisibility.issues;
+  const showReports = showStandupReport || showIssuesReport;
+
+  useEffect(() => {
+    if (projectMetaLoading) return;
+    if (
+      (view.kind === "standup" && !showStandupReport)
+      || (view.kind === "issues" && !showIssuesReport)
+    ) {
+      navigate({ kind: "agent" });
+    }
+  }, [navigate, projectMetaLoading, showIssuesReport, showStandupReport, view.kind]);
 
   // Fetch every BHAG entity once (unconditionally, unless this page IS a
   // BHAG) — used both to resolve this project's direct BHAG tags below and,
@@ -1648,21 +1672,19 @@ export function TomeWiki({ slug }: { slug: string }) {
                   />
                 </div>
 
-                <div className="mt-6 flex items-center justify-between gap-1 px-2 pb-1.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Reports
-                  </span>
-                  <BetaBadge showTooltip={false} />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <NavItem
-                    icon={<Newspaper className="h-4 w-4" />}
-                    label="Standup"
-                    active={navActive.standup}
-                    onClick={() => navigate({ kind: "standup" })}
-                    tipTitle="Standup"
-                    tipDescription="The project's report card: headline, blockers, and what's next. Rewritten by the agent on every ingest. (This feature is still in testing.)"
-                  />
+                {showReports && (
+                  <ReportsDisclosure slug={slug}>
+                    {showStandupReport && (
+                      <NavItem
+                        icon={<Newspaper className="h-4 w-4" />}
+                        label="Standup"
+                        active={navActive.standup}
+                        onClick={() => navigate({ kind: "standup" })}
+                        tipTitle="Standup"
+                        tipDescription="The project's report card: headline, blockers, and what's next. Rewritten by the agent on every ingest. (This feature is still in testing.)"
+                      />
+                    )}
+                    {showIssuesReport && (
                   <IssueLabelDisclosure
                     expanded
                     collapsible={false}
@@ -1787,7 +1809,9 @@ export function TomeWiki({ slug }: { slug: string }) {
                       </p>
                     )}
                   </IssueLabelDisclosure>
-                </div>
+                    )}
+                  </ReportsDisclosure>
+                )}
 
                 <div className="mt-6 flex items-center justify-between gap-1 px-2 pb-1.5">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

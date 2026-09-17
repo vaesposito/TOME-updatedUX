@@ -76,6 +76,13 @@ export type ProjectType = "project" | "bhag" | "area";
  *  `ProjectDocument.review_mode`. */
 export type TomeReviewMode = "none" | "stable_only" | "all";
 
+/** Project-scoped visibility for the optional Reports group in TOME. */
+export interface TomeReportVisibility {
+  enabled: boolean;
+  standup: boolean;
+  issues: boolean;
+}
+
 export type DataStewardKind = "user" | "team";
 
 /**
@@ -334,6 +341,8 @@ export interface ProjectDocument {
   optionality?: string[];
   /** Per-project on/off for the source-activity feed. Undefined = on. */
   sources_feed_enabled?: boolean;
+  /** Which report surfaces readers see. Missing fields default to visible. */
+  report_visibility?: Partial<TomeReportVisibility>;
   /**
    * How much draft/HITL review gates agent-written page changes (chat, MCP
    * edit, ingest): `none` = writes land live immediately; `stable_only` =

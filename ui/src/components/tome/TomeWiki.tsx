@@ -115,6 +115,7 @@ import {
   type TomeTrackedIssueLabel,
 } from "@/lib/tome/issue-filter-views";
 import { useResponsiveProjectSidebar } from "@/lib/tome/responsive-project-sidebar";
+import { useElementFullscreen } from "@/lib/tome/use-element-fullscreen";
 import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
 import { buildPageCreationAgentPrompt } from "@/lib/tome/page-creation";
@@ -507,19 +508,8 @@ export function TomeWiki({ slug }: { slug: string }) {
   // Full-screen: the browser Fullscreen API on the wiki root (below AppHeader)
   // hides the outer app chrome while keeping the wiki's own sidebar/header.
   const wikiRootRef = useRef<HTMLDivElement | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  useEffect(() => {
-    const onChange = () => setIsFullscreen(document.fullscreenElement === wikiRootRef.current);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-    } else {
-      void wikiRootRef.current?.requestFullscreen();
-    }
-  }, []);
+  const { isFallbackFullscreen, isFullscreen, toggleFullscreen } =
+    useElementFullscreen(wikiRootRef);
 
   const load = useCallback(async () => {
     setError(null);
@@ -1519,7 +1509,11 @@ export function TomeWiki({ slug }: { slug: string }) {
     <TooltipProvider>
       <div
         ref={wikiRootRef}
-        className="flex h-full min-h-[calc(100vh-4rem)] flex-col bg-background"
+        data-fullscreen-mode={isFallbackFullscreen ? "fallback" : isFullscreen ? "native" : "off"}
+        className={cn(
+          "flex h-full min-h-[calc(100vh-4rem)] flex-col bg-background",
+          isFallbackFullscreen && "fixed inset-0 z-[100] h-dvh min-h-0",
+        )}
       >
         <header className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b px-6 py-2 text-sm">
           {/* Keep the global route hierarchy in one breadcrumb trail. The
@@ -1598,7 +1592,8 @@ export function TomeWiki({ slug }: { slug: string }) {
               variant="outline"
               size="sm"
               className="h-auto gap-1.5 px-2 py-1"
-              onClick={toggleFullscreen}
+              onClick={() => void toggleFullscreen()}
+              aria-pressed={isFullscreen}
             >
               {isFullscreen ? (
                 <Minimize2 className="h-3.5 w-3.5" />

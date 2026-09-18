@@ -1,5 +1,5 @@
 export interface BuiltInOAuthConnectorDescriptor {
-  provider: "amplitude" | "atlassian" | "figma" | "github" | "gitlab" | "linear" | "notion" | "pagerduty" | "webex";
+  provider: "amplitude" | "atlassian" | "figma" | "github" | "gitlab" | "linear" | "notion" | "pagerduty" | "webex" | "webex_myagent";
   name: string;
   authorizationUrl: string;
   tokenUrl: string;
@@ -58,8 +58,7 @@ export const BUILT_IN_OAUTH_CONNECTORS: BuiltInOAuthConnectorDescriptor[] = [
       "meeting:recordings_read",
       "identity:people_read",
       "spark:messages_read",
-      // MyAgent delegated ingestion sends a correlated direct message as the
-      // user. Existing Webex connections must reconnect to gain this scope.
+      // General Webex messaging tools send messages as the connected user.
       "spark:messages_write",
       "spark:mcp",
       "spark-admin:people_read",
@@ -69,6 +68,14 @@ export const BUILT_IN_OAUTH_CONNECTORS: BuiltInOAuthConnectorDescriptor[] = [
       "meeting:transcripts_read",  // fetch transcripts for ingest
       "meeting:summaries_read",    // AI meeting summaries (meeting picker hasSummary)
     ],
+  },
+  {
+    provider: "webex_myagent",
+    name: "MyAgent (Webex)",
+    authorizationUrl: "https://webexapis.com/v1/authorize",
+    tokenUrl: "https://webexapis.com/v1/access_token",
+    // Dedicated app and connection: never narrow the general Webex provider.
+    scopes: ["spark:kms", "spark:messages_read", "spark:messages_write"],
   },
   {
     provider: "pagerduty",

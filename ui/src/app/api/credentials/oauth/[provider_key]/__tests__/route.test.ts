@@ -180,15 +180,15 @@ describe("/api/credentials/oauth/[provider_key]", () => {
     expect(text).toContain("caipe.oauth.connection");
   });
 
-  it("completes a deploy-configured provider through a shared callback URL", async () => {
+  it.each(["webex_secondary", "webex_myagent"])("completes %s through a shared callback URL", async (providerKey) => {
     mockCompleteConnection.mockResolvedValue({
       id: "provider-connection-1",
-      provider: "webex_secondary",
+      provider: providerKey,
       status: "connected",
     });
     const { createOAuthStateCookie, oauthStateCookieName } = await import("@/lib/credentials/oauth-state");
     const cookie = createOAuthStateCookie({
-      providerKey: "webex_secondary",
+      providerKey,
       ownerId: "alice-sub",
       state: "state-1",
       codeVerifier: "verifier-1",
@@ -196,18 +196,18 @@ describe("/api/credentials/oauth/[provider_key]", () => {
     const { GET } = await import("../callback/route");
     const response = await GET(
       new Request("http://localhost/api/credentials/oauth/webex/callback?code=code-1&state=state-1", {
-        headers: { cookie: `${oauthStateCookieName("webex_secondary")}=${cookie}` },
+        headers: { cookie: `${oauthStateCookieName(providerKey)}=${cookie}` },
       }) as never,
       { params: Promise.resolve({ provider_key: "webex" }) },
     );
 
     expect(mockCompleteConnection).toHaveBeenCalledWith({
-      providerKey: "webex_secondary",
+      providerKey,
       owner: { type: "user", id: "alice-sub" },
       code: "code-1",
       codeVerifier: "verifier-1",
     });
-    expect(response.headers.get("set-cookie")).toContain("caipe_oauth_state_webex_secondary=;");
+    expect(response.headers.get("set-cookie")).toContain(`${oauthStateCookieName(providerKey)}=;`);
   });
 
   it("renders a branded Webex failure page for provider OAuth errors", async () => {

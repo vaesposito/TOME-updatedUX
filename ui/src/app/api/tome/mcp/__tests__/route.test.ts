@@ -436,7 +436,7 @@ describe("Tome MCP authentication challenge", () => {
       const body = await response.json();
       const text = body.result.content[0].text;
 
-      expect(text).toContain("MyAgent: external connector authorization unverified [Outlook]");
+      expect(text).toContain("MyAgent: external connector authorization/provenance unverified [Outlook]");
       expect(text).toContain("https://circuit.cisco.com/myagent/settings/connectors");
       expect(text).not.toContain("MyAgent: all sources accessible");
     } finally {

@@ -3,7 +3,17 @@
 import {
   getMyAgentWebexConfig,
   requestMyAgentEvidence,
+  resolveMyAgentWebexCredential,
 } from "../myagent-webex";
+
+const mockListConnections = jest.fn();
+const mockRefreshConnection = jest.fn();
+jest.mock("@/lib/credentials/oauth-service-factory", () => ({
+  getProviderConnectionService: jest.fn(async () => ({
+    listConnections: mockListConnections,
+    refreshConnection: mockRefreshConnection,
+  })),
+}));
 
 const MYAGENT_ENV = {
   TOME_MYAGENT_ENABLED: "true",
@@ -31,10 +41,55 @@ describe("MyAgent Webex bridge", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Object.assign(process.env, MYAGENT_ENV);
+    mockListConnections.mockReset().mockResolvedValue([]);
+    mockRefreshConnection.mockReset().mockResolvedValue({ accessToken: "dedicated-token" });
   });
 
   afterAll(() => {
     process.env = originalEnv;
+  });
+
+  it("resolves only the caller's dedicated MyAgent connection when both providers are connected", async () => {
+    const dedicated = { id: "myagent-connection", provider: "webex_myagent", status: "connected",
+      grantedScopes: ["spark:kms", "spark:messages_read", "spark:messages_write"] };
+    mockListConnections.mockResolvedValue([
+      { id: "general-connection", provider: "webex", status: "connected" },
+      dedicated,
+    ]);
+    await expect(resolveMyAgentWebexCredential("user-1")).resolves.toEqual({
+      available: true, accessToken: "dedicated-token", connection: dedicated,
+    });
+    expect(mockListConnections).toHaveBeenCalledWith({ type: "user", id: "user-1" });
+    expect(mockRefreshConnection).toHaveBeenCalledTimes(1);
+    expect(mockRefreshConnection).toHaveBeenCalledWith("myagent-connection");
+  });
+
+  it("does not fall back to general, managed, or meeting Webex connections", async () => {
+    mockListConnections.mockResolvedValue(["webex", "webex_messaging", "webex_pam"].map((provider) => ({
+      id: provider, provider, status: "connected",
+      grantedScopes: ["spark:kms", "spark:messages_read", "spark:messages_write"],
+    })));
+    await expect(resolveMyAgentWebexCredential("user-1")).resolves.toMatchObject({
+      available: false, fixableByUser: true, reason: expect.stringContaining("MyAgent (Webex)"),
+    });
+    expect(mockRefreshConnection).not.toHaveBeenCalled();
+  });
+
+  it.each(["spark:kms", "spark:messages_read", "spark:messages_write"])(
+    "requires %s on the dedicated connection", async (missingScope) => {
+      mockListConnections.mockResolvedValue([{
+        id: "myagent-connection", provider: "webex_myagent", status: "connected",
+        grantedScopes: ["spark:kms", "spark:messages_read", "spark:messages_write"].filter((scope) => scope !== missingScope),
+      }]);
+      await expect(resolveMyAgentWebexCredential("user-1")).resolves.toMatchObject({ available: false, fixableByUser: true });
+      expect(mockRefreshConnection).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not use a disconnected dedicated connection", async () => {
+    mockListConnections.mockResolvedValue([{ id: "myagent-connection", provider: "webex_myagent", status: "revoked" }]);
+    await expect(resolveMyAgentWebexCredential("user-1")).resolves.toMatchObject({ available: false });
+    expect(mockRefreshConnection).not.toHaveBeenCalled();
   });
 
   it("sends only the selected integrations and accepts only a correlated MyAgent reply", async () => {

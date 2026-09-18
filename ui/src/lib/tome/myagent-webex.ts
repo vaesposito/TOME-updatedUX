@@ -2,7 +2,7 @@
  * Server-only MyAgent Webex bridge.
  *
  * Outlook, Salesforce, and SharePoint credentials never enter CAIPE. A Tome
- * ingest uses the triggering user's *personal* Webex OAuth connection to send
+ * ingest uses the triggering user's dedicated MyAgent Webex OAuth connection to send
  * one DM which names the user's requested categories to the
  * deployment-configured MyAgent identity, then passes only the correlated
  * reply to the ingest agent as untrusted evidence. The category list limits
@@ -22,7 +22,7 @@ import {
 } from "@/lib/projects/myagent-source";
 
 const WEBEX_API = "https://webexapis.com/v1";
-const REQUIRED_SCOPES = ["spark:messages_read", "spark:messages_write"] as const;
+const REQUIRED_SCOPES = ["spark:kms", "spark:messages_read", "spark:messages_write"] as const;
 const MAX_EVIDENCE_CHARS = 8_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 const DEFAULT_REPLY_TIMEOUT_MS = 30_000;
@@ -106,7 +106,7 @@ function missingRequiredScopes(connection: ProviderConnectionMetadata): string[]
 }
 
 /**
- * Resolve only the requested user's standard Webex connection. This avoids
+ * Resolve only the requested user's dedicated webex_myagent connection. This avoids
  * resolveProjectCredentials(), which can intentionally substitute a managed
  * Webex account for room ingestion.
  */
@@ -140,12 +140,12 @@ export async function resolveMyAgentWebexCredential(
     const service = await getProviderConnectionService();
     const connections = await service.listConnections({ type: "user", id: sub });
     const connection = connections.find(
-      (candidate) => candidate.provider === "webex" && candidate.status === "connected",
+      (candidate) => candidate.provider === "webex_myagent" && candidate.status === "connected",
     );
     if (!connection) {
       return {
         available: false,
-        reason: "Connect your Webex account before using MyAgent ingestion.",
+        reason: "Connect MyAgent (Webex) in Connections before using MyAgent ingestion. A general Webex connection is separate.",
         fixableByUser: true,
       };
     }
@@ -154,7 +154,7 @@ export async function resolveMyAgentWebexCredential(
       return {
         available: false,
         connection,
-        reason: "Reconnect Webex and grant message read and send permissions for MyAgent ingestion.",
+        reason: "Reconnect MyAgent (Webex) and grant encryption, message read, and message send permissions.",
         fixableByUser: true,
       };
     }
@@ -163,7 +163,7 @@ export async function resolveMyAgentWebexCredential(
       return {
         available: false,
         connection,
-        reason: "Reconnect your Webex account before using MyAgent ingestion.",
+        reason: "Reconnect MyAgent (Webex) in Connections before using MyAgent ingestion.",
         fixableByUser: true,
       };
     }
@@ -171,7 +171,7 @@ export async function resolveMyAgentWebexCredential(
   } catch {
     return {
       available: false,
-      reason: "Reconnect your Webex account before using MyAgent ingestion.",
+      reason: "Reconnect MyAgent (Webex) in Connections before using MyAgent ingestion.",
       fixableByUser: true,
     };
   }

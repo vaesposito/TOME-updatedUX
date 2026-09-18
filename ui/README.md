@@ -107,11 +107,25 @@ TOME_MYAGENT_ENABLED=true
 TOME_MYAGENT_WEBEX_EMAIL=<MyAgent Webex email>
 TOME_MYAGENT_POLL_INTERVAL_MS=2000
 TOME_MYAGENT_REPLY_TIMEOUT_MS=30000
+WEBEX_MYAGENT_CLIENT_ID=<dedicated Webex OAuth app client ID>
+WEBEX_MYAGENT_CLIENT_SECRET=<dedicated Webex OAuth app client secret>
+# Use this deployment's public origin and register the same URI on the app.
+WEBEX_MYAGENT_REDIRECT_URI=https://app.example.com/api/credentials/oauth/webex_myagent/callback
 ```
+
+Use an existing dedicated app or register one with only these scopes: `spark:kms`,
+`spark:messages_read`, and `spark:messages_write`. It appears in Connections as
+**MyAgent (Webex)**, independently of the general Webex connector. Keep the
+general app's credentials and room/people/meeting scopes separate. No people
+profile scope is requested for the MyAgent app, so it has no Webex profile lookup.
+Set its redirect URI to a callback already registered on that app. The shared
+`/api/credentials/oauth/webex/callback` is supported: the callback resolves the
+dedicated provider from signed OAuth state, so it does not overwrite the general
+`webex` connection. A provider-specific callback can also be used if registered.
 
 Each browser user explicitly authorizes TOME to send a delegated request for
 their own identity; that authorization is not project-wide. For every run,
-CAIPE resolves the triggering user's own `webex` connection, sends a bounded
+CAIPE resolves the triggering user's own `webex_myagent` connection, sends a bounded
 one-time direct message naming the requested connector categories to MyAgent
 as that user, and accepts only a reply correlated to that request. It never
 uses the managed Webex identity for this path and never exposes the user Webex
@@ -122,8 +136,8 @@ which connector produced a reply. Users must manage the actual integrations in
 [MyAgent connector settings](https://circuit.cisco.com/myagent/settings/connectors).
 Hard per-connector provenance requires a MyAgent-owned scoped delegation API
 or attestation contract, which this Webex handoff does not currently expose.
-Existing Webex connections must be reauthorized to grant both message read and
-message write permissions. A received reply is retained as protected evidence
+Users must explicitly connect **MyAgent (Webex)**; existing `webex` connections
+are not reused, migrated, or used as a fallback. A received reply is retained as protected evidence
 and is used only in a restricted wiki-only follow-up pass. Every report it
 influences is a private draft with no deadline auto-promotion; only the
 authorizing user or a Tome administrator can explicitly approve it. After that
@@ -134,6 +148,12 @@ not yet been claimed; a Webex message already sent cannot be recalled, but its
 reply is discarded if the revoke wins before consumption.
 MyAgent delegation is manual-only: scheduled auto-ingest never sends a request
 using a user's MyAgent/Webex authorization.
+
+When migrating a deployment that previously put the MyAgent app in
+`WEBEX_CLIENT_ID` / `WEBEX_CLIENT_SECRET`, move those credentials into the new
+`WEBEX_MYAGENT_*` fields and restore the original general Webex app credentials
+before rollout. Preserve the app's registered callback, then have users
+connect MyAgent separately (and reconnect general Webex if its app was rotated).
 
 ### Config-driven Agentic Apps
 

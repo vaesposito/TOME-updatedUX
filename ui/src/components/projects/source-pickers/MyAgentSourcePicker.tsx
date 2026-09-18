@@ -1,6 +1,7 @@
 "use client";
 
 import { Bot, Check, ExternalLink, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 import {
   MYAGENT_CONNECTOR_OPTIONS,
@@ -168,7 +169,11 @@ export function MyAgentSourcePicker({
               MyAgent connector settings <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </a>
             . TOME&apos;s Webex backend sends a bounded one-time request naming the selected
-            connector categories to MyAgent on your behalf using your Webex authorization.
+            connector categories to MyAgent on your behalf using your dedicated{" "}
+            <Link href="/credentials" className="font-medium text-foreground underline underline-offset-2">
+              MyAgent (Webex) connection
+            </Link>
+            , separate from your general Webex connection.
             This selection limits what TOME asks for, but is not a CAIPE-enforced provider
             scope: MyAgent&apos;s settings and policy are the sole authorization boundary, and
             CAIPE cannot verify which connector produced a reply. CAIPE does not receive or

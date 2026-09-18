@@ -6,6 +6,7 @@
 // Mock the token store so tests don't require a MongoDB/ESM environment.
 // Provides a simple in-memory Map that behaves identically to the real L1 path.
 const _mockTokenStore = new Map<string, import('../auth-token-store').StoredTokenState>()
+jest.mock('../mongodb', () => ({ isMongoDBConfigured: false }))
 jest.mock('../auth-token-store', () => ({
   getStoredTokens: jest.fn(async (
     sub: string | undefined,
@@ -137,6 +138,7 @@ describe('auth-config', () => {
   beforeEach(() => {
     mockReconcileOidcClaimGroupsForUser.mockReset()
     _resetServerTokenStore()
+    _resetInflightRefreshes()
   })
 
   describe('hasRequiredGroup', () => {
@@ -687,7 +689,7 @@ describe('auth-config', () => {
     })
 
     it('should use the internal token endpoint without trusting public discovery metadata', async () => {
-      process.env.OIDC_DISCOVERY_URL = 'http://keycloak.caipe-prod.svc:8080/realms/caipe'
+      process.env.OIDC_DISCOVERY_URL = 'http://keycloak.example:8080/realms/example'
       const now = Math.floor(Date.now() / 1000)
 
       await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
@@ -700,7 +702,7 @@ describe('auth-config', () => {
 
       expect(fetchSpy).toHaveBeenCalledTimes(1)
       expect(fetchSpy).toHaveBeenCalledWith(
-        'http://keycloak.caipe-prod.svc:8080/realms/caipe/protocol/openid-connect/token',
+        'http://keycloak.example:8080/realms/example/protocol/openid-connect/token',
         expect.objectContaining({ method: 'POST' }),
       )
     })
@@ -801,7 +803,7 @@ describe('auth-config', () => {
       expect(result.error).toBe('RefreshTokenError')
     })
 
-    it('should fall back to Keycloak-style token endpoint when OIDC discovery fails', async () => {
+    it('should not guess a token endpoint when OIDC discovery fails', async () => {
       fetchSpy.mockRestore()
       fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(
         makeRefreshFetchMock({ discoveryFails: true }),
@@ -809,7 +811,6 @@ describe('auth-config', () => {
 
       const now = Math.floor(Date.now() / 1000)
 
-      // Should still attempt the refresh using Keycloak fallback path
       await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
         token: {
           accessToken: 'at',
@@ -818,10 +819,8 @@ describe('auth-config', () => {
         },
       })
 
-      // Discovery failed → fallback → token exchange also "failed" (our mock returns non-JSON
-      // for the fallback call because discovery-fails mock only mocks the discovery call)
-      // The important assertion: it attempted a refresh (fetch was called)
-      expect(fetchSpy).toHaveBeenCalled()
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy.mock.calls[0][0]).toContain('.well-known/openid-configuration')
     })
 
     it('should keep existing refresh token when provider does not return a new one', async () => {

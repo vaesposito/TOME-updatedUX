@@ -6,6 +6,7 @@
 // Mock the token store so tests don't require a MongoDB/ESM environment.
 // Provides a simple in-memory Map that behaves identically to the real L1 path.
 const _mockTokenStore = new Map<string, import('../auth-token-store').StoredTokenState>()
+jest.mock('../mongodb', () => ({ isMongoDBConfigured: false }))
 jest.mock('../auth-token-store', () => ({
   getStoredTokens: jest.fn(async (
     sub: string | undefined,
@@ -137,6 +138,7 @@ describe('auth-config', () => {
   beforeEach(() => {
     mockReconcileOidcClaimGroupsForUser.mockReset()
     _resetServerTokenStore()
+    _resetInflightRefreshes()
   })
 
   describe('hasRequiredGroup', () => {
@@ -665,7 +667,7 @@ describe('auth-config', () => {
       expect(fetchSpy).not.toHaveBeenCalled()
     })
 
-    it('should return RefreshTokenExpired when token exchange returns non-JSON', async () => {
+    it('should treat a non-JSON token response as transient while the access token is valid', async () => {
       fetchSpy.mockRestore()
       fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(
         makeRefreshFetchMock({ nonJsonResponse: true }),
@@ -677,11 +679,89 @@ describe('auth-config', () => {
         token: {
           accessToken: 'at',
           refreshToken: 'rt',
+          expiresAt: now + 120,
+        },
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.accessToken).toBe('at')
+      expect(result.refreshSuppressedUntil).toBe(now + 60)
+    })
+
+    it('should use the internal token endpoint without trusting public discovery metadata', async () => {
+      process.env.OIDC_DISCOVERY_URL = 'http://keycloak.example:8080/realms/example'
+      const now = Math.floor(Date.now() / 1000)
+
+      await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
+        token: {
+          accessToken: 'at',
+          refreshToken: 'rt',
           expiresAt: now + 60,
         },
       })
 
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'http://keycloak.example:8080/realms/example/protocol/openid-connect/token',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+
+    it('should prefer an explicit server-side token endpoint override', async () => {
+      process.env.OIDC_DISCOVERY_URL = 'http://keycloak:8080/realms/caipe'
+      process.env.OIDC_TOKEN_ENDPOINT = 'http://keycloak-token:8080/custom/token'
+      const now = Math.floor(Date.now() / 1000)
+
+      await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
+        token: {
+          accessToken: 'at',
+          refreshToken: 'rt',
+          expiresAt: now + 60,
+        },
+      })
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'http://keycloak-token:8080/custom/token',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+
+    it('should not force-refresh a session that already has a terminal error', async () => {
+      const result = await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
+        token: {
+          accessToken: 'at',
+          refreshToken: 'rt',
+          expiresAt: Math.floor(Date.now() / 1000) + 60,
+          error: 'RefreshTokenExpired',
+        },
+        trigger: 'update',
+        session: { forceRefresh: true },
+      })
+
       expect(result.error).toBe('RefreshTokenExpired')
+      expect(fetchSpy).not.toHaveBeenCalled()
+    })
+
+    it('should clear terminal refresh state on a fresh sign-in', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const result = await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
+        token: {
+          error: 'RefreshTokenExpired',
+          refreshTerminal: true,
+          refreshSuppressedUntil: now + 60,
+        },
+        account: {
+          access_token: 'new-at',
+          refresh_token: 'new-rt',
+          expires_at: now + 3600,
+        },
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.refreshTerminal).toBeUndefined()
+      expect(result.refreshSuppressedUntil).toBeUndefined()
+      expect(result.refreshToken).toBe('new-rt')
     })
 
     it('should return RefreshTokenExpired when token exchange fails', async () => {
@@ -705,7 +785,25 @@ describe('auth-config', () => {
       expect(result.error).toBe('RefreshTokenExpired')
     })
 
-    it('should fall back to Keycloak-style token endpoint when OIDC discovery fails', async () => {
+    it('should return RefreshTokenError for a transient token failure after access expiry', async () => {
+      fetchSpy.mockRestore()
+      fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(
+        makeRefreshFetchMock({ nonJsonResponse: true }),
+      )
+      const now = Math.floor(Date.now() / 1000)
+
+      const result = await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
+        token: {
+          accessToken: 'at',
+          refreshToken: 'rt',
+          expiresAt: now - 10,
+        },
+      })
+
+      expect(result.error).toBe('RefreshTokenError')
+    })
+
+    it('should not guess a token endpoint when OIDC discovery fails', async () => {
       fetchSpy.mockRestore()
       fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(
         makeRefreshFetchMock({ discoveryFails: true }),
@@ -713,7 +811,6 @@ describe('auth-config', () => {
 
       const now = Math.floor(Date.now() / 1000)
 
-      // Should still attempt the refresh using Keycloak fallback path
       await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
         token: {
           accessToken: 'at',
@@ -722,10 +819,8 @@ describe('auth-config', () => {
         },
       })
 
-      // Discovery failed → fallback → token exchange also "failed" (our mock returns non-JSON
-      // for the fallback call because discovery-fails mock only mocks the discovery call)
-      // The important assertion: it attempted a refresh (fetch was called)
-      expect(fetchSpy).toHaveBeenCalled()
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(fetchSpy.mock.calls[0][0]).toContain('.well-known/openid-configuration')
     })
 
     it('should keep existing refresh token when provider does not return a new one', async () => {
@@ -965,6 +1060,23 @@ describe('auth-config', () => {
 
       expect(result.accessToken).toBeUndefined()
       expect(result.error).toBe('RefreshTokenExpired')
+    })
+
+    it('should not advertise a rejected refresh token to the client', async () => {
+      const result = await (authOptions.callbacks!.session! as (...args: unknown[]) => Promise<unknown>)({
+        session: { user: { name: 'Test', email: 'test@example.com' } },
+        token: {
+          accessToken: 'at',
+          refreshToken: 'rejected-rt',
+          refreshTerminal: true,
+          isAuthorized: true,
+          role: 'user',
+          expiresAt: 9999999999,
+        },
+      })
+
+      expect(result.accessToken).toBe('at')
+      expect(result.hasRefreshToken).toBe(false)
     })
 
     it('should mark SSO sessions invalid when the server-side access token cache is missing', async () => {
@@ -1420,8 +1532,17 @@ describe('auth-config', () => {
       // Should NOT be logged out — access token is still valid
       expect(result.error).toBeUndefined()
       expect(result.accessToken).toBe('still-valid-at')
-      // Retry shortly instead of suppressing until the token expires.
-      expect(result.refreshSuppressedUntil).toBe(now + 15)
+      expect(result.refreshTerminal).toBe(true)
+      expect(result.refreshSuppressedUntil).toBe(now + 200)
+
+      fetchSpy.mockClear()
+      const repeated = await (authOptions.callbacks!.jwt! as (...args: unknown[]) => Promise<unknown>)({
+        token: result,
+        trigger: 'update',
+        session: { forceRefresh: true },
+      })
+      expect(repeated.refreshTerminal).toBe(true)
+      expect(fetchSpy).not.toHaveBeenCalled()
     })
 
     it('adopts a newer token written by another replica after invalid_grant', async () => {

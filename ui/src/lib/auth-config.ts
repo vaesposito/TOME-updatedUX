@@ -1,5 +1,6 @@
 import { decodeJwt } from "jose";
 import type { NextAuthOptions } from "next-auth";
+import { getRefreshFailure, recordRefreshFailure, refreshFingerprint, resetRefreshFailures } from './auth-refresh-state';
 
 /**
  * Auth configuration for OIDC SSO
@@ -10,6 +11,8 @@ import type { NextAuthOptions } from "next-auth";
  * - OIDC_ISSUER: OIDC provider issuer URL
  * - OIDC_CLIENT_ID: OIDC client ID
  * - OIDC_CLIENT_SECRET: OIDC client secret
+ * - OIDC_TOKEN_ENDPOINT: Optional server-side token endpoint override. Use an
+ *     internal service URL when browser-facing OIDC traffic passes through a WAF.
  * - SSO_ENABLED: "true" to enable SSO, otherwise disabled.
  *   (Also accepts NEXT_PUBLIC_SSO_ENABLED for backward compatibility.)
  *   If SSO does not appear enabled: check window.__APP_CONFIG__ in the browser.
@@ -304,25 +307,48 @@ export function canViewAdminDashboard(groups: string[]): boolean {
 /** Reset in-flight refresh map (for testing only). */
 export function _resetInflightRefreshes(): void {
   _inflightRefreshes.clear();
+  resetRefreshFailures();
 }
 
 // Safety net 1: In-flight deduplication.
 // Maps the current refresh token → the pending exchange Promise so that
 // concurrent callers (refetchInterval + TokenExpiryGuard) share one HTTP
 // request instead of racing and triggering invalid_grant with rotating tokens.
-type ExchangeResult = {
+type TokenExchangeSuccess = {
   access_token: string;
   id_token?: string;
   refresh_token?: string;
-  expires_in?: number;
-} | null; // null = graceful race (see safety net 2)
+  expires_in: number;
+  receivedAt?: number; // Server timestamp, never accepted from the provider body.
+};
 
-type OidcExchangeResponse = Exclude<ExchangeResult, null> & {
+type ExchangeResult = TokenExchangeSuccess | {
+  outcome: "terminal" | "transient";
+  retryAt?: number;
+};
+
+type OidcExchangeResponse = Partial<TokenExchangeSuccess> & {
   error?: string;
   error_description?: string;
 };
 
 const _inflightRefreshes = new Map<string, Promise<ExchangeResult>>();
+
+function validatedEndpoint(raw: string): URL {
+  const url = new URL(raw);
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.hash) {
+    throw new Error('Invalid OIDC endpoint configuration');
+  }
+  return url;
+}
+
+function validExchange(data: OidcExchangeResponse): data is TokenExchangeSuccess {
+  return !data.error && typeof data.access_token === 'string' && data.access_token.trim().length > 0
+    && typeof data.expires_in === 'number' && Number.isSafeInteger(data.expires_in) && data.expires_in > 0
+    && Number.isSafeInteger(Math.floor(Date.now() / 1000) + data.expires_in)
+    && (data.refresh_token === undefined || (typeof data.refresh_token === 'string' && data.refresh_token.trim().length > 0))
+    && (data.id_token === undefined || (typeof data.id_token === 'string' && data.id_token.trim().length > 0));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Server-side token store
@@ -348,6 +374,8 @@ const PEER_REFRESH_RETRY_DELAYS_MS = [0, 25, 50, 100];
 async function readPeerRefreshedTokens(token: {
   sub?: unknown;
   tokenStoreVersion?: unknown;
+  accessToken?: unknown;
+  refreshToken?: unknown;
 }): Promise<StoredTokenState | undefined> {
   const sub = typeof token.sub === "string" ? token.sub : undefined;
   const version = typeof token.tokenStoreVersion === "number"
@@ -363,21 +391,23 @@ async function readPeerRefreshedTokens(token: {
       bypassL1: true,
       minimumVersion: version + 1,
     });
-    if (state) return state;
+    if (state && state.expiresAt && state.expiresAt > Math.floor(Date.now() / 1000)
+      && state.accessToken && (state.accessToken !== token.accessToken || state.refreshToken !== token.refreshToken)) return state;
   }
   return undefined;
 }
 
 function exchangeResultFromStoredTokens(
   state: StoredTokenState,
-): Exclude<ExchangeResult, null> | null {
-  if (!state.accessToken) return null;
+): TokenExchangeSuccess | null {
   const now = Math.floor(Date.now() / 1000);
+  if (!state.accessToken || !state.expiresAt || state.expiresAt <= now) return null;
   return {
     access_token: state.accessToken,
     id_token: state.idToken,
     refresh_token: state.refreshToken,
-    expires_in: state.expiresAt ? Math.max(1, state.expiresAt - now) : undefined,
+    expires_in: state.expiresAt - now,
+    receivedAt: now,
   };
 }
 
@@ -388,9 +418,9 @@ async function applyExchangeResult(
     expiresAt?: number;
     [key: string]: unknown;
   },
-  result: Exclude<ExchangeResult, null>,
+  result: TokenExchangeSuccess,
 ) {
-  const expiresAt = Math.floor(Date.now() / 1000) + (result.expires_in || 3600);
+  const expiresAt = (result.receivedAt ?? Math.floor(Date.now() / 1000)) + result.expires_in;
   const candidate = {
     accessToken: result.access_token,
     idToken: result.id_token,
@@ -411,7 +441,59 @@ async function applyExchangeResult(
     refreshToken: authoritative?.refreshToken ?? candidate.refreshToken,
     tokenStoreVersion: authoritative?.version ?? expectedVersion,
     error: undefined,
+    refreshTerminal: undefined,
     refreshSuppressedUntil: undefined,
+    refreshFailureKey: undefined,
+  };
+}
+
+function handleRefreshFailure(
+  token: {
+    expiresAt?: number;
+    [key: string]: unknown;
+  },
+  outcome: "terminal" | "transient",
+  retryAt?: number,
+) {
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = token.expiresAt as number | undefined;
+  const accessTokenIsValid = !!token.accessToken && !!expiresAt && expiresAt > now;
+  token = {
+    ...token,
+    refreshFailureKey: typeof token.refreshToken === 'string'
+      ? refreshFingerprint(process.env.OIDC_ISSUER || '', process.env.OIDC_CLIENT_ID || '', token.refreshToken)
+      : undefined,
+  };
+
+  if (outcome === "terminal") {
+    if (accessTokenIsValid) {
+      return {
+        ...token,
+        error: undefined,
+        refreshTerminal: true,
+        refreshSuppressedUntil: expiresAt,
+      };
+    }
+    return {
+      ...token,
+      error: "RefreshTokenExpired",
+      refreshTerminal: true,
+      refreshSuppressedUntil: undefined,
+    };
+  }
+
+  if (accessTokenIsValid) {
+    return {
+      ...token,
+      error: undefined,
+      refreshSuppressedUntil: Math.min(expiresAt, retryAt ?? now + 60),
+    };
+  }
+
+  return {
+    ...token,
+    error: "RefreshTokenError",
+    refreshSuppressedUntil: retryAt ?? now + 60,
   };
 }
 
@@ -444,9 +526,12 @@ export function _resetServerTokenStore(): void {
  * Safety nets:
  *   1. In-flight deduplication: concurrent calls with the same refresh token
  *      share a single HTTP exchange rather than racing.
- *   2. Graceful invalid_grant: if the provider rejects the token but the
- *      access token is still valid, we treat it as a race (another instance
- *      already refreshed) and return the existing token without an error.
+ *   2. Cross-replica adoption: after invalid_grant, adopt a newer token from
+ *      the shared token store when another instance already refreshed it.
+ *   3. Terminal suppression: a rejected refresh token is never retried. The
+ *      current access token may finish its lifetime, then the user signs in once.
+ *   4. Transient suppression: WAF/network/provider failures do not invalidate a
+ *      still-valid access token and are retried only after a bounded backoff.
  *
  * @param token - The JWT token containing the refresh token
  * @returns Updated token with new access_token and expiry
@@ -464,7 +549,9 @@ async function refreshAccessToken(token: {
     // Server-side calls (discovery + token refresh) prefer OIDC_DISCOVERY_URL so
     // they can use the Docker-internal hostname while OIDC_ISSUER stays
     // browser-facing. See provider config below for full rationale.
-    const serverIssuer = process.env.OIDC_DISCOVERY_URL || issuer;
+    const internalIssuer = process.env.OIDC_DISCOVERY_URL?.trim();
+    const serverIssuer = internalIssuer || issuer;
+    const configuredTokenEndpoint = process.env.OIDC_TOKEN_ENDPOINT?.trim();
     const clientId = process.env.OIDC_CLIENT_ID;
     const clientSecret = process.env.OIDC_CLIENT_SECRET;
 
@@ -485,45 +572,76 @@ async function refreshAccessToken(token: {
     }
 
     const currentRefreshToken = token.refreshToken as string;
+    const key = refreshFingerprint(issuer, clientId, currentRefreshToken);
 
     // Safety net 1: join an in-flight exchange for the same refresh token
-    const existing = _inflightRefreshes.get(currentRefreshToken);
+    const existing = _inflightRefreshes.get(key);
     if (existing) {
       console.log("[Auth] Joining in-flight token exchange (concurrent refresh detected)");
       const result = await existing;
-      if (result === null) {
-        // Another caller already handled the race; current access token is still valid
-        return { ...token, error: undefined };
-      }
+      if ("outcome" in result) return handleRefreshFailure(token, result.outcome, result.retryAt);
       return applyExchangeResult(token, result);
     }
 
     // Inner function that performs the actual HTTP exchange.
-    // Returns the token data on success, null for graceful races, or throws on real errors.
+    // Returns token data on success or a classified failure result.
+    let failureWasCached = false;
     const doExchange = async (): Promise<ExchangeResult> => {
-      // Discover the token endpoint from the OIDC issuer's well-known configuration.
-      // Falls back to Keycloak-style path if discovery fails.
+      const failure = await getRefreshFailure(key);
+      if (failure) {
+        failureWasCached = true;
+        const peer = await readPeerRefreshedTokens(token);
+        const adopted = peer && exchangeResultFromStoredTokens(peer);
+        return adopted || { outcome: failure.outcome, retryAt: Math.floor(failure.expiresAt.getTime() / 1000) };
+      }
+      // Keep server-side refreshes on the internal network whenever an internal
+      // issuer is configured. Keycloak discovery advertises its public endpoint,
+      // which would otherwise send every refresh through the public WAF.
       let tokenEndpoint: string;
-      try {
-        const wellKnownUrl = `${serverIssuer}/.well-known/openid-configuration`;
-        const discoveryResponse = await fetch(wellKnownUrl, { next: { revalidate: 3600 } });
+      if (configuredTokenEndpoint) {
+        tokenEndpoint = configuredTokenEndpoint;
+        console.log("[Auth] Using configured server-side OIDC token endpoint");
+      } else if (internalIssuer && /\/realms\/[^/]+\/?$/.test(
+        validatedEndpoint(internalIssuer).pathname.replace(/\/\.well-known\/openid-configuration\/?$/, ''),
+      )) {
+        const realmBase = validatedEndpoint(internalIssuer);
+        realmBase.pathname = realmBase.pathname.replace(/\/\.well-known\/openid-configuration\/?$/, '').replace(/\/$/, '')
+          + '/protocol/openid-connect/token';
+        realmBase.search = '';
+        tokenEndpoint = realmBase.toString();
+        console.log("[Auth] Using internal Keycloak token endpoint");
+      } else {
+        const discoveryUrl = validatedEndpoint(serverIssuer!);
+        discoveryUrl.pathname = discoveryUrl.pathname.replace(/\/$/, '');
+        if (!discoveryUrl.pathname.endsWith('/.well-known/openid-configuration')) {
+          discoveryUrl.pathname += '/.well-known/openid-configuration';
+        }
+        const discoveryResponse = await fetch(discoveryUrl.toString(), {
+          next: { revalidate: 3600 }, redirect: 'error', signal: AbortSignal.timeout(10_000),
+        });
         if (discoveryResponse.ok) {
           const discoveryDoc = await discoveryResponse.json();
-          tokenEndpoint = discoveryDoc.token_endpoint;
-          console.log("[Auth] Token endpoint from OIDC discovery:", tokenEndpoint);
+          if (typeof discoveryDoc?.token_endpoint !== 'string') throw new Error('Missing token endpoint');
+          const discovered = validatedEndpoint(discoveryDoc.token_endpoint);
+          if (discoveryUrl.protocol === 'https:' && discovered.protocol !== 'https:') {
+            throw new Error('Insecure discovery token endpoint');
+          }
+          tokenEndpoint = discovered.toString();
         } else {
-          console.warn("[Auth] OIDC discovery failed, falling back to Keycloak-style path");
-          tokenEndpoint = `${serverIssuer}/protocol/openid-connect/token`;
+          // Do not guess a Keycloak route for generic OIDC providers.
+          await discoveryResponse.body?.cancel();
+          throw new Error('OIDC discovery unavailable');
         }
-      } catch (discoveryError) {
-        console.warn("[Auth] OIDC discovery error, falling back to Keycloak-style path:", discoveryError);
-        tokenEndpoint = `${serverIssuer}/protocol/openid-connect/token`;
       }
 
       console.log("[Auth] Refreshing access token...");
 
-      const response = await fetch(tokenEndpoint, {
+      const response = await fetch(validatedEndpoint(tokenEndpoint).toString(), {
         method: "POST",
+        // Never forward a client secret/refresh token through an HTTP redirect.
+        redirect: 'error',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
@@ -540,21 +658,18 @@ async function refreshAccessToken(token: {
       let data: OidcExchangeResponse;
 
       if (contentType.includes("application/json")) {
-        data = await response.json() as OidcExchangeResponse;
+        const body: unknown = await response.json();
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return { outcome: 'transient' };
+        data = body as OidcExchangeResponse;
       } else {
-        const text = await response.text();
-        console.error("[Auth] Token refresh returned non-JSON response:", text.substring(0, 200));
-        throw new Error("RefreshTokenExpired");
+        // Provider/WAF bodies can contain tokens, cookies, or reflected input.
+        console.warn("[Auth] Token refresh returned non-JSON response", response.status);
+        await response.body?.cancel();
+        return { outcome: "transient" };
       }
 
       if (!response.ok) {
-        // Safety net 2: graceful invalid_grant handling.
-        // When a peer (another Next.js instance or refetchInterval) already consumed
-        // the rotating refresh token, we get invalid_grant back. If the access token
-        // is still valid, treat this as a benign race rather than forcing a logout.
-        if (data.error === "invalid_grant") {
-          const now = Math.floor(Date.now() / 1000);
-          const expiresAt = token.expiresAt as number | undefined;
+        if (data.error === "invalid_grant" || data.error === "invalid_token") {
           const peerTokens = await readPeerRefreshedTokens(token);
           const peerResult = peerTokens
             ? exchangeResultFromStoredTokens(peerTokens)
@@ -563,48 +678,51 @@ async function refreshAccessToken(token: {
             console.log("[Auth] Adopted token refresh completed by another replica");
             return peerResult;
           }
-          if (expiresAt && expiresAt > now) {
-            console.warn(
-              "[Auth] invalid_grant with valid access token — concurrent refresh race detected, keeping current token"
-            );
-            return null; // Signal: no error, keep existing token
-          }
+          console.warn("[Auth] Refresh token is no longer active; suppressing further retries");
+          return { outcome: "terminal" };
         }
-        console.error("[Auth] Token refresh failed:", data);
-        throw new Error("RefreshTokenExpired");
+        console.warn("[Auth] Token refresh rejected", response.status);
+        return { outcome: "transient" };
       }
 
-      console.log("[Auth] Token refreshed successfully");
-      return data as ExchangeResult;
+      if (!validExchange(data)) {
+        console.warn('[Auth] Invalid token refresh response');
+        return { outcome: 'transient' };
+      }
+      // Do not let unrecognized provider fields become internal control state.
+      return {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        id_token: data.id_token,
+        expires_in: data.expires_in,
+        receivedAt: Math.floor(Date.now() / 1000),
+      };
     };
 
     // Register the exchange Promise so concurrent callers can join it (safety net 1)
-    const exchangePromise = doExchange();
-    _inflightRefreshes.set(currentRefreshToken, exchangePromise);
+    const exchangePromise = doExchange().catch((): ExchangeResult => {
+      console.warn('[Auth] Token refresh transport or configuration failure');
+      return { outcome: 'transient' };
+    }).then(async (result) => {
+      if ('outcome' in result) {
+        if (!failureWasCached) await recordRefreshFailure(key, result.outcome);
+      } else await applyExchangeResult(token, result); // Persist before releasing the in-flight guard.
+      return result;
+    });
+    _inflightRefreshes.set(key, exchangePromise);
 
     let result: ExchangeResult;
     try {
       result = await exchangePromise;
     } finally {
-      _inflightRefreshes.delete(currentRefreshToken);
+      _inflightRefreshes.delete(key);
     }
 
-    if (result === null) {
-      // Graceful race: access token still valid, no logout needed
-      return { ...token, error: undefined };
-    }
-
+    if ("outcome" in result) return handleRefreshFailure(token, result.outcome, result.retryAt);
     return applyExchangeResult(token, result);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage === "RefreshTokenExpired") {
-      return { ...token, error: "RefreshTokenExpired" };
-    }
-    console.error("[Auth] Error refreshing access token:", error);
-    return {
-      ...token,
-      error: "RefreshTokenError",
-    };
+  } catch {
+    console.warn("[Auth] Unable to complete token refresh");
+    return handleRefreshFailure(token, "transient");
   }
 }
 
@@ -674,19 +792,44 @@ export const authOptions: NextAuthOptions = {
         delete token.idToken;
       }
 
+      // A fresh authorization grant replaces all prior refresh failure state.
+      if (account) {
+        token.error = undefined;
+        token.refreshTerminal = undefined;
+        token.refreshSuppressedUntil = undefined;
+        token.refreshFailureKey = undefined;
+      } else {
+        // Never retry a refresh token that the provider has already rejected.
+        // Allow a still-valid access token to finish its lifetime, then require
+        // one clean interactive sign-in.
+        if (token.refreshTerminal) {
+          const now = Math.floor(Date.now() / 1000);
+          const expiresAt = token.expiresAt as number | undefined;
+          if (!token.accessToken || !expiresAt || expiresAt <= now) {
+            token.error = "RefreshTokenExpired";
+          }
+          return token;
+        }
+
+        // This guard intentionally precedes the force-refresh branch. Client
+        // keepalive/update calls must not revive a known failed session.
+        if (token.error && token.error !== 'AccessTokenMissing') {
+          console.warn(`[Auth] Token refresh already failed (${token.error}), skipping refresh attempt`);
+          return token;
+        }
+        if (token.refreshSuppressedUntil && Date.now() / 1000 < token.refreshSuppressedUntil) return token;
+      }
+
       // Force-refresh when admin changes roles/permissions and calls
       // update({ forceRefresh: true }) from the client.
-      if (
+      const forceRefresh = !!(
+        !account && ENABLE_REFRESH_TOKEN &&
         trigger === "update" &&
         updateData &&
         typeof updateData === "object" &&
-        (updateData as Record<string, unknown>).forceRefresh &&
+        (updateData as Record<string, unknown>).forceRefresh === true &&
         token.refreshToken
-      ) {
-        console.log("[Auth] Force-refreshing token");
-        const refreshed = await refreshAccessToken(token) as typeof token;
-        return refreshed;
-      }
+      );
 
       // Initial sign in - persist the OAuth tokens (NOT id_token).
       if (account) {
@@ -810,18 +953,12 @@ export const authOptions: NextAuthOptions = {
       const now = Math.floor(Date.now() / 1000);
       const expiresAt = token.expiresAt as number | undefined;
 
-      if (ENABLE_REFRESH_TOKEN && expiresAt) {
-        const timeUntilExpiry = expiresAt - now;
+      if (ENABLE_REFRESH_TOKEN && (expiresAt || forceRefresh)) {
+        const timeUntilExpiry = (expiresAt ?? now) - now;
 
-        const shouldRefresh = timeUntilExpiry < 5 * 60; // Refresh if less than 5 min remaining
+        const shouldRefresh = forceRefresh || timeUntilExpiry < 5 * 60;
 
         if (shouldRefresh) {
-          // Don't attempt refresh if there's already an error (prevents loops)
-          if (token.error) {
-            console.warn(`[Auth] Token refresh already failed (${token.error}), skipping refresh attempt`);
-            return token;
-          }
-
           // Don't attempt refresh if suppressed (graceful invalid_grant already handled)
           // This prevents infinite refresh loops when the refresh token is consumed but
           // the access token is still valid.
@@ -836,14 +973,15 @@ export const authOptions: NextAuthOptions = {
           if (token.refreshToken) {
             const refreshedToken = await refreshAccessToken(token) as typeof token;
 
-            // If refresh returned the same access token (graceful invalid_grant race),
-            // suppress further refresh attempts until the token expires to prevent
-            // an infinite refresh loop.
+            // If refresh kept the current access token after a transient failure,
+            // preserve the backoff selected by refreshAccessToken.
             if (!refreshedToken.error && refreshedToken.accessToken === token.accessToken) {
               console.log(`[Auth] Refresh suppressed — access token still valid for ${timeUntilExpiry}s, will not retry`);
               return {
                 ...refreshedToken,
-                refreshSuppressedUntil: Math.min(expiresAt, now + 15),
+                refreshSuppressedUntil:
+                  (refreshedToken.refreshSuppressedUntil as number | undefined)
+                  ?? Math.min(expiresAt ?? now, now + 60),
               };
             }
 
@@ -904,7 +1042,6 @@ export const authOptions: NextAuthOptions = {
       // Only pass tokens if they're valid (not expired)
       if (!token.error) {
         session.accessToken = token.accessToken as string;
-        session.hasRefreshToken = !!token.refreshToken;
       }
 
       session.error = token.error as string | undefined;
@@ -912,7 +1049,7 @@ export const authOptions: NextAuthOptions = {
       session.expiresAt = token.expiresAt as number | undefined;
 
       // Pass refresh token metadata (NOT the token itself - security)
-      session.hasRefreshToken = !!token.refreshToken;
+      session.hasRefreshToken = ENABLE_REFRESH_TOKEN && !!token.refreshToken && token.refreshTerminal !== true;
       session.refreshTokenExpiresAt = token.refreshTokenExpiresAt as number | undefined;
 
       // Set role from token (OIDC group check only here)
@@ -997,6 +1134,16 @@ export const authOptions: NextAuthOptions = {
             : 0,
         });
         if (stored) {
+          // Failure flags belong to the rejected credential, not every future
+          // token for this subject. A peer refresh/login may have replaced it.
+          if (decoded.refreshFailureKey && stored.refreshToken && decoded.refreshFailureKey !== refreshFingerprint(
+            process.env.OIDC_ISSUER || '', process.env.OIDC_CLIENT_ID || '', stored.refreshToken,
+          )) {
+            decoded.error = undefined;
+            decoded.refreshTerminal = undefined;
+            decoded.refreshSuppressedUntil = undefined;
+            decoded.refreshFailureKey = undefined;
+          }
           if (stored.accessToken) decoded.accessToken = stored.accessToken;
           if (stored.refreshToken) decoded.refreshToken = stored.refreshToken;
           if (stored.idToken) decoded.idToken = stored.idToken;
@@ -1070,6 +1217,8 @@ declare module "next-auth/jwt" {
     canAccessDynamicAgents?: boolean; // Legacy context flag; OpenFGA authorizes agents
     groupsCheckedAt?: number; // Unix timestamp of last group re-evaluation
     refreshSuppressedUntil?: number; // Unix timestamp — skip refresh attempts until this time (set after graceful invalid_grant)
+    refreshTerminal?: boolean; // Provider rejected this refresh token; never retry it
+    refreshFailureKey?: string; // Fingerprint scopes failure flags to a single credential
     tokenStoreVersion?: number; // Monotonic MongoDB token record version for cross-replica cache coherence
     org?: string;           // Tenant identifier from org claim (FR-020)
   }

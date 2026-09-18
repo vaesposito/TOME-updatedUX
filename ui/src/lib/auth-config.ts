@@ -10,6 +10,8 @@ import type { NextAuthOptions } from "next-auth";
  * - OIDC_ISSUER: OIDC provider issuer URL
  * - OIDC_CLIENT_ID: OIDC client ID
  * - OIDC_CLIENT_SECRET: OIDC client secret
+ * - OIDC_TOKEN_ENDPOINT: Optional server-side token endpoint override. Use an
+ *     internal service URL when browser-facing OIDC traffic passes through a WAF.
  * - SSO_ENABLED: "true" to enable SSO, otherwise disabled.
  *   (Also accepts NEXT_PUBLIC_SSO_ENABLED for backward compatibility.)
  *   If SSO does not appear enabled: check window.__APP_CONFIG__ in the browser.
@@ -310,14 +312,18 @@ export function _resetInflightRefreshes(): void {
 // Maps the current refresh token → the pending exchange Promise so that
 // concurrent callers (refetchInterval + TokenExpiryGuard) share one HTTP
 // request instead of racing and triggering invalid_grant with rotating tokens.
-type ExchangeResult = {
+type TokenExchangeSuccess = {
   access_token: string;
   id_token?: string;
   refresh_token?: string;
   expires_in?: number;
-} | null; // null = graceful race (see safety net 2)
+};
 
-type OidcExchangeResponse = Exclude<ExchangeResult, null> & {
+type ExchangeResult = TokenExchangeSuccess | {
+  outcome: "terminal" | "transient";
+};
+
+type OidcExchangeResponse = Partial<TokenExchangeSuccess> & {
   error?: string;
   error_description?: string;
 };
@@ -370,7 +376,7 @@ async function readPeerRefreshedTokens(token: {
 
 function exchangeResultFromStoredTokens(
   state: StoredTokenState,
-): Exclude<ExchangeResult, null> | null {
+): TokenExchangeSuccess | null {
   if (!state.accessToken) return null;
   const now = Math.floor(Date.now() / 1000);
   return {
@@ -388,7 +394,7 @@ async function applyExchangeResult(
     expiresAt?: number;
     [key: string]: unknown;
   },
-  result: Exclude<ExchangeResult, null>,
+  result: TokenExchangeSuccess,
 ) {
   const expiresAt = Math.floor(Date.now() / 1000) + (result.expires_in || 3600);
   const candidate = {
@@ -411,7 +417,50 @@ async function applyExchangeResult(
     refreshToken: authoritative?.refreshToken ?? candidate.refreshToken,
     tokenStoreVersion: authoritative?.version ?? expectedVersion,
     error: undefined,
+    refreshTerminal: undefined,
     refreshSuppressedUntil: undefined,
+  };
+}
+
+function handleRefreshFailure(
+  token: {
+    expiresAt?: number;
+    [key: string]: unknown;
+  },
+  outcome: "terminal" | "transient",
+) {
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = token.expiresAt as number | undefined;
+  const accessTokenIsValid = !!expiresAt && expiresAt > now;
+
+  if (outcome === "terminal") {
+    if (accessTokenIsValid) {
+      return {
+        ...token,
+        error: undefined,
+        refreshTerminal: true,
+        refreshSuppressedUntil: expiresAt,
+      };
+    }
+    return {
+      ...token,
+      error: "RefreshTokenExpired",
+      refreshTerminal: true,
+      refreshSuppressedUntil: undefined,
+    };
+  }
+
+  if (accessTokenIsValid) {
+    return {
+      ...token,
+      error: undefined,
+      refreshSuppressedUntil: Math.min(expiresAt, now + 60),
+    };
+  }
+
+  return {
+    ...token,
+    error: "RefreshTokenError",
   };
 }
 
@@ -444,9 +493,12 @@ export function _resetServerTokenStore(): void {
  * Safety nets:
  *   1. In-flight deduplication: concurrent calls with the same refresh token
  *      share a single HTTP exchange rather than racing.
- *   2. Graceful invalid_grant: if the provider rejects the token but the
- *      access token is still valid, we treat it as a race (another instance
- *      already refreshed) and return the existing token without an error.
+ *   2. Cross-replica adoption: after invalid_grant, adopt a newer token from
+ *      the shared token store when another instance already refreshed it.
+ *   3. Terminal suppression: a rejected refresh token is never retried. The
+ *      current access token may finish its lifetime, then the user signs in once.
+ *   4. Transient suppression: WAF/network/provider failures do not invalidate a
+ *      still-valid access token and are retried only after a bounded backoff.
  *
  * @param token - The JWT token containing the refresh token
  * @returns Updated token with new access_token and expiry
@@ -464,7 +516,9 @@ async function refreshAccessToken(token: {
     // Server-side calls (discovery + token refresh) prefer OIDC_DISCOVERY_URL so
     // they can use the Docker-internal hostname while OIDC_ISSUER stays
     // browser-facing. See provider config below for full rationale.
-    const serverIssuer = process.env.OIDC_DISCOVERY_URL || issuer;
+    const internalIssuer = process.env.OIDC_DISCOVERY_URL?.trim();
+    const serverIssuer = internalIssuer || issuer;
+    const configuredTokenEndpoint = process.env.OIDC_TOKEN_ENDPOINT?.trim();
     const clientId = process.env.OIDC_CLIENT_ID;
     const clientSecret = process.env.OIDC_CLIENT_SECRET;
 
@@ -491,33 +545,42 @@ async function refreshAccessToken(token: {
     if (existing) {
       console.log("[Auth] Joining in-flight token exchange (concurrent refresh detected)");
       const result = await existing;
-      if (result === null) {
-        // Another caller already handled the race; current access token is still valid
-        return { ...token, error: undefined };
-      }
+      if ("outcome" in result) return handleRefreshFailure(token, result.outcome);
       return applyExchangeResult(token, result);
     }
 
     // Inner function that performs the actual HTTP exchange.
-    // Returns the token data on success, null for graceful races, or throws on real errors.
+    // Returns token data on success or a classified failure result.
     const doExchange = async (): Promise<ExchangeResult> => {
-      // Discover the token endpoint from the OIDC issuer's well-known configuration.
-      // Falls back to Keycloak-style path if discovery fails.
+      // Keep server-side refreshes on the internal network whenever an internal
+      // issuer is configured. Keycloak discovery advertises its public endpoint,
+      // which would otherwise send every refresh through the public WAF.
       let tokenEndpoint: string;
-      try {
-        const wellKnownUrl = `${serverIssuer}/.well-known/openid-configuration`;
-        const discoveryResponse = await fetch(wellKnownUrl, { next: { revalidate: 3600 } });
-        if (discoveryResponse.ok) {
-          const discoveryDoc = await discoveryResponse.json();
-          tokenEndpoint = discoveryDoc.token_endpoint;
-          console.log("[Auth] Token endpoint from OIDC discovery:", tokenEndpoint);
-        } else {
-          console.warn("[Auth] OIDC discovery failed, falling back to Keycloak-style path");
+      if (configuredTokenEndpoint) {
+        tokenEndpoint = configuredTokenEndpoint;
+        console.log("[Auth] Using configured server-side OIDC token endpoint");
+      } else if (internalIssuer) {
+        const realmBase = internalIssuer
+          .replace(/\/\.well-known\/openid-configuration\/?$/, "")
+          .replace(/\/$/, "");
+        tokenEndpoint = `${realmBase}/protocol/openid-connect/token`;
+        console.log("[Auth] Using internal Keycloak token endpoint");
+      } else {
+        try {
+          const wellKnownUrl = `${serverIssuer}/.well-known/openid-configuration`;
+          const discoveryResponse = await fetch(wellKnownUrl, { next: { revalidate: 3600 } });
+          if (discoveryResponse.ok) {
+            const discoveryDoc = await discoveryResponse.json();
+            tokenEndpoint = discoveryDoc.token_endpoint;
+            console.log("[Auth] Token endpoint from OIDC discovery:", tokenEndpoint);
+          } else {
+            console.warn("[Auth] OIDC discovery failed, falling back to Keycloak-style path");
+            tokenEndpoint = `${serverIssuer}/protocol/openid-connect/token`;
+          }
+        } catch (discoveryError) {
+          console.warn("[Auth] OIDC discovery error, falling back to Keycloak-style path:", discoveryError);
           tokenEndpoint = `${serverIssuer}/protocol/openid-connect/token`;
         }
-      } catch (discoveryError) {
-        console.warn("[Auth] OIDC discovery error, falling back to Keycloak-style path:", discoveryError);
-        tokenEndpoint = `${serverIssuer}/protocol/openid-connect/token`;
       }
 
       console.log("[Auth] Refreshing access token...");
@@ -544,17 +607,11 @@ async function refreshAccessToken(token: {
       } else {
         const text = await response.text();
         console.error("[Auth] Token refresh returned non-JSON response:", text.substring(0, 200));
-        throw new Error("RefreshTokenExpired");
+        return { outcome: "transient" };
       }
 
       if (!response.ok) {
-        // Safety net 2: graceful invalid_grant handling.
-        // When a peer (another Next.js instance or refetchInterval) already consumed
-        // the rotating refresh token, we get invalid_grant back. If the access token
-        // is still valid, treat this as a benign race rather than forcing a logout.
-        if (data.error === "invalid_grant") {
-          const now = Math.floor(Date.now() / 1000);
-          const expiresAt = token.expiresAt as number | undefined;
+        if (data.error === "invalid_grant" || data.error === "invalid_token") {
           const peerTokens = await readPeerRefreshedTokens(token);
           const peerResult = peerTokens
             ? exchangeResultFromStoredTokens(peerTokens)
@@ -563,15 +620,11 @@ async function refreshAccessToken(token: {
             console.log("[Auth] Adopted token refresh completed by another replica");
             return peerResult;
           }
-          if (expiresAt && expiresAt > now) {
-            console.warn(
-              "[Auth] invalid_grant with valid access token — concurrent refresh race detected, keeping current token"
-            );
-            return null; // Signal: no error, keep existing token
-          }
+          console.warn("[Auth] Refresh token is no longer active; suppressing further retries");
+          return { outcome: "terminal" };
         }
         console.error("[Auth] Token refresh failed:", data);
-        throw new Error("RefreshTokenExpired");
+        return { outcome: "transient" };
       }
 
       console.log("[Auth] Token refreshed successfully");
@@ -589,22 +642,11 @@ async function refreshAccessToken(token: {
       _inflightRefreshes.delete(currentRefreshToken);
     }
 
-    if (result === null) {
-      // Graceful race: access token still valid, no logout needed
-      return { ...token, error: undefined };
-    }
-
+    if ("outcome" in result) return handleRefreshFailure(token, result.outcome);
     return applyExchangeResult(token, result);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage === "RefreshTokenExpired") {
-      return { ...token, error: "RefreshTokenExpired" };
-    }
     console.error("[Auth] Error refreshing access token:", error);
-    return {
-      ...token,
-      error: "RefreshTokenError",
-    };
+    return handleRefreshFailure(token, "transient");
   }
 }
 
@@ -672,6 +714,32 @@ export const authOptions: NextAuthOptions = {
       // the cookie over the 4096-byte limit, causing chunking loops.
       if (token.idToken) {
         delete token.idToken;
+      }
+
+      // A fresh authorization grant replaces all prior refresh failure state.
+      if (account) {
+        token.error = undefined;
+        token.refreshTerminal = undefined;
+        token.refreshSuppressedUntil = undefined;
+      } else {
+        // Never retry a refresh token that the provider has already rejected.
+        // Allow a still-valid access token to finish its lifetime, then require
+        // one clean interactive sign-in.
+        if (token.refreshTerminal) {
+          const now = Math.floor(Date.now() / 1000);
+          const expiresAt = token.expiresAt as number | undefined;
+          if (!expiresAt || expiresAt <= now) {
+            token.error = "RefreshTokenExpired";
+          }
+          return token;
+        }
+
+        // This guard intentionally precedes the force-refresh branch. Client
+        // keepalive/update calls must not revive a known failed session.
+        if (token.error) {
+          console.warn(`[Auth] Token refresh already failed (${token.error}), skipping refresh attempt`);
+          return token;
+        }
       }
 
       // Force-refresh when admin changes roles/permissions and calls
@@ -816,12 +884,6 @@ export const authOptions: NextAuthOptions = {
         const shouldRefresh = timeUntilExpiry < 5 * 60; // Refresh if less than 5 min remaining
 
         if (shouldRefresh) {
-          // Don't attempt refresh if there's already an error (prevents loops)
-          if (token.error) {
-            console.warn(`[Auth] Token refresh already failed (${token.error}), skipping refresh attempt`);
-            return token;
-          }
-
           // Don't attempt refresh if suppressed (graceful invalid_grant already handled)
           // This prevents infinite refresh loops when the refresh token is consumed but
           // the access token is still valid.
@@ -836,14 +898,15 @@ export const authOptions: NextAuthOptions = {
           if (token.refreshToken) {
             const refreshedToken = await refreshAccessToken(token) as typeof token;
 
-            // If refresh returned the same access token (graceful invalid_grant race),
-            // suppress further refresh attempts until the token expires to prevent
-            // an infinite refresh loop.
+            // If refresh kept the current access token after a transient failure,
+            // preserve the backoff selected by refreshAccessToken.
             if (!refreshedToken.error && refreshedToken.accessToken === token.accessToken) {
               console.log(`[Auth] Refresh suppressed — access token still valid for ${timeUntilExpiry}s, will not retry`);
               return {
                 ...refreshedToken,
-                refreshSuppressedUntil: Math.min(expiresAt, now + 15),
+                refreshSuppressedUntil:
+                  (refreshedToken.refreshSuppressedUntil as number | undefined)
+                  ?? Math.min(expiresAt, now + 60),
               };
             }
 
@@ -904,7 +967,6 @@ export const authOptions: NextAuthOptions = {
       // Only pass tokens if they're valid (not expired)
       if (!token.error) {
         session.accessToken = token.accessToken as string;
-        session.hasRefreshToken = !!token.refreshToken;
       }
 
       session.error = token.error as string | undefined;
@@ -912,7 +974,7 @@ export const authOptions: NextAuthOptions = {
       session.expiresAt = token.expiresAt as number | undefined;
 
       // Pass refresh token metadata (NOT the token itself - security)
-      session.hasRefreshToken = !!token.refreshToken;
+      session.hasRefreshToken = !!token.refreshToken && token.refreshTerminal !== true;
       session.refreshTokenExpiresAt = token.refreshTokenExpiresAt as number | undefined;
 
       // Set role from token (OIDC group check only here)
@@ -1070,6 +1132,7 @@ declare module "next-auth/jwt" {
     canAccessDynamicAgents?: boolean; // Legacy context flag; OpenFGA authorizes agents
     groupsCheckedAt?: number; // Unix timestamp of last group re-evaluation
     refreshSuppressedUntil?: number; // Unix timestamp — skip refresh attempts until this time (set after graceful invalid_grant)
+    refreshTerminal?: boolean; // Provider rejected this refresh token; never retry it
     tokenStoreVersion?: number; // Monotonic MongoDB token record version for cross-replica cache coherence
     org?: string;           // Tenant identifier from org claim (FR-020)
   }

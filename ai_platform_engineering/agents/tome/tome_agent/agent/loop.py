@@ -27,6 +27,7 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 from tome_agent.agent import http_client
 from tome_agent.agent.connectors import REGISTRY
 from tome_agent.agent.connectors.base import SourceItem
+from tome_agent.agent.mcp_myagent import build_myagent_mcp
 from tome_agent.agent.mcp_mycelium import build_mycelium_mcp
 from tome_agent.agent.mcp_tome import build_tome_mcp
 from tome_agent.reports import schema as report_schema
@@ -250,8 +251,7 @@ def make_constrain_reads_hook(
             return False
         normalized = pattern.replace("\\", "/")
         if (
-            normalized.startswith("/")
-            or normalized.startswith("~")
+            normalized.startswith(("/", "~"))
             or (
                 len(normalized) >= 2
                 and normalized[0].isalpha()
@@ -700,6 +700,7 @@ def build_agent_options(
     extra_read_dirs: list[Path] | None = None,
     offline: bool = False,
     restrict_untrusted_evidence: bool = False,
+    myagent_run_id: str | None = None,
     max_budget_usd: float | None = None,
     expected_template_pages: dict[str, Any] | None = None,
 ) -> ClaudeAgentOptions:
@@ -786,6 +787,10 @@ def build_agent_options(
                 ]
             )
 
+    if myagent_run_id and restrict_untrusted_evidence and not offline and agent_role != "viewer":
+        mcp_servers["myagent"] = build_myagent_mcp(project_id, myagent_run_id)
+        allowed.append("mcp__myagent__ask_myagent")
+
     for connector in () if (offline or restrict_untrusted_evidence) else REGISTRY:
         token = _connector_token(connector.slug)
         if not connector.is_enabled(token):
@@ -838,7 +843,7 @@ def build_agent_options(
         # For delegated external evidence, `tools` is the actual availability
         # fence: no WebFetch/Search, connector MCP, or ambient built-in can
         # become callable even if a source reply tries to prompt-inject it.
-        tools=list(allowed) if restrict_untrusted_evidence else None,
+        tools=[name for name in allowed if not name.startswith("mcp__")] if restrict_untrusted_evidence else None,
         allowed_tools=allowed,
         permission_mode="acceptEdits",
         system_prompt=system_prompt,

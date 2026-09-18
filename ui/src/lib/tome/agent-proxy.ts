@@ -228,6 +228,9 @@ export interface AgentIngestRequest {
    * The agent receives no Webex token and cannot invoke MyAgent itself.
    */
   myagent_evidence?: MyAgentEvidence;
+  /** Enables only the run-scoped backend research tool, never forwards an OAuth token. */
+  myagent_questions_enabled?: boolean;
+  myagent_sources?: string[];
   snapshot: ProjectSnapshot;
   /** Compact GitHub-backed Decisions/Critical index; bodies hydrate on demand. */
   issue_context: AgentIssueContext;
@@ -537,6 +540,8 @@ export function buildIngestRequest(
     mode?: "full" | "quick";
     connectorData?: Record<string, unknown>;
     myAgentEvidence?: MyAgentEvidence;
+    myAgentQuestionsEnabled?: boolean;
+    myAgentSources?: string[];
     credentials?: ForwardedCredentials;
     /**
      * The server may use a personal Webex token for a one-shot MyAgent bridge
@@ -572,6 +577,7 @@ export function buildIngestRequest(
     seed: opts.seed,
     connector_data: opts.connectorData ?? {},
     ...(opts.myAgentEvidence ? { myagent_evidence: opts.myAgentEvidence } : {}),
+    ...(opts.myAgentQuestionsEnabled ? { myagent_questions_enabled: true, myagent_sources: opts.myAgentSources ?? [] } : {}),
     snapshot,
     issue_context: opts.issueContext ?? emptyIssueContext(),
     is_greenfield: opts.isGreenfield,

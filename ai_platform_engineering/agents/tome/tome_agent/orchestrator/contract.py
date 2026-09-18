@@ -269,7 +269,7 @@ class MyAgentEvidence(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def require_evidence_for_received_status(self) -> "MyAgentEvidence":
+    def require_evidence_for_received_status(self) -> MyAgentEvidence:
         if self.status == "received":
             if not self.capabilities:
                 raise ValueError("received MyAgent evidence requires at least one capability")
@@ -284,6 +284,8 @@ class IngestRequest(BaseModel):
     connector_data: dict[str, Any] = Field(default_factory=dict)
     myagent_evidence: MyAgentEvidence | None = None
     """Validated external evidence from the user-approved MyAgent source."""
+    myagent_questions_enabled: bool = False
+    myagent_sources: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(default_factory=list, max_length=3)
     snapshot: ProjectSnapshot
     issue_context: IssueContext = Field(default_factory=IssueContext)
     is_greenfield: bool

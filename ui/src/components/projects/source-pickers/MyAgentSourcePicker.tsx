@@ -137,7 +137,7 @@ export function MyAgentSourcePicker({
           )}
           <span>
             <span className="font-medium text-foreground">
-              I authorize TOME to send MyAgent a Webex request as me, naming these categories during ingestion.
+              I authorize TOME to ask MyAgent up to three project-specific questions as me during manual ingestion.
             </span>
             {!enabled ? (
               <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -168,8 +168,8 @@ export function MyAgentSourcePicker({
             >
               MyAgent connector settings <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </a>
-            . TOME&apos;s Webex backend sends a bounded one-time request naming the selected
-            connector categories to MyAgent on your behalf using your dedicated{" "}
+            . TOME reads the project first, then asks focused questions using the selected
+            sources through your dedicated{" "}
             <Link href="/credentials" className="font-medium text-foreground underline underline-offset-2">
               MyAgent (Webex) connection
             </Link>
@@ -178,7 +178,7 @@ export function MyAgentSourcePicker({
             scope: MyAgent&apos;s settings and policy are the sole authorization boundary, and
             CAIPE cannot verify which connector produced a reply. CAIPE does not receive or
             manage those underlying credentials. A returned reply is untrusted external evidence:
-            it is applied only in a restricted wiki-only follow-up pass, and every resulting
+            it is used only in a restricted project-research pass, and every resulting
             report stays a private draft with no automatic promotion. Only you or a TOME
             administrator can explicitly approve it before its pages follow normal project
             sharing rules.

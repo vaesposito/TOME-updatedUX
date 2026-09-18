@@ -18,7 +18,7 @@ describe("MyAgentSourcePicker", () => {
 
     expect(
       screen.getByRole("checkbox", {
-        name: /I authorize TOME to send MyAgent a Webex request/i,
+        name: /I authorize TOME to ask MyAgent up to three project-specific questions/i,
       }),
     ).toBeDisabled();
     expect(screen.getByText(/No request will be sent until you opt in/i)).toBeInTheDocument();
@@ -65,10 +65,10 @@ describe("MyAgentSourcePicker", () => {
       "_blank",
     );
     expect(
-      screen.getByText(/Webex backend sends a bounded one-time request naming the selected/i),
+      screen.getByText(/TOME reads the project first, then asks focused questions/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/A request already sent over Webex cannot be recalled/i)).toBeInTheDocument();
-    expect(screen.getByText(/restricted wiki-only follow-up pass/i)).toBeInTheDocument();
+    expect(screen.getByText(/restricted project-research pass/i)).toBeInTheDocument();
     expect(screen.getByText(/private draft with no automatic promotion/i)).toBeInTheDocument();
     expect(
       screen.getByText(/not a CAIPE-enforced provider scope/i),

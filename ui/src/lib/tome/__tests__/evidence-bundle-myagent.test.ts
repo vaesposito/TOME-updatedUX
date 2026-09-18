@@ -19,7 +19,7 @@ jest.mock("../evaluation-store", () => {
   };
 });
 
-import { captureEvidenceBundle } from "../evidence-bundle";
+import { appendMyAgentQuestionEvidence, bundleHasMyAgentEvidence, captureEvidenceBundle } from "../evidence-bundle";
 import type { ProjectDocument } from "@/types/projects";
 
 const project = {
@@ -91,5 +91,23 @@ describe("MyAgent evidence bundle capture", () => {
       },
     });
     expect(oversized.items.find((item) => item.kind === "myagent")?.content).toHaveLength(8_000);
+  });
+
+  it("preserves earlier questions in immutable, private research snapshots", async () => {
+    const original = await captureEvidenceBundle({ project, createdBy: "owner-subject" });
+    const first = await appendMyAgentQuestionEvidence(original, "What is the blocker?", {
+      capabilities: ["outlook"], status: "received", content: "Approval is pending.",
+    });
+    const second = await appendMyAgentQuestionEvidence(first, "Who owns that approval?", {
+      capabilities: ["outlook"], status: "received", content: "The project lead.",
+    });
+    expect(bundleHasMyAgentEvidence(original)).toBe(false);
+    expect(bundleHasMyAgentEvidence(second)).toBe(true);
+    expect(first.items.filter((item) => item.kind === "myagent")).toHaveLength(1);
+    expect(second.items.filter((item) => item.kind === "myagent")).toHaveLength(2);
+    expect(second._id).not.toBe(first._id);
+    expect(second.content_hash).not.toBe(first.content_hash);
+    expect(second.created_by).toBe("owner-subject");
+    expect(JSON.parse(second.items.at(-1)!.content)).toEqual({ question: "Who owns that approval?", answer: "The project lead." });
   });
 });

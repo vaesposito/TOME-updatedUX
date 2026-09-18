@@ -577,6 +577,8 @@ async def ingest_endpoint(body: IngestRequest):
                         seed=body.seed,
                         connector_data=body.connector_data,
                         myagent_evidence=None if body.experiment is not None else body.myagent_evidence,
+                        myagent_questions_enabled=body.myagent_questions_enabled and body.experiment is None,
+                        myagent_sources=body.myagent_sources,
                         snapshot=body.snapshot,
                         is_greenfield=body.is_greenfield,
                         issue_context=body.issue_context,

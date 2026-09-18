@@ -65,15 +65,6 @@ import { evaluateDraftQuality } from "./draft-quality";
 import { shouldAwaitIngestReview, summarizeDraftFileReviews } from "./ingest-review";
 import type { IngestFileReviewDecision } from "@/types/tome";
 import {
-  requestMyAgentEvidence,
-  resolveMyAgentWebexCredential,
-  type MyAgentEvidence,
-} from "./myagent-webex";
-import {
-  buildMyAgentConsentDelegationClaim,
-  buildMyAgentConsentDelegationConsumptionClaim,
-} from "@/lib/projects/myagent-consent-update";
-import {
   myAgentConnectorsForSubject,
   myAgentConsentRevisionForSubject,
   myAgentConsentSubjectFromSession,
@@ -364,7 +355,6 @@ async function prepareRun(
     meetings.length > 0 || messagingOnly
       ? { webex: { meetings, messaging_only: messagingOnly } }
       : {};
-  let myAgentEvidence: MyAgentEvidence | undefined;
   // MyAgent evidence is a direct-source input for the ingest endpoint only.
   // Never send a user-delegated Webex message for compact/synthesize routes
   // that cannot consume the reply, or for unattended auto-ingest. A scheduled
@@ -376,85 +366,17 @@ async function prepareRun(
     run.myagent_interactive_authorized === true
     ? myAgentConnectorsForSubject(project.sources, run.triggered_by_sub)
     : [];
-  if (myAgentConnectors.length > 0) {
-    // Resolve the personal Webex credential before taking the one-shot claim:
-    // Disconnect may still win while local credential lookup is in progress.
-    // The conditional claim below is the last state transition before the
-    // external send; a tombstone written first makes it miss.
-    const delegatedWebex = await resolveMyAgentWebexCredential(
-      run.triggered_by_sub ?? "",
-    );
-
-    // Mark the run before any reply reaches the model so all subsequent trace
-    // reads fail closed for non-owners, even when quality review is disabled.
-    // A failed claim can over-restrict a run, which is intentionally safer
-    // than exposing a reply after a concurrent Disconnect.
-    await runs.updateOne({ _id: runId }, { $set: { myagent_delegated: true } });
-    const subject = run.triggered_by_sub ?? "";
-    const claim = buildMyAgentConsentDelegationClaim({
-      subject,
-      expectedRevision: myAgentConsentRevisionForSubject(project.sources, subject),
-      runId,
-      claimedAt: new Date().toISOString(),
-    });
-    const projects = await getCollection<ProjectDocument>("projects");
-    const projectMongoId = (ObjectId.isValid(projectId)
-      ? new ObjectId(projectId)
-      : projectId) as unknown as string;
-    const claimed = await projects.updateOne(
-      { _id: projectMongoId, ...claim.filter },
-      claim.update,
-    );
-    if (claimed.matchedCount > 0) {
-      // This call starts the external Webex send immediately after the claim.
-      // A disconnect that commits after this point cannot retract an already
-      // claimed single request, but it blocks every not-yet-claimed request.
-      const evidence = delegatedWebex.available && delegatedWebex.accessToken
-        ? await requestMyAgentEvidence({
-            accessToken: delegatedWebex.accessToken,
-            capabilities: myAgentConnectors,
-          })
-        : {
-            capabilities: myAgentConnectors,
-            status: "unavailable" as const,
-            detail:
-              delegatedWebex.reason ||
-              "The triggering user's Webex authorization is unavailable for MyAgent ingestion.",
-          };
-      if (evidence.status === "received") {
-        // A response can arrive after the user pressed Disconnect. Take a
-        // second conditional, durable claim immediately before making its
-        // content available to the agent; if the consent tombstone won while
-        // Webex was replying, discard the reply instead of persisting it.
-        const consume = buildMyAgentConsentDelegationConsumptionClaim({
-          subject,
-          expectedRevision: claim.expectedRevision,
-          runId,
-          consumedAt: new Date().toISOString(),
-        });
-        const consumed = await projects.updateOne(
-          { _id: projectMongoId, ...consume.filter },
-          consume.update,
-        );
-        if (consumed.matchedCount > 0) {
-          // This server-side marker is written before any agent callback.
-          // The internal page route then forces every report write to draft,
-          // independent of project review mode or skipReview, so a human must
-          // explicitly review the untrusted external result before it becomes
-          // live wiki context.
-          await runs.updateOne(
-            { _id: runId },
-            { $set: { myagent_evidence_received: true } },
-          );
-          myAgentEvidence = evidence;
-        }
-      } else {
-        myAgentEvidence = evidence;
-      }
-    }
-    // Do not persist delegated-source status or connector names in the
-    // project-readable run log. The reply is per-user evidence; the owner can
-    // inspect the resulting draft and protected quality review instead.
+  const myAgentQuestionsEnabled = myAgentConnectors.length > 0;
+  if (myAgentQuestionsEnabled) {
+    // Grant research for this run, but send no generic upfront message. The
+    // agent first reads the project, then asks concrete questions through a
+    // backend tool that rechecks the run, consent and owner on every call.
+    await runs.updateOne({ _id: runId }, { $set: {
+      myagent_delegated: true,
+      myagent_tool_enabled: true,
+      myagent_consent_revision: myAgentConsentRevisionForSubject(project.sources, run.triggered_by_sub ?? ""),
+      myagent_allowed_sources: myAgentConnectors,
+    } });
   }
   // A MyAgent-only source uses the user's Webex token solely in this backend
   // bridge. Do not forward it to the agent's direct Webex MCP unless this run
@@ -475,7 +397,7 @@ async function prepareRun(
       : isArea
         ? await resolveAreaChildren(project.name)
         : [];
-  if (run.quality_policy_mode !== "off" || myAgentEvidence?.status === "received") {
+  if (run.quality_policy_mode !== "off" || myAgentQuestionsEnabled) {
     const bundle = await captureEvidenceBundle({
       project: scopedProject,
       childProjects: childProjects.map((child) => ({
@@ -484,7 +406,6 @@ async function prepareRun(
       })),
       createdBy: run.triggered_by_sub ?? "tome-system",
       seed: dispatch.seed,
-      myAgentEvidence,
     });
     await runs.updateOne(
       { _id: runId },
@@ -547,7 +468,8 @@ async function prepareRun(
     isGreenfield,
     mode: dispatch.mode,
     connectorData,
-    myAgentEvidence,
+    myAgentQuestionsEnabled,
+    myAgentSources: myAgentConnectors,
     credentials,
     omitWebexCredential: !agentNeedsWebex,
     seedStablePages: isGreenfield && dispatch.seedStablePages === true,

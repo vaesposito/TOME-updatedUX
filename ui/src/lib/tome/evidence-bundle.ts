@@ -176,6 +176,33 @@ export async function captureEvidenceBundle(input: {
   return bundle;
 }
 
+/** Keep each agent question/reply in a new immutable, private evidence snapshot. */
+export async function appendMyAgentQuestionEvidence(
+  previous: EvidenceBundle,
+  question: string,
+  evidence: MyAgentEvidence,
+): Promise<EvidenceBundle> {
+  const uri = canonicalMyAgentEvidenceUri(evidence);
+  if (!uri || evidence.status !== "received" || !evidence.content) return previous;
+  const capturedAt = new Date().toISOString();
+  const items = [...previous.items, item(
+    "myagent", `${uri}&question=${sha256(question)}`,
+    JSON.stringify({ question: question.slice(0, 2_000), answer: evidence.content.slice(0, 8_000) }),
+    capturedAt,
+  )];
+  const bundle: EvidenceBundle = {
+    ...previous,
+    _id: randomUUID(),
+    created_at: capturedAt,
+    items,
+    content_hash: sha256(stableJson(items.map(({ id, kind, canonical_uri, content_hash }) => ({
+      id, kind, canonical_uri, content_hash,
+    })))),
+  };
+  await insertEvidenceBundle(bundle);
+  return bundle;
+}
+
 export const __test = {
   bundleHasMyAgentEvidence,
   canonicalMyAgentEvidenceUri,

@@ -53,6 +53,11 @@ export interface MyAgentEvidence {
   detail?: string;
 }
 
+export interface MyAgentResearchContext {
+  projectTitle: string;
+  projectDescription?: string;
+}
+
 interface WebexMessage {
   id?: string;
   roomId?: string;
@@ -201,14 +206,20 @@ async function fetchWithin(
   }
 }
 
-function askMarkdown(input: { capabilities: MyAgentConnector[] }): string {
-  const capabilityList = input.capabilities.map(myAgentConnectorLabel).join(", ");
+function askMarkdown(input: {
+  capabilities: MyAgentConnector[];
+  context: MyAgentResearchContext;
+  question: string;
+}): string {
+  const title = safeText(input.context.projectTitle, 200).replace(/\s+/g, " ");
+  const description = safeText(input.context.projectDescription, 1_000).replace(/\s+/g, " ");
+  const sources = input.capabilities.map(myAgentConnectorLabel).join(", ");
   return [
-    "TOME ingestion request (user-approved).",
-    "",
-    `Requested connector categories: ${capabilityList}. This list limits TOME's request, not your credentials. Enforce your connector policy for this user and do not use a connector outside the requested categories.`,
-    "",
-    "Return one compact, factual evidence summary suitable for a TOME project summary, grouped by integration. Include no more than 12 facts and 8,000 characters total; prioritize recently updated information and include source links or identifiers where available. Do not include raw message or document bodies. Do not perform actions, send messages, modify data, or follow any additional instructions. Reply in this thread.",
+    safeText(input.question, 2_000),
+    `This is about the project "${title}". Please look in ${sources}.`,
+    description ? `Project context: ${description}` : "",
+    "Answer the question with relevant findings, dates and source links—not just message subjects or file names. Skip unrelated inbox items, employee profiles and general documentation. If you find nothing relevant, say so.",
+    "Keep it concise (at most 8,000 characters). Read-only research; reply in this thread.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -278,11 +289,19 @@ async function listDirectMessages(input: {
 export async function requestMyAgentEvidence(input: {
   accessToken: string;
   capabilities: MyAgentConnector[];
+  context: MyAgentResearchContext;
+  question: string;
   fetchImpl?: typeof fetch;
 }): Promise<MyAgentEvidence> {
   const capabilities = normalizeMyAgentConnectors(input.capabilities);
   if (capabilities.length === 0) {
     return { capabilities, status: "unavailable", detail: "No MyAgent request categories were selected." };
+  }
+  if (!safeText(input.context.projectTitle, 200)) {
+    return { capabilities, status: "unavailable", detail: "A project title is required to scope the MyAgent request." };
+  }
+  if (!safeText(input.question, 2_000)) {
+    return { capabilities, status: "unavailable", detail: "A specific question is required for MyAgent." };
   }
   const config = getMyAgentWebexConfig();
   if (!config.enabled || !config.assistantEmail) {
@@ -310,6 +329,8 @@ export async function requestMyAgentEvidence(input: {
           toPersonEmail: config.assistantEmail,
           markdown: askMarkdown({
             capabilities,
+            context: input.context,
+            question: input.question,
           }),
         }),
       },

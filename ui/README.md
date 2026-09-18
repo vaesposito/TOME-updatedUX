@@ -125,9 +125,16 @@ dedicated provider from signed OAuth state, so it does not overwrite the general
 
 Each browser user explicitly authorizes TOME to send a delegated request for
 their own identity; that authorization is not project-wide. For every run,
-CAIPE resolves the triggering user's own `webex_myagent` connection, sends a bounded
-one-time direct message naming the requested connector categories to MyAgent
-as that user, and accepts only a reply correlated to that request. It never
+the agent reads the project wiki and the user's ingest focus, then uses
+`ask_myagent(question)` to fill specific gaps. There is no generic upfront
+"evidence summary" request. The tool supports up to three sequential questions
+per manual ingest, including a targeted follow-up. For example: "Who owns the
+launch blocker discussed in this week's project emails, and what is the agreed
+next step?"
+
+CAIPE resolves the triggering user's own `webex_myagent` connection for each
+question, adds the project title/context and selected source names, and accepts
+only a reply correlated to that question's Webex thread. It never
 uses the managed Webex identity for this path and never exposes the user Webex
 token to the Tome agent. The selected categories limit TOME's request; they
 are not a CAIPE-enforced provider scope. MyAgent—not CAIPE—enforces the
@@ -138,7 +145,9 @@ Hard per-connector provenance requires a MyAgent-owned scoped delegation API
 or attestation contract, which this Webex handoff does not currently expose.
 Users must explicitly connect **MyAgent (Webex)**; existing `webex` connections
 are not reused, migrated, or used as a fallback. A received reply is retained as protected evidence
-and is used only in a restricted wiki-only follow-up pass. Every report it
+and is used only in a restricted project-research pass. That pass has same-project
+wiki tools and the run-scoped MyAgent tool, but no general web, source MCP,
+cross-project or shell tools. Every report it
 influences is a private draft with no deadline auto-promotion; only the
 authorizing user or a Tome administrator can explicitly approve it. After that
 approval, its pages follow the project's normal sharing rules. The raw
@@ -148,6 +157,12 @@ not yet been claimed; a Webex message already sent cannot be recalled, but its
 reply is discarded if the revoke wins before consumption.
 MyAgent delegation is manual-only: scheduled auto-ingest never sends a request
 using a user's MyAgent/Webex authorization.
+
+The backend checks the active run, its owner, current write access and unchanged
+consent before each question and again before consuming a reply. The question
+count and in-flight lock are enforced atomically across UI replicas. The model
+cannot choose a different user, project or source set. Each question/answer is
+saved in the run's protected evidence bundle rather than the shared run log.
 
 When migrating a deployment that previously put the MyAgent app in
 `WEBEX_CLIENT_ID` / `WEBEX_CLIENT_SECRET`, move those credentials into the new

@@ -437,6 +437,12 @@ export interface IngestRun {
    * a Webex request on that person's behalf.
    */
   myagent_interactive_authorized?: boolean;
+  /** Server-owned tool grant for this manual run; rechecked on every question. */
+  myagent_tool_enabled?: boolean;
+  myagent_consent_revision?: string | null;
+  myagent_allowed_sources?: string[];
+  myagent_question_count?: number;
+  myagent_question_in_flight?: boolean;
   /** Email of the triggering user; stored for revision attribution. */
   triggered_by_email?: string;
   /** Params the worker uses to start a queued run; absent on the immediate path. */

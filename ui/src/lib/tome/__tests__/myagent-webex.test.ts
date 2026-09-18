@@ -21,6 +21,8 @@ const MYAGENT_ENV = {
   TOME_MYAGENT_POLL_INTERVAL_MS: "500",
   TOME_MYAGENT_REPLY_TIMEOUT_MS: "5000",
 };
+const context = { projectTitle: "Example rollout", projectDescription: "Move the reporting service to the new platform." };
+const question = "What rollout blockers did the delivery team raise this week, and who owns the next steps?";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -149,6 +151,7 @@ describe("MyAgent Webex bridge", () => {
 
     const result = await requestMyAgentEvidence({
       accessToken: "user-webex-token",
+      context, question,
       capabilities: ["sharepoint", "outlook", "sharepoint"],
       fetchImpl: fetchMock as unknown as typeof fetch,
     });
@@ -164,8 +167,12 @@ describe("MyAgent Webex bridge", () => {
     expect(sentBody).toEqual(
       expect.objectContaining({ toPersonEmail: "myagent@example.com" }),
     );
-    expect(sentBody.markdown).toContain("Requested connector categories: Outlook, SharePoint.");
-    expect(sentBody.markdown).toContain("limits TOME's request, not your credentials");
+    expect(sentBody.markdown.startsWith(question)).toBe(true);
+    expect(sentBody.markdown).toContain('project "Example rollout"');
+    expect(sentBody.markdown).toContain(context.projectDescription);
+    expect(sentBody.markdown).toContain("Please look in Outlook, SharePoint.");
+    expect(sentBody.markdown).not.toContain("connector");
+    expect(sentBody.markdown).not.toContain("TOME");
     expect(sentBody.markdown).not.toContain("Salesforce");
     expect(sentBody.markdown).not.toContain("TOME Project");
   });
@@ -176,6 +183,7 @@ describe("MyAgent Webex bridge", () => {
     await expect(
       requestMyAgentEvidence({
         accessToken: "user-webex-token",
+        context, question,
         capabilities: [],
         fetchImpl: fetchMock as unknown as typeof fetch,
       }),
@@ -201,6 +209,7 @@ describe("MyAgent Webex bridge", () => {
     try {
       const evidence = requestMyAgentEvidence({
         accessToken: "user-webex-token",
+        context, question,
         capabilities: ["salesforce"],
         fetchImpl: fetchMock as unknown as typeof fetch,
       });
@@ -232,5 +241,17 @@ describe("MyAgent Webex bridge", () => {
       pollIntervalMs: 500,
       replyTimeoutMs: 60_000,
     });
+  });
+
+  it.each([
+    { context, question: " " },
+    { context: { projectTitle: " " }, question },
+  ])("does not send an unscoped generic request", async (scope) => {
+    const fetchMock = jest.fn();
+    await expect(requestMyAgentEvidence({
+      accessToken: "user-webex-token", capabilities: ["outlook"],
+      ...scope, fetchImpl: fetchMock,
+    })).resolves.toMatchObject({ status: "unavailable" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

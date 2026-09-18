@@ -47,6 +47,16 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
+async def ask_myagent(project_id: str, run_id: str, question: str) -> dict[str, Any]:
+    """Broker a research question through the UI; OAuth credentials never enter the agent."""
+    url = f"{_backend_url()}/api/internal/projects/{project_id}/runs/{run_id}/myagent"
+    async with httpx.AsyncClient(timeout=75.0) as client:
+        # No retry: an interrupted response may already have sent the Webex DM.
+        response = await client.post(url, json={"question": question}, headers=_auth_headers())
+        response.raise_for_status()
+        return response.json()
+
+
 # The container is multi-project: each request scopes itself to the project in
 # its snapshot. The active id is set per-request (set_active_project_id) and
 # read here. ContextVars are task-local, so concurrent requests for different

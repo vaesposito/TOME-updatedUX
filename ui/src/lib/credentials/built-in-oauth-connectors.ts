@@ -58,8 +58,6 @@ export const BUILT_IN_OAUTH_CONNECTORS: BuiltInOAuthConnectorDescriptor[] = [
       "meeting:recordings_read",
       "identity:people_read",
       "spark:messages_read",
-      // General Webex messaging tools send messages as the connected user.
-      "spark:messages_write",
       "spark:mcp",
       "spark-admin:people_read",
       "spark:rooms_read",          // list/read rooms (source picker + project sources)

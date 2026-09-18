@@ -48,6 +48,7 @@ describe("OAuth connector env bootstrap", () => {
       redirectUri: "https://app.example.com/api/credentials/oauth/webex/callback",
       scopes: expect.arrayContaining(["spark:rooms_read", "spark:people_read", "spark:memberships_read", "meeting:transcripts_read"]),
     });
+    expect(inputs.find((input) => input.provider === "webex")?.scopes).not.toContain("spark:messages_write");
   });
 
   it("never uses general Webex client credentials to bootstrap MyAgent", () => {
@@ -104,7 +105,6 @@ describe("OAuth connector env bootstrap", () => {
         "meeting:recordings_read",
         "identity:people_read",
         "spark:messages_read",
-        "spark:messages_write",
         "spark:mcp",
         "spark-admin:people_read",
         "spark:rooms_read",

@@ -45,6 +45,9 @@ import {
   markChatRunRunning,
 } from "@/lib/tome/chat-run-store";
 import type { ChatPart, ChatSession, ModelProvenance } from "@/types/tome";
+import { myAgentConnectorsForSubject, myAgentConsentRevisionForSubject, myAgentConsentSubjectFromSession } from "@/lib/projects/myagent-source";
+import { isMyAgentInteractiveBrowserAction } from "@/lib/tome/myagent-interactive";
+import { compatibleChatResume, requestsMyAgent } from "@/lib/tome/myagent-chat-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +72,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     message?: string;
     sdk_session_id?: string | null;
     is_compact?: boolean;
+    myagent_research?: boolean;
   };
   if (body.is_compact) {
     if (!body.sdk_session_id) {
@@ -82,17 +86,33 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     throw new ApiError("`message` (string) is required", 400, "BAD_REQUEST");
   }
 
+  const ownedSession = await ensureSession(tctx.projectId, userIdOf(tctx.user.email));
+  const research = body.is_compact ? ownedSession.myagent_research === true
+    : body.myagent_research === true || requestsMyAgent(body.message ?? "");
+  const subject = myAgentConsentSubjectFromSession(tctx.session);
+  const sources = research ? myAgentConnectorsForSubject(tctx.project.sources, subject) : [];
+  const revision = subject ? myAgentConsentRevisionForSubject(tctx.project.sources, subject) : null;
+  if (research && !body.is_compact && (!subject || !tctx.user.email ||
+      !isMyAgentInteractiveBrowserAction(request, tctx.session))) {
+    throw new ApiError("Ask MyAgent from your signed-in TOME chat.", 403, "MYAGENT_BROWSER_REQUIRED");
+  }
+  if (research && !body.is_compact && (!sources.length || !revision)) {
+    throw new ApiError("Choose the sources to query in this project's MyAgent settings, then ask again.", 400, "MYAGENT_SOURCES_REQUIRED");
+  }
   const chatRequest = await buildChatRequest(tctx, {
     message: body.message ?? "",
-    sdkSessionId: body.sdk_session_id ?? null,
+    sdkSessionId: compatibleChatResume(body.sdk_session_id ?? null, ownedSession.sdk_session_id, ownedSession.myagent_research, research),
     isCompact: body.is_compact,
+    myAgentResearch: research,
   });
   try {
-    const rollup = await readableTomeRollupProjects(tctx);
-    const repos = rollupGitHubRepos(rollup);
-    const credential = await resolveTomeGitHubCredential(tctx);
-    await loadTomeIssueCache({ repos, token: credential.token });
-    chatRequest.issue_context = await buildTomeIssueContext(repos);
+    if (!research) {
+      const rollup = await readableTomeRollupProjects(tctx);
+      const repos = rollupGitHubRepos(rollup);
+      const credential = await resolveTomeGitHubCredential(tctx);
+      await loadTomeIssueCache({ repos, token: credential.token });
+      chatRequest.issue_context = await buildTomeIssueContext(repos);
+    }
   } catch (error) {
     // Issue context is supplementary. A GitHub outage must not block wiki chat.
     console.warn("[tome-chat] GitHub issue context unavailable", error);
@@ -103,9 +123,16 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   let session: ChatSession | null = null;
   let runId: string | null = null;
   if (!body.is_compact && body.message) {
-    session = await ensureSession(tctx.projectId, userIdOf(tctx.user.email));
+    session = ownedSession;
     await appendMessage(session, "user", body.message);
-    runId = (await createChatRun(session))._id;
+    runId = (await createChatRun(session, research ? {
+      subject: subject!, sources, revision: revision!, seed: body.message,
+    } : undefined))._id;
+    if (research) {
+      chatRequest.myagent_run_id = runId;
+      chatRequest.myagent_sources = sources;
+    }
+    await markChatRunRunning(runId);
   }
 
   let upstream: Response;
@@ -156,7 +183,6 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     return new Response(trackedBody, { headers });
   }
 
-  await markChatRunRunning(runId!);
 
   // Tee the stream: the browser gets one branch, byte-for-byte; the other is
   // parsed and persisted here, independent of whether the browser is still
@@ -169,6 +195,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     session,
     chatRequest.sdk_session_id ?? null,
     runId!,
+    research,
   );
   return new Response(clientBody, { headers });
 });
@@ -206,6 +233,7 @@ async function persistAssistantTurn(
   session: ChatSession,
   fallbackSdkSessionId: string | null,
   runId: string,
+  myAgentResearch = false,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -316,7 +344,7 @@ async function persistAssistantTurn(
       await appendMessage(session, "assistant", text, parts, model, modelProvenance);
     }
     if (sdkSessionId) {
-      await setSdkSessionId(session._id!, sdkSessionId);
+      await setSdkSessionId(session._id!, sdkSessionId, myAgentResearch);
     }
   } catch (error) {
     persistenceError ??= String((error as Error)?.message ?? error);

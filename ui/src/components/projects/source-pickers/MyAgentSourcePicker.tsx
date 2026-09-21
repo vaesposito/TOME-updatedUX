@@ -53,7 +53,7 @@ export function MyAgentSourcePicker({
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">MyAgent</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Choose which business-context categories TOME asks MyAgent about during ingestion.
+            Choose which sources MyAgent should search for your questions.
           </p>
         </div>
       </div>
@@ -137,7 +137,7 @@ export function MyAgentSourcePicker({
           )}
           <span>
             <span className="font-medium text-foreground">
-              I authorize TOME to ask MyAgent up to three project-specific questions as me during manual ingestion.
+              Allow TOME to query my selected sources through MyAgent in chat and manual ingestion.
             </span>
             {!enabled ? (
               <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -145,10 +145,7 @@ export function MyAgentSourcePicker({
               </span>
             ) : (
               <span className="mt-0.5 block text-xs text-muted-foreground">
-                Disconnect blocks a request that TOME has not yet claimed. A request already
-                sent over Webex cannot be recalled; if Disconnect wins before the reply is
-                consumed, TOME discards it. This does not disconnect the underlying connector
-                in MyAgent settings, and scheduled auto-ingest never uses this permission.
+                Up to three questions per chat turn or manual ingest. Turn off to stop new queries.
               </span>
             )}
           </span>
@@ -159,29 +156,20 @@ export function MyAgentSourcePicker({
         <p className="flex gap-1.5 leading-5">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
           <span>
-            First authorize these connectors in{" "}
+            Connect your{" "}
+            <Link href="/credentials" className="font-medium text-foreground underline underline-offset-2">
+              MyAgent (Webex) account
+            </Link>
+            {" "}and review your enabled sources in{" "}
             <a
               href={MYAGENT_CONNECTOR_SETTINGS_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2"
             >
-              MyAgent connector settings <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              MyAgent settings <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </a>
-            . TOME reads the project first, then asks focused questions using the selected
-            sources through your dedicated{" "}
-            <Link href="/credentials" className="font-medium text-foreground underline underline-offset-2">
-              MyAgent (Webex) connection
-            </Link>
-            , separate from your general Webex connection.
-            This selection limits what TOME asks for, but is not a CAIPE-enforced provider
-            scope: MyAgent&apos;s settings and policy are the sole authorization boundary, and
-            CAIPE cannot verify which connector produced a reply. CAIPE does not receive or
-            manage those underlying credentials. A returned reply is untrusted external evidence:
-            it is used only in a restricted project-research pass, and every resulting
-            report stays a private draft with no automatic promotion. Only you or a TOME
-            administrator can explicitly approve it before its pages follow normal project
-            sharing rules.
+            . Ingestion results stay in private drafts until you approve them.
           </span>
         </p>
       </div>

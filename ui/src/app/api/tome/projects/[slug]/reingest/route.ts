@@ -14,6 +14,7 @@ import {
   type ManualWebexMeetingSelection,
 } from "@/lib/tome/webex-meeting-series";
 import { isSynthesizedType } from "@/types/projects";
+import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     sourceScope?: "project" | "webex_meetings";
     seedStablePages?: boolean;
     skipReview?: boolean;
+    myAgentSources?: unknown;
   };
 
   if (body.sourceScope && !["project", "webex_meetings"].includes(body.sourceScope)) {
@@ -71,6 +73,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       : undefined;
     const { runId } = await startIngestRun(tctx, {
       seed: body.seed ?? null,
+      myAgentSources: body.myAgentSources === undefined ? undefined : normalizeMyAgentConnectors(body.myAgentSources),
       mode: body.mode,
       webexMeetings,
       sourceScope: body.sourceScope,

@@ -134,6 +134,9 @@ class IssueContext(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    myagent_research: bool = False
+    myagent_run_id: UUID | None = None
+    myagent_sources: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(default_factory=list, max_length=3)
     message: str
     sdk_session_id: str | None = None
     is_compact: bool = False

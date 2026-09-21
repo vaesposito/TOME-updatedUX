@@ -349,6 +349,8 @@ export interface ModelProvenance {
 
 /** What the queue worker needs to actually start a queued run later. */
 export interface IngestDispatch {
+  /** Optional per-run subset of the user's consented MyAgent sources. Empty disables research. */
+  myAgentSources?: string[];
   /** Agent endpoint: "/ingest" (source pull) or "/synthesize" (BHAG roll-up). */
   endpoint: string;
   /**
@@ -522,6 +524,8 @@ export interface ChatSession {
   title?: string;
   /** Claude Agent SDK session id — a resume hint, not the durable key. */
   sdk_session_id?: string;
+  /** Prevent research transcripts from resuming in a tool-enabled general session. */
+  myagent_research?: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -607,6 +611,14 @@ export interface ChatRun {
   session_id: string;
   project_id: string;
   user_id: string;
+  triggered_by_sub?: string;
+  myagent_interactive_authorized?: boolean;
+  myagent_tool_enabled?: boolean;
+  myagent_consent_revision?: string | null;
+  myagent_allowed_sources?: string[];
+  myagent_question_count?: number;
+  myagent_question_in_flight?: boolean;
+  myagent_seed?: string;
   status: ChatRunStatus;
   events: ChatRunEvent[];
   last_event_id: number;

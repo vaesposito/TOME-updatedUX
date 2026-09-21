@@ -168,13 +168,16 @@ describe("MyAgent Webex bridge", () => {
       expect.objectContaining({ toPersonEmail: "myagent@example.com" }),
     );
     expect(sentBody.markdown.startsWith(question)).toBe(true);
-    expect(sentBody.markdown).toContain('project "Example rollout"');
+    expect(sentBody.markdown).toContain('project context: "Example rollout"');
     expect(sentBody.markdown).toContain(context.projectDescription);
     expect(sentBody.markdown).toContain("Please look in Outlook, SharePoint.");
     expect(sentBody.markdown).not.toContain("connector");
     expect(sentBody.markdown).not.toContain("TOME");
     expect(sentBody.markdown).not.toContain("Salesforce");
     expect(sentBody.markdown).not.toContain("TOME Project");
+    expect(sentBody.markdown).toContain("Findings for the request");
+    expect(sentBody.markdown).toContain("Project relevance");
+    expect(sentBody.markdown).toContain("even if it does not mention the project");
   });
 
   it("does not contact Webex when no integration was selected", async () => {
@@ -194,6 +197,20 @@ describe("MyAgent Webex bridge", () => {
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends the original seed alongside the agent question and separates project relevance", async () => {
+    const fetchMock = jest.fn().mockResolvedValue(jsonResponse({}, 400));
+    await requestMyAgentEvidence({
+      accessToken: "user-webex-token", capabilities: ["outlook"], question: "Which messages need a response?",
+      context: { ...context, seedInstruction: "Summarize my unread emails from yesterday." }, fetchImpl: fetchMock,
+    });
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body).markdown;
+    expect(sent).toContain("User request: Summarize my unread emails from yesterday.");
+    expect(sent).toContain("Which messages need a response?");
+    expect(sent).toContain("This project name may not appear in those sources");
+    expect(sent).toContain("no direct project match was found");
+    expect(sent).not.toContain("Include only clear matches to this project");
   });
 
   it("returns an explicit bounded timeout when MyAgent does not reply", async () => {

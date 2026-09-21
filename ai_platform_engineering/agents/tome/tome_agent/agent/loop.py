@@ -701,6 +701,8 @@ def build_agent_options(
     offline: bool = False,
     restrict_untrusted_evidence: bool = False,
     myagent_run_id: str | None = None,
+    myagent_run_kind: str = "ingest",
+    read_only: bool = False,
     max_budget_usd: float | None = None,
     expected_template_pages: dict[str, Any] | None = None,
 ) -> ClaudeAgentOptions:
@@ -755,7 +757,7 @@ def build_agent_options(
         # No WebFetch, connector MCP, cross-project lookup, or live template
         # call can make the two candidates observe different evidence.
         allowed = list(WIKI_TOOLS)
-    elif agent_role == "viewer":
+    elif agent_role == "viewer" or read_only:
         allowed = ["Read", "Glob", "Grep"]
         if not restrict_untrusted_evidence:
             allowed.extend(
@@ -787,8 +789,8 @@ def build_agent_options(
                 ]
             )
 
-    if myagent_run_id and restrict_untrusted_evidence and not offline and agent_role != "viewer":
-        mcp_servers["myagent"] = build_myagent_mcp(project_id, myagent_run_id)
+    if myagent_run_id and restrict_untrusted_evidence and not offline and (agent_role != "viewer" or myagent_run_kind == "chat"):
+        mcp_servers["myagent"] = build_myagent_mcp(project_id, myagent_run_id, run_kind=myagent_run_kind)
         allowed.append("mcp__myagent__ask_myagent")
 
     for connector in () if (offline or restrict_untrusted_evidence) else REGISTRY:

@@ -126,8 +126,8 @@ async function checkMyAgent(
       accessible: [],
       inaccessible: [],
       unverified: labels,
-      detail:
-        "Webex delegation is ready, but TOME cannot verify MyAgent connector authorization or which connector produced a reply. Confirm MyAgent settings and policy.",
+      connection_ready: true,
+      detail: "Connected. Review your enabled sources in MyAgent settings.",
       fixable_by_user: false,
     };
   }

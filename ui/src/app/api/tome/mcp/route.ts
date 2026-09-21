@@ -1150,6 +1150,8 @@ const TOOLS: ToolDef[] = [
           lines.push(`${s.label}: not connected — visit ${data.credentials_url} to connect`);
         } else if (s.inaccessible?.length > 0) {
           lines.push(`${s.label}: accessible [${s.accessible?.join(", ") || "none"}], no access [${s.inaccessible.join(", ")}] — visit ${data.credentials_url} to reconnect or update scopes`);
+        } else if (s.provider === "myagent" && s.connection_ready) {
+          lines.push(`${s.label}: connected — review enabled sources at ${MYAGENT_CONNECTOR_SETTINGS_URL}`);
         } else if (s.unverified?.length > 0) {
           lines.push(
             `${s.label}: external connector authorization/provenance unverified [${s.unverified.join(", ")}] — review ${MYAGENT_CONNECTOR_SETTINGS_URL}`,

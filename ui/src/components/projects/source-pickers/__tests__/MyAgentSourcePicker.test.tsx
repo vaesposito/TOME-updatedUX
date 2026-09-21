@@ -18,7 +18,7 @@ describe("MyAgentSourcePicker", () => {
 
     expect(
       screen.getByRole("checkbox", {
-        name: /I authorize TOME to ask MyAgent up to three project-specific questions/i,
+        name: /Allow TOME to query my selected sources/i,
       }),
     ).toBeDisabled();
     expect(screen.getByText(/No request will be sent until you opt in/i)).toBeInTheDocument();
@@ -46,7 +46,7 @@ describe("MyAgentSourcePicker", () => {
     );
   });
 
-  it("explains the Webex delegation, private-draft review, and connector authorization path", () => {
+  it("shows source checkboxes and a small settings reminder without warning prose", () => {
     render(
       <MyAgentSourcePicker
         selected={["outlook"]}
@@ -56,22 +56,18 @@ describe("MyAgentSourcePicker", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: /MyAgent connector settings/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /MyAgent settings/i })).toHaveAttribute(
       "href",
       MYAGENT_CONNECTOR_SETTINGS_URL,
     );
-    expect(screen.getByRole("link", { name: /MyAgent connector settings/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /MyAgent settings/i })).toHaveAttribute(
       "target",
       "_blank",
     );
-    expect(
-      screen.getByText(/TOME reads the project first, then asks focused questions/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/A request already sent over Webex cannot be recalled/i)).toBeInTheDocument();
-    expect(screen.getByText(/restricted project-research pass/i)).toBeInTheDocument();
-    expect(screen.getByText(/private draft with no automatic promotion/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/not a CAIPE-enforced provider scope/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Outlook/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Salesforce/i })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /SharePoint/i })).not.toBeChecked();
+    expect(screen.getByText(/Ingestion results stay in private drafts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot verify|sole authorization boundary|untrusted external evidence/i)).not.toBeInTheDocument();
   });
 });

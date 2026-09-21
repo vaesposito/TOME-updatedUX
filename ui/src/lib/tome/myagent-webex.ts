@@ -56,6 +56,8 @@ export interface MyAgentEvidence {
 export interface MyAgentResearchContext {
   projectTitle: string;
   projectDescription?: string;
+  /** Original user seed/chat request, retained even when the agent asks a subquestion. */
+  seedInstruction?: string | null;
 }
 
 interface WebexMessage {
@@ -214,11 +216,13 @@ function askMarkdown(input: {
   const title = safeText(input.context.projectTitle, 200).replace(/\s+/g, " ");
   const description = safeText(input.context.projectDescription, 1_000).replace(/\s+/g, " ");
   const sources = input.capabilities.map(myAgentConnectorLabel).join(", ");
+  const seed = safeText(input.context.seedInstruction ?? undefined, 2_000);
   return [
+    seed ? `User request: ${seed}` : "",
     safeText(input.question, 2_000),
-    `This is about the project "${title}". Please look in ${sources}.`,
-    description ? `Project context: ${description}` : "",
-    "Answer the question with relevant findings, dates and source links—not just message subjects or file names. Skip unrelated inbox items, employee profiles and general documentation. If you find nothing relevant, say so.",
+    `Please look in ${sources}.`,
+    `Optional project context: "${title}"${description ? ` — ${description}` : ""}. This project name may not appear in those sources.`,
+    "Use two sections: 1. Findings for the request — answer the question with relevant information, dates and source links, even if it does not mention the project. 2. Project relevance — identify any supported connection to the project, or say no direct project match was found. Do not invent links between unrelated items or substitute employee profiles for email/opportunity results.",
     "Keep it concise (at most 8,000 characters). Read-only research; reply in this thread.",
   ]
     .filter(Boolean)

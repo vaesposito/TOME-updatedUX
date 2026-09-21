@@ -37,7 +37,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from tome_agent.tracing import flush_tracing, initialize_tracing, trace_context
+from tome_agent.tracing import (
+    flush_tracing,
+    initialize_tracing,
+    suppress_sensitive_evidence_tracing,
+    trace_context,
+)
 
 # Install the SDK wrapper before importing any Tome modules that bind
 # `claude_agent_sdk.query` locally. This keeps every existing SDK entry point
@@ -510,12 +515,12 @@ async def chat_endpoint(body: ChatRequest):
             # racing an ingest's workspace write/persist cycle.
             async with workspace.project_lock(body.snapshot.project_id):
                 await _require_fresh_workspace(body.snapshot.project_id)
-                with trace_context(
+                with (suppress_sensitive_evidence_tracing() if body.myagent_research else trace_context(
                     snapshot=body.snapshot,
                     actor_email=body.actor_email,
                     session_id=body.sdk_session_id,
                     operation="chat",
-                ):
+                )):
                     async for event in stream_chat(
                         user_message=body.message,
                         sdk_session_id=body.sdk_session_id,
@@ -524,6 +529,9 @@ async def chat_endpoint(body: ChatRequest):
                         issue_context=body.issue_context,
                         actor_email=body.actor_email,
                         is_compact=body.is_compact,
+                        myagent_research=body.myagent_research,
+                        myagent_run_id=str(body.myagent_run_id) if body.myagent_run_id else None,
+                        myagent_sources=body.myagent_sources,
                     ):
                         yield _sse_format(event)
             success = True

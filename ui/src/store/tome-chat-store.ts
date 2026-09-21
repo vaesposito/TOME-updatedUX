@@ -25,6 +25,7 @@ export interface TomeChatViewState {
   hydrated: boolean;
   sessionId: string | null;
   sdkSessionId: string | null;
+  myAgentResearch?: boolean;
   readOnly: boolean;
   sessionOwner: string | null;
   contextUsage: { percentage: number } | null;

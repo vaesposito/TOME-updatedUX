@@ -128,7 +128,9 @@ their own identity; that authorization is not project-wide. For every run,
 the agent reads the project wiki and the user's ingest focus, then uses
 `ask_myagent(question)` to fill specific gaps. There is no generic upfront
 "evidence summary" request. The tool supports up to three sequential questions
-per manual ingest, including a targeted follow-up. For example: "Who owns the
+per manual ingest or chat turn, including a targeted follow-up. The optional
+seed instruction is sent to MyAgent as the original research request, alongside
+the agent's more specific question. For example: "Who owns the
 launch blocker discussed in this week's project emails, and what is the agreed
 next step?"
 
@@ -155,8 +157,23 @@ delegated run trace and detailed quality evidence remain restricted to the
 authorizing user and Tome administrators. Disconnect blocks requests that have
 not yet been claimed; a Webex message already sent cannot be recalled, but its
 reply is discarded if the revoke wins before consumption.
-MyAgent delegation is manual-only: scheduled auto-ingest never sends a request
-using a user's MyAgent/Webex authorization.
+MyAgent is also available in TOME chat. An explicit request such as "ask MyAgent
+for my emails" selects MyAgent research automatically; the **Ask MyAgent**
+composer checkbox keeps follow-up questions in that mode and can be turned off
+to return to ordinary project chat. Research chat is private and read-only, with
+no project edits or general source tools. Its SDK session is never resumed with
+ordinary chat's tools. Scheduled auto-ingest never uses MyAgent authorization.
+
+Choose Outlook, SharePoint and/or Salesforce in project MyAgent settings.
+Ingestion also shows checkboxes to narrow the sources for one run; clearing all
+of them skips MyAgent for that ingest. A connected Webex delegation shows green,
+with a small link to review source access in MyAgent settings. It is transport
+readiness, not an assertion that external source permissions were inspected.
+
+MyAgent answers in two sections: **Findings for the request** and **Project
+relevance**. The project name is optional context, not a mandatory search term:
+the requested information may be useful even when no source mentions the TOME
+project. In that case MyAgent should state that no direct project match was found.
 
 The backend checks the active run, its owner, current write access and unchanged
 consent before each question and again before consuming a reply. The question

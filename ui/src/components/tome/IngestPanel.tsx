@@ -39,6 +39,7 @@ import {
 } from "@/lib/tome/myagent-interactive";
 import {
   MYAGENT_CONNECTOR_SETTINGS_URL,
+  MYAGENT_CONNECTOR_OPTIONS,
   myAgentConnectorOption,
   normalizeMyAgentConnectors,
 } from "@/lib/projects/myagent-source";
@@ -430,6 +431,8 @@ export function IngestPanel({
   const [sourceRows, setSourceRows] = useState<SourceRow[] | null>(null);
   const [preflight, setPreflight] = useState<PreflightSourceResult[] | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(true);
+  const [myAgentAllowed, setMyAgentAllowed] = useState<string[]>([]);
+  const [myAgentSelection, setMyAgentSelection] = useState<string[]>([]);
   const [projectName, setProjectName] = useState("");
   const [autoIngest, setAutoIngest] = useState<AutoIngestConfig | undefined>(undefined);
 
@@ -488,6 +491,9 @@ export function IngestPanel({
         setProjectName(proj.slug ?? "");
         setAutoIngest(proj.autoIngest);
         const s = proj.sources ?? {};
+        const allowed = s.myagent_enabled ? normalizeMyAgentConnectors(s.myagent_connectors) : [];
+        setMyAgentAllowed(allowed);
+        setMyAgentSelection(allowed);
         // MyAgent delegated evidence is intentionally unsupported for Area and
         // BHAG synthesis. Hide any malformed or legacy stored selection here:
         // synthesis never dispatches it, and showing it would misleadingly
@@ -623,6 +629,7 @@ export function IngestPanel({
       : {
           seed: seed.trim() || undefined,
           mode,
+          myAgentSources: preflightLoading ? undefined : myAgentSelection,
           webexMeetings: selectedList.length > 0 ? selectedList : undefined,
           sourceScope: action === "meeting" ? "webex_meetings" : undefined,
           seedStablePages: isGreenfield ? seedPages : undefined,
@@ -653,7 +660,7 @@ export function IngestPanel({
     } finally {
       setStarting(false);
     }
-  }, [slug, seed, action, meetings, selectedMeetings, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
+  }, [slug, seed, action, meetings, selectedMeetings, myAgentSelection, preflightLoading, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
 
   // Compaction — an in-place editing pass (tighten prose, fix stale tome:// links).
   // Its own run through the shared lifecycle; shows in the same log + history.
@@ -936,7 +943,9 @@ export function IngestPanel({
                             ? pf?.detail || `Connected but no access to: ${inaccessible.join(", ")}`
                             : unverified
                               ? pf?.detail || `${row.label}: connector authorization is not verified by TOME`
-                            : pf
+                              : row.kind === "myagent" && pf?.connection_ready
+                                ? "MyAgent (Webex) connected"
+                              : pf
                               ? `${row.label}: access confirmed for all sources`
                               : `${row.label}: access not yet verified`;
 
@@ -971,7 +980,20 @@ export function IngestPanel({
                                 )}
                                 {row.label}
                               </p>
-                              <ul className="mt-1 space-y-1">
+                              {row.kind === "myagent" ? (
+                                <fieldset className="mt-2 flex flex-wrap gap-3">
+                                  <legend className="mb-1 text-xs text-muted-foreground">Query for this ingest</legend>
+                                  {MYAGENT_CONNECTOR_OPTIONS.map((option) => (
+                                    <label key={option.id} className="flex items-center gap-1.5 text-xs">
+                                      <input type="checkbox" checked={myAgentSelection.includes(option.id)}
+                                        disabled={!myAgentAllowed.includes(option.id) || starting || Boolean(activeRun)}
+                                        onChange={(event) => setMyAgentSelection((current) => event.target.checked
+                                          ? [...current, option.id] : current.filter((source) => source !== option.id))} />
+                                      {option.label}
+                                    </label>
+                                  ))}
+                                </fieldset>
+                              ) : <ul className="mt-1 space-y-1">
                                 {row.items.map((item) => (
                                   <li
                                     key={`${item.label}:${item.detail ?? ""}`}
@@ -1005,9 +1027,9 @@ export function IngestPanel({
                                     </span>
                                   </li>
                                 ))}
-                              </ul>
+                              </ul>}
                               {pf?.detail ? (
-                                <p className="mt-1 text-xs text-amber-500">
+                                <p className={cn("mt-1 text-xs", allOk ? "text-muted-foreground" : "text-amber-500")}>
                                   {pf.detail}
                                 </p>
                               ) : inaccessible.length > 0 ? (
@@ -1019,14 +1041,14 @@ export function IngestPanel({
                                 </p>
                               ) : null}
                             </div>
-                            {unverified && row.kind === "myagent" ? (
+                            {(unverified || allOk) && row.kind === "myagent" ? (
                               <a
                                 href={MYAGENT_CONNECTOR_SETTINGS_URL}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="shrink-0 text-xs text-primary hover:underline"
                               >
-                                Review connectors →
+                                MyAgent settings →
                               </a>
                             ) : (noToken || accessIssue) && pf?.fixable_by_user !== false ? (
                               <Link
@@ -1210,6 +1232,11 @@ export function IngestPanel({
                     disabled={!canEdit || starting}
                     className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                   />
+                  {myAgentSelection.length > 0 && action !== "meeting" && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Sent to MyAgent as the main research request. Project relevance is reported separately.
+                    </p>
+                  )}
                 </div>
               )}
 

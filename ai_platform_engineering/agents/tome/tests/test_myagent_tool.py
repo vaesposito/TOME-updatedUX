@@ -23,7 +23,7 @@ async def test_tool_uses_bound_identity_and_returns_untrusted_evidence(monkeypat
     monkeypatch.setattr(mcp_myagent.http_client, "ask_myagent", callback)
     tool = make_tool(monkeypatch)
     result = await tool.handler({"question": " Who owns the blocker? ", "run_id": "other-run", "project_id": "other-project"})
-    callback.assert_awaited_once_with("project-1", "run-1", "Who owns the blocker?")
+    callback.assert_awaited_once_with("project-1", "run-1", "Who owns the blocker?", run_kind="ingest")
     assert "Untrusted research result" in result["content"][0]["text"]
 
 
@@ -78,6 +78,16 @@ def test_tool_is_available_only_in_authorized_restricted_ingest(monkeypatch: pyt
         restrict_untrusted_evidence=True, myagent_run_id="run-1",
     )
     assert "myagent" not in options.mcp_servers
+
+    chat_options = build_agent_options(
+        snapshot=ProjectSnapshot(project_id="project-1", name="Example"),
+        system_prompt="test", model="example-model", max_turns=1, persist_author="tester",
+        restrict_untrusted_evidence=True, myagent_run_id="chat-run-1", myagent_run_kind="chat", read_only=True,
+    )
+    assert set(chat_options.mcp_servers) == {"myagent"}
+    assert chat_options.tools == ["Read", "Glob", "Grep"]
+    assert "Write" not in chat_options.allowed_tools
+    assert "Edit" not in chat_options.allowed_tools
 
 
 @pytest.mark.asyncio

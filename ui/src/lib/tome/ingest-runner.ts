@@ -364,7 +364,7 @@ async function prepareRun(
     endpoint === "/ingest" &&
     run.triggered_by !== "auto" &&
     run.myagent_interactive_authorized === true
-    ? myAgentConnectorsForSubject(project.sources, run.triggered_by_sub)
+    ? myAgentConnectorsForSubject(project.sources, run.triggered_by_sub, dispatch.myAgentSources)
     : [];
   const myAgentQuestionsEnabled = myAgentConnectors.length > 0;
   if (myAgentQuestionsEnabled) {
@@ -521,6 +521,7 @@ export async function startIngestRun(
     triggeredBy?: "manual" | "auto";
     /** Set only by the first-party reingest route after browser-origin checks. */
     myAgentInteractiveAuthorized?: boolean;
+    myAgentSources?: string[];
   },
 ): Promise<{ runId: string }> {
   const projectId = ctx.projectId;
@@ -539,6 +540,7 @@ export async function startIngestRun(
     dispatch: {
       endpoint: opts.agentEndpoint ?? "/ingest",
       seed: opts.seed ?? null,
+      ...(opts.myAgentSources === undefined ? {} : { myAgentSources: opts.myAgentSources }),
       mode: opts.mode,
       seedStablePages: opts.seedStablePages,
       webexMeetings: opts.webexMeetings,

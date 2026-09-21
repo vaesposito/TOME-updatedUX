@@ -12,6 +12,8 @@ export interface PreflightSourceResult {
   inaccessible: string[];
   /** Items that require external authorization TOME cannot verify directly. */
   unverified?: string[];
+  /** MyAgent transport is ready; external source permissions remain managed there. */
+  connection_ready?: boolean;
   /** True when the provider token is missing entirely (not just per-item failures). */
   no_token: boolean;
   /** Safe provider-specific explanation for an unavailable managed credential. */
@@ -29,7 +31,7 @@ export interface PreflightResult {
 
 /**
  * The access state of a single source, for UI display:
- *  - ok           — connected and every resource is accessible
+ *  - ok           — ready (MyAgent checks its Webex connection, not external permissions)
  *  - access_issue — connected but some resources are blocked (amber)
  *  - no_token     — provider not connected at all (red)
  *  - unknown      — not checked yet / no result
@@ -45,6 +47,7 @@ export function preflightState(pf: PreflightSourceResult | undefined): Preflight
   if (!pf) return "unknown";
   if (pf.no_token) return "no_token";
   if (pf.inaccessible.length > 0) return "access_issue";
+  if (pf.provider === "myagent" && pf.connection_ready) return "ok";
   if (pf.unverified?.length) return "unverified";
   return "ok";
 }

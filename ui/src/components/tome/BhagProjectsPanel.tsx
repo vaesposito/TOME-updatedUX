@@ -361,7 +361,7 @@ function AccessLine({ state }: { state: PreflightState | undefined }) {
     );
   }
   const spec: Record<PreflightState, { dot: string; label: string }> = {
-    ok: { dot: "bg-emerald-500", label: "Access confirmed" },
+    ok: { dot: "bg-emerald-500", label: "Sources ready" },
     access_issue: { dot: "bg-amber-500", label: "Some sources blocked" },
     no_token: { dot: "bg-destructive", label: "Not connected" },
     unverified: { dot: "bg-amber-500", label: "External authorization unverified" },

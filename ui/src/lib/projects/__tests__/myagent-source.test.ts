@@ -11,6 +11,14 @@ import {
 } from "../myagent-source";
 
 describe("myagent-source", () => {
+  it("narrows per-ingest selections without adding unconsented sources or treating empty as all", () => {
+    const sources = { myagent_consents: [{ subject: "owner", connectors: ["outlook", "sharepoint"], granted_at: "2026-01-01" }] };
+    expect(myAgentConnectorsForSubject(sources, "owner", ["outlook"])).toEqual(["outlook"]);
+    expect(myAgentConnectorsForSubject(sources, "owner", ["salesforce", "sharepoint"])).toEqual(["sharepoint"]);
+    expect(myAgentConnectorsForSubject(sources, "owner", [])).toEqual([]);
+    expect(myAgentConnectorsForSubject(sources, "owner")).toEqual(["outlook", "sharepoint"]);
+    expect(myAgentConnectorsForSubject(sources, "other", ["outlook"])).toEqual([]);
+  });
   it("normalizes the static connector allow-list in canonical order", () => {
     expect(
       normalizeMyAgentConnectors([

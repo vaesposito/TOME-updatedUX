@@ -111,16 +111,20 @@ export function normalizeMyAgentConsents(value: unknown): MyAgentConsent[] {
   return [...bySubject.values()].sort((left, right) => left.subject.localeCompare(right.subject));
 }
 
-/** Return only the integrations this exact identity has authorized. */
+/** Return this identity's authorized sources, optionally narrowed for one query/run. */
 export function myAgentConnectorsForSubject(
   sources: MyAgentSourceFields | undefined,
   subject: string | null | undefined,
+  requestedSources?: unknown,
 ): MyAgentConnector[] {
   const normalizedSubject = subject?.trim();
   if (!normalizedSubject) return [];
-  return normalizeMyAgentConsents(sources?.myagent_consents).find(
+  const allowed = normalizeMyAgentConsents(sources?.myagent_consents).find(
     (consent) => consent.subject === normalizedSubject,
   )?.connectors ?? [];
+  if (requestedSources == null) return allowed;
+  const requested = normalizeMyAgentConnectors(requestedSources);
+  return allowed.filter((source) => requested.includes(source));
 }
 
 /**

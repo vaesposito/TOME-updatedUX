@@ -135,11 +135,14 @@ export async function appendMessage(
 export async function setSdkSessionId(
   sessionId: string,
   sdkSessionId: string,
+  myAgentResearch?: boolean,
 ): Promise<void> {
   const sessions = await getTomeChatSessionsCollection();
   await sessions.updateOne(
     { _id: sessionId },
-    { $set: { sdk_session_id: sdkSessionId, updated_at: new Date() } },
+    { $set: { sdk_session_id: sdkSessionId, updated_at: new Date(),
+      ...(myAgentResearch === undefined ? {} : { myagent_research: myAgentResearch }),
+    } },
   );
 }
 

@@ -4,13 +4,14 @@ import { askMyAgentForRun } from "../myagent-tool";
 const mockFindRun = jest.fn();
 const mockUpdateRun = jest.fn();
 const mockUpdateProject = jest.fn();
+const mockFindProject = jest.fn();
 const mockCanWrite = jest.fn();
 const mockCanRead = jest.fn();
 const mockResolveCredential = jest.fn();
 const mockRequest = jest.fn();
 const mockGetBundle = jest.fn();
 const mockAppendEvidence = jest.fn();
-jest.mock("@/lib/mongodb", () => ({ getCollection: async () => ({ updateOne: mockUpdateProject }) }));
+jest.mock("@/lib/mongodb", () => ({ getCollection: async () => ({ updateOne: mockUpdateProject, findOne: mockFindProject }) }));
 jest.mock("../mongo-collections", () => ({
   getTomeIngestRunsCollection: async () => ({ findOne: mockFindRun, updateOne: mockUpdateRun }),
   getTomeChatRunsCollection: async () => ({ findOne: mockFindRun, updateOne: mockUpdateRun }),
@@ -45,6 +46,7 @@ beforeEach(() => {
   mockFindRun.mockResolvedValue({ ...baseRun });
   mockUpdateRun.mockResolvedValue({ matchedCount: 1 });
   mockUpdateProject.mockResolvedValue({ matchedCount: 1 });
+  mockFindProject.mockResolvedValue(project);
   mockCanWrite.mockResolvedValue(true);
   mockCanRead.mockResolvedValue(true);
   mockResolveCredential.mockResolvedValue({ available: true, accessToken: "private-token" });
@@ -142,4 +144,15 @@ it("rejects chat research after project access is lost", async () => {
   mockCanRead.mockResolvedValue(false);
   await expect(askMyAgentForRun(project, "run-1", question, "chat")).rejects.toBeDefined();
   expect(mockRequest).not.toHaveBeenCalled();
+});
+
+it("rechecks fresh project metadata before consuming a chat reply", async () => {
+  const updated = { ...project, team_id: "different-team" };
+  mockFindProject.mockResolvedValueOnce(project).mockResolvedValueOnce(updated);
+  mockCanRead.mockImplementation(async (_subject, current) => current.team_id !== "different-team");
+  const result = await askMyAgentForRun(project, "run-1", question, "chat");
+  expect(mockRequest).toHaveBeenCalled();
+  expect(mockCanRead).toHaveBeenLastCalledWith("owner-1", updated);
+  expect(result.status).toBe("unavailable");
+  expect(result.content).toBeUndefined();
 });

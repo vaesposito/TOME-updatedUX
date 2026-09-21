@@ -33,9 +33,17 @@ export async function askMyAgentForRun(
     throw new ApiError("MyAgent research is not authorized for this run.", 403, "MYAGENT_NOT_AUTHORIZED");
   }
   const subject = run.triggered_by_sub;
-  const canAccess = () => runKind === "chat"
-    ? canReadTomeProject(subject, project).then(async (allowed) => allowed || await isTomeAdminSubject(subject))
-    : canWriteAs(subject, project);
+  const projects = await getCollection<ProjectDocument>("projects");
+  const projectMongoId = (ObjectId.isValid(project._id) ? new ObjectId(project._id) : project._id) as unknown as string;
+  const canAccess = async () => {
+    // Permission helpers may repair implied tuples from project metadata.
+    // Re-read it so a reply cannot restore access from a pre-revocation snapshot.
+    const currentProject = await projects.findOne({ _id: projectMongoId });
+    if (!currentProject) return false;
+    return runKind === "chat"
+      ? await canReadTomeProject(subject, currentProject) || await isTomeAdminSubject(subject)
+      : canWriteAs(subject, currentProject);
+  };
   if (!await canAccess()) {
     throw new ApiError("The run owner no longer has project access.", 403, "MYAGENT_NOT_AUTHORIZED");
   }
@@ -63,8 +71,6 @@ export async function askMyAgentForRun(
     throw new ApiError("MyAgent question limit reached, another question is in flight, or the run stopped.", 429, "MYAGENT_QUESTION_LIMIT");
   }
   try {
-    const projects = await getCollection<ProjectDocument>("projects");
-    const projectMongoId = (ObjectId.isValid(project._id) ? new ObjectId(project._id) : project._id) as unknown as string;
     const claim = buildMyAgentConsentDelegationClaim({ subject, expectedRevision: revision, runId, claimedAt: new Date().toISOString() });
     const claimed = await projects.updateOne({ _id: projectMongoId, ...claim.filter }, claim.update);
     if (!claimed.matchedCount) {

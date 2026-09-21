@@ -105,6 +105,40 @@ function normalizeProviderId(raw: string): string {
   return value.replace(/[-_](sso|oidc|saml)$/i, "");
 }
 
+function claimString(profile: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = profile[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+/** Resolve display names across standard OIDC and broker-specific claim styles. */
+function resolveOidcDisplayName(profile: Record<string, unknown>): string {
+  const firstName = claimString(
+    profile,
+    "given_name",
+    "firstname",
+    "first_name",
+    "firstName",
+    "givenName",
+  );
+  const lastName = claimString(
+    profile,
+    "family_name",
+    "lastname",
+    "last_name",
+    "lastName",
+    "familyName",
+  );
+  const composedName = [firstName, lastName].filter(Boolean).join(" ");
+  return (
+    claimString(profile, "name", "fullname", "full_name", "display_name") ||
+    composedName ||
+    claimString(profile, "preferred_username", "username", "email")
+  );
+}
+
 export function resolveLoginProviderId(profile?: Record<string, unknown>): string {
   const claim = profile?.identity_provider;
   if (typeof claim === "string" && claim.trim()) {
@@ -759,18 +793,22 @@ export const authOptions: NextAuthOptions = {
       profile(profile) {
         // Build display name from available claims.
         // Keycloak sends standard OIDC: name, given_name, family_name
-        // Duo SSO sends: fullname, firstname, lastname, username
-        const composedName =
-          `${profile.given_name || profile.firstname || ""} ${profile.family_name || profile.lastname || ""}`.trim();
-        const name =
-          profile.name || profile.fullname || composedName ||
-          profile.preferred_username || profile.username || profile.email;
+        // Duo SSO deployments may send: fullname, firstname, lastname,
+        // first_name, last_name, firstName, lastName, or username.
+        const claims = profile as unknown as Record<string, unknown>;
+        const name = resolveOidcDisplayName(claims);
 
         console.log("[Auth profile] Claims:", {
           name: profile.name,
           given_name: profile.given_name,
           family_name: profile.family_name,
           fullname: profile.fullname,
+          firstname: claims.firstname,
+          lastname: claims.lastname,
+          first_name: claims.first_name,
+          last_name: claims.last_name,
+          firstName: claims.firstName,
+          lastName: claims.lastName,
           preferred_username: profile.preferred_username,
           resolved: name,
         });
@@ -917,9 +955,7 @@ export const authOptions: NextAuthOptions = {
           console.log('[Auth JWT] Org (tenant):', token.org);
         }
 
-        const displayName =
-          (profileData.name as string | undefined) ??
-          (profileData.preferred_username as string | undefined);
+        const displayName = resolveOidcDisplayName(profileData);
 
         await import("@/lib/rbac/login-openfga-bootstrap")
           .then(({ reconcileLoginOpenFgaAccess }) =>

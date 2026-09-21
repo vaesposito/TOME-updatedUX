@@ -16,17 +16,14 @@ import {
 } from "@/lib/projects/myagent-source";
 
 import { resolveWebexRoomExecution } from "@/lib/tome/webex-room-execution";
+import { githubApiBaseUrl, githubFullName } from "@/lib/projects/github-repository";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ slug: string }> };
 
 function normalizeRepoSlug(raw: string): string {
-  let s = raw.trim().replace(/\.git$/, "");
-  for (const prefix of ["https://github.com/", "github.com/"]) {
-    if (s.startsWith(prefix)) s = s.slice(prefix.length);
-  }
-  return s;
+  return githubFullName(raw);
 }
 
 async function checkGitHub(
@@ -42,7 +39,7 @@ async function checkGitHub(
     repos.map(async (raw) => {
       const slug = normalizeRepoSlug(raw);
       try {
-        const r = await fetch(`https://api.github.com/repos/${slug}`, { headers });
+        const r = await fetch(`${githubApiBaseUrl()}/repos/${slug}`, { headers });
         return { item: slug, ok: r.status === 200 };
       } catch {
         return { item: slug, ok: false };

@@ -1,28 +1,93 @@
 import type { GitHubRepositorySource } from "@/types/projects";
 
 const PICKER_PREFIX = "github-repo:";
-const GITHUB_URL_PREFIX = /^https?:\/\/(?:www\.)?github\.com\//i;
+const PUBLIC_GITHUB_WEB_BASE = "https://github.com";
+
+function configuredValue(name: string): string {
+  // NEXT_PUBLIC_GITHUB_HOST is useful to client components. Server-only
+  // callers can use GITHUB_HOST/GITHUB_API_URL without exposing credentials.
+  const env = typeof process !== "undefined" ? process.env : undefined;
+  return (
+    env?.[`NEXT_PUBLIC_${name}`]?.trim() ||
+    env?.[name]?.trim() ||
+    ""
+  );
+}
+
+/** Base URL for the GitHub web UI, including GitHub Enterprise Server. */
+export function githubWebBaseUrl(): string {
+  const configuredHost = configuredValue("GITHUB_HOST");
+  if (configuredHost) {
+    return configuredHost.startsWith("http")
+      ? configuredHost.replace(/\/+$/, "")
+      : `https://${configuredHost.replace(/\/+$/, "")}`;
+  }
+
+  const api = configuredValue("GITHUB_API_URL");
+  if (api && !/api\.github\.com/i.test(api)) {
+    return api.replace(/\/api\/v3\/?$/i, "").replace(/\/+$/, "");
+  }
+  return PUBLIC_GITHUB_WEB_BASE;
+}
+
+/** REST API base URL, defaulting to public GitHub for backwards compatibility. */
+export function githubApiBaseUrl(): string {
+  const api = configuredValue("GITHUB_API_URL");
+  if (api) return api.replace(/\/+$/, "");
+  const web = githubWebBaseUrl();
+  return web === PUBLIC_GITHUB_WEB_BASE ? "https://api.github.com" : `${web}/api/v3`;
+}
+
+/** GitHub Enterprise GraphQL is served at /api/graphql, not /api/v3/graphql. */
+export function githubGraphqlUrl(): string {
+  const configured = configuredValue("GITHUB_GRAPHQL_URL");
+  if (configured) return configured.replace(/\/+$/, "");
+  const web = githubWebBaseUrl();
+  return web === PUBLIC_GITHUB_WEB_BASE
+    ? `${githubApiBaseUrl()}/graphql`
+    : `${web}/api/graphql`;
+}
+
+function repositoryPath(value: string): string {
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    return url.pathname;
+  } catch {
+    return trimmed
+      .replace(/^https?:\/\/(?:www\.)?github\.com\//i, "")
+      .replace(/^https?:\/\/[^/]+\//i, "");
+  }
+}
 
 /** Normalize a GitHub URL or `owner/name` reference into `owner/name`. */
 export function githubFullName(value: string): string {
-  return value
-    .trim()
-    .replace(GITHUB_URL_PREFIX, "")
+  return repositoryPath(value)
     .replace(/[?#].*$/, "")
     .replace(/\.git$/i, "")
     .replace(/^\/+|\/+$/g, "");
 }
 
 export function githubHtmlUrl(fullName: string): string {
-  return `https://github.com/${githubFullName(fullName)}`;
+  return `${githubWebBaseUrl()}/${githubFullName(fullName)}`;
 }
 
 /** Best-effort structured source for legacy/manual repository values. */
 export function githubSourceFromValue(value: string): GitHubRepositorySource {
   const fullName = githubFullName(value);
+  let htmlUrl = githubHtmlUrl(fullName);
+  try {
+    const url = new URL(value.trim());
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      htmlUrl = `${url.origin}/${parts[0]}/${parts[1].replace(/\.git$/i, "")}`;
+    }
+  } catch {
+    // Shorthand owner/name values use the configured GitHub web base.
+  }
   return {
     full_name: fullName,
-    html_url: githubHtmlUrl(fullName),
+    html_url: htmlUrl,
   };
 }
 

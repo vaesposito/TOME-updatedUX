@@ -5,16 +5,17 @@
 // are dropped and the result is capped per poll.
 
 import type { EventProvenance, SourceEvent } from "./types";
+import {
+  githubApiBaseUrl,
+  githubFullName,
+  githubGraphqlUrl,
+} from "@/lib/projects/github-repository";
 
-const GH_API = "https://api.github.com";
+const GH_API = githubApiBaseUrl();
 
 /** Parse a repo string (URL or `owner/name`) into its parts. */
 export function parseOwnerRepo(repo: string): { owner: string; name: string } | null {
-  const cleaned = repo
-    .trim()
-    .replace(/\.git$/, "")
-    .replace(/^https?:\/\/github\.com\//i, "")
-    .replace(/^\/+|\/+$/g, "");
+  const cleaned = githubFullName(repo);
   const parts = cleaned.split("/").filter(Boolean);
   if (parts.length < 2) return null;
   return { owner: parts[0], name: parts[1] };
@@ -101,7 +102,7 @@ async function ghGraphql<T>(
   token: string,
   variables: Record<string, unknown>,
 ): Promise<T> {
-  const res = await fetch(`${GH_API}/graphql`, {
+  const res = await fetch(githubGraphqlUrl(), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

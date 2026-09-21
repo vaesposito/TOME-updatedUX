@@ -636,6 +636,11 @@ services:
       # Skill Hub GitHub crawl/import token. Keep the value in .env or the shell;
       # never hardcode tokens in compose.
       - GITHUB_TOKEN=${GITHUB_TOKEN:-${GITHUB_PERSONAL_ACCESS_TOKEN:-}}
+      # GitHub source URLs and API endpoints. Defaults preserve public GitHub;
+      # set these for GitHub Enterprise Server deployments.
+      - GITHUB_HOST=${GITHUB_HOST:-}
+      - GITHUB_API_URL=${GITHUB_API_URL:-https://api.github.com}
+      - GITHUB_GRAPHQL_URL=${GITHUB_GRAPHQL_URL:-}
       # MongoDB (when running with profile caipe-ui; mongodb service is in same profile)
       # (changeme default is for local dev only; for production use Helm chart and External Secrets)
       - MONGODB_URI=${MONGODB_URI:-mongodb://admin:changeme@caipe-mongodb:27017/caipe?authSource=admin}
@@ -863,6 +868,11 @@ services:
       - DYNAMIC_AGENTS_URL=${DYNAMIC_AGENTS_URL:-http://dynamic-agents:8001}
       - SKILL_SCANNER_URL=${SKILL_SCANNER_URL:-http://skill-scanner:8000}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-${GITHUB_PERSONAL_ACCESS_TOKEN:-}}
+      # GitHub source URLs and API endpoints. Defaults preserve public GitHub;
+      # set these for GitHub Enterprise Server deployments.
+      - GITHUB_HOST=${GITHUB_HOST:-}
+      - GITHUB_API_URL=${GITHUB_API_URL:-https://api.github.com}
+      - GITHUB_GRAPHQL_URL=${GITHUB_GRAPHQL_URL:-}
       - MONGODB_URI=${MONGODB_URI:-mongodb://admin:changeme@caipe-mongodb:27017/caipe?authSource=admin}
       - MONGODB_DATABASE=${MONGODB_DATABASE:-caipe}
       - AGENTGATEWAY_TARGETS_TOKEN=${AGENTGATEWAY_TARGETS_TOKEN:-agentgateway-config-bridge-dev-token}

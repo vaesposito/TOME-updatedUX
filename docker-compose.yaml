@@ -402,6 +402,11 @@ services:
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI:-}
+      # GitHub source URLs and API endpoints. Defaults preserve public GitHub;
+      # set these for GitHub Enterprise Server deployments.
+      - GITHUB_HOST=${GITHUB_HOST:-}
+      - GITHUB_API_URL=${GITHUB_API_URL:-https://api.github.com}
+      - GITHUB_GRAPHQL_URL=${GITHUB_GRAPHQL_URL:-}
       - CONFLUENCE_CLIENT_ID=${CONFLUENCE_CLIENT_ID:-}
       - CONFLUENCE_CLIENT_SECRET=${CONFLUENCE_CLIENT_SECRET:-}
       - CONFLUENCE_REDIRECT_URI=${CONFLUENCE_REDIRECT_URI:-}

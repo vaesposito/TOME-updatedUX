@@ -92,6 +92,9 @@ only rooms where the signed-in user and managed account are both current Webex
 members. Project authorization continues to govern who can access the ingested
 content. Saving and ingesting recheck shared Webex membership; removing either
 account from a room therefore fails closed.
+Switching personal/managed credentials clears available room results and
+automatically refreshes them; late responses from the previous account are ignored.
+Already selected project sources are preserved.
 Managed tokens remain server-side, are used only for ingest, and are never sent
 to Tome chat, AgentGateway, meeting tools, or the browser. Projects created
 before this feature remain on their existing personal Webex path.

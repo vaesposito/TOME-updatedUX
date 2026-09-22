@@ -413,6 +413,7 @@ export function IngestPanel({
   const [meetingsOpen, setMeetingsOpen] = useState(false);
   const [meetings, setMeetings] = useState<WebexMeeting[] | null>(null);
   const [meetingsLoading, setMeetingsLoading] = useState(false);
+  const [meetingProviderName, setMeetingProviderName] = useState<string | null>(null);
   const [selectedMeetings, setSelectedMeetings] = useState<Set<string>>(new Set());
   const [meetingFilter, setMeetingFilter] = useState("");
   const [meetingLookbackDays, setMeetingLookbackDays] = useState(3);
@@ -479,6 +480,7 @@ export function IngestPanel({
         );
         if (!res.ok) throw new Error(`fetch failed (${res.status})`);
         const json = await res.json();
+        setMeetingProviderName(json?.data?.connection?.name ?? null);
         setMeetings(json?.data?.meetings ?? []);
       } catch {
         setMeetings([]);
@@ -1059,7 +1061,7 @@ export function IngestPanel({
                           </ul>
                         ) : !meetings || meetings.length === 0 ? (
                           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-                            No meetings found. Connect Webex in
+                            No meetings found. Connect {meetingProviderName || "your configured meeting app"} in
                             <Link
                               href="/credentials"
                               target="_blank"

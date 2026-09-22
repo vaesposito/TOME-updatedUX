@@ -19,9 +19,10 @@
 import { NextRequest } from "next/server";
 
 import { successResponse, withErrorHandler } from "@/lib/api-middleware";
+import { getOAuthConnectorService } from "@/lib/credentials/oauth-service-factory";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import { sessionSub } from "@/lib/tome/agent-proxy";
-import { manualWebexAccessToken } from "@/lib/tome/webex-meeting-series";
+import { manualWebexAccessToken, manualWebexProvider } from "@/lib/tome/webex-meeting-series";
 
 export const dynamic = "force-dynamic";
 
@@ -241,10 +242,19 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       ? Math.min(requestedLookback, MAX_LOOKBACK_DAYS)
       : DEFAULT_LOOKBACK_DAYS;
 
+  const provider = manualWebexProvider();
+  const service = await getOAuthConnectorService();
+  const connectors = await service.listConnectors();
+  const connector = connectors.find((item) => item.provider === provider);
+  const connection = { provider, name: connector?.name ?? null };
   const token = await manualWebexAccessToken(sessionSub(tctx.session));
 
   if (!token) {
-    return successResponse(debug ? { note: "no webex token", meetings: [] } : { meetings: [] });
+    return successResponse({
+      connection,
+      meetings: [],
+      ...(debug ? { note: "no token for the configured meeting provider" } : {}),
+    });
   }
 
   const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
@@ -267,6 +277,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       lookbackDays,
     );
     return successResponse({
+      connection,
       lookbackDays,
       windowDays: WINDOW_DAYS,
       recordings: {
@@ -389,5 +400,5 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     console.log(`[webex-meetings] skipped ${skippedNoMeetingId} recording(s) with no meetingId`);
   }
 
-  return successResponse({ meetings });
+  return successResponse({ meetings, connection });
 });

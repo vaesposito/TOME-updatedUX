@@ -62,8 +62,9 @@ not create a schedule.
 
 1. The browser requests
    `GET /api/tome/projects/<slug>/webex-meetings?lookbackDays=<days>`.
-2. The BFF uses the signed-in user's built-in `webex` connection. The OAuth
-   token is never sent to the browser.
+2. The BFF uses the signed-in user's `TOME_MANUAL_WEBEX_PROVIDER` connection
+   (default `webex`). The connection prompt uses that connector's saved display
+   name, not its provider ID. The OAuth token is never sent to the browser.
 3. The BFF queries recordings and meeting transcripts in parallel, merges them
    by Webex meeting instance ID, and returns newest first.
 4. The picker defaults to the previous 3 days. The user may choose 3, 7, or 30

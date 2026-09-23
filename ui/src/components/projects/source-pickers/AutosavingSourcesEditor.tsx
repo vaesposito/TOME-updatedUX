@@ -68,6 +68,8 @@ export function AutosavingSourcesEditor({
           throw new Error(body.error ?? `Save failed (${response.status})`);
         }
         if (version === versionRef.current) {
+          // Use canonical, server-verified room bindings without queueing another save.
+          if (body.data?.project?.sources) onChange(body.data.project.sources);
           setStatus("saved");
           onDirtyChange?.(false);
           onSaved?.(body.data.project as ProjectDocument);
@@ -82,7 +84,7 @@ export function AutosavingSourcesEditor({
         }
       }
     },
-    [onDirtyChange, onSaved, slug],
+    [onChange, onDirtyChange, onSaved, slug],
   );
 
   const queueSave = useCallback(

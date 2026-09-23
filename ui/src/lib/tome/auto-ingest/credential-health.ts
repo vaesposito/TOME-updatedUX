@@ -1,3 +1,4 @@
+import { webexRoomAccount } from "@/lib/projects/webex-room-account";
 import type { ProviderConnectionMetadata } from "@/lib/credentials/oauth-service";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCollection } from "@/lib/mongodb";
@@ -124,15 +125,12 @@ export function requiredAutoIngestProviders(project: ProjectDocument): AutoInges
   ) {
     providers.push("atlassian");
   }
-  if (
-    (sources.webex_rooms?.length ?? 0) > 0 &&
-    sources.webex_credential_mode !== "managed"
-  ) {
-    providers.push(
-      sources.webex_credential_provider === "webex_messaging"
-        ? "webex_messaging"
-        : "webex",
-    );
+  for (const room of sources.webex_rooms ?? []) {
+    const account = webexRoomAccount(room, sources);
+    if (account.mode === "personal") {
+      const provider = account.provider === "webex_messaging" ? "webex_messaging" : "webex";
+      if (!providers.includes(provider)) providers.push(provider);
+    }
   }
   return providers;
 }

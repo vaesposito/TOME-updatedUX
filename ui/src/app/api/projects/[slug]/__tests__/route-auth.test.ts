@@ -14,11 +14,10 @@ const mockRemoveTomeReadAccess = jest.fn(async () => undefined);
 const mockReconcileDataSteward = jest.fn(async () => undefined);
 const mockInvalidateTomeReadAccessCatalogCache = jest.fn();
 const mockDeleteReservation = jest.fn(async () => ({ deletedCount: 1 }));
-const mockAssertManagedRooms = jest.fn();
+const mockPrepareRooms = jest.fn();
 
-jest.mock("@/lib/tome/managed-webex", () => ({
-  ...jest.requireActual("@/lib/tome/managed-webex"),
-  assertManagedWebexRoomsAccessible: (...args: unknown[]) => mockAssertManagedRooms(...args),
+jest.mock("@/lib/tome/webex-room-execution", () => ({
+  prepareWebexRooms: (...args: unknown[]) => mockPrepareRooms(...args),
 }));
 
 jest.mock("@/lib/api-middleware", () => {
@@ -50,6 +49,7 @@ jest.mock("@/lib/mongodb", () => ({
 }));
 
 jest.mock("@/lib/tome/data-steward", () => ({
+  tomeSessionSubject: () => "steward-subject",
   dataStewardOpenFgaSubject: jest.fn(),
   getTomeProjectPermissions: (...args: unknown[]) =>
     mockGetTomeProjectPermissions(...args),
@@ -313,48 +313,31 @@ describe("PATCH /api/projects/[slug] report visibility", () => {
   });
 });
 
-describe("PATCH saved managed Webex rooms", () => {
+describe("PATCH Webex source authorization and attribution", () => {
   const retained = { room_id: "other", name: "Other room", slug: "other" };
-  const added = { room_id: "new", name: "New room", slug: "new" };
-  let project: Record<string, unknown>;
+  const added = { room_id: "new", name: "New room", slug: "new", credential_mode: "managed", credential_provider: "webex_messaging" };
+  const project = { _id: "example-id", slug: "example", type: "project", sources: { webex_rooms: [retained] } };
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAssertManagedRooms.mockResolvedValue(undefined);
+    mockPrepareRooms.mockImplementation(async ({ rooms }) => rooms);
     mockGetTomeProjectPermissions.mockResolvedValue({ canRead: true, canEdit: true, canManageSteward: false });
-    project = { _id: "example-id", slug: "example", type: "project", sources: {
-      webex_credential_mode: "managed", webex_credential_provider: "webex_messaging", webex_rooms: [retained],
-    } };
     mockFindBySlug.mockReturnValue({ limit: () => ({ toArray: async () => [project] }) });
-    mockFindOne.mockImplementation(async () => project);
+    mockFindOne.mockResolvedValue(project);
   });
-  async function save(rooms: typeof retained[]) {
-    return PATCH(patchRequest("example", { sources: {
-      webex_credential_mode: "managed", webex_credential_provider: "webex_messaging", webex_rooms: rooms,
-    } }), { params: Promise.resolve({ slug: "example" }) });
+  async function save() {
+    return PATCH(patchRequest("example", { sources: { webex_rooms: [retained, added] } }), { params: Promise.resolve({ slug: "example" }) });
   }
-  it("checks only newly added rooms while retaining unchanged attachments", async () => {
-    expect((await save([retained, added])).status).toBe(200);
-    expect(mockAssertManagedRooms).toHaveBeenCalledWith(expect.objectContaining({ rooms: [added] }));
-    expect(mockUpdateOne).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      $set: expect.objectContaining({ "sources.webex_rooms": [retained, added] }),
+  it("passes authenticated attribution and prior records to the shared validator", async () => {
+    expect((await save()).status).toBe(200);
+    expect(mockPrepareRooms).toHaveBeenCalledWith(expect.objectContaining({
+      subject: "steward-subject", userEmail: "steward@example.test", previousSources: project.sources,
+      rooms: expect.arrayContaining([expect.objectContaining(added)]),
     }));
   });
-  it("lets editors remove an inaccessible attachment without requiring its membership", async () => {
-    expect((await save([])).status).toBe(200);
-    expect(mockAssertManagedRooms).not.toHaveBeenCalled();
-  });
-  it("checks edited room metadata and validates all rooms when the account mode changes", async () => {
-    const changed = { ...retained, name: "Changed name" };
-    expect((await save([changed])).status).toBe(200);
-    expect(mockAssertManagedRooms).toHaveBeenLastCalledWith(expect.objectContaining({ rooms: [changed] }));
-    project.sources = { webex_credential_mode: "personal", webex_rooms: [retained] };
-    expect((await save([retained])).status).toBe(200);
-    expect(mockAssertManagedRooms).toHaveBeenLastCalledWith(expect.objectContaining({ rooms: [retained] }));
-  });
-  it("still rejects unauthorized project edits before Webex validation", async () => {
+  it("rejects unauthorized project edits before checking Webex access", async () => {
     mockGetTomeProjectPermissions.mockResolvedValue({ canRead: true, canEdit: false });
-    expect((await save([added])).status).toBe(403);
-    expect(mockAssertManagedRooms).not.toHaveBeenCalled();
+    expect((await save()).status).toBe(403);
+    expect(mockPrepareRooms).not.toHaveBeenCalled();
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 });

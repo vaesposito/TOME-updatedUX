@@ -35,7 +35,8 @@ import {
 import { preflightState, type PreflightSourceResult } from "@/lib/tome/preflight";
 import { describeRelativeTime, nextCronRun } from "@/lib/tome/auto-ingest/schedule-presets";
 import { cn } from "@/lib/utils";
-import type { AutoIngestConfig, ConfluencePageScope } from "@/types/projects";
+import type { AutoIngestConfig, ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
+import { WebexIngestSources } from "./WebexIngestSources";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ interface WebexMeeting {
 }
 
 interface ProjectSources {
+  webex_credential_mode?: WebexCredentialMode;
   repos: string[];
   confluence_url: string;
   confluence_page_scopes?: unknown;
@@ -74,11 +76,14 @@ interface ProjectSources {
     slug?: string;
     id?: string;
     title?: string;
+    credential_mode?: WebexCredentialMode;
   }>;
 }
 
 interface SourceItem {
   label: string;
+  room_id?: string;
+  webexMode?: WebexCredentialMode;
   detail?: string;
   href?: string;
 }
@@ -193,7 +198,8 @@ export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
     rows.push({
       kind: "webex",
       label: "Webex",
-      items: roomLabels.map((room) => ({ label: room })),
+      items: rooms.map((room) => ({ label: room.name || room.title || room.room_id || room.id || "",
+        room_id: room.room_id || room.id, webexMode: room.credential_mode ?? s.webex_credential_mode ?? "personal" })),
       connectorKey: "webex",
     });
   }
@@ -869,6 +875,9 @@ export function IngestPanel({
                     ) : (
                       sourceRows.map((row) => {
                         const pf = preflight?.find((p) => p.provider === row.kind);
+                        if (row.kind === "webex") {
+                          return <WebexIngestSources key={row.kind} items={row.items} preflight={pf} />;
+                        }
                         const state = preflightState(pf);
                         const inaccessible = pf?.inaccessible ?? [];
                         const accessible = pf?.accessible ?? [];
@@ -876,10 +885,6 @@ export function IngestPanel({
                         const noToken = state === "no_token";
                         const allOk = state === "ok";
                         const accessIssue = state === "access_issue";
-                        const runAs = pf?.run_as;
-                        const runAsLabel = runAs
-                          ? `${runAs.name}${runAs.email && runAs.email !== runAs.name ? ` (${runAs.email})` : ""}`
-                          : noToken ? "not connected" : "account unavailable";
 
                         const tooltipText = noToken
                           ? pf?.detail || `${row.label} not connected: the agent will skip this source`
@@ -940,17 +945,6 @@ export function IngestPanel({
                                           {item.label}
                                         </span>
                                       )}
-                                      {row.kind === "webex" ? (
-                                        <span
-                                          className="break-words text-muted-foreground"
-                                          title={runAs?.mode === "managed"
-                                            ? "Webex space ingest uses the configured managed account."
-                                            : "Manual ingest uses the account connected by the person starting it, not whoever added the space. Scheduled ingest uses its configured credential owner."}
-                                        >
-                                          {" · Runs as: "}{runAsLabel}
-                                          {runAs?.mode === "managed" ? " · managed account" : null}
-                                        </span>
-                                      ) : null}
                                       {item.detail ? (
                                         <span className="block break-words text-[11px] text-muted-foreground">
                                           {item.detail}

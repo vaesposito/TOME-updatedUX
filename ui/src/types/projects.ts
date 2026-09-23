@@ -169,9 +169,31 @@ export interface WebexRoomSource {
   slug: string;
   name: string;
   room_id: string;
+  /** Missing fields keep the project's legacy account settings. */
+  credential_mode?: WebexCredentialMode;
+  credential_provider?: string;
+  /** Authenticated adder, recorded on new attachments only; never an execution identity. */
+  added_by?: { subject: string; name: string; email: string; added_at: string };
 }
 
 export type WebexCredentialMode = "personal" | "managed";
+
+export interface WebexRoomRunAs {
+  mode: WebexCredentialMode;
+  name: string;
+  email?: string;
+}
+
+export interface WebexRoomCheck {
+  room_id: string;
+  name: string;
+  mode: WebexCredentialMode;
+  available: boolean;
+  access: "accessible" | "inaccessible" | "unknown";
+  no_token?: boolean;
+  run_as?: WebexRoomRunAs;
+  detail?: string;
+}
 
 /**
  * One attached GitHub repository. `id` is the durable identity returned by

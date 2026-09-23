@@ -41,9 +41,15 @@ and persistence. CAIPE Mongo is the system of record.
 
 Webex request credentials may include `messaging_only: true`. In that mode the
 embedded Webex MCP registers only room, message, and people tools; meeting,
-recording, transcript, and summary tools are unavailable. CAIPE UI uses this
-mode for the deployment-owned Webex space-ingest account. It is request-scoped
-and does not create an ambient service credential inside Tome Agent.
+recording, transcript, and summary tools are unavailable.
+
+Mixed personal/managed space ingestion supplies `credentials.webex.room_tokens`
+as a JSON map of attached room IDs to tokens. Each room uses only its mapped
+token; missing or malformed mappings never fall back to another account.
+Message/person detail lookups with mapped credentials require IDs previously
+seen in that room's messages. Meeting tools use only `webex.access_token`
+(the caller's own credential), never a generic room token. The UI does not
+forward room-token mappings to chat. No ambient service credential is created.
 
 The endpoint, models, and credentials are config-driven — nothing host- or
 product-specific is hardcoded. Model resolution is exact entity, entity type,

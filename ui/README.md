@@ -89,38 +89,56 @@ connection, and verifies that Webex `/people/me` returns the configured email.
 The project option appears only after those checks pass.
 The managed picker tells users which account to add to a Webex space and lists
 only rooms where the signed-in user and managed account are both current Webex
-members. Project authorization continues to govern who can access the ingested
-content. Adding/changing attachments and ingesting recheck shared Webex membership;
-removing either account from a room therefore fails closed for ingestion.
-Switching personal/managed credentials clears available room results and
-automatically refreshes them; late responses from the previous account are ignored.
-During onboarding, switching also clears selected Webex rooms. Non-Webex project
-sources are unchanged.
+members. Project authorization governs who can access the ingested content.
 
 In **Settings → Sources → Webex**:
 
-- Accessible saved rooms are selected only in their account's picker.
-- **Rooms added by other users** lists saved rooms the current user cannot
-  access, including managed-account rooms where they are not a member. Grouping
-  uses direct room/membership checks, not attribution or search-result absence.
-- That section is outside both account tabs. Switching tabs only browses;
-  saved rooms and their ingest account are unchanged. Refresh rechecks access.
-- Lookup failures are shown separately as unverified, not as missing membership.
-- Editors can remove those attachments or preserve them while editing their own
-  selections. Unchanged retained rooms do not need to pass the editor's Webex
-  membership check on save; ingestion still validates every room.
-- A project still has one Webex ingest account setting, not one per room. Remove
-  its saved rooms before selecting rooms with a different account; tab switching
-  cannot silently reassign existing rooms. No added-by metadata is stored.
+- One **Webex source** card with the Webex logo contains **Selected Webex Spaces**
+  first, then **Add a new Webex Space**, separated by a divider.
+- **Selected Webex Spaces** shows every attached space and its **Runs as**
+  identity, independently of the discovery tabs.
+- **Add a new Webex Space** supports personal and managed discovery; both
+  lists exclude all room IDs already attached to this project. Switching tabs
+  clears stale results and refreshes without changing saved selections.
+- Adding a personal space requires access using the current user's selected
+  connection. Adding a managed space requires both that user and the generic
+  account to belong to the space.
+- New attachments record server-verified `added_by` (subject, name, email,
+  timestamp) and per-room `credential_mode`/`credential_provider`. The adder
+  is attribution only, **never** the account used for personal ingestion.
+- An editor can remove a space only if they currently have Webex access to it.
+  Managed removal checks shared membership. Both the UI and save API enforce
+  this; retaining another user's inaccessible space does not require access.
+- Adder attribution is hidden for accessible spaces. Inaccessible spaces show
+  “User X added it and you don't have access to delete.” Lookup failures leave
+  removal disabled without claiming that membership was revoked.
+- The existing **Refresh** button also rechecks selected-space removal access.
+- Older records retain their project-level account settings and unknown
+  adders. There is no migration, ownership inference, or reassignment step.
+  Changing a retained legacy space's account type requires explicitly
+  removing and re-adding it.
 
-The ingest page shows **Runs as** beside each Webex room, using the name/email
-returned by Webex for the resolved token. Personal manual ingest uses the person
-starting the run, not whoever added the room; scheduled ingest uses its configured
-credential owner. Managed space ingest uses the generic account. If the profile
-cannot be read, the UI shows the connection type without guessing a person.
-Managed tokens remain server-side, are used only for ingest, and are never sent
-to Tome chat, AgentGateway, meeting tools, or the browser. Projects created
-before this feature remain on their existing personal Webex path.
+**Execution rules (manual and scheduled):**
+
+- Personal manual ingestion uses the person starting it; scheduled ingestion
+  uses `autoIngest.credentialOwner`. An inaccessible personal room still
+  reports an access error and never borrows the adder's credentials.
+- Managed ingestion uses the configured generic account. The initiating user
+  or schedule owner does **not** need Webex membership or a Webex connection;
+  project ingestion authorization and the generic account's access are what
+  matter. Loss of generic-account access fails clearly.
+- Projects can mix personal and managed spaces. **Runs as** reflects each
+  resolved account; profile lookup failure falls back to the connection type,
+  not an invented user name.
+- **Run ingest** groups Webex spaces into **Will be ingested** and **Won't be
+  ingested**, with per-space connection/access reasons. Personal access issues
+  do not prevent accessible managed spaces from contributing data. Failed
+  checks are labeled **Access not verified**, not missing membership. A managed
+  account failure is shown as **Ingest blocked**, matching execution policy.
+- Scoped room tokens remain server-side and are forwarded only for ingestion.
+  Generic tokens cannot read unrelated rooms, arbitrary people/messages,
+  meetings, or transcripts, and are never forwarded to chat or the browser.
+  Existing meeting-ingest authentication is unchanged.
 
 ### Config-driven Agentic Apps
 

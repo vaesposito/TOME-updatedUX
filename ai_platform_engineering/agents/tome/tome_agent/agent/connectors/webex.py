@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel, Field
 
 from tome_agent.agent import http_client
@@ -50,7 +52,23 @@ class WebexConnector(Connector[WebexExtra]):
             token=token,
             allowed_room_ids=allowed_room_ids,
             messaging_only=self._messaging_only(),
+            room_tokens=self._room_tokens(),
         )
+
+    @staticmethod
+    def _room_tokens() -> dict[str, str] | None:
+        credential = http_client.get_active_credentials().get("webex", {})
+        if "room_tokens" not in credential:
+            return None
+        # An invalid explicit mapping must never fall back to the caller token.
+        try:
+            mapping = json.loads(credential["room_tokens"])
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(mapping, dict):
+            return {}
+        return {key: value for key, value in mapping.items()
+                if isinstance(key, str) and isinstance(value, str) and value}
 
     @staticmethod
     def _messaging_only() -> bool:

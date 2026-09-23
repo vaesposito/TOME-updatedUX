@@ -8,8 +8,11 @@ import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects"
 export type SourceKind = "github" | "confluence" | "webex";
 
 export interface SourcePickerProps {
+  /** Render controls inside a parent source card without a second branded card. */
+  embedded?: boolean;
   /** Selected values (github: repo URLs/refs; confluence: one space/page URL; webex: room IDs). */
   selected: string[];
+  excludedKeys?: string[];
   onChange: (next: string[]) => void;
   confluencePageScopes?: ConfluencePageScope[];
   onConfluencePageScopesChange?: (
@@ -29,7 +32,9 @@ export interface SourcePickerProps {
  */
 export function SourcePicker({
   source,
+  embedded,
   selected,
+  excludedKeys,
   onChange,
   confluencePageScopes,
   onConfluencePageScopesChange,
@@ -48,7 +53,9 @@ export function SourcePicker({
   return (
     <SourceItemPicker
       adapter={adapter}
+      embedded={embedded}
       selected={selected}
+      excludedKeys={excludedKeys}
       onChange={onChange}
       confluencePageScopes={confluencePageScopes}
       onConfluencePageScopesChange={onConfluencePageScopesChange}

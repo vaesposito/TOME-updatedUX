@@ -18,6 +18,7 @@ export interface SourcePickerProps {
   ) => void;
   webexCredentialMode?: WebexCredentialMode;
   webexCredentialProvider?: string;
+  onRefresh?: () => void;
 }
 
 /**
@@ -34,6 +35,7 @@ export function SourcePicker({
   onConfluencePageScopesChange,
   webexCredentialMode,
   webexCredentialProvider,
+  onRefresh,
 }: { source?: string } & SourcePickerProps) {
   const adapter = source ? SOURCE_ADAPTERS[source as SourceKind] : undefined;
   if (!adapter) {
@@ -52,6 +54,7 @@ export function SourcePicker({
       onConfluencePageScopesChange={onConfluencePageScopesChange}
       webexCredentialMode={webexCredentialMode}
       webexCredentialProvider={webexCredentialProvider}
+      onRefresh={onRefresh}
     />
   );
 }

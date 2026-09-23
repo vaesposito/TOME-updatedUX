@@ -486,11 +486,27 @@ export const PATCH = withErrorHandler(
         ? cleanWebexRooms(body.sources.webex_rooms)
         : project.sources?.webex_rooms ?? [];
       if (changesWebexConfiguration && nextWebexSettings.mode === "managed") {
-        await assertManagedWebexRoomsAccessible({
-          session,
-          userEmail: user.email,
-          rooms: nextWebexRooms,
+        const previousSettings = normalizeWebexCredentialSettings({
+          mode: project.sources?.webex_credential_mode ?? "personal",
+          provider: project.sources?.webex_credential_provider ?? "webex",
         });
+        const sameCredential = previousSettings.mode === nextWebexSettings.mode &&
+          previousSettings.provider === nextWebexSettings.provider;
+        const previousRooms = new Map((project.sources?.webex_rooms ?? []).map((room) => [room.room_id, room]));
+        const roomsToValidate = nextWebexRooms.filter((room) => {
+          const previous = previousRooms.get(room.room_id);
+          return !sameCredential || !previous || previous.name !== room.name || previous.slug !== room.slug;
+        });
+        // Editors may retain/remove other users' existing attachments without
+        // room membership. New/changed attachments still require shared access;
+        // ingest independently rechecks access to every room in the run.
+        if (roomsToValidate.length) {
+          await assertManagedWebexRoomsAccessible({
+            session,
+            userEmail: user.email,
+            rooms: roomsToValidate,
+          });
+        }
       }
       if (
         "webex_credential_mode" in body.sources ||

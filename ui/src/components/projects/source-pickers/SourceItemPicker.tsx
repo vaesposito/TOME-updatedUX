@@ -90,6 +90,7 @@ export function SourceItemPicker({
   onConfluencePageScopesChange,
   webexCredentialMode,
   webexCredentialProvider,
+  onRefresh,
 }: {
   adapter: SourceAdapter;
   selected: string[];
@@ -101,6 +102,7 @@ export function SourceItemPicker({
   ) => void;
   webexCredentialMode?: WebexCredentialMode;
   webexCredentialProvider?: string;
+  onRefresh?: () => void;
 }) {
   const {
     connected,
@@ -306,7 +308,7 @@ export function SourceItemPicker({
             managedWebex ? "Managed account unavailable" : "Not connected"
           )}
         </span>
-        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={reload} title="Refresh">
+        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={() => { reload(); onRefresh?.(); }} title="Refresh">
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </Button>
       </div>

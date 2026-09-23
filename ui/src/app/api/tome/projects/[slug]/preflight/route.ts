@@ -87,9 +87,10 @@ async function checkConfluence(
 async function checkWebex(
   rooms: { room_id: string; name?: string }[],
   token: string,
+  mode: "personal" | "managed",
 ): Promise<Omit<PreflightSourceResult, "label" | "provider">> {
-  const results = await Promise.all(
-    rooms.map(async (room) => {
+  const [results, runAs] = await Promise.all([
+    Promise.all(rooms.map(async (room) => {
       const label = room.name || room.room_id;
       try {
         const r = await fetch(`https://webexapis.com/v1/rooms/${encodeURIComponent(room.room_id)}`, {
@@ -99,13 +100,42 @@ async function checkWebex(
       } catch {
         return { item: label, ok: false };
       }
-    }),
-  );
+    })),
+    webexRunAs(token, mode),
+  ]);
   return {
     no_token: false,
     accessible: results.filter((r) => r.ok).map((r) => r.item),
     inaccessible: results.filter((r) => !r.ok).map((r) => r.item),
+    run_as: runAs,
   };
+}
+
+async function webexRunAs(
+  token: string,
+  mode: "personal" | "managed",
+): Promise<NonNullable<PreflightSourceResult["run_as"]>> {
+  const fallback = {
+    mode,
+    name: mode === "managed" ? "Managed Webex account" : "Your Webex connection",
+  };
+  try {
+    // One profile lookup for the exact token used to check all attached rooms.
+    // A profile failure must not turn successful room-access checks into errors.
+    const response = await fetch("https://webexapis.com/v1/people/me", {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!response.ok) return fallback;
+    const profile = await response.json() as { displayName?: unknown; emails?: unknown };
+    const email = Array.isArray(profile.emails)
+      ? profile.emails.find((value): value is string => typeof value === "string" && Boolean(value.trim()))?.trim()
+      : undefined;
+    const name = typeof profile.displayName === "string" ? profile.displayName.trim() : "";
+    return { mode, name: name || email || fallback.name, ...(email ? { email } : {}) };
+  } catch {
+    return fallback;
+  }
 }
 
 export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
@@ -167,7 +197,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       : null,
     webexRooms.length > 0
       ? creds["webex"]?.access_token
-        ? checkWebex(webexRooms, creds["webex"].access_token)
+        ? checkWebex(webexRooms, creds["webex"].access_token, usesManagedWebex ? "managed" : "personal")
         : Promise.resolve({
             no_token: true,
             accessible: [],

@@ -876,6 +876,10 @@ export function IngestPanel({
                         const noToken = state === "no_token";
                         const allOk = state === "ok";
                         const accessIssue = state === "access_issue";
+                        const runAs = pf?.run_as;
+                        const runAsLabel = runAs
+                          ? `${runAs.name}${runAs.email && runAs.email !== runAs.name ? ` (${runAs.email})` : ""}`
+                          : noToken ? "not connected" : "account unavailable";
 
                         const tooltipText = noToken
                           ? pf?.detail || `${row.label} not connected: the agent will skip this source`
@@ -936,6 +940,17 @@ export function IngestPanel({
                                           {item.label}
                                         </span>
                                       )}
+                                      {row.kind === "webex" ? (
+                                        <span
+                                          className="break-words text-muted-foreground"
+                                          title={runAs?.mode === "managed"
+                                            ? "Webex space ingest uses the configured managed account."
+                                            : "Manual ingest uses the account connected by the person starting it, not whoever added the space. Scheduled ingest uses its configured credential owner."}
+                                        >
+                                          {" · Runs as: "}{runAsLabel}
+                                          {runAs?.mode === "managed" ? " · managed account" : null}
+                                        </span>
+                                      ) : null}
                                       {item.detail ? (
                                         <span className="block break-words text-[11px] text-muted-foreground">
                                           {item.detail}

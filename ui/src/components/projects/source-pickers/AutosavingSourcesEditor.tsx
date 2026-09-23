@@ -131,7 +131,7 @@ export function AutosavingSourcesEditor({
         }
       }}
     >
-      <SourcesEditor kinds={kinds} value={value} onChange={queueSave} />
+      <SourcesEditor kinds={kinds} value={value} onChange={queueSave} settingsProjectSlug={slug} />
       <div
         role="status"
         aria-live="polite"

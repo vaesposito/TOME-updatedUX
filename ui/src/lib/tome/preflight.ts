@@ -16,6 +16,12 @@ export interface PreflightSourceResult {
   detail?: string;
   /** False when the signed-in user cannot fix this from their Connections page. */
   fixable_by_user?: boolean;
+  /** Webex identity for this caller's manual ingest, resolved from its token. */
+  run_as?: {
+    mode: "personal" | "managed";
+    name: string;
+    email?: string;
+  };
 }
 
 /** Resource-level preflight for one project across all its sources. */

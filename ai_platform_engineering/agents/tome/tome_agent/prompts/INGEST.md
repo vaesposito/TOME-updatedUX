@@ -365,7 +365,7 @@ something you actually found, not something you assumed.
 
 - **GitHub** (`mcp__github__*`): commits, issues, PRs, releases, CODEOWNERS,
   `github_get_file`, `github_get_file_chunk`, `github_list_dir`. `github_get_file`
-  returns at most 8,000 characters. If it reports `truncated: true`, continue
+  returns at most 16,000 characters. If it reports `truncated: true`, continue
   with `github_get_file_chunk` at `next_offset`, keeping the same repo/path/ref
   and using a limit of at most 8,000 until `next_offset` is null. For large
   files, do not try to read the SDK's externalized tool-result file with `Read`

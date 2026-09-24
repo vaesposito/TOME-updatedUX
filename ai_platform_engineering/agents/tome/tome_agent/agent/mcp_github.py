@@ -14,7 +14,7 @@ Tools returned by `build_github_mcp(repos, token)`:
   github_list_pulls(repo, since, state)
   github_get_pr(repo, number)
   github_get_codeowners(repo)
-  github_get_file(repo, path, ref)       — first 8,000 chars of a file
+  github_get_file(repo, path, ref)       — first 16,000 chars of a file
   github_get_file_chunk(repo, path, ref, offset, limit) — bounded file slice
   github_list_dir(repo, path, ref)       — directory listing
   github_get_readme(repo, ref)           — repo README (any variant)
@@ -352,7 +352,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
 
     @tool(
         "github_get_file",
-        "Read a small file from a repo at `path` (no leading slash). Optional `ref` is a branch/tag/sha; defaults to the repo's default branch. Returns up to 8,000 characters. If `truncated` is true, continue with `github_get_file_chunk` using `next_offset`.",
+        "Read a file from a repo at `path` (no leading slash). Optional `ref` is a branch/tag/sha; defaults to the repo's default branch. Returns up to 16,000 characters. If `truncated` is true, continue with `github_get_file_chunk` using `next_offset`.",
         {"repo": str, "path": str, "ref": str},
     )
     async def get_file(args: dict) -> dict[str, Any]:
@@ -381,7 +381,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         max_bytes = 2_000_000
         if len(text.encode("utf-8", errors="ignore")) > max_bytes:
             return _err("file exceeds 2MB; use github_list_dir or a more specific source file")
-        chunk_size = 8_000
+        chunk_size = 16_000
         truncated = len(text) > chunk_size
         return _ok(
             {

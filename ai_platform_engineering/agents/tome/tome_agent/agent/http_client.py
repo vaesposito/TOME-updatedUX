@@ -273,6 +273,24 @@ async def list_gists(project_id: str | None = None) -> list[dict[str, Any]]:
         return gists if isinstance(gists, list) else []
 
 
+async def search_gists(
+    query: str, project_id: str | None = None, limit: int = 3
+) -> list[dict[str, Any]]:
+    """Find a few relevant project gists and return bounded excerpts."""
+    pid = project_id or _project_id()
+    url = f"{_backend_url()}/api/internal/projects/{pid}/gists"
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        resp = await client.get(
+            url,
+            headers=_auth_headers(),
+            params={"q": query[:2_000], "limit": limit},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        gists = data.get("gists") if isinstance(data, dict) else None
+        return gists if isinstance(gists, list) else []
+
+
 async def get_gist(gist_id: str, project_id: str | None = None) -> dict[str, Any] | None:
     """Fetch one gist's full body by id, or None if it doesn't exist (or
     belongs to a different project). Backs the chat agent's `get_gist` tool."""

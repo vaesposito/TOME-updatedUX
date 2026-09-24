@@ -412,6 +412,7 @@ function RunDiffPane({ slug, runId }: { slug: string; runId: string }) {
             useDarkTheme={dark}
             leftTitle={selected.isNewPage ? "(new page)" : "before this run"}
             rightTitle="after this run"
+            styles={{ diffContainer: { minWidth: 0 } }}
           />
         )}
       </section>

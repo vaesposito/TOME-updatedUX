@@ -364,7 +364,12 @@ something you actually found, not something you assumed.
 ### Connector tools
 
 - **GitHub** (`mcp__github__*`): commits, issues, PRs, releases, CODEOWNERS,
-  `github_get_file`, `github_list_dir`.
+  `github_get_file`, `github_get_file_chunk`, `github_list_dir`. `github_get_file`
+  returns at most 8,000 characters. If it reports `truncated: true`, continue
+  with `github_get_file_chunk` at `next_offset`, keeping the same repo/path/ref
+  and using a limit of at most 8,000 until `next_offset` is null. For large
+  files, do not try to read the SDK's externalized tool-result file with `Read`
+  or shell commands.
 - **Webex** (`mcp__webex__*`): `webex_list_messages(roomId)` (newest first)
   → `webex_get_message(messageId)`; `webex_get_person(personId)` (cached
   per run); `webex_list_rooms()`; `webex_meetings_list_meetings()` +

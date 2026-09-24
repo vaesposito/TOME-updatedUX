@@ -14,7 +14,8 @@ Tools returned by `build_github_mcp(repos, token)`:
   github_list_pulls(repo, since, state)
   github_get_pr(repo, number)
   github_get_codeowners(repo)
-  github_get_file(repo, path, ref)       — raw file contents
+  github_get_file(repo, path, ref)       — first 8,000 chars of a file
+  github_get_file_chunk(repo, path, ref, offset, limit) — bounded file slice
   github_list_dir(repo, path, ref)       — directory listing
   github_get_readme(repo, ref)           — repo README (any variant)
   github_list_milestones(repo, state)    — due dates, open/closed issue counts
@@ -351,7 +352,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
 
     @tool(
         "github_get_file",
-        "Read a file from a repo at `path` (no leading slash). Optional `ref` is a branch/tag/sha; defaults to the repo's default branch. Returns raw text, truncated at 200KB.",
+        "Read a small file from a repo at `path` (no leading slash). Optional `ref` is a branch/tag/sha; defaults to the repo's default branch. Returns up to 8,000 characters. If `truncated` is true, continue with `github_get_file_chunk` using `next_offset`.",
         {"repo": str, "path": str, "ref": str},
     )
     async def get_file(args: dict) -> dict[str, Any]:
@@ -377,12 +378,81 @@ def build_github_mcp(repos: list[str], token: str = ""):
                 text = resp.text
         except httpx.HTTPStatusError as e:
             return _err(f"HTTP {e.response.status_code}: {e.response.text[:200]}")
-        max_bytes = 200_000
+        max_bytes = 2_000_000
         if len(text.encode("utf-8", errors="ignore")) > max_bytes:
-            text = text.encode("utf-8", errors="ignore")[:max_bytes].decode(
-                "utf-8", errors="ignore"
-            ) + "\n\n…[truncated at 200KB]"
-        return _ok({"path": path, "ref": ref or None, "content": text})
+            return _err("file exceeds 2MB; use github_list_dir or a more specific source file")
+        chunk_size = 8_000
+        truncated = len(text) > chunk_size
+        return _ok(
+            {
+                "path": path,
+                "ref": ref or None,
+                "content": text[:chunk_size],
+                "total_chars": len(text),
+                "truncated": truncated,
+                "next_offset": chunk_size if truncated else None,
+                "hint": (
+                    "Continue with github_get_file_chunk at next_offset."
+                    if truncated
+                    else None
+                ),
+            }
+        )
+
+    @tool(
+        "github_get_file_chunk",
+        "Read the next bounded slice of a GitHub file. Pass the same `repo`, `path`, and `ref` used for `github_get_file`; `offset` is a character offset (use the previous response's `next_offset`), and `limit` must be 1–8,000. Use an empty `ref` for the default branch. Repeat until `next_offset` is null.",
+        {"repo": str, "path": str, "ref": str, "offset": int, "limit": int},
+    )
+    async def get_file_chunk(args: dict) -> dict[str, Any]:
+        repo = _normalize_repo(args.get("repo", ""), allowed)
+        if not repo:
+            return _err(f"repo {args.get('repo')!r} not in this project's allowlist")
+        path = (args.get("path") or "").lstrip("/")
+        if not path:
+            return _err("path is required")
+        try:
+            offset = int(args.get("offset"))
+            limit = int(args.get("limit"))
+        except (TypeError, ValueError):
+            return _err("offset and limit must be integers")
+        if offset < 0:
+            return _err("offset must be zero or greater")
+        if not 1 <= limit <= 8_000:
+            return _err("limit must be between 1 and 8000 characters")
+
+        ref = (args.get("ref") or "").strip()
+        params = {"ref": ref} if ref else None
+        try:
+            async with httpx.AsyncClient(
+                timeout=20.0,
+                headers={**_headers(), "Accept": "application/vnd.github.raw"},
+            ) as client:
+                resp = await client.get(
+                    f"{API}/repos/{repo}/contents/{path}", params=params
+                )
+                if resp.status_code == 404:
+                    return _err(f"not found: {repo}:{path}" + (f"@{ref}" if ref else ""))
+                resp.raise_for_status()
+                text = resp.text
+        except httpx.HTTPStatusError as e:
+            return _err(f"HTTP {e.response.status_code}: {e.response.text[:200]}")
+        max_bytes = 2_000_000
+        if len(text.encode("utf-8", errors="ignore")) > max_bytes:
+            return _err("file exceeds 2MB; use github_list_dir or a more specific source file")
+
+        chunk = text[offset : offset + limit]
+        next_offset = offset + len(chunk)
+        return _ok(
+            {
+                "path": path,
+                "ref": ref or None,
+                "offset": offset,
+                "content": chunk,
+                "total_chars": len(text),
+                "next_offset": next_offset if next_offset < len(text) else None,
+            }
+        )
 
     @tool(
         "github_list_dir",
@@ -578,6 +648,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
             search_issues,
             get_codeowners,
             get_file,
+            get_file_chunk,
             list_dir,
             get_readme,
             list_milestones,

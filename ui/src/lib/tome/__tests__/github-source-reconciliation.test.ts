@@ -87,7 +87,7 @@ it("resolves a renamed repository by stable GitHub ID", async () => {
 
 it("persists canonical metadata and tombstones only obsolete repo pages", async () => {
   const deletePage = jest.fn(async () => undefined);
-  const persistSources = jest.fn(async () => undefined);
+  const persistGitHubSources = jest.fn(async () => undefined);
   const dependencies: ReconciliationDependencies = {
     fetchImpl: jest.fn(async () => githubResponse()) as jest.MockedFunction<
       typeof fetch
@@ -99,7 +99,7 @@ it("persists canonical metadata and tombstones only obsolete repo pages", async 
       "repos/renamed-repository/overview.md": "current",
     })),
     deletePage,
-    persistSources,
+    persistGitHubSources,
   };
 
   const result = await reconcileGitHubSourcesForIngest(
@@ -119,18 +119,16 @@ it("persists canonical metadata and tombstones only obsolete repo pages", async 
     ["project-id", "repos/old-repository/activity.md"],
     ["project-id", "repos/old-repository/overview.md"],
   ]);
-  expect(persistSources).toHaveBeenCalledWith(
+  expect(persistGitHubSources).toHaveBeenCalledWith(
     "project-id",
-    expect.objectContaining({
-      repos: ["https://github.com/example/renamed-repository"],
-      github_repos: [
-        expect.objectContaining({
-          id: 42,
-          full_name: "example/renamed-repository",
-          default_branch: "trunk",
-        }),
-      ],
-    }),
+    [
+      expect.objectContaining({
+        id: 42,
+        full_name: "example/renamed-repository",
+        default_branch: "trunk",
+      }),
+    ],
+    ["https://github.com/example/renamed-repository"],
   );
   expect(result.project.sources?.github_repos?.[0].id).toBe(42);
 });
@@ -158,7 +156,7 @@ it("tombstones every repo page after the last GitHub source is removed", async (
   const removedProject = project();
   removedProject.sources = { repos: [], github_repos: [] };
   const deletePage = jest.fn(async () => undefined);
-  const persistSources = jest.fn(async () => undefined);
+  const persistGitHubSources = jest.fn(async () => undefined);
   const dependencies: ReconciliationDependencies = {
     fetchImpl: jest.fn() as jest.MockedFunction<typeof fetch>,
     listPages: jest.fn(async () => ({
@@ -166,7 +164,7 @@ it("tombstones every repo page after the last GitHub source is removed", async (
       "repos/removed/overview.md": "stale",
     })),
     deletePage,
-    persistSources,
+    persistGitHubSources,
   };
 
   const result = await reconcileGitHubSourcesForIngest(
@@ -180,9 +178,10 @@ it("tombstones every repo page after the last GitHub source is removed", async (
     "project-id",
     "repos/removed/overview.md",
   );
-  expect(persistSources).toHaveBeenCalledWith(
+  expect(persistGitHubSources).toHaveBeenCalledWith(
     "project-id",
-    expect.objectContaining({ github_repos: [], repos: [] }),
+    [],
+    [],
   );
   expect(result.tombstonedPaths).toEqual(["repos/removed/overview.md"]);
 });

@@ -2,6 +2,9 @@ import os
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+from opentelemetry import context as context_api
+from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
+
 from tome_agent import tracing
 
 
@@ -54,3 +57,13 @@ class TracingConfigurationTest(TestCase):
         get_client.assert_called_once_with()
         instrumentor_class.return_value.instrument.assert_called_once_with()
         client.flush.assert_called_once_with()
+
+    def test_sensitive_evidence_scope_suppresses_open_telemetry_instrumentation(
+        self,
+    ) -> None:
+        self.assertFalse(context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY))
+
+        with tracing.suppress_sensitive_evidence_tracing():
+            self.assertTrue(context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY))
+
+        self.assertFalse(context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY))

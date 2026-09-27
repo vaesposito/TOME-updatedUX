@@ -75,6 +75,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       ? {
           id: session._id,
           sdkSessionId: session.sdk_session_id ?? null,
+          myAgentResearch: session.myagent_research === true,
           userId: session.user_id ?? null,
         }
       : null,

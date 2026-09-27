@@ -14,7 +14,9 @@ import {
   encodeGitHubPickerValue,
 } from "@/lib/projects/github-repository";
 import { SourcePicker, type SourceKind } from "./index";
+import { MyAgentSourcePicker } from "./MyAgentSourcePicker";
 import { WebexCredentialModePicker } from "./WebexCredentialModePicker";
+import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
 
 /**
  * The single, generic, config-driven sources surface, used everywhere a
@@ -29,10 +31,11 @@ const LABELS: Record<SourceKind, string> = {
   github: "GitHub repos",
   confluence: "Confluence source",
   webex: "Webex",
+  myagent: "MyAgent",
 };
 
 /** Source kind → credentials provider id (for the shared ProviderLogo). */
-const PROVIDER_FOR_KIND: Record<SourceKind, string> = {
+const PROVIDER_FOR_KIND: Record<Exclude<SourceKind, "myagent">, string> = {
   github: "github",
   confluence: "atlassian",
   webex: "webex",
@@ -50,6 +53,7 @@ function valueFor(kind: SourceKind, sources: ProjectSources): string[] {
     return sources.confluence_url ? [sources.confluence_url] : [];
   if (kind === "webex")
     return (sources.webex_rooms ?? []).map(webexRoomToPickerValue);
+  if (kind === "myagent") return sources.myagent_connectors ?? [];
   return [];
 }
 
@@ -70,6 +74,12 @@ function applyTo(
     return { ...sources, confluence_url: next[0] ?? "" };
   if (kind === "webex")
     return { ...sources, webex_rooms: next.map(toWebexRoomSource) };
+  if (kind === "myagent") {
+    return {
+      ...sources,
+      myagent_connectors: normalizeMyAgentConnectors(next),
+    };
+  }
   return sources;
 }
 
@@ -102,8 +112,31 @@ export function SourcesEditor({
 
   return (
     <div className="space-y-5">
-      {kinds.map((kind) =>
-        readOnly ? (
+      {kinds.map((kind) => {
+        if (kind === "myagent") {
+          return (
+            <div key={kind} className="space-y-3">
+              <MyAgentSourcePicker
+                selected={normalizeMyAgentConnectors(value.myagent_connectors)}
+                onChange={(next) =>
+                  onChange({
+                    ...value,
+                    myagent_connectors: next,
+                    // Changing an integration scope always needs a fresh
+                    // user consent before it can be used on their behalf.
+                    myagent_enabled: false,
+                  })
+                }
+                enabled={value.myagent_enabled === true}
+                onEnabledChange={(next) =>
+                  onChange({ ...value, myagent_enabled: next })
+                }
+                readOnly={readOnly}
+              />
+            </div>
+          );
+        }
+        return readOnly ? (
           <div key={kind} className="space-y-2">
             <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <ProviderLogo
@@ -176,8 +209,8 @@ export function SourcesEditor({
               }
             />
           </div>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }

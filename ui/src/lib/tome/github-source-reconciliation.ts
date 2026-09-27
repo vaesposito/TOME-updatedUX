@@ -18,7 +18,6 @@ import { AGENT_IDENTITIES } from "./agent-identities";
 import type {
   GitHubRepositorySource,
   ProjectDocument,
-  ProjectSources,
 } from "@/types/projects";
 
 import type { ForwardedCredentials } from "./agent-proxy";
@@ -48,7 +47,12 @@ export interface ReconciliationDependencies {
   fetchImpl: typeof fetch;
   listPages: (projectId: string) => Promise<Record<string, string>>;
   deletePage: (projectId: string, path: string) => Promise<void>;
-  persistSources: (projectId: string, sources: ProjectSources) => Promise<void>;
+  /** Persist only canonical GitHub fields; never replace the whole source object. */
+  persistGitHubSources: (
+    projectId: string,
+    githubRepos: GitHubRepositorySource[],
+    repos: string[],
+  ) => Promise<void>;
 }
 
 function configuredGitHubSources(project: ProjectDocument): GitHubRepositorySource[] {
@@ -150,7 +154,7 @@ async function defaultDependencies(): Promise<ReconciliationDependencies> {
         author: AGENT_IDENTITIES.ingestor,
         message: "tombstone obsolete GitHub source subtree",
       }),
-    persistSources: async (projectId, sources) => {
+    persistGitHubSources: async (projectId, githubRepos, repos) => {
       const { ObjectId } = await import("mongodb");
       const projects = await getCollection<ProjectDocument>("projects");
       const _id = ObjectId.isValid(projectId)
@@ -158,7 +162,13 @@ async function defaultDependencies(): Promise<ReconciliationDependencies> {
         : projectId;
       await projects.updateOne(
         { _id },
-        { $set: { sources, updated_at: new Date() } },
+        {
+          $set: {
+            "sources.github_repos": githubRepos,
+            "sources.repos": repos,
+            updated_at: new Date(),
+          },
+        },
       );
     },
   };
@@ -194,7 +204,7 @@ export async function reconcileGitHubSourcesForIngest(
       ? [{ from: prior.full_name || prior.html_url, to: source.full_name }]
       : [];
   });
-  const sources: ProjectSources = {
+  const sources = {
     ...(project.sources ?? {}),
     github_repos: canonical,
     repos: canonical.map((source) => source.html_url),
@@ -203,7 +213,11 @@ export async function reconcileGitHubSourcesForIngest(
     (project.sources?.github_repos?.length ?? 0) > 0 ||
     (project.sources?.repos?.length ?? 0) > 0;
   if (hadConfiguredRepos || tombstonedPaths.length > 0) {
-    await deps.persistSources(project._id, sources);
+    await deps.persistGitHubSources(
+      project._id,
+      canonical,
+      canonical.map((source) => source.html_url),
+    );
   }
 
   return {

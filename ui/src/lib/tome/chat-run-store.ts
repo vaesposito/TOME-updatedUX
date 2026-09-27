@@ -14,7 +14,9 @@ function expiryFrom(now: Date): Date {
   return new Date(now.getTime() + RUN_RETENTION_MS);
 }
 
-export async function createChatRun(session: ChatSession): Promise<ChatRun> {
+export async function createChatRun(session: ChatSession, myagent?: {
+  subject: string; sources: string[]; revision: string; seed: string;
+}): Promise<ChatRun> {
   const now = new Date();
   const run: ChatRun = {
     _id: randomUUID(),
@@ -22,6 +24,14 @@ export async function createChatRun(session: ChatSession): Promise<ChatRun> {
     project_id: session.project_id,
     user_id: session.user_id,
     status: "starting",
+    ...(myagent ? {
+      triggered_by_sub: myagent.subject,
+      myagent_interactive_authorized: true,
+      myagent_tool_enabled: true,
+      myagent_consent_revision: myagent.revision,
+      myagent_allowed_sources: myagent.sources,
+      myagent_seed: myagent.seed,
+    } : {}),
     events: [],
     last_event_id: 0,
     created_at: now,

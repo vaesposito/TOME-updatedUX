@@ -1,6 +1,7 @@
 /** Check a project's wiki pages for template drift (#508). Synchronous, no SSE. */
 
 import type { ProjectSnapshot } from "@/lib/tome/agent-proxy";
+import { tomeAgentAuthorizationHeaders } from "@/lib/tome/agent-auth";
 
 export type PageDriftStatus = "missing" | "unbound" | "version_behind" | "current";
 
@@ -35,7 +36,10 @@ export async function checkTemplateDrift(
     `${process.env.TOME_AGENT_URL.replace(/\/$/, "")}/template-drift`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...tomeAgentAuthorizationHeaders(),
+      },
       body: JSON.stringify({
         snapshot,
         pages,

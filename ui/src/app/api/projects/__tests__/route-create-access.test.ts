@@ -16,15 +16,52 @@ const mockInvalidateTomeReadAccessCatalogCache = jest.fn();
 const mockDiscoverMeetingSeries = jest.fn();
 const mockInteractiveWebexMeetingInvoker = jest.fn();
 const mockRequestWebexMeetingOwnerCheck = jest.fn();
+const mockIsMyAgentInteractiveBrowserAction = jest.fn();
 const reservationInsertOne = jest.fn();
 const reservationDeleteOne = jest.fn();
 
 jest.mock("@/lib/api-middleware", () => {
-  const actual = jest.requireActual("@/lib/api-middleware");
+  class ApiError extends Error {
+    constructor(
+      message: string,
+      public status = 500,
+      public code = "INTERNAL_ERROR",
+    ) {
+      super(message);
+    }
+  }
   return {
-    ...actual,
+    ApiError,
     getAuthFromBearerOrSession: (...args: unknown[]) =>
       mockGetAuthFromBearerOrSession(...args),
+    successResponse: (data: unknown, status = 200) =>
+      Response.json({ success: true, data }, { status }),
+    withErrorHandler: (handler: (...args: unknown[]) => unknown) => async (...args: unknown[]) => {
+      try {
+        return await handler(...args);
+      } catch (error) {
+        if (
+          error instanceof ApiError ||
+          (error &&
+            typeof error === "object" &&
+            ("status" in error || "statusCode" in error) &&
+            "code" in error)
+        ) {
+          const apiError = error as ApiError & { statusCode?: number };
+          return Response.json(
+            { success: false, error: apiError.message, code: apiError.code },
+            { status: apiError.status ?? apiError.statusCode ?? 500 },
+          );
+        }
+        return Response.json(
+          {
+            success: false,
+            error: error instanceof Error ? error.message : "Internal server error",
+          },
+          { status: 500 },
+        );
+      }
+    },
   };
 });
 
@@ -71,6 +108,11 @@ jest.mock("@/lib/tome/audit", () => ({
     id: "creator-subject",
     email: "creator@example.test",
   })),
+}));
+
+jest.mock("@/lib/tome/myagent-interactive", () => ({
+  isMyAgentInteractiveBrowserAction: (...args: unknown[]) =>
+    mockIsMyAgentInteractiveBrowserAction(...args),
 }));
 
 jest.mock("@/lib/tome/auto-ingest/cursor", () => ({
@@ -139,6 +181,7 @@ describe("POST /api/projects access setup failures", () => {
     mockRemoveTomeReadAccess.mockResolvedValue(undefined);
     mockCanAssignProjectToTeam.mockResolvedValue(true);
     mockRequestWebexMeetingOwnerCheck.mockResolvedValue(undefined);
+    mockIsMyAgentInteractiveBrowserAction.mockReturnValue(true);
   });
 
   function createRequest(
@@ -186,6 +229,46 @@ describe("POST /api/projects access setup failures", () => {
     expect(deleteOne).not.toHaveBeenCalled();
     expect(reservationDeleteOne).not.toHaveBeenCalled();
     expect(mockAuditTome).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires an explicit first-party browser action before creating MyAgent consent", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "creator@example.test" },
+      session: {
+        authMethod: "session",
+        principalType: "oidc_user",
+        sub: "creator-subject",
+        user: { email: "creator@example.test" },
+      },
+    });
+    mockIsMyAgentInteractiveBrowserAction.mockReturnValue(false);
+
+    const denied = await POST(createRequest({
+      myagent_connectors: ["outlook"],
+      myagent_enabled: true,
+    }));
+
+    expect(denied.status).toBe(403);
+    await expect(denied.json()).resolves.toMatchObject({
+      code: "MYAGENT_INTERACTIVE_CONSENT_REQUIRED",
+    });
+    expect(projects.insertOne).not.toHaveBeenCalled();
+
+    mockIsMyAgentInteractiveBrowserAction.mockReturnValue(true);
+    const allowed = await POST(createRequest({
+      myagent_connectors: ["outlook"],
+      myagent_enabled: true,
+    }));
+
+    expect(allowed.status).toBe(201);
+    expect(projects.insertOne.mock.calls[0][0].sources).toMatchObject({
+      myagent_consents: [
+        expect.objectContaining({
+          subject: "creator-subject",
+          connectors: ["outlook"],
+        }),
+      ],
+    });
   });
 
   it("stores the onboarding schedule and a selected non-hosted Webex meeting series atomically", async () => {

@@ -6,6 +6,8 @@ import { buildSnapshotFromProject } from "@/lib/tome/agent-proxy";
 import { githubRepoSlug } from "@/lib/projects/github-repository";
 import { getPageStore } from "@/lib/tome/page-store";
 import { getAllPageTemplates } from "@/lib/tome/page-templates-store";
+import type { MyAgentEvidence } from "@/lib/tome/myagent-webex";
+import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
 import type { ProjectDocument } from "@/types/projects";
 import type { EvidenceBundle, EvidenceItem, EvidenceKind } from "@/types/tome-evaluation";
 
@@ -63,11 +65,32 @@ function canonicalPageUri(
   return `tome://${project.slug}/${path}`;
 }
 
+function canonicalMyAgentEvidenceUri(evidence: MyAgentEvidence): string | null {
+  const capabilities = normalizeMyAgentConnectors(evidence.capabilities);
+  return capabilities.length > 0
+    ? `myagent://webex/delegated?capabilities=${capabilities.join(",")}`
+    : null;
+}
+
+/** The bundle can contain private, per-user delegated MyAgent evidence. */
+export function bundleHasMyAgentEvidence(
+  bundle: Pick<EvidenceBundle, "items"> | null | undefined,
+): boolean {
+  return Boolean(
+    bundle?.items.some(
+      (evidence) =>
+        evidence.kind === "myagent" || evidence.canonical_uri.startsWith("myagent://"),
+    ),
+  );
+}
+
 export async function captureEvidenceBundle(input: {
   project: ProjectDocument & { _id: string };
   childProjects?: Array<{ _id: string; slug: string }>;
   createdBy: string;
   seed?: string | null;
+  /** Correlated external evidence already returned for this exact run. */
+  myAgentEvidence?: MyAgentEvidence;
 }): Promise<EvidenceBundle> {
   const capturedAt = new Date().toISOString();
   const [pages, templates, childPages] = await Promise.all([
@@ -126,6 +149,12 @@ export async function captureEvidenceBundle(input: {
   if (input.seed?.trim()) {
     items.push(item("seed", `tome-seed://${input.project.slug}`, input.seed.trim(), capturedAt));
   }
+  const myAgentEvidence = input.myAgentEvidence;
+  const myAgentUri = myAgentEvidence && canonicalMyAgentEvidenceUri(myAgentEvidence);
+  const myAgentContent = (myAgentEvidence?.content ?? "").trim().slice(0, 8_000);
+  if (myAgentEvidence?.status === "received" && myAgentUri && myAgentContent) {
+    items.push(item("myagent", myAgentUri, myAgentContent, capturedAt));
+  }
   const bundle: EvidenceBundle = {
     _id: randomUUID(),
     project_id: input.project._id,
@@ -147,4 +176,36 @@ export async function captureEvidenceBundle(input: {
   return bundle;
 }
 
-export const __test = { canonicalPageUri, pageEvidenceKind };
+/** Keep each agent question/reply in a new immutable, private evidence snapshot. */
+export async function appendMyAgentQuestionEvidence(
+  previous: EvidenceBundle,
+  question: string,
+  evidence: MyAgentEvidence,
+): Promise<EvidenceBundle> {
+  const uri = canonicalMyAgentEvidenceUri(evidence);
+  if (!uri || evidence.status !== "received" || !evidence.content) return previous;
+  const capturedAt = new Date().toISOString();
+  const items = [...previous.items, item(
+    "myagent", `${uri}&question=${sha256(question)}`,
+    JSON.stringify({ question: question.slice(0, 2_000), answer: evidence.content.slice(0, 8_000) }),
+    capturedAt,
+  )];
+  const bundle: EvidenceBundle = {
+    ...previous,
+    _id: randomUUID(),
+    created_at: capturedAt,
+    items,
+    content_hash: sha256(stableJson(items.map(({ id, kind, canonical_uri, content_hash }) => ({
+      id, kind, canonical_uri, content_hash,
+    })))),
+  };
+  await insertEvidenceBundle(bundle);
+  return bundle;
+}
+
+export const __test = {
+  bundleHasMyAgentEvidence,
+  canonicalMyAgentEvidenceUri,
+  canonicalPageUri,
+  pageEvidenceKind,
+};

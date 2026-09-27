@@ -1697,7 +1697,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                     tipDescription={
                       isSynthesized
                         ? `Ingest this ${isArea ? "area's" : "BHAG's"} directly attached sources, then synthesize them with its tagged project wikis.`
-                        : "Start an ingest run that (re)builds the wiki from the project's attached sources: GitHub repos, Confluence spaces, and Webex rooms."
+                        : "Start an ingest run that (re)builds the wiki from the project's attached sources: GitHub repos, Confluence spaces, Webex rooms, and opted-in MyAgent evidence."
                     }
                     tag={awaitingReview ? "needs review" : undefined}
                   />

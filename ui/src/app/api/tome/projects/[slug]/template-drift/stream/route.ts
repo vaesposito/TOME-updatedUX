@@ -6,6 +6,7 @@
 import { NextRequest } from "next/server";
 
 import { ApiError, withErrorHandler } from "@/lib/api-middleware";
+import { tomeAgentAuthorizationHeaders } from "@/lib/tome/agent-auth";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import { buildSnapshot } from "@/lib/tome/agent-proxy";
 import { getPageStore } from "@/lib/tome/page-store";
@@ -44,7 +45,10 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const snapshot = buildSnapshot(tctx);
   const upstream = await fetch(`${agentUrl.replace(/\/$/, "")}/template-drift/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...tomeAgentAuthorizationHeaders(),
+    },
     body: JSON.stringify({
       snapshot,
       pages,

@@ -14,6 +14,9 @@ import {
   normalizeConfluencePageScope,
   normalizeConfluencePageScopes,
 } from "@/lib/projects/confluence-source";
+import {
+  myAgentSourcesForSubject,
+} from "@/lib/projects/myagent-source";
 import { runOnboardingDeletes, runOnboardingUpdates } from "@/lib/projects/onboarding-providers";
 import { normalizeGitHubRepositorySource } from "@/lib/projects/github-repository";
 import {
@@ -43,6 +46,7 @@ import {
   resolveDataSteward,
   resolveStoredDataSteward,
 } from "@/lib/tome/data-steward";
+import { sessionSub } from "@/lib/tome/agent-proxy";
 import type {
   DataStewardInput,
   ProjectDocument,
@@ -72,7 +76,8 @@ async function resolveTeamByIdOrSlug(
 
 /** Emit `tome.source.attach`/`detach` events for what changed between the
  * project's sources before and after a PATCH. Repos + Confluence URL compared
- * by value; Webex rooms by `room_id`. */
+ * by value; Webex rooms by `room_id`. MyAgent consent is deliberately handled
+ * by its own subject-scoped endpoint and is never accepted here. */
 function auditSourceChanges(
   slug: string,
   actor: TomeAuditActor,
@@ -136,6 +141,7 @@ export const GET = withErrorHandler(
       project: {
         ...project,
         _id: String(project._id),
+        sources: myAgentSourcesForSubject(project.sources, sessionSub(session)),
       },
       permissions: {
         can_read: permissions.canRead,
@@ -457,6 +463,18 @@ export const PATCH = withErrorHandler(
       else $unset["optionality"] = "";
     }
     if (body.sources) {
+      if (
+        "myagent_connectors" in body.sources ||
+        "myagent_enabled" in body.sources ||
+        "myagent_consent_revision" in body.sources ||
+        "myagent_consents" in (body.sources as Record<string, unknown>)
+      ) {
+        throw new ApiError(
+          "MyAgent delegation must be changed through its dedicated consent endpoint.",
+          400,
+          "MYAGENT_CONSENT_ENDPOINT_REQUIRED",
+        );
+      }
       const cleanWebexRooms = (
         rooms: Array<{ room_id?: string; name?: string; slug?: string }>,
       ): WebexRoomSource[] =>
@@ -594,7 +612,13 @@ export const PATCH = withErrorHandler(
     if (!updated) throw new ApiError("Project not found after update", 500, "UPDATE_FAILED");
 
     const sub = (session as { sub?: string } | undefined)?.sub;
-    const externalUpdates = await runOnboardingUpdates(updated, sub);
+    const externalUpdates = await runOnboardingUpdates(
+      {
+        ...updated,
+        sources: myAgentSourcesForSubject(updated.sources, sub),
+      },
+      sub,
+    );
 
     const actor = tomeActorFromAuth({ user, session });
     // Metadata edit vs source change are distinct audit actions; a PATCH can be
@@ -629,7 +653,11 @@ export const PATCH = withErrorHandler(
     const updatedReadConfiguration = await getTomeReadConfiguration(updated);
     const updatedSteward = await resolveStoredDataSteward(updated.data_steward).catch(() => null);
     return successResponse({
-      project: { ...updated, _id: String(updated._id) },
+      project: {
+        ...updated,
+        _id: String(updated._id),
+        sources: myAgentSourcesForSubject(updated.sources, sessionSub(session)),
+      },
       rbac: {
         ...updatedReadConfiguration,
         dataSteward: updatedSteward

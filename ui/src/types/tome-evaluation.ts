@@ -98,6 +98,7 @@ export type EvidenceKind =
   | "github"
   | "confluence"
   | "webex"
+  | "myagent"
   | "wiki"
   | "template"
   | "seed"

@@ -11,7 +11,7 @@ type ConfiguredConnector = Record<string, unknown>;
 const CONFIGURED_CONNECTORS_ENV = "CREDENTIAL_BOOTSTRAP_OAUTH_CONNECTORS_JSON";
 
 interface BootstrapProviderEnv {
-  provider: "amplitude" | "atlassian" | "figma" | "github" | "gitlab" | "linear" | "notion" | "pagerduty" | "webex";
+  provider: "amplitude" | "atlassian" | "figma" | "github" | "gitlab" | "linear" | "notion" | "pagerduty" | "webex" | "webex_myagent";
   clientIdEnv: string;
   clientSecretEnv?: string;
   redirectUriEnv: string;
@@ -43,6 +43,12 @@ const PROVIDER_ENV: BootstrapProviderEnv[] = [
     clientIdEnv: "WEBEX_CLIENT_ID",
     clientSecretEnv: "WEBEX_CLIENT_SECRET",
     redirectUriEnv: "WEBEX_REDIRECT_URI",
+  },
+  {
+    provider: "webex_myagent",
+    clientIdEnv: "WEBEX_MYAGENT_CLIENT_ID",
+    clientSecretEnv: "WEBEX_MYAGENT_CLIENT_SECRET",
+    redirectUriEnv: "WEBEX_MYAGENT_REDIRECT_URI",
   },
   {
     provider: "pagerduty",

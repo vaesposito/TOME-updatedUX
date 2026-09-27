@@ -7,7 +7,7 @@ import {
   githubSourceKey,
 } from "@/lib/projects/github-repository";
 import type { SourceAdapter } from "./SourceItemPicker";
-import type { SourceKind } from "./index";
+import type { BrowsableSourceKind } from "./index";
 
 const stripGh = (v: string) => v.replace(/^https?:\/\/github\.com\//i, "");
 
@@ -123,7 +123,7 @@ const webex: SourceAdapter = {
     ) : null,
 };
 
-export const SOURCE_ADAPTERS: Record<SourceKind, SourceAdapter> = {
+export const SOURCE_ADAPTERS: Record<BrowsableSourceKind, SourceAdapter> = {
   github,
   confluence,
   webex,

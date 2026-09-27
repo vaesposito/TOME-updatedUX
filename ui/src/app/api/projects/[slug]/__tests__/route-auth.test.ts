@@ -16,9 +16,17 @@ const mockInvalidateTomeReadAccessCatalogCache = jest.fn();
 const mockDeleteReservation = jest.fn(async () => ({ deletedCount: 1 }));
 
 jest.mock("@/lib/api-middleware", () => {
-  const actual = jest.requireActual("@/lib/api-middleware");
+  class ApiError extends Error {
+    constructor(
+      message: string,
+      public status = 500,
+      public code = "INTERNAL_ERROR",
+    ) {
+      super(message);
+    }
+  }
   return {
-    ...actual,
+    ApiError,
     getAuthFromBearerOrSession: jest.fn(async () => ({
       user: { email: "steward@example.test" },
       session: {
@@ -26,6 +34,27 @@ jest.mock("@/lib/api-middleware", () => {
         user: { email: "steward@example.test" },
       },
     })),
+    successResponse: (data: unknown) => Response.json({ success: true, data }),
+    withErrorHandler: (handler: (...args: unknown[]) => unknown) => async (...args: unknown[]) => {
+      try {
+        return await handler(...args);
+      } catch (error) {
+        if (
+          error instanceof ApiError ||
+          (error &&
+            typeof error === "object" &&
+            ("status" in error || "statusCode" in error) &&
+            "code" in error)
+        ) {
+          const apiError = error as ApiError & { statusCode?: number };
+          return Response.json(
+            { success: false, error: apiError.message, code: apiError.code },
+            { status: apiError.status ?? apiError.statusCode ?? 500 },
+          );
+        }
+        throw error;
+      }
+    },
   };
 });
 
@@ -41,6 +70,10 @@ jest.mock("@/lib/mongodb", () => ({
           updateOne: mockUpdateOne,
         },
   ),
+}));
+
+jest.mock("@/lib/auth-config", () => ({
+  isBootstrapAdmin: jest.fn(() => false),
 }));
 
 jest.mock("@/lib/tome/data-steward", () => ({
@@ -235,6 +268,38 @@ describe("PATCH /api/projects/[slug] review policy", () => {
         $unset: { review_mode: "" },
       },
     );
+  });
+
+  it("refuses MyAgent consent fields so stale project PATCHes cannot replace per-user scope", async () => {
+    const project = {
+      _id: "project-id",
+      slug: "example-project",
+      name: "Example Project",
+      title: "Example Project",
+      type: "project",
+      team_id: "example-team-id",
+      team_slug: "example-team",
+      team_name: "Example Team",
+      sources: {},
+    };
+    mockFindBySlug.mockReturnValue({
+      limit: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([project]),
+      }),
+    });
+
+    const response = await PATCH(
+      patchRequest("example-project", {
+        sources: { myagent_connectors: ["outlook"], myagent_enabled: true },
+      }),
+      { params: Promise.resolve({ slug: "example-project" }) },
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "MYAGENT_CONSENT_ENDPOINT_REQUIRED",
+    });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 });
 

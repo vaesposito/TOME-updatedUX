@@ -48,6 +48,7 @@ services:
       - TOME_AUTO_INGEST_ENABLED=${TOME_AUTO_INGEST_ENABLED:-true}
       - TOME_AUTO_INGEST_CREDENTIAL_REFRESH_MS=${TOME_AUTO_INGEST_CREDENTIAL_REFRESH_MS:-300000}
       - TOME_AGENT_URL=http://tome-agent-tome:8766
+      - TOME_AGENT_TOKEN=${TOME_AGENT_TOKEN:?TOME_AGENT_TOKEN must be set to a shared secret}
       - TOME_AGENT_BACKEND_URL=http://caipe-ui:3000/api/tome
       - MYCELIUM_URL=http://mycelium-backend-tome:8000
       - TOME_INTERNAL_ORIGIN=http://caipe-ui:3000

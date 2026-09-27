@@ -96,6 +96,97 @@ Managed tokens remain server-side, are used only for ingest, and are never sent
 to Tome chat, AgentGateway, meeting tools, or the browser. Projects created
 before this feature remain on their existing personal Webex path.
 
+### MyAgent delegated ingestion
+
+Tome can optionally ask MyAgent for selected Outlook, Salesforce, or
+SharePoint context while it ingests a project. Configure the feature with a
+MyAgent Webex recipient identity:
+
+```text
+TOME_MYAGENT_ENABLED=true
+TOME_MYAGENT_WEBEX_EMAIL=<MyAgent Webex email>
+TOME_MYAGENT_POLL_INTERVAL_MS=2000
+TOME_MYAGENT_REPLY_TIMEOUT_MS=30000
+WEBEX_MYAGENT_CLIENT_ID=<dedicated Webex OAuth app client ID>
+WEBEX_MYAGENT_CLIENT_SECRET=<dedicated Webex OAuth app client secret>
+# Use this deployment's public origin and register the same URI on the app.
+WEBEX_MYAGENT_REDIRECT_URI=https://app.example.com/api/credentials/oauth/webex_myagent/callback
+```
+
+Use an existing dedicated app or register one with only these scopes: `spark:kms`,
+`spark:messages_read`, and `spark:messages_write`. It appears in Connections as
+**MyAgent (Webex)**, independently of the general Webex connector. Keep the
+general app's credentials and room/people/meeting scopes separate. No people
+profile scope is requested for the MyAgent app, so it has no Webex profile lookup.
+Set its redirect URI to a callback already registered on that app. The shared
+`/api/credentials/oauth/webex/callback` is supported: the callback resolves the
+dedicated provider from signed OAuth state, so it does not overwrite the general
+`webex` connection. A provider-specific callback can also be used if registered.
+
+Each browser user explicitly authorizes TOME to send a delegated request for
+their own identity; that authorization is not project-wide. For every run,
+the agent reads the project wiki and the user's ingest focus, then uses
+`ask_myagent(question)` to fill specific gaps. There is no generic upfront
+"evidence summary" request. The tool supports up to three sequential questions
+per manual ingest or chat turn, including a targeted follow-up. The optional
+seed instruction is sent to MyAgent as the original research request, alongside
+the agent's more specific question. For example: "Who owns the
+launch blocker discussed in this week's project emails, and what is the agreed
+next step?"
+
+CAIPE resolves the triggering user's own `webex_myagent` connection for each
+question, adds the project title/context and selected source names, and accepts
+only a reply correlated to that question's Webex thread. It never
+uses the managed Webex identity for this path and never exposes the user Webex
+token to the Tome agent. The selected categories limit TOME's request; they
+are not a CAIPE-enforced provider scope. MyAgent—not CAIPE—enforces the
+Outlook, Salesforce, and SharePoint authorizations, and CAIPE cannot verify
+which connector produced a reply. Users must manage the actual integrations in
+[MyAgent connector settings](https://circuit.cisco.com/myagent/settings/connectors).
+Hard per-connector provenance requires a MyAgent-owned scoped delegation API
+or attestation contract, which this Webex handoff does not currently expose.
+Users must explicitly connect **MyAgent (Webex)**; existing `webex` connections
+are not reused, migrated, or used as a fallback. A received reply is retained as protected evidence
+and is used only in a restricted project-research pass. That pass has same-project
+wiki tools and the run-scoped MyAgent tool, but no general web, source MCP,
+cross-project or shell tools. Every report it
+influences is a private draft with no deadline auto-promotion; only the
+authorizing user or a Tome administrator can explicitly approve it. After that
+approval, its pages follow the project's normal sharing rules. The raw
+delegated run trace and detailed quality evidence remain restricted to the
+authorizing user and Tome administrators. Disconnect blocks requests that have
+not yet been claimed; a Webex message already sent cannot be recalled, but its
+reply is discarded if the revoke wins before consumption.
+MyAgent is also available in TOME chat. An explicit request such as "ask MyAgent
+for my emails" selects MyAgent research automatically; the **Ask MyAgent**
+composer checkbox keeps follow-up questions in that mode and can be turned off
+to return to ordinary project chat. Research chat is private and read-only, with
+no project edits or general source tools. Its SDK session is never resumed with
+ordinary chat's tools. Scheduled auto-ingest never uses MyAgent authorization.
+
+Choose Outlook, SharePoint and/or Salesforce in project MyAgent settings.
+Ingestion also shows checkboxes to narrow the sources for one run; clearing all
+of them skips MyAgent for that ingest. A connected Webex delegation shows green,
+with a small link to review source access in MyAgent settings. It is transport
+readiness, not an assertion that external source permissions were inspected.
+
+MyAgent answers in two sections: **Findings for the request** and **Project
+relevance**. The project name is optional context, not a mandatory search term:
+the requested information may be useful even when no source mentions the TOME
+project. In that case MyAgent should state that no direct project match was found.
+
+The backend checks the active run, its owner, current write access and unchanged
+consent before each question and again before consuming a reply. The question
+count and in-flight lock are enforced atomically across UI replicas. The model
+cannot choose a different user, project or source set. Each question/answer is
+saved in the run's protected evidence bundle rather than the shared run log.
+
+When migrating a deployment that previously put the MyAgent app in
+`WEBEX_CLIENT_ID` / `WEBEX_CLIENT_SECRET`, move those credentials into the new
+`WEBEX_MYAGENT_*` fields and restore the original general Webex app credentials
+before rollout. Preserve the app's registered callback, then have users
+connect MyAgent separately (and reconnect general Webex if its app was rotated).
+
 ### Config-driven Agentic Apps
 
 Set `AGENTIC_APPS_CONFIG_PATH` when Agentic Apps should be registered from a

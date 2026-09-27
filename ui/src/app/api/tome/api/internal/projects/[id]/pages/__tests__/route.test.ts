@@ -16,6 +16,47 @@ const mockGetExperiment = jest.fn();
 const mockGetExperimentArtifact = jest.fn();
 const mockWriteExperimentArtifactPage = jest.fn();
 
+jest.mock("@/lib/api-middleware", () => {
+  class ApiError extends Error {
+    constructor(
+      message: string,
+      public status = 500,
+      public code = "INTERNAL_ERROR",
+    ) {
+      super(message);
+    }
+  }
+  return {
+    ApiError,
+    withErrorHandler: (handler: (...args: unknown[]) => unknown) => async (...args: unknown[]) => {
+      try {
+        return await handler(...args);
+      } catch (error) {
+        if (
+          error instanceof ApiError ||
+          (error &&
+            typeof error === "object" &&
+            ("status" in error || "statusCode" in error) &&
+            "code" in error)
+        ) {
+          const apiError = error as ApiError & { statusCode?: number };
+          return Response.json(
+            { success: false, error: apiError.message, code: apiError.code },
+            { status: apiError.status ?? apiError.statusCode ?? 500 },
+          );
+        }
+        return Response.json(
+          {
+            success: false,
+            error: error instanceof Error ? error.message : "Internal server error",
+          },
+          { status: 500 },
+        );
+      }
+    },
+  };
+});
+
 jest.mock("@/lib/tome/internal-api", () => ({
   requireAgentToken: (...args: unknown[]) => mockRequireAgentToken(...args),
   resolveProject: (...args: unknown[]) => mockResolveProject(...args),
@@ -27,6 +68,24 @@ jest.mock("@/lib/tome/page-store", () => ({
 
 jest.mock("@/lib/rbac/openfga", () => ({
   checkOpenFgaTuple: (...args: unknown[]) => mockCheckOpenFgaTuple(...args),
+}));
+
+// Keep this route-level test focused on its `actor_sub` hand-off without
+// importing the full data-steward module (which also loads the interactive
+// auth configuration). The production helper ultimately asks this exact FGA
+// question; its retry/admin behavior is covered with data-steward itself.
+jest.mock("@/lib/tome/data-steward", () => ({
+  canWriteAs: async (
+    sub: string,
+    project: { _id: string; type?: string },
+  ): Promise<boolean> => {
+    const result = await mockCheckOpenFgaTuple({
+      user: `user:${sub}`,
+      relation: "can_write",
+      object: `document:tome/${project.type ?? "project"}/${project._id}`,
+    });
+    return result?.allowed === true;
+  },
 }));
 
 jest.mock("@/lib/tome/access", () => ({
@@ -297,6 +356,36 @@ describe("internal pages POST — FGA enforcement for chat-initiated writes", ()
       "proj-1",
       "charter.md",
       "# Charter",
+      expect.objectContaining({ status: "draft" }),
+    );
+  });
+
+  it("keeps received MyAgent evidence in draft despite skip-review and no-review settings", async () => {
+    const mockWritePage = jest.fn().mockResolvedValue(undefined);
+    mockResolveProject.mockResolvedValue({ ...PROJECT, review_mode: "none" });
+    mockGetPageStore.mockResolvedValue({ writePage: mockWritePage, readPage: mockReadPage });
+    mockGetTomeIngestRunsCollection.mockResolvedValue({
+      findOne: jest.fn().mockResolvedValue({
+        dispatch: { skipReview: true },
+        myagent_evidence_received: true,
+      }),
+    });
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      postRequest({
+        path: "updates/example.md",
+        body: "---\nkind: dynamic\n---\n# Delegated update",
+        report_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      }),
+      ctx(),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockWritePage).toHaveBeenCalledWith(
+      "proj-1",
+      "updates/example.md",
+      expect.any(String),
       expect.objectContaining({ status: "draft" }),
     );
   });

@@ -5,7 +5,8 @@ import { SOURCE_ADAPTERS } from "./adapters";
 import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
 
 /** The connectors a project can draw sources from (YAML `source:` values). */
-export type SourceKind = "github" | "confluence" | "webex";
+export type SourceKind = "github" | "confluence" | "webex" | "myagent";
+export type BrowsableSourceKind = Exclude<SourceKind, "myagent">;
 
 export interface SourcePickerProps {
   /** Selected values (github: repo URLs/refs; confluence: one space/page URL; webex: room IDs). */
@@ -35,7 +36,7 @@ export function SourcePicker({
   webexCredentialMode,
   webexCredentialProvider,
 }: { source?: string } & SourcePickerProps) {
-  const adapter = source ? SOURCE_ADAPTERS[source as SourceKind] : undefined;
+  const adapter = source ? SOURCE_ADAPTERS[source as BrowsableSourceKind] : undefined;
   if (!adapter) {
     return (
       <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">

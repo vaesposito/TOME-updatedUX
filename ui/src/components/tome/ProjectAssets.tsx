@@ -6,7 +6,13 @@ import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SourcesEditor } from "@/components/projects/source-pickers/SourcesEditor";
 import { useProjectSourceKinds } from "@/components/projects/source-pickers/useProjectSourceKinds";
-import type { ProjectSources } from "@/types/projects";
+import {
+  myAgentConsentSelection,
+  sameMyAgentConsentSelection,
+  saveMyAgentConsent,
+} from "@/lib/projects/myagent-consent-client";
+import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
+import { isSynthesizedType, type ProjectSources, type ProjectType } from "@/types/projects";
 
 /**
  * The sources attached to a project — the GitHub repos / Confluence space / etc.
@@ -17,7 +23,13 @@ import type { ProjectSources } from "@/types/projects";
  * up.
  */
 
-const EMPTY: ProjectSources = { repos: [], confluence_url: "", webex_rooms: [] };
+const EMPTY: ProjectSources = {
+  repos: [],
+  confluence_url: "",
+  webex_rooms: [],
+  myagent_connectors: [],
+  myagent_enabled: false,
+};
 
 export function ProjectAssets({
   slug,
@@ -28,6 +40,7 @@ export function ProjectAssets({
 }) {
   const { kinds, loading: kindsLoading } = useProjectSourceKinds();
   const [sources, setSources] = useState<ProjectSources | null>(null);
+  const [projectType, setProjectType] = useState<ProjectType | undefined>();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ProjectSources>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -38,6 +51,7 @@ export function ProjectAssets({
       const res = await fetch(`/api/projects/${slug}`);
       if (!res.ok) throw new Error(`load failed (${res.status})`);
       const json = await res.json();
+      setProjectType(json?.data?.project?.type);
       const s = json?.data?.project?.sources ?? {};
       setSources({
         repos: Array.isArray(s.repos) ? s.repos : [],
@@ -57,6 +71,10 @@ export function ProjectAssets({
           typeof s.webex_credential_provider === "string"
             ? s.webex_credential_provider
             : "webex",
+        myagent_connectors: normalizeMyAgentConnectors(s.myagent_connectors),
+        myagent_enabled: s.myagent_enabled === true,
+        myagent_consent_revision:
+          typeof s.myagent_consent_revision === "string" ? s.myagent_consent_revision : null,
       });
     } catch (e) {
       setError(String((e as Error)?.message ?? e));
@@ -79,6 +97,12 @@ export function ProjectAssets({
     setError(null);
     try {
       const repos = (draft.repos ?? []).map((r) => r.trim()).filter(Boolean);
+      const myAgentConsentChanged =
+        !isSynthesizedType(projectType) &&
+        !sameMyAgentConsentSelection(
+          myAgentConsentSelection(sources ?? undefined),
+          myAgentConsentSelection(draft),
+        );
       const res = await fetch(`/api/projects/${slug}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -100,6 +124,9 @@ export function ProjectAssets({
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || `save failed (${res.status})`);
       }
+      if (myAgentConsentChanged) {
+        await saveMyAgentConsent(slug, draft);
+      }
       setEditing(false);
       await load();
     } catch (e) {
@@ -107,9 +134,12 @@ export function ProjectAssets({
     } finally {
       setSaving(false);
     }
-  }, [slug, draft, load]);
+  }, [slug, draft, load, projectType, sources]);
 
-  const hasSources = kinds.length > 0;
+  const visibleKinds = isSynthesizedType(projectType)
+    ? kinds.filter((kind) => kind !== "myagent")
+    : kinds;
+  const hasSources = visibleKinds.length > 0;
 
   return (
     <div className="rounded-lg border p-4">
@@ -127,7 +157,7 @@ export function ProjectAssets({
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : editing ? (
         <div className="space-y-4">
-          <SourcesEditor kinds={kinds} value={draft} onChange={setDraft} />
+          <SourcesEditor kinds={visibleKinds} value={draft} onChange={setDraft} />
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex gap-2">
             <Button size="sm" onClick={() => void save()} disabled={saving}>
@@ -145,7 +175,7 @@ export function ProjectAssets({
         </div>
       ) : (
         <>
-          <SourcesEditor kinds={kinds} value={sources} onChange={() => {}} readOnly />
+          <SourcesEditor kinds={visibleKinds} value={sources} onChange={() => {}} readOnly />
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
         </>
       )}

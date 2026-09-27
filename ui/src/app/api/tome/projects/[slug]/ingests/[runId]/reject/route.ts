@@ -8,6 +8,8 @@ import { loadTomeProject, requireTomeEditor } from "@/lib/tome/tome-api";
 import { auditTome, tomeActorFromAuth } from "@/lib/tome/audit";
 import { rejectDraftRun } from "@/lib/tome/ingest-runner";
 import { getTomeIngestRunsCollection } from "@/lib/tome/mongo-collections";
+import { tomeSessionSubject } from "@/lib/tome/data-steward";
+import { mayViewMyAgentRunEvidence } from "@/lib/projects/myagent-source";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,20 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const runs = await getTomeIngestRunsCollection();
   const run = await runs.findOne({ _id: runId, project_id: tctx.projectId });
   if (!run) throw new ApiError("Ingest run not found", 404, "RUN_NOT_FOUND");
+  if (
+    run.myagent_evidence_received === true &&
+    !mayViewMyAgentRunEvidence(
+      run.triggered_by_sub,
+      tomeSessionSubject(tctx.session),
+      tctx.canManageSteward,
+    )
+  ) {
+    throw new ApiError(
+      "Only the user who authorized this MyAgent evidence or a Tome administrator may reject it.",
+      403,
+      "MYAGENT_EVIDENCE_PRIVATE",
+    );
+  }
   if (run.status !== "awaiting_review") {
     throw new ApiError("Run is not awaiting review", 409, "RUN_NOT_AWAITING_REVIEW");
   }

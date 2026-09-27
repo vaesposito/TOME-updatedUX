@@ -145,6 +145,32 @@ describe("requiredAutoIngestProviders", () => {
       ),
     ).toEqual([]);
   });
+
+  it("does not consume MyAgent delegation from a scheduled ingest", () => {
+    const base = project("myagent", {
+      sources: {
+        myagent_consents: [
+          {
+            subject: owner.subject,
+            connectors: ["outlook"],
+            granted_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(requiredAutoIngestProviders(base)).toEqual([]);
+
+    base.sources = {
+      myagent_consents: [
+        {
+          subject: "another-user",
+          connectors: ["outlook"],
+          granted_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    };
+    expect(requiredAutoIngestProviders(base)).toEqual([]);
+  });
 });
 
 describe("refreshAutoIngestCredentialHealth", () => {

@@ -243,7 +243,7 @@ function AppCard({
         <div className="pointer-events-auto flex items-center gap-1.5">
           <button
             type="button"
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition ${isFavorite ? "border-amber-200/50 bg-amber-300/20 text-amber-100" : "border-border bg-muted/40 text-muted-foreground hover:border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-500"}`}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition ${isFavorite ? "border-amber-500 bg-amber-400 text-amber-950" : "border-border bg-muted/40 text-muted-foreground hover:border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-500"}`}
             onClick={onToggleFavorite}
             aria-label={
               isFavorite
@@ -281,7 +281,7 @@ function AppCard({
             </a>
           ) : (
             <span
-              className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/10 text-amber-100"
+              className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full border border-amber-500/40 bg-amber-400/20 text-amber-600"
               aria-label={`${app.displayName} launch blocked`}
               title={`Launch blocked: ${blockedLabel}`}
             >
@@ -316,7 +316,7 @@ function AppCard({
         Created by {app.createdBy}
       </p>
       {!app.canLaunch ? (
-        <div className="relative z-10 mt-3 rounded-2xl border border-amber-200/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+        <div className="relative z-10 mt-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
           Launch blocked: {blockedLabel}
         </div>
       ) : null}

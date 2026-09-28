@@ -39,6 +39,15 @@ describe("Webex space run-as labels", () => {
     expect(screen.getByRole("region", { name: "Access not verified" })).toBeInTheDocument();
   });
 
+  it("names the configured connector in personal-space connection warnings", async () => {
+    setup({ rooms: ["room-1", "room-2"].map((room_id) => ({ room_id, name: room_id,
+      mode: "personal", available: false, access: "unknown", no_token: true,
+      connection: { provider: "custom_messaging", name: "Example Messaging" },
+    })) });
+    expect(await screen.findAllByText("Connect Example Messaging to access this space.")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "Connect Example Messaging in Connections →" })).toHaveAttribute("target", "_blank");
+  });
+
   it("confirms managed spaces will still ingest when the user has no personal connection", async () => {
     setup({ no_token: true, detail: "Do not render the misleading aggregate warning", rooms: [
       { room_id: "room-1", name: "First space", mode: "managed", available: true, access: "accessible",

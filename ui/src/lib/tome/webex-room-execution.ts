@@ -1,7 +1,7 @@
 /** Server-only: personal rooms use the caller/schedule owner; managed rooms use the generic account. */
 import { ApiError } from "@/lib/api-error";
-import { collectForwardedCredentials } from "@/lib/projects/onboarding-providers";
 import { webexRoomAccount } from "@/lib/projects/webex-room-account";
+import { personalWebexSpaceToken, webexSpaceConnectionLabel, webexSpaceProvider } from "./webex-space-provider";
 import type { ProjectSources, WebexRoomCheck, WebexRoomRunAs, WebexRoomSource } from "@/types/projects";
 import {
   listManagedWebexSharedRoomIds,
@@ -21,20 +21,19 @@ async function webexGet(path: string, token: string): Promise<Response> {
   });
 }
 
-async function accountFor(settings: AccountSettings, caller: Caller, editing: boolean, forwarded?: Forwarded): Promise<Account> {
+async function accountFor(settings: AccountSettings, caller: Caller, purpose: "ingest" | "edit" | "add", forwarded?: Forwarded): Promise<Account> {
   let token = "";
   let email: string | undefined;
   if (settings.mode === "managed") {
-    const managed = await resolveManagedWebexCredential({ force: true, requireMemberships: editing });
+    const managed = await resolveManagedWebexCredential({ force: true, requireMemberships: purpose !== "ingest" });
     if (!managed.capability.available || !managed.accessToken) {
       throw new Error("Managed Webex account is unavailable. Contact an administrator.");
     }
     token = managed.accessToken;
     email = managed.capability.accountEmail;
   } else if (caller.subject) {
-    const credentials = forwarded?.[settings.provider] ? forwarded
-      : await collectForwardedCredentials(caller.subject, [settings.provider]);
-    token = credentials[settings.provider]?.access_token ?? "";
+    const credential = await personalWebexSpaceToken(caller.subject, purpose !== "add", forwarded);
+    token = credential?.accessToken ?? "";
   }
   if (!token) throw new Error("Webex connection is not available.");
   const fallback: WebexRoomRunAs = { mode: settings.mode,
@@ -53,36 +52,39 @@ async function accountFor(settings: AccountSettings, caller: Caller, editing: bo
   return { token, runAs: fallback };
 }
 
-/** Access checks are for either ingestion or editing attachments. Managed caller
- * membership is checked ONLY for editing; personal access always uses the caller.
+/** Access checks cover ingestion, removal and new attachments. Managed caller
+ * membership is checked ONLY for editing/adding; personal access always uses the caller.
+ * New attachments require the configured app; existing-space checks permit legacy fallback.
  * Never return roomTokens to a browser.
  */
 export async function resolveWebexRoomExecution(input: Caller & {
   sources: ProjectSources;
-  purpose: "ingest" | "edit";
+  purpose: "ingest" | "edit" | "add";
   forwarded?: Forwarded;
 }): Promise<{ checks: WebexRoomCheck[]; roomTokens: Record<string, string> }> {
   const accounts = new Map<string, Promise<Account>>();
   const roomTokens: Record<string, string> = Object.create(null);
   const rooms = input.sources.webex_rooms ?? [];
   const checks: WebexRoomCheck[] = [];
+  const personalConnection = rooms.some((room) => webexRoomAccount(room, input.sources).mode === "personal")
+    ? await webexSpaceConnectionLabel() : undefined;
   for (let offset = 0; offset < rooms.length; offset += 8) {
     checks.push(...await Promise.all(rooms.slice(offset, offset + 8).map(async (room): Promise<WebexRoomCheck> => {
       const settings = webexRoomAccount(room, input.sources);
       const check: WebexRoomCheck = { room_id: room.room_id, name: room.name, mode: settings.mode, available: false, access: "unknown" };
-      const key = JSON.stringify(settings);
+      const key = settings.mode;
       let pending = accounts.get(key);
       if (!pending) {
-        pending = accountFor(settings, input, input.purpose === "edit", input.forwarded);
+        pending = accountFor(settings, input, input.purpose, input.forwarded);
         accounts.set(key, pending);
       }
       let account: Account;
       try {
         account = await pending;
       } catch {
-        return { ...check, no_token: true, detail: settings.mode === "managed"
+        return { ...check, no_token: true, connection: settings.mode === "personal" ? personalConnection : undefined, detail: settings.mode === "managed"
           ? "Managed Webex account is unavailable. Contact an administrator."
-          : "Connect your Webex account to access this space." };
+          : `Connect ${personalConnection?.name ?? "Webex"} to access this space.` };
       }
       check.run_as = account.runAs;
       // Personal ingestion retains its existing behavior: a failed room read is
@@ -93,7 +95,7 @@ export async function resolveWebexRoomExecution(input: Caller & {
         if (!response.ok) return { ...check,
           access: response.status === 403 || response.status === 404 ? "inaccessible" : "unknown",
           detail: settings.mode === "managed" ? "The managed Webex account cannot access this space." : `No access to ${room.name || room.room_id}` };
-        if (input.purpose === "edit" && settings.mode === "managed") {
+        if (input.purpose !== "ingest" && settings.mode === "managed") {
           const shared = await listManagedWebexSharedRoomIds({ accessToken: account.token,
             userEmail: input.userEmail ?? "", roomIds: [room.room_id] });
           if (!shared.has(room.room_id)) return { ...check, access: "inaccessible", detail: "You are not a member of this space." };
@@ -133,11 +135,11 @@ export async function prepareWebexRooms(input: Caller & {
       provider: room.credential_provider ?? input.defaults.provider,
     });
     return { room_id: room.room_id, name: room.name, slug: room.slug,
-      credential_mode: settings.mode, credential_provider: settings.provider };
+      credential_mode: settings.mode, credential_provider: settings.mode === "personal" ? webexSpaceProvider() : settings.provider };
   });
   if (newRooms.length) {
     if (!input.subject) throw new ApiError("A signed-in user is required to add Webex spaces.", 403, "WEBEX_ADDER_REQUIRED");
-    const { checks } = await resolveWebexRoomExecution({ ...input, purpose: "edit", sources: { webex_rooms: newRooms } });
+    const { checks } = await resolveWebexRoomExecution({ ...input, purpose: "add", sources: { webex_rooms: newRooms } });
     const blocked = checks.filter((room) => !room.available);
     if (blocked.length) throw new ApiError(`You cannot add these Webex spaces: ${blocked.map((room) => room.name).join(", ")}. Check your connection and space membership.`,
       403, "WEBEX_ROOM_ADD_FORBIDDEN");

@@ -169,8 +169,9 @@ export interface WebexRoomSource {
   slug: string;
   name: string;
   room_id: string;
-  /** Missing fields keep the project's legacy account settings. */
+  /** Missing mode keeps the project's legacy personal/managed setting. */
   credential_mode?: WebexCredentialMode;
+  /** Connector used when attached; personal execution follows deployment preference + legacy fallback. */
   credential_provider?: string;
   /** Authenticated adder, recorded on new attachments only; never an execution identity. */
   added_by?: { subject: string; name: string; email: string; added_at: string };
@@ -191,6 +192,8 @@ export interface WebexRoomCheck {
   available: boolean;
   access: "accessible" | "inaccessible" | "unknown";
   no_token?: boolean;
+  /** Configured personal connector to offer when no usable connection exists. */
+  connection?: { provider: string; name: string };
   run_as?: WebexRoomRunAs;
   detail?: string;
 }
@@ -226,9 +229,9 @@ export interface ProjectSources {
   confluence_page_scope?: ConfluencePageScope;
   confluence_spaces?: ConfluenceSpaceSource[]; // typed Confluence spaces
   webex_rooms?: WebexRoomSource[]; // typed Webex rooms (slug+name+room_id)
-  /** Missing means the legacy, personal `webex` connection. */
+  /** Missing means personal mode. */
   webex_credential_mode?: WebexCredentialMode;
-  /** Personal provider selection; managed mode always uses deployment config. */
+  /** Legacy source metadata. Runtime providers are selected by deployment config. */
   webex_credential_provider?: string;
   component_urls?: string[]; // arbitrary software/service URLs
 }

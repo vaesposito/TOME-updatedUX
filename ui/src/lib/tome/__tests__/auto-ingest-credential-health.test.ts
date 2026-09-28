@@ -22,6 +22,7 @@ import {
 import type { ProjectDocument } from "@/types/projects";
 
 const now = new Date("2026-08-13T18:00:00.000Z");
+const originalSpaceProvider = process.env.TOME_WEBEX_SPACE_PROVIDER;
 const owner = {
   subject: "owner-subject",
   email: "owner@example.test",
@@ -93,8 +94,13 @@ function collections(projects: ProjectDocument[] = []) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  delete process.env.TOME_WEBEX_SPACE_PROVIDER;
   listConnections.mockResolvedValue([]);
   refreshConnection.mockResolvedValue({ accessToken: "never-returned", expiresIn: 3600 });
+});
+afterEach(() => {
+  if (originalSpaceProvider === undefined) delete process.env.TOME_WEBEX_SPACE_PROVIDER;
+  else process.env.TOME_WEBEX_SPACE_PROVIDER = originalSpaceProvider;
 });
 
 describe("requiredAutoIngestProviders", () => {
@@ -118,7 +124,7 @@ describe("requiredAutoIngestProviders", () => {
     ).toEqual(["github", "atlassian", "webex"]);
   });
 
-  it("tracks a personal messaging connector but not the deployment-managed account", () => {
+  it("uses deployment preference rather than old source metadata and excludes managed accounts", () => {
     const baseSources = {
       webex_rooms: [{ slug: "example", name: "Example", room_id: "room-id" }],
     };
@@ -132,7 +138,7 @@ describe("requiredAutoIngestProviders", () => {
           },
         }),
       ),
-    ).toEqual(["webex_messaging"]);
+    ).toEqual(["webex"]);
     expect(
       requiredAutoIngestProviders(
         project("managed", {
@@ -148,6 +154,28 @@ describe("requiredAutoIngestProviders", () => {
 });
 
 describe("refreshAutoIngestCredentialHealth", () => {
+  it.each([true, false])("tracks the same per-owner provider as ingestion (preferred connected: %s)", async (preferredConnected) => {
+    process.env.TOME_WEBEX_SPACE_PROVIDER = "custom_messaging";
+    const projects = ["one", "two"].map((id) => project(id, { sources: {
+      webex_rooms: [{ room_id: "room-a", name: "Space A", slug: "space-a", credential_mode: "personal", credential_provider: "webex" }],
+    } }));
+    const { healthRows } = collections(projects);
+    listConnections.mockResolvedValue([
+      { id: "legacy", provider: "webex", status: "connected", renewable: true },
+      ...(preferredConnected ? [{ id: "preferred", provider: "custom_messaging", status: "connected", renewable: true }] : []),
+    ]);
+    await refreshAutoIngestCredentialHealth(now, projects);
+    expect(listConnections).toHaveBeenCalledTimes(1);
+    expect(refreshConnection).toHaveBeenCalledTimes(1);
+    expect(refreshConnection).toHaveBeenCalledWith(preferredConnected ? "preferred" : "legacy", { includeDiagnostics: true });
+    const provider = preferredConnected ? "custom_messaging" : "webex";
+    expect(healthRows).toEqual([expect.objectContaining({ provider, status: "healthy" })]);
+    const snapshot = await getAutoIngestCredentialHealth(300_000, now);
+    expect(snapshot.rows).toHaveLength(2);
+    expect(snapshot.rows.every((row) => row.provider === provider && row.status === "healthy")).toBe(true);
+    expect(listConnections).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(snapshot)).not.toContain("never-returned");
+  });
   it("refreshes a shared owner's provider once and records healthy metadata without a token", async () => {
     const { healthRows } = collections();
     const projects = [

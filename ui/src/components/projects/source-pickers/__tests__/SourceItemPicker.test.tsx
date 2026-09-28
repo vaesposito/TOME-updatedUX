@@ -31,6 +31,15 @@ describe("SourceItemPicker", () => {
     });
   });
 
+  it("asks for the exact configured app name when adding a personal Webex space", () => {
+    mockUseSourceOptions.mockReturnValue({ connected: false, options: [], loading: false,
+      connection: { provider: "custom_messaging", name: "Example Messaging" }, manageUrl: "/credentials",
+      search: jest.fn(), reload: jest.fn() });
+    render(<SourceItemPicker adapter={SOURCE_ADAPTERS.webex} selected={[]} onChange={jest.fn()} />);
+    expect(screen.getByText(/Example Messaging not connected — link Example Messaging in/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Connections" })).toHaveAttribute("target", "_blank");
+  });
+
   it("collapses the picker into a compact 'Connected to X · Change' row once a Confluence space is selected", async () => {
     const user = userEvent.setup();
     const sourceUrl = "https://example.atlassian.net/wiki/spaces/PLATFORM";

@@ -1,10 +1,15 @@
 /** @jest-environment node */
 import type { ProjectSources, WebexRoomSource } from "@/types/projects";
-const mockCollect = jest.fn();
+const mockConnections = jest.fn();
+const mockRefresh = jest.fn();
 const mockManaged = jest.fn();
 const mockShared = jest.fn();
-jest.mock("@/lib/projects/onboarding-providers", () => ({
-  collectForwardedCredentials: (...args: unknown[]) => mockCollect(...args),
+jest.mock("@/lib/credentials/oauth-service-factory", () => ({
+  getProviderConnectionService: async () => ({
+    listConnections: (...args: unknown[]) => mockConnections(...args),
+    refreshConnection: (...args: unknown[]) => mockRefresh(...args),
+  }),
+  getOAuthConnectorService: async () => ({ listConnectors: async () => [{ provider: "webex_messaging", name: "Example Messaging" }] }),
 }));
 jest.mock("../managed-webex", () => ({
   normalizeWebexCredentialSettings: (request: unknown) => request,
@@ -14,19 +19,26 @@ jest.mock("../managed-webex", () => ({
 import { prepareWebexRooms, resolveWebexRoomExecution } from "../webex-room-execution";
 const room: WebexRoomSource = { room_id: "room-a", name: "Room A", slug: "room-a" };
 const originalFetch = global.fetch;
+const originalProvider = process.env.TOME_WEBEX_SPACE_PROVIDER;
 const defaults = { mode: "personal" as const, provider: "webex" };
 const caller = { subject: "user-b", userEmail: "b@example.com" };
 const prepare = (rooms: WebexRoomSource[], previousSources?: ProjectSources) =>
   prepareWebexRooms({ rooms, previousSources, ...caller, userName: "User B", defaults });
 beforeEach(() => {
   jest.resetAllMocks();
-  mockCollect.mockImplementation(async (subject, providers) => Object.fromEntries(providers.map((provider: string) => [provider, { access_token: `token-${subject}` }])));
+  delete process.env.TOME_WEBEX_SPACE_PROVIDER;
+  mockConnections.mockImplementation(async (principal) => [{ provider: "webex", status: "connected", id: principal.id }]);
+  mockRefresh.mockImplementation(async (id) => ({ accessToken: `token-${id}` }));
   mockManaged.mockResolvedValue({ capability: { available: true, provider: "webex_messaging", accountEmail: "generic@example.com" }, accessToken: "managed-token" });
   mockShared.mockResolvedValue(new Set(["room-a"]));
   global.fetch = jest.fn(async (url) => new Response(JSON.stringify(String(url).endsWith("people/me")
     ? { displayName: "Resolved Account", emails: ["account@example.com"] } : { id: "room-a" })));
 });
-afterEach(() => { global.fetch = originalFetch; });
+afterEach(() => {
+  global.fetch = originalFetch;
+  if (originalProvider === undefined) delete process.env.TOME_WEBEX_SPACE_PROVIDER;
+  else process.env.TOME_WEBEX_SPACE_PROVIDER = originalProvider;
+});
 
 it.each(["personal", "managed"] as const)("records the authenticated adder for new %s rooms, ignoring forged attribution", async (mode) => {
   const result = await prepare([{ ...room, credential_mode: mode, credential_provider: "webex",
@@ -39,7 +51,7 @@ it("preserves original attribution, mode and metadata when another editor retain
   const original: WebexRoomSource = { ...room, credential_mode: "managed",
     added_by: { subject: "user-a", name: "User A", email: "a@example.com", added_at: "2026-01-01T00:00:00Z" } };
   expect(await prepare([{ ...room, credential_mode: "personal" }], { webex_rooms: [original] })).toEqual([original]);
-  expect(mockCollect).not.toHaveBeenCalled();
+  expect(mockConnections).not.toHaveBeenCalled();
   expect(mockShared).not.toHaveBeenCalled();
 });
 it("keeps legacy rooms unchanged, without guessing or backfilling an adder", async () => {
@@ -50,11 +62,11 @@ it.each(["manual-caller", "schedule-owner"])("uses %s's token for legacy persona
   const resolved = await resolveWebexRoomExecution({ sources: { webex_rooms: [{ ...room,
     added_by: { subject: "old-adder", name: "Old Adder", email: "old@example.com", added_at: "" } }] },
     subject, purpose: "ingest" });
-  expect(mockCollect).toHaveBeenCalledWith(subject, ["webex"]);
+  expect(mockConnections).toHaveBeenCalledWith({ type: "user", id: subject });
   expect(resolved.roomTokens).toEqual({ "room-a": `token-${subject}` });
 });
 it("ingests legacy managed rooms without the caller's connection or membership", async () => {
-  mockCollect.mockResolvedValue({});
+  mockConnections.mockResolvedValue([]);
   mockShared.mockResolvedValue(new Set());
   const resolved = await resolveWebexRoomExecution({ ...caller, purpose: "ingest",
     sources: { webex_rooms: [room], webex_credential_mode: "managed" } });
@@ -83,7 +95,7 @@ it("uses separate tokens for mixed account types and reuses each account lookup"
     { ...room, room_id: "room-c", credential_mode: "personal" as const }];
   const resolved = await resolveWebexRoomExecution({ ...caller, purpose: "ingest", sources: { webex_rooms: rooms } });
   expect(resolved.roomTokens).toEqual({ "room-a": "token-user-b", "room-b": "managed-token", "room-c": "token-user-b" });
-  expect(mockCollect).toHaveBeenCalledTimes(1);
+  expect(mockConnections).toHaveBeenCalledTimes(1);
   expect(mockShared).not.toHaveBeenCalled();
   expect(JSON.stringify(resolved.checks)).not.toMatch(/token-user-b|managed-token/);
 });
@@ -100,4 +112,58 @@ it("fails closed when managed access is lost and distinguishes network errors fr
     sources: { webex_rooms: [{ ...room, credential_mode: "managed" }] } });
   expect(resolved.checks[0]).toMatchObject({ available: false, access: "unknown" });
   expect(resolved.roomTokens).toEqual({});
+});
+
+it.each(["manual-caller", "schedule-owner"])("prefers configured messaging for %s's legacy rooms without rewriting metadata", async (subject) => {
+  process.env.TOME_WEBEX_SPACE_PROVIDER = "webex_messaging";
+  mockConnections.mockResolvedValue([
+    { id: "legacy", provider: "webex", status: "connected" },
+    { id: "messaging", provider: "webex_messaging", status: "connected" },
+  ]);
+  const sources = { webex_rooms: [{ ...room, credential_mode: "personal" as const, credential_provider: "webex" }] };
+  const before = JSON.stringify(sources);
+  const resolved = await resolveWebexRoomExecution({ subject, purpose: "ingest", sources });
+  expect(resolved.roomTokens).toEqual({ "room-a": "token-messaging" });
+  expect(mockRefresh).toHaveBeenCalledWith("messaging");
+  expect(mockRefresh).not.toHaveBeenCalledWith("legacy");
+  expect(mockConnections).toHaveBeenCalledWith({ type: "user", id: subject });
+  expect(JSON.stringify(sources)).toBe(before);
+});
+
+it("requires the configured connector for additions but allows legacy fallback for existing-room ingest/removal", async () => {
+  process.env.TOME_WEBEX_SPACE_PROVIDER = "webex_messaging";
+  await expect(prepare([room])).rejects.toThrow("cannot add");
+  expect(mockRefresh).not.toHaveBeenCalled();
+  const resolved = await resolveWebexRoomExecution({ ...caller, purpose: "ingest", sources: { webex_rooms: [room] } });
+  expect(resolved.roomTokens).toEqual({ "room-a": "token-user-b" });
+  expect(await prepare([], { webex_rooms: [room] })).toEqual([]);
+});
+
+it("saves the configured provider only on new personal rooms, ignoring stale client defaults", async () => {
+  process.env.TOME_WEBEX_SPACE_PROVIDER = "custom_messaging";
+  mockConnections.mockResolvedValue([{ id: "custom", provider: "custom_messaging", status: "connected" }]);
+  const saved = await prepare([room, { ...room, room_id: "new-room", credential_provider: "webex" }], { webex_rooms: [room] });
+  expect(saved[0]).toEqual(room);
+  expect(saved[1]).toMatchObject({ credential_provider: "custom_messaging", added_by: { subject: caller.subject } });
+});
+
+it("does not fall back to legacy after the preferred connection is denied room access", async () => {
+  process.env.TOME_WEBEX_SPACE_PROVIDER = "webex_messaging";
+  mockConnections.mockResolvedValue([
+    { id: "legacy", provider: "webex", status: "connected" },
+    { id: "messaging", provider: "webex_messaging", status: "connected" },
+  ]);
+  global.fetch = jest.fn(async () => new Response("{}", { status: 403 }));
+  const resolved = await resolveWebexRoomExecution({ ...caller, purpose: "ingest", sources: { webex_rooms: [room] } });
+  expect(resolved.checks[0].access).toBe("inaccessible");
+  expect(mockRefresh).toHaveBeenCalledTimes(1);
+  expect(mockRefresh).toHaveBeenCalledWith("messaging");
+});
+
+it("names the configured app when neither personal connector is connected", async () => {
+  process.env.TOME_WEBEX_SPACE_PROVIDER = "webex_messaging";
+  mockConnections.mockResolvedValue([]);
+  const resolved = await resolveWebexRoomExecution({ ...caller, purpose: "ingest", sources: { webex_rooms: [room] } });
+  expect(resolved.checks[0]).toMatchObject({ no_token: true,
+    connection: { provider: "webex_messaging", name: "Example Messaging" }, detail: "Connect Example Messaging to access this space." });
 });

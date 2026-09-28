@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api-error";
+import { webexSpaceProvider } from "./webex-space-provider";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import type { ProviderConnectionMetadata } from "@/lib/credentials/oauth-service";
 import type { ResourceAuthzSession } from "@/lib/rbac/resource-authz";
@@ -230,7 +231,7 @@ export function normalizeWebexCredentialSettings(input: {
     typeof input.provider === "string" && input.provider.trim()
       ? input.provider.trim()
       : "webex";
-  if (provider !== "webex" && provider !== "webex_messaging") {
+  if (provider !== "webex" && provider !== "webex_messaging" && provider !== webexSpaceProvider()) {
     throw new ApiError(
       "Unsupported personal Webex credential provider.",
       400,

@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 const mockGetAuthFromBearerOrSession = jest.fn();
 const mockListConnections = jest.fn();
 const mockRefreshConnection = jest.fn();
+const mockListConnectors = jest.fn();
 const mockResolveManagedWebexCredential = jest.fn();
 const mockListManagedWebexSharedRoomIds = jest.fn();
 
@@ -20,6 +21,7 @@ jest.mock("@/lib/api-middleware", () => {
 });
 
 jest.mock("@/lib/credentials/oauth-service-factory", () => ({
+  getOAuthConnectorService: async () => ({ listConnectors: mockListConnectors }),
   getProviderConnectionService: jest.fn(async () => ({
     listConnections: (...args: unknown[]) => mockListConnections(...args),
     refreshConnection: (...args: unknown[]) => mockRefreshConnection(...args),
@@ -43,6 +45,39 @@ jest.mock("@/lib/rbac/resource-authz", () => ({
 }));
 
 import { GET } from "../route";
+
+describe("configured personal Webex space discovery", () => {
+  const originalFetch = global.fetch;
+  const originalProvider = process.env.TOME_WEBEX_SPACE_PROVIDER;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.TOME_WEBEX_SPACE_PROVIDER = "custom_messaging";
+    mockGetAuthFromBearerOrSession.mockResolvedValue({ user: { email: "user@example.com" }, session: { sub: "user-a" } });
+    mockListConnectors.mockResolvedValue([{ provider: "custom_messaging", name: "Example Messaging" }]);
+    mockRefreshConnection.mockResolvedValue({ accessToken: "messaging-token" });
+    global.fetch = jest.fn(async (url) => jsonResponse(String(url).includes("people/me")
+      ? { displayName: "Example User" } : { items: [{ id: "space-a", title: "Space A" }] }));
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+    if (originalProvider === undefined) delete process.env.TOME_WEBEX_SPACE_PROVIDER;
+    else process.env.TOME_WEBEX_SPACE_PROVIDER = originalProvider;
+  });
+  it("requires the configured connector for new spaces even when legacy webex is connected", async () => {
+    mockListConnections.mockResolvedValue([{ provider: "webex", id: "legacy", status: "connected" }]);
+    const response = await GET(new NextRequest("http://example.test/api/projects/source-options?provider=webex&credential_provider=webex"));
+    expect((await response.json()).data).toMatchObject({ connected: false, options: [], connection: { provider: "custom_messaging", name: "Example Messaging" } });
+    expect(mockRefreshConnection).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+  it("lists spaces with the configured provider despite stale client defaults", async () => {
+    mockListConnections.mockResolvedValue([{ provider: "custom_messaging", id: "custom", status: "connected" }]);
+    const response = await GET(new NextRequest("http://example.test/api/projects/source-options?provider=webex&credential_provider=webex"));
+    expect((await response.json()).data).toMatchObject({ connected: true, options: [{ value: "space-a", label: "Space A" }], connection: { name: "Example Messaging" } });
+    expect(mockRefreshConnection).toHaveBeenCalledWith("custom");
+    expect(mockListConnections).toHaveBeenCalledWith({ type: "user", id: "user-a" });
+  });
+});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

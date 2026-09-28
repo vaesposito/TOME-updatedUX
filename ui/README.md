@@ -120,6 +120,15 @@ In **Settings → Sources → Webex**:
 
 **Execution rules (manual and scheduled):**
 
+- `TOME_WEBEX_SPACE_PROVIDER` chooses the personal **space** connector (default
+  `webex`; set to `webex_messaging` to use Webex Messaging). New-space discovery
+  and additions require this connector; prompts show its configured app name.
+- Ingestion and access checks for existing personal spaces prefer the caller's
+  connected configured provider, falling back to `webex` when it is not connected.
+  Scheduled runs use the schedule owner's connections with the same rule.
+  Refresh failures or denied room access do not trigger an identity fallback.
+  No existing source metadata is migrated. This setting is independent of
+  `TOME_MANUAL_WEBEX_PROVIDER`, which controls recorded meetings only.
 - Personal manual ingestion uses the person starting it; scheduled ingestion
   uses `autoIngest.credentialOwner`. An inaccessible personal room still
   reports an access error and never borrows the adder's credentials.

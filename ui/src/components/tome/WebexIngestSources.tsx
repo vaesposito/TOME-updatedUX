@@ -21,7 +21,7 @@ function unavailableReason({ check, mode }: CheckedSpace): string {
   if (check?.no_token) {
     return mode === "managed"
       ? "The managed Webex account is unavailable. Contact an administrator."
-      : "Connect your Webex account to access this space.";
+      : check.connection ? `Connect ${check.connection.name} to access this space.` : "Connect your Webex account to access this space.";
   }
   if (check?.access === "inaccessible") {
     return mode === "managed"
@@ -123,7 +123,7 @@ export function WebexIngestSources({ items, preflight }: {
         )}
         {skipped.some((space) => space.check?.no_token) && (
           <Link href="/credentials" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs text-primary hover:underline">
-            Connect Webex in Connections →
+            Connect {skipped.find((space) => space.check?.no_token)?.check?.connection?.name ?? "Webex"} in Connections →
           </Link>
         )}
       </div>

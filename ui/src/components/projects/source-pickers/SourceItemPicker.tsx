@@ -42,7 +42,7 @@ export interface SourceAdapter {
   emptyNone: string;
   emptyNoMatch?: string;
   /** Not-connected copy: rich (with a Connections link) and the bare fallback. */
-  notConnectedHowTo: (connectionsLink: ReactNode) => ReactNode;
+  notConnectedHowTo: (connectionsLink: ReactNode, connectionName?: string) => ReactNode;
   notConnectedBare: string;
   /**
    * Shown under the loading skeleton once a first load runs past ~2.5s, so a
@@ -110,6 +110,7 @@ export function SourceItemPicker({
 }) {
   const {
     connected,
+    connection,
     connectedTo,
     options,
     loading,
@@ -346,7 +347,7 @@ export function SourceItemPicker({
               ? managedCapability?.reason ||
                 "The managed Webex account needs reconnection."
               : manageUrl
-                ? adapter.notConnectedHowTo(connectionsLink)
+                ? adapter.notConnectedHowTo(connectionsLink, connection?.name)
                 : adapter.notConnectedBare}
           </p>
         )}

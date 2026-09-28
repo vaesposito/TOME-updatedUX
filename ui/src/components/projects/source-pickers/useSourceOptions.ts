@@ -12,6 +12,7 @@ export interface SourceOption {
 
 export interface SourceOptionsState {
   connected: boolean;
+  connection?: { provider: string; name: string };
   connectedTo?: string;
   options: SourceOption[];
   loading: boolean;
@@ -59,6 +60,8 @@ async function loadSourceOptions(
   const d = json?.data ?? {};
   return {
     connected: Boolean(d.connected),
+    connection: typeof d.connection?.provider === "string" && typeof d.connection?.name === "string"
+      ? { provider: d.connection.provider, name: d.connection.name } : undefined,
     connectedTo: typeof d.connectedTo === "string" ? d.connectedTo : undefined,
     options: Array.isArray(d.options) ? d.options : [],
     error: typeof d.error === "string" ? d.error : undefined,

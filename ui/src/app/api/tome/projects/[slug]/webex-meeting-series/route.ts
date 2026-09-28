@@ -14,6 +14,7 @@ import {
   interactiveWebexMeetingInvoker,
   meetingSeriesHostEligibility,
   meetingSeriesMatches,
+  findMatchingMeetingSeries,
   nonHostMeetingSeriesAllowed,
   webexMeetingSeriesDiscoveryWindow,
 } from "@/lib/tome/webex-meeting-series";
@@ -73,7 +74,7 @@ export const GET = withErrorHandler(async (request: NextRequest, context: Ctx) =
   const ownerSubject = sessionSub(tctx.session);
   const refreshedSubscriptions = subscriptions.map((subscription) => {
     if (!ownerSubject || subscription.credentialOwner.subject !== ownerSubject) return subscription;
-    const candidate = candidates.find((item) => meetingSeriesMatches(item, subscription));
+    const candidate = findMatchingMeetingSeries(candidates, subscription);
     if (!candidate) return subscription;
     return {
       ...subscription,
@@ -128,7 +129,14 @@ export const POST = withErrorHandler(async (request: NextRequest, context: Ctx) 
     );
   }
   const existing = tctx.project.autoIngest?.webexMeetingSeries ?? [];
-  const duplicate = existing.find((item) => meetingSeriesMatches(candidate, item));
+  const duplicate = findMatchingMeetingSeries(existing, candidate);
+  if (!duplicate && existing.some((item) => meetingSeriesMatches(candidate, item))) {
+    throw new ApiError(
+      "Multiple saved subscriptions match this meeting. Review the existing series before adding it.",
+      409,
+      "WEBEX_MEETING_SERIES_AMBIGUOUS",
+    );
+  }
   if (duplicate) {
     await requestSubscriptionCalendarRefresh(duplicate, new Date());
     return successResponse({ subscription: duplicate, created: false });

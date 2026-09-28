@@ -17,7 +17,7 @@ import {
   backgroundWebexMeetingInvoker,
   discoverMeetingSeries,
   downloadMeetingTranscript,
-  meetingSeriesMatches,
+  findMatchingMeetingSeries,
   resolveOccurrenceMeeting,
   type WebexMeetingOccurrenceCandidate,
 } from "../webex-meeting-series";
@@ -210,7 +210,7 @@ async function reconcileSubscriptionCalendar(
   now: Date,
   candidates: SeriesDiscovery,
 ): Promise<Date | null> {
-  const series = candidates.find((candidate) => meetingSeriesMatches(candidate, subscription));
+  const series = findMatchingMeetingSeries(candidates, subscription);
   if (!series) {
     await updateSubscription(project._id, subscription.id, {
       lastCalendarCheckAt: now.toISOString(),

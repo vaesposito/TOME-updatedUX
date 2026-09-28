@@ -11,7 +11,7 @@ import {
 import {
   backgroundWebexMeetingInvoker,
   discoverMeetingSeries,
-  meetingSeriesMatches,
+  findMatchingMeetingSeries,
   type WebexMeetingOccurrenceCandidate,
 } from "../webex-meeting-series";
 
@@ -128,7 +128,7 @@ export async function previewWebexMeetingSeriesBackfill(
     siteUrl: subscription.siteUrl,
     now,
   });
-  const series = candidates.find((candidate) => meetingSeriesMatches(candidate, subscription));
+  const series = findMatchingMeetingSeries(candidates, subscription);
   if (!series) {
     throw new ApiError(
       "That recurring meeting was not returned by Webex for the selected time range.",

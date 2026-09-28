@@ -254,6 +254,19 @@ Series identity prefers durable Meetings and User Hub series IDs. Meeting
 numbers and personal-room links are weak references: multiple unrelated series
 can reuse them and must not be collapsed into one result.
 
+Discovery, saved-subscription refresh, scheduled checks, and **Sync now** use
+the same identity rules. Exact series IDs take precedence over weak matches,
+and conflicting IDs never match. Link comparisons preserve join identifiers
+such as `MTID`; stripping all query parameters would turn unrelated
+`j.php?MTID=...` meetings into the same address. A weak saved-series match also
+requires the same title and compatible host, and must be unambiguous. Calendar
+title/host joins likewise remain separate when multiple series could match.
+Actual host renames still propagate when the durable identity matches.
+
+These checks do not migrate saved subscriptions, rewrite occurrence IDs, or
+repair previously misattributed history. Existing history needs separate,
+explicitly approved investigation/remediation.
+
 ## Authentication and MCP Selection
 
 Both flows use MCP server ID `webex_meetings` and forward the bearer on

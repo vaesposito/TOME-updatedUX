@@ -3,7 +3,7 @@
  * `webex_meetings` MCP server. No Webex REST calls live in Tome's BFF.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api-error";
@@ -22,6 +22,12 @@ import type {
   WebexMeetingSeriesSubscription,
 } from "@/types/projects";
 import type { WebexMeetingIngestItem } from "@/types/tome";
+import {
+  compatibleSeriesMetadata,
+  normalizedSeriesWebLink,
+} from "./webex-meeting-series-identity";
+
+export { findMatchingMeetingSeries, meetingSeriesMatches } from "./webex-meeting-series-identity";
 
 const SERVER_ID = "webex_meetings";
 const PROVIDER = "webex_meetings";
@@ -404,33 +410,6 @@ function normalizedWebLink(value: unknown): string {
   }
 }
 
-export function meetingSeriesMatches(
-  candidate: WebexMeetingSeriesCandidate,
-  stored: { seriesKey: string; sourceRefs: WebexMeetingSeriesSourceRefs },
-): boolean {
-  if (candidate.seriesKey === stored.seriesKey) return true;
-  const left = candidate.sourceRefs;
-  const right = stored.sourceRefs;
-  if (left.meetingSeriesId && left.meetingSeriesId === right.meetingSeriesId) return true;
-  if (left.userHubSeriesId && left.userHubSeriesId === right.userHubSeriesId) return true;
-  if (left.scheduledMeetingId && left.scheduledMeetingId === right.scheduledMeetingId) return true;
-
-  // A personal-room meeting number/link is not a series identity: several
-  // unrelated recurring series can deliberately reuse it. Only use those
-  // weak refs when the two records do not carry conflicting same-source IDs.
-  if (
-    (left.meetingSeriesId && right.meetingSeriesId) ||
-    (left.userHubSeriesId && right.userHubSeriesId)
-  ) {
-    return false;
-  }
-  return Boolean(
-    (left.meetingNumber && left.meetingNumber === right.meetingNumber) ||
-      (normalizedWebLink(left.webLink) &&
-        normalizedWebLink(left.webLink) === normalizedWebLink(right.webLink)),
-  );
-}
-
 function rawMeetingRefs(item: Record<string, unknown>): WebexMeetingSeriesSourceRefs {
   const meetingType = stringValue(item.meetingType);
   return {
@@ -617,7 +596,17 @@ export function normalizeMeetingSeries(input: {
     );
   }
 
-  for (const item of arrayItems(input.userHubCalendar)) {
+  const userHubRows = arrayItems(input.userHubCalendar);
+  const calendarIdentities = userHubRows.map((item) => ({
+    seriesKey: "",
+    title: stringValue(item.subject),
+    hostEmail: hostEmailFromItem(item),
+    sourceRefs: {
+      userHubSeriesId: stringValue(item.seriesId) || undefined,
+      webLink: stringValue(item.webLink) || undefined,
+    },
+  }));
+  for (const [index, item] of userHubRows.entries()) {
     const userHubSeriesId = stringValue(item.seriesId);
     const occurrenceType = stringValue(item.occurrenceType).toLowerCase();
     const refs: WebexMeetingSeriesSourceRefs = {
@@ -633,23 +622,24 @@ export function normalizeMeetingSeries(input: {
     // the key fallback for Webex templates that say "expired" even though the
     // user's calendar contains current recurring occurrences.
     if (!candidate) {
-      const subject = stringValue(item.subject).trim().toLowerCase();
-      const organizerEmail = hostEmailFromItem(item)?.trim().toLowerCase();
-      const titleMatches = candidates.filter((existing) => {
-        if (!subject || existing.title.trim().toLowerCase() !== subject) return false;
-        const existingHost = existing.hostEmail?.trim().toLowerCase();
-        return !organizerEmail || !existingHost || organizerEmail === existingHost;
-      });
-      // Ambiguous title/host matches must stay separate instead of silently
-      // merging two distinct recurring series.
-      if (titleMatches.length === 1) candidate = titleMatches[0];
-    }
-    if (!candidate && refs.webLink) {
-      const webLink = normalizedWebLink(refs.webLink);
-      const linkMatches = candidates.filter(
-        (existing) => normalizedWebLink(existing.sourceRefs.webLink) === webLink,
+      const titleMatches = candidates.filter((existing) =>
+        compatibleSeriesMetadata(existing, calendarIdentities[index]),
       );
-      if (linkMatches.length === 1) candidate = linkMatches[0];
+      // Ambiguous title/host matches must stay separate instead of silently
+      // merging two distinct recurring series. Check both sides: a single
+      // public template can still have several compatible calendar series.
+      if (titleMatches.length === 1) {
+        const match = titleMatches[0];
+        const metadata = {
+          ...match,
+          sourceRefs: { ...match.sourceRefs, userHubSeriesId: undefined },
+        };
+        const calendarSeriesIds = new Set(calendarIdentities
+          .filter((identity) => compatibleSeriesMetadata(metadata, identity))
+          .map((identity) => identity.sourceRefs.userHubSeriesId)
+          .filter(Boolean));
+        if (calendarSeriesIds.size <= 1) candidate = match;
+      }
     }
     const explicitlyRecurring =
       Boolean(userHubSeriesId) ||
@@ -657,8 +647,15 @@ export function normalizeMeetingSeries(input: {
       occurrenceType.includes("recurr");
     if (!candidate && !explicitlyRecurring) continue;
     if (!candidate) {
-      const fallbackKey = userHubSeriesId || normalizedWebLink(refs.webLink);
-      if (!fallbackKey) continue;
+      const webLink = normalizedSeriesWebLink(refs.webLink);
+      if (!userHubSeriesId && !webLink) continue;
+      // ID-less recurring rows need more than a shared personal-room address.
+      // Hash the composite identity rather than embedding private join URLs.
+      const fallbackKey = userHubSeriesId || `link:${createHash("sha256").update(JSON.stringify([
+        webLink,
+        stringValue(item.subject).trim().toLowerCase(),
+        hostEmailFromItem(item)?.trim().toLowerCase() ?? "",
+      ])).digest("hex")}`;
       candidate = {
         seriesKey: `userhub:${fallbackKey}`,
         title: stringValue(item.subject) || "Untitled meeting series",

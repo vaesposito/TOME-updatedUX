@@ -121,7 +121,7 @@ jest.mock("../webex-meeting-series", () => ({
   backgroundWebexMeetingInvoker: (...args: unknown[]) => backgroundInvoker(...args),
   discoverMeetingSeries: (...args: unknown[]) => discoverMeetingSeries(...args),
   downloadMeetingTranscript: (...args: unknown[]) => downloadMeetingTranscript(...args),
-  meetingSeriesMatches: () => true,
+  findMatchingMeetingSeries: jest.requireActual("../webex-meeting-series-identity").findMatchingMeetingSeries,
   resolveOccurrenceMeeting: (...args: unknown[]) => resolveOccurrenceMeeting(...args),
 }));
 
@@ -557,6 +557,70 @@ describe("Webex meeting-series scheduler", () => {
     expect(backgroundInvoker).not.toHaveBeenCalled();
     expect(discoverMeetingSeries).not.toHaveBeenCalled();
     expect(scheduleOwnerCheck).not.toHaveBeenCalled();
+  });
+
+  it("keeps the subscribed series when an unrelated calendar series is returned first", async () => {
+    const webLink = "https://meetings.example.test/site/j.php?MTID=original";
+    const subscribedProject = {
+      ...project,
+      autoIngest: {
+        ...project.autoIngest,
+        webexMeetingSeries: [{
+          ...project.autoIngest!.webexMeetingSeries![0],
+          sourceRefs: { meetingSeriesId: "series-1", webLink },
+        }],
+      },
+    } as ProjectDocument & { _id: string };
+    discoverMeetingSeries.mockResolvedValueOnce([
+      {
+        seriesKey: "userhub:unrelated",
+        title: "Unrelated meeting",
+        sourceRefs: { userHubSeriesId: "unrelated", webLink: webLink.replace("original", "other") },
+        occurrences: [{ occurrenceKey: "wrong-occurrence" }],
+      },
+      {
+        seriesKey: "webex:series-1",
+        title: "Platform sync renamed by host",
+        sourceRefs: { meetingSeriesId: "series-1", webLink },
+        occurrences: [],
+      },
+    ]);
+
+    await tickWebexMeetingSeriesScheduler(now, [subscribedProject]);
+
+    expect(projectUpdate).toHaveBeenCalledWith(
+      { _id: "project-1" },
+      expect.objectContaining({ $set: expect.objectContaining({
+        "autoIngest.webexMeetingSeries.$[series].title": "Platform sync renamed by host",
+      }) }),
+      { arrayFilters: [{ "series.id": "subscription-1" }] },
+    );
+    expect(occurrences).toHaveLength(0);
+    expect(enqueueRun).not.toHaveBeenCalled();
+  });
+
+  it("does not rename or ingest an unrelated series when the subscribed series is missing", async () => {
+    discoverMeetingSeries.mockResolvedValueOnce([{
+      seriesKey: "userhub:unrelated",
+      title: "Unrelated meeting",
+      sourceRefs: { userHubSeriesId: "unrelated" },
+      occurrences: [{ occurrenceKey: "wrong-occurrence" }],
+    }]);
+
+    await tickWebexMeetingSeriesScheduler(now, [project]);
+
+    expect(projectUpdate).toHaveBeenCalledWith(
+      { _id: "project-1" },
+      expect.objectContaining({ $set: expect.objectContaining({
+        "autoIngest.webexMeetingSeries.$[series].lastStatus": "failed",
+      }) }),
+      expect.any(Object),
+    );
+    for (const [, update] of projectUpdate.mock.calls) {
+      expect(update.$set).not.toHaveProperty(["autoIngest.webexMeetingSeries.$[series].title"]);
+    }
+    expect(occurrences).toHaveLength(0);
+    expect(enqueueRun).not.toHaveBeenCalled();
   });
 
   it("wakes after the earliest upcoming meeting instead of waiting for the daily refresh", async () => {

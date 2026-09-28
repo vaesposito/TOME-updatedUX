@@ -255,6 +255,7 @@ describe("Webex recurring meeting discovery", () => {
     expect(
       meetingSeriesMatches(result[0], {
         seriesKey: "old-key",
+        title: "Design review",
         sourceRefs: { webLink: "https://cisco.webex.com/meet/design-review/" },
       }),
     ).toBe(true);

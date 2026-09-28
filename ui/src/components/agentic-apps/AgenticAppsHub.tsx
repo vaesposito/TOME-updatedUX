@@ -393,7 +393,10 @@ function RuntimeInfoTooltip({
         className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/40 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
         aria-label={`Runtime details for ${app.displayName}`}
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
       >
         <Info className="h-3.5 w-3.5" aria-hidden />
       </button>

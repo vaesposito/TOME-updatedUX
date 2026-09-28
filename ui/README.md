@@ -100,6 +100,8 @@ In **Settings → Sources → Webex**:
 - **Add a new Webex Space** supports personal and managed discovery; both
   lists exclude all room IDs already attached to this project. Switching tabs
   clears stale results and refreshes without changing saved selections.
+- Managed discovery says **No new shared spaces found** when returned spaces
+  are already attached; **No shared spaces found** means none were returned.
 - Adding a personal space requires access using the current user's selected
   connection. Adding a managed space requires both that user and the generic
   account to belong to the space.

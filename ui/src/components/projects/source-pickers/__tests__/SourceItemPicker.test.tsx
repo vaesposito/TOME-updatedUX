@@ -31,6 +31,38 @@ describe("SourceItemPicker", () => {
     });
   });
 
+  it.each([false, true])("distinguishes no shared spaces from already-added spaces (shared returned: %s)", (hasShared) => {
+    mockUseSourceOptions.mockReturnValue({
+      connected: true, loading: false, manageUrl: "/credentials",
+      options: hasShared ? [{ value: "room-a", label: "Space A" }, { value: "room-b", label: "Space B" }] : [],
+      managedCapability: { available: true, accountEmail: "managed@example.com" },
+      search: jest.fn(), reload: jest.fn(),
+    });
+    render(<SourceItemPicker adapter={SOURCE_ADAPTERS.webex} selected={[]} excludedKeys={["room-a", "room-b"]}
+      onChange={jest.fn()} webexCredentialMode="managed" />);
+    expect(screen.getByText(`No ${hasShared ? "new " : ""}shared spaces found. You and managed@example.com must both be members.`)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Space A" })).not.toBeInTheDocument();
+  });
+
+  it("uses new for search results that are all already added, without hiding lookup errors", async () => {
+    const state = {
+      connected: true, loading: false, manageUrl: "/credentials",
+      options: [{ value: "room-a", label: "Space A" }],
+      managedCapability: { available: true, accountEmail: "managed@example.com" },
+      search: jest.fn(), reload: jest.fn(),
+    };
+    mockUseSourceOptions.mockReturnValue(state);
+    const props = { adapter: SOURCE_ADAPTERS.webex, selected: [], excludedKeys: ["room-a"],
+      onChange: jest.fn(), webexCredentialMode: "managed" as const };
+    const { rerender } = render(<SourceItemPicker {...props} />);
+    await userEvent.setup().type(screen.getByPlaceholderText("Search rooms…"), "Space A");
+    expect(screen.getByText("No new shared Webex spaces match your search.")).toBeInTheDocument();
+    mockUseSourceOptions.mockReturnValue({ ...state, error: "Unable to verify shared spaces. Contact an administrator." });
+    rerender(<SourceItemPicker {...props} />);
+    expect(screen.getByText("Unable to verify shared spaces. Contact an administrator.")).toBeInTheDocument();
+    expect(screen.queryByText("No new shared Webex spaces match your search.")).not.toBeInTheDocument();
+  });
+
   it("asks for the exact configured app name when adding a personal Webex space", () => {
     mockUseSourceOptions.mockReturnValue({ connected: false, options: [], loading: false,
       connection: { provider: "custom_messaging", name: "Example Messaging" }, manageUrl: "/credentials",

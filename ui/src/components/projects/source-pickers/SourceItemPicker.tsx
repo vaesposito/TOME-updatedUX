@@ -243,13 +243,14 @@ export function SourceItemPicker({
   const managedWebex =
     adapter.provider === "webex" && webexCredentialMode === "managed";
   const managedAccountEmail = managedCapability?.accountEmail;
+  const hasAlreadyAddedSpaces = options.some((option) => excludedKeys.includes(optionKeyOf(option)));
   const emptyListCopy =
     managedWebex && error
       ? error
       : managedWebex && managedAccountEmail
       ? query.trim()
-        ? "No shared Webex spaces match your search."
-        : `No shared spaces found. You and ${managedAccountEmail} must both be members.`
+        ? `No ${hasAlreadyAddedSpaces ? "new " : ""}shared Webex spaces match your search.`
+        : `No ${hasAlreadyAddedSpaces ? "new " : ""}shared spaces found. You and ${managedAccountEmail} must both be members.`
       : query.trim()
         ? adapter.emptyNoMatch ?? adapter.emptyNone
         : adapter.emptyNone;

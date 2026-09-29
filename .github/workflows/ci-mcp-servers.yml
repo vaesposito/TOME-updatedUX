@@ -73,6 +73,7 @@ jobs:
     outputs:
       agents_to_build: ${{ steps.set-matrix.outputs.agents_to_build }}
       agents_to_retag: ${{ steps.set-matrix.outputs.agents_to_retag }}
+      agents_to_publish: ${{ steps.set-matrix.outputs.agents_to_publish }}
       should_build: ${{ steps.set-matrix.outputs.should_build }}
       should_retag: ${{ steps.set-matrix.outputs.should_retag }}
       tag_version: ${{ steps.version.outputs.tag_version }}
@@ -163,6 +164,7 @@ jobs:
               console.log("📊 Chart-only tag: skipping image builds");
               core.setOutput('agents_to_build', '[]');
               core.setOutput('agents_to_retag', '[]');
+              core.setOutput('agents_to_publish', '[]');
               core.setOutput('should_build', 'false');
               core.setOutput('should_retag', 'false');
               core.setOutput('image_prefix', '');
@@ -200,6 +202,7 @@ jobs:
 
             core.setOutput('agents_to_build', JSON.stringify(agentsToBuild));
             core.setOutput('agents_to_retag', JSON.stringify(agentsToRetag));
+            core.setOutput('agents_to_publish', JSON.stringify(allAgents));
             core.setOutput('should_build', String(agentsToBuild.length > 0));
             core.setOutput('should_retag', String(agentsToRetag.length > 0 && !!tagVersion));
             core.setOutput('image_prefix', imagePrefix);
@@ -221,6 +224,7 @@ jobs:
       packages: write
 
     strategy:
+      max-parallel: 10
       matrix:
         agent: ${{ fromJson(needs.determine-agents.outputs.agents_to_build) }}
         platform: [linux/amd64, linux/arm64]
@@ -333,6 +337,7 @@ jobs:
       packages: write
 
     strategy:
+      max-parallel: 5
       matrix:
         agent: ${{ fromJson(needs.determine-agents.outputs.agents_to_build) }}
       fail-fast: false
@@ -619,7 +624,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        agent: ${{ fromJSON(needs.load-config.outputs.all_agents) }}
+        agent: ${{ fromJSON(needs.determine-agents.outputs.agents_to_publish) }}
     uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@fce663497d58691f824fedc4eed62dcdf38a20a8
     with:
       image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-agents.outputs.image_prefix }}mcp-${{ matrix.agent }}

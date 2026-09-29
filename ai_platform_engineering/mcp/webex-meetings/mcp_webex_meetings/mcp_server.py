@@ -1129,7 +1129,9 @@ def register_tools(server) -> None:
             params["from"] = args.from_iso
         if args.to_iso:
             params["to"] = args.to_iso
-        return await _request("GET", "/recordings", params=params)
+        # Recording metadata can contain playback passwords and host keys.
+        # Never expose those values through an MCP tool response.
+        return _sanitize_sensitive(await _request("GET", "/recordings", params=params))
 
     @server.tool(name="webex_list_transcripts")
     @_handle_errors
@@ -1169,6 +1171,59 @@ def register_tools(server) -> None:
                 public_error = exc
                 listing = {"items": []}
         items = listing.get("items", []) if isinstance(listing, dict) else []
+
+        # Webex's broad transcript date filter is not reliable for recordings
+        # that are visible through the recordings API. When it returns an empty
+        # list, recover through each recording's actual occurrence ID. A series
+        # ID is rejected by /meetingTranscripts; occurrence IDs contain `_I_`.
+        if (
+            not items
+            and not args.meeting_id
+            and not userhub_only_lookup
+            and (args.from_iso or args.to_iso)
+        ):
+            recording_params: dict[str, Any] = {"max": 100}
+            if args.from_iso:
+                recording_params["from"] = args.from_iso
+            if args.to_iso:
+                recording_params["to"] = args.to_iso
+            recording_payload = await _request("GET", "/recordings", params=recording_params)
+            recording_items = _extract_items(recording_payload) or []
+            occurrence_ids: list[str] = []
+            for recording in recording_items:
+                if not isinstance(recording, dict):
+                    continue
+                occurrence_id = str(recording.get("meetingId") or "").strip()
+                series_id = str(recording.get("meetingSeriesId") or "").strip()
+                if occurrence_id and occurrence_id != series_id and occurrence_id not in occurrence_ids:
+                    occurrence_ids.append(occurrence_id)
+            recovered: list[dict[str, Any]] = []
+            seen_ids: set[str] = set()
+            for occurrence_id in occurrence_ids:
+                occurrence_payload = await _request(
+                    "GET",
+                    "/meetingTranscripts",
+                    params={"meetingId": occurrence_id, "max": args.max_results},
+                )
+                occurrence_items = (
+                    occurrence_payload.get("items", [])
+                    if isinstance(occurrence_payload, dict)
+                    else []
+                )
+                for item in occurrence_items:
+                    if not isinstance(item, dict):
+                        continue
+                    transcript_id = str(item.get("id") or "").strip()
+                    if transcript_id and transcript_id not in seen_ids:
+                        seen_ids.add(transcript_id)
+                        recovered.append(item)
+            if recovered:
+                items = recovered
+                listing = {
+                    "items": items,
+                    "source": "recording_occurrence_lookup",
+                    "recordingsChecked": len(occurrence_ids),
+                }
         if args.download and items:
             bearer = _bearer_from_request()
             async with httpx.AsyncClient(

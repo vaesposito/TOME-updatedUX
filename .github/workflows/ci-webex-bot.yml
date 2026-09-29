@@ -475,7 +475,7 @@ jobs:
       contents: read
       packages: read
       id-token: write
-    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@d262b86f89f00ffc0c03814d8a971757d9c52f46
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@fce663497d58691f824fedc4eed62dcdf38a20a8
     with:
       image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-changes.outputs.image_prefix }}caipe-webex-bot
       image-tag: ${{ needs.determine-changes.outputs.tag_version }}

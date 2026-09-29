@@ -496,6 +496,7 @@ export function DraftReviewView({
                   useDarkTheme={dark}
                   leftTitle={selected.isNewPage ? "(new file)" : "live"}
                   rightTitle={selected.requiresDecision ? "draft" : "ingest change"}
+                  styles={{ diffContainer: { minWidth: 0 } }}
                 />
               </div>
             </>

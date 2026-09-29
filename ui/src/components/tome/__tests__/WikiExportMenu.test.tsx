@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
+import { ToastProvider } from "@/components/ui/toast";
 import {
   WikiExportMenu,
   wikiExportHref,
@@ -15,7 +16,11 @@ describe("WikiExportMenu", () => {
   });
 
   it("shows all formats for the selected page", () => {
-    render(<WikiExportMenu slug="example-project" path="roadmap.md" />);
+    render(
+      <ToastProvider>
+        <WikiExportMenu slug="example-project" path="roadmap.md" />
+      </ToastProvider>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Export this page" }));
 
@@ -35,10 +40,12 @@ describe("WikiExportMenu", () => {
 
   it("shows gist downloads and opens a gist-scoped presentation workflow", () => {
     render(
-      <WikiExportMenu
-        slug="example-project"
-        gist={{ id: "gist-1", title: "Example gist", filename: "example-gist.md" }}
-      />,
+      <ToastProvider>
+        <WikiExportMenu
+          slug="example-project"
+          gist={{ id: "gist-1", title: "Example gist", filename: "example-gist.md" }}
+        />
+      </ToastProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Export this gist" }));
@@ -64,7 +71,11 @@ describe("WikiExportMenu", () => {
         },
       }),
     } as Response);
-    render(<WikiExportMenu slug="example-project" path="roadmap.md" />);
+    render(
+      <ToastProvider>
+        <WikiExportMenu slug="example-project" path="roadmap.md" />
+      </ToastProvider>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Export this page" }));
     fireEvent.click(screen.getByRole("button", { name: /Export as presentation/ }));
@@ -77,5 +88,57 @@ describe("WikiExportMenu", () => {
       "/api/tome/projects/example-project/pages",
     ));
     fetchMock.mockRestore();
+  });
+
+  it("saves through the native picker when the browser supports it", async () => {
+    const close = jest.fn().mockResolvedValue(undefined);
+    const createWritable = jest.fn().mockResolvedValue({ close });
+    const showSaveFilePicker = jest.fn().mockResolvedValue({ createWritable });
+    window.showSaveFilePicker = showSaveFilePicker;
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      body: null,
+    } as Response);
+
+    render(
+      <ToastProvider>
+        <WikiExportMenu slug="example-project" path="roadmap.md" title="Roadmap" />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Export this page" }));
+    fireEvent.click(screen.getByRole("link", { name: /Markdown/ }));
+
+    await waitFor(() => expect(showSaveFilePicker).toHaveBeenCalledWith(
+      expect.objectContaining({ suggestedName: "roadmap.md" }),
+    ));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tome/projects/example-project/export?format=markdown&path=roadmap.md",
+    ));
+    await waitFor(() => expect(close).toHaveBeenCalled());
+
+    fetchMock.mockRestore();
+    delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+
+  it("cancelling the native picker does not show an error toast", async () => {
+    const showSaveFilePicker = jest
+      .fn()
+      .mockRejectedValue(new DOMException("cancelled", "AbortError"));
+    window.showSaveFilePicker = showSaveFilePicker;
+
+    render(
+      <ToastProvider>
+        <WikiExportMenu slug="example-project" path="roadmap.md" />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Export this page" }));
+    fireEvent.click(screen.getByRole("link", { name: /Markdown/ }));
+
+    await waitFor(() => expect(showSaveFilePicker).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker;
   });
 });

@@ -822,6 +822,7 @@ export function WikiPageView({
               <WikiExportMenu
                 slug={slug}
                 path={path}
+                title={title}
                 triggerClassName="border border-border p-1.5"
               />
             </>

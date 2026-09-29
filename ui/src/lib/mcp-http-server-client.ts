@@ -422,7 +422,9 @@ export async function invokeHttpMcpTool(input: {
   toolName: string;
   params: Record<string, unknown>;
   credentialResolution?: McpCredentialResolution;
+  timeoutMs?: number;
 }): Promise<{ ok: boolean; status: number; payload: unknown }> {
+  const startedAt = Date.now();
   const agentGatewayManaged = isAgentGatewayEndpoint(input.server);
   const endpoint = input.server.endpoint.trim();
   if (agentGatewayManaged && !isAgentGatewayRouteEndpoint(endpoint)) {
@@ -444,7 +446,7 @@ export async function invokeHttpMcpTool(input: {
     endpoint,
     headers,
     agentGatewayManaged,
-    timeoutMs: 15_000,
+    timeoutMs: Math.min(input.timeoutMs ?? 15_000, 15_000),
   });
   try {
     const invoked = await mcpJsonRpc({
@@ -457,6 +459,7 @@ export async function invokeHttpMcpTool(input: {
         method: "tools/call",
         params: { name: input.toolName, arguments: input.params },
       },
+      timeoutMs: input.timeoutMs === undefined ? undefined : Math.max(1, input.timeoutMs - (Date.now() - startedAt)),
     });
     return { ok: invoked.ok, status: invoked.status, payload: invoked.payload };
   } finally {
@@ -491,13 +494,14 @@ export async function invokeDirectHttpMcpTool(input: {
   headers?: Record<string, string>;
   timeoutMs?: number;
 }): Promise<{ ok: boolean; status: number; payload: unknown }> {
+  const startedAt = Date.now();
   const endpoint = input.endpoint.trim();
   const headers = input.headers ?? {};
   const initialized = await initializeMcpSession({
     endpoint,
     headers,
     agentGatewayManaged: false,
-    timeoutMs: input.timeoutMs ?? 15_000,
+    timeoutMs: Math.min(input.timeoutMs ?? 15_000, 15_000),
   });
   try {
     const invoked = await mcpJsonRpc({
@@ -510,7 +514,7 @@ export async function invokeDirectHttpMcpTool(input: {
         method: "tools/call",
         params: { name: input.toolName, arguments: input.params },
       },
-      timeoutMs: input.timeoutMs ?? 30_000,
+      timeoutMs: input.timeoutMs === undefined ? 30_000 : Math.max(1, input.timeoutMs - (Date.now() - startedAt)),
     });
     return { ok: invoked.ok, status: invoked.status, payload: invoked.payload };
   } finally {

@@ -373,7 +373,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       const invoke = await interactiveWebexMeetingInvoker(request, { user, session });
       const candidates = await discoverMeetingSeries(
         invoke,
-        webexMeetingSeriesDiscoveryWindow(now),
+        // Creation revalidates all picker horizons, including selections made
+        // before the user narrowed the visible occurrence window.
+        webexMeetingSeriesDiscoveryWindow(now, 30),
       );
       const candidatesByKey = new Map(candidates.map((candidate) => [candidate.seriesKey, candidate]));
       for (const seriesKey of requestedMeetingSeriesKeys) {

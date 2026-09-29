@@ -230,9 +230,32 @@ Tome invokes the configured `webex_meetings` MCP server directly. It combines:
 - `webex_list_meetings` with `meeting`
 - `webex_userhub_calendar`
 
-The discovery window covers the previous 48 hours and next 90 days. User Hub
-calendar discovery is required because some active recurring meetings do not
-appear reliably through `webex_list_meetings` alone.
+The picker includes the previous 48 hours and defaults to the next **7 days**.
+Its dropdown also offers **14** and **30 days**. Changing the window clears old
+results and performs a fresh lookup. Add uses that same window; onboarding
+creation revalidates up to 30 days without discarding previously selected keys.
+Public series templates are not date-filtered. Calendar-only monthly series
+may require a longer window to appear. This picker choice is not stored on the
+subscription: background checks retain their 48-hour lookback, 90-day horizon,
+and existing per-user/site cadence.
+
+- Fetch series templates once; query scheduled/calendar occurrences in windows
+  of at most seven days, with no gaps. Actual-meeting queries only cover the past.
+- Run at most two MCP requests concurrently. The whole sweep has a configurable
+  `TOME_WEBEX_SERIES_DISCOVERY_TIMEOUT_MS` budget: **45000** by default, capped at
+  120000. No automatic retries are added; remaining windows are marked incomplete
+  when the budget expires. Unrelated MCP callers keep their existing defaults.
+- User Hub receives both `startDate` and inclusive `endDate`; omitting the latter
+  can yield only its default calendar window. Date-only bounds overlap by a day
+  for local timezone safety; the MCP then filters exact timestamps. Deploy the
+  updated Meetings MCP alongside the UI to get this behavior.
+- Failed, timed-out, malformed, or potentially capped results produce a visible
+  **Discovery incomplete** warning. A missing next occurrence is **unknown**, not
+  evidence that no meeting exists. Logs use `[WebexSeries] discovery incomplete`
+  with source, date window, and reason, never credentials or raw responses.
+
+User Hub discovery remains necessary because some active recurring meetings do
+not appear reliably through `webex_list_meetings` alone.
 
 When an occurrence has no public meeting instance ID, Tome sends its series
 title, start time, and Webex site to `webex_list_transcripts`. The MCP server
@@ -335,6 +358,7 @@ already claimed by another retry.
 | `TOME_AUTO_INGEST_ENABLED` | `false` | Must be `true` to start the scheduler, including meeting-series work. |
 | `TOME_AUTO_INGEST_TICK_MS` | `60000` | Local scheduler loop interval. |
 | `TOME_WEBEX_SERIES_REFRESH_MS` | `86400000` | Owner/site calendar refresh interval; minimum five minutes. |
+| `TOME_WEBEX_SERIES_DISCOVERY_TIMEOUT_MS` | `45000` | Total discovery sweep budget in milliseconds, bounded to 1–120 seconds. Expired/failed windows produce incomplete-result warnings in the picker. |
 | `TOME_WEBEX_RETRO_SYNC_LOOKBACK_DAYS` | `30` | Historical window used by **Sync now**; bounded to 1–365 days. |
 | `TOME_WEBEX_ALLOW_NON_HOST_SERIES` | `true` | Allow users to add meeting series hosted by someone else after the recording-access warning. Set `false` to disable this in both onboarding and project settings; write APIs enforce the same policy. Existing subscriptions are not removed. |
 | `TOME_WEBEX_TRANSCRIPT_SETTLE_MS` | `900000` | Required unchanged time before all transcript segments are merged and queued. Set `0` to disable settling. |

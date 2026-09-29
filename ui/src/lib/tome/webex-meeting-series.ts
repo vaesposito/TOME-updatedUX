@@ -26,6 +26,8 @@ import {
   compatibleSeriesMetadata,
   normalizedSeriesWebLink,
 } from "./webex-meeting-series-identity";
+import { queryWebexMeetingSeries, webexSeriesDiscoveryTimeoutMs, type SeriesDiscoveryInput } from "./webex-series-discovery";
+import { WEBEX_SERIES_LOOKAHEAD_DAYS } from "./webex-series-discovery-options";
 
 export { findMatchingMeetingSeries, meetingSeriesMatches } from "./webex-meeting-series-identity";
 
@@ -97,14 +99,22 @@ export interface WebexMeetingSeriesHostEligibility {
   unavailableReason?: string;
 }
 
-export function webexMeetingSeriesDiscoveryWindow(now = new Date()): {
+export function webexMeetingSeriesLookaheadDays(value: unknown): number {
+  const days = value === undefined || value === null ? 7 : Number(value);
+  if (!WEBEX_SERIES_LOOKAHEAD_DAYS.some((allowed) => allowed === days)) {
+    throw new ApiError("Choose a 7, 14, or 30 day discovery window.", 400, "INVALID_DISCOVERY_WINDOW");
+  }
+  return days;
+}
+
+export function webexMeetingSeriesDiscoveryWindow(now = new Date(), lookaheadDays = 7): {
   from: Date;
   to: Date;
   now: Date;
 } {
   return {
     from: new Date(now.getTime() - 48 * 60 * 60 * 1000),
-    to: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000),
+    to: new Date(now.getTime() + webexMeetingSeriesLookaheadDays(lookaheadDays) * 24 * 60 * 60 * 1000),
     now,
   };
 }
@@ -168,7 +178,7 @@ export function meetingSeriesHostEligibility(
   return { canAutoIngest: false, unavailableReason: HOST_REQUIRED_REASON };
 }
 
-export type Invoke = (toolName: string, params: Record<string, unknown>) => Promise<unknown>;
+export type Invoke = (toolName: string, params: Record<string, unknown>, options?: { timeoutMs?: number }) => Promise<unknown>;
 
 export interface ManualWebexMeetingSelection
   extends Omit<WebexMeetingIngestItem, "transcript"> {
@@ -312,7 +322,7 @@ export async function interactiveWebexMeetingInvoker(
       "WEBEX_MEETINGS_CONNECTION_REQUIRED",
     );
   }
-  return async (toolName, params) => {
+  return async (toolName, params, options) => {
     const response = await invokeHttpMcpTool({
       request,
       session,
@@ -321,6 +331,7 @@ export async function interactiveWebexMeetingInvoker(
       toolName,
       params: webexMcpToolArguments(params),
       credentialResolution,
+      timeoutMs: options?.timeoutMs ?? webexSeriesDiscoveryTimeoutMs(),
     });
     if (!response.ok) {
       throw new ApiError(
@@ -344,13 +355,13 @@ export async function backgroundWebexMeetingInvoker(ownerSubject: string): Promi
       "WEBEX_MEETINGS_CONNECTION_REQUIRED",
     );
   }
-  return async (toolName, params) => {
+  return async (toolName, params, options) => {
     const response = await invokeDirectHttpMcpTool({
       endpoint: server.endpoint,
       toolName,
       params: webexMcpToolArguments(params),
       headers: { "X-CAIPE-Provider-Token": token },
-      timeoutMs: toolName === "webex_list_transcripts" ? 75_000 : 30_000,
+      timeoutMs: options?.timeoutMs ?? (toolName === "webex_list_transcripts" ? 75_000 : webexSeriesDiscoveryTimeoutMs()),
     });
     if (!response.ok) {
       throw new ApiError(
@@ -692,38 +703,18 @@ export function normalizeMeetingSeries(input: {
 
 export async function discoverMeetingSeries(
   invoke: Invoke,
-  input: { from: Date; to: Date; siteUrl?: string; now?: Date },
+  input: SeriesDiscoveryInput,
 ): Promise<WebexMeetingSeriesCandidate[]> {
-  const common = {
-    from_iso: input.from.toISOString(),
-    to_iso: input.to.toISOString(),
-    max_results: 100,
+  return (await discoverMeetingSeriesWithDiagnostics(invoke, input)).candidates;
+}
+
+export async function discoverMeetingSeriesWithDiagnostics(invoke: Invoke, input: SeriesDiscoveryInput) {
+  const result = await queryWebexMeetingSeries(invoke, input);
+  return {
+    candidates: normalizeMeetingSeries({ ...result, now: input.now }),
+    complete: result.complete,
+    warnings: result.warnings,
   };
-  const results = await Promise.allSettled([
-    invoke("webex_list_meetings", { meeting_type: "meetingSeries", max_results: 100 }),
-    invoke("webex_list_meetings", { ...common, meeting_type: "scheduledMeeting" }),
-    invoke("webex_list_meetings", { ...common, meeting_type: "meeting" }),
-    invoke("webex_userhub_calendar", {
-      ...common,
-      ...(input.siteUrl ? { site_url: input.siteUrl } : {}),
-      meeting_list_type: "All",
-      max_results: 500,
-    }),
-  ]);
-  if (results.every((result) => result.status === "rejected")) {
-    throw results[0].status === "rejected" ? results[0].reason : new Error("Webex discovery failed");
-  }
-  const value = (index: number): unknown => {
-    const result = results[index];
-    return result?.status === "fulfilled" ? result.value : { items: [] };
-  };
-  return normalizeMeetingSeries({
-    meetingSeries: value(0),
-    scheduledMeetings: value(1),
-    meetingInstances: value(2),
-    userHubCalendar: value(3),
-    now: input.now,
-  });
 }
 
 export async function resolveOccurrenceMeetingId(

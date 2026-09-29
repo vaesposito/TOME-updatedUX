@@ -10,6 +10,8 @@ import {
   resolveOccurrenceMeetingId,
   resolveOccurrenceMeeting,
   webexMcpToolArguments,
+  webexMeetingSeriesDiscoveryWindow,
+  webexMeetingSeriesLookaheadDays,
 } from "../webex-meeting-series";
 
 jest.mock("@/lib/mcp-http-server-client", () => ({
@@ -26,6 +28,17 @@ jest.mock("@/lib/projects/onboarding-providers", () => ({
 
 describe("Webex recurring meeting discovery", () => {
   const now = new Date("2026-09-01T12:00:00Z");
+
+  it("validates picker horizons and always retains the 48-hour lookback", () => {
+    expect(webexMeetingSeriesDiscoveryWindow(now)).toEqual({
+      from: new Date("2026-08-30T12:00:00Z"), to: new Date("2026-09-08T12:00:00Z"), now,
+    });
+    for (const days of [7, 14, 30]) {
+      expect(webexMeetingSeriesLookaheadDays(String(days))).toBe(days);
+      expect(webexMeetingSeriesDiscoveryWindow(now, days).from).toEqual(new Date("2026-08-30T12:00:00Z"));
+    }
+    expect(() => webexMeetingSeriesLookaheadDays("90")).toThrow("Choose a 7, 14, or 30");
+  });
 
   it("defaults and configures the one-off manual Webex provider", () => {
     const previous = process.env.TOME_MANUAL_WEBEX_PROVIDER;

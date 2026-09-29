@@ -62,7 +62,11 @@ jest.mock("@/lib/tome/webex-meeting-series", () => ({
       lastStatus: "pending",
     }),
   ),
-  discoverMeetingSeries: (...args: unknown[]) => mockDiscoverMeetingSeries(...args),
+  discoverMeetingSeriesWithDiagnostics: async (...args: unknown[]) => {
+    const result = await mockDiscoverMeetingSeries(...args);
+    return Array.isArray(result) ? { candidates: result, complete: true, warnings: [] } : result;
+  },
+  webexMeetingSeriesLookaheadDays: (value: unknown) => value == null ? 7 : Number(value),
   interactiveWebexMeetingInvoker: (...args: unknown[]) =>
     mockInteractiveWebexMeetingInvoker(...args),
   meetingSeriesHostEligibility: (...args: unknown[]) =>
@@ -77,6 +81,7 @@ jest.mock("@/lib/tome/webex-meeting-series", () => ({
 }));
 
 import { GET, POST } from "../route";
+import { webexMeetingSeriesDiscoveryWindow } from "@/lib/tome/webex-meeting-series";
 
 const context = { params: Promise.resolve({ slug: "example-project" }) };
 const updateOne = jest.fn();
@@ -126,13 +131,14 @@ describe("/api/tome/projects/[slug]/webex-meeting-series", () => {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ seriesKey: "example-series" }),
+          body: JSON.stringify({ seriesKey: "example-series", lookaheadDays: 30 }),
         },
       ),
       context,
     );
 
     expect(response.status).toBe(201);
+    expect(webexMeetingSeriesDiscoveryWindow).toHaveBeenCalledWith(expect.any(Date), 30);
     expect(updateOne).toHaveBeenCalledTimes(1);
     expect(mockRequestWebexMeetingOwnerCheck).toHaveBeenCalledWith(
       "owner-subject",
@@ -142,6 +148,44 @@ describe("/api/tome/projects/[slug]/webex-meeting-series", () => {
     expect(updateOne.mock.invocationCallOrder[0]).toBeLessThan(
       mockRequestWebexMeetingOwnerCheck.mock.invocationCallOrder[0],
     );
+  });
+
+  it("preserves saved schedule information when discovery is incomplete", async () => {
+    const tctx = await mockLoadTomeProject();
+    const saved = {
+      id: "saved-series", seriesKey: "webex:original", title: "Original title",
+      credentialOwner: { subject: "owner-subject" },
+      sourceRefs: { meetingSeriesId: "original" },
+      nextOccurrenceStartAt: "2026-10-06T10:00:00Z",
+    };
+    tctx.project.autoIngest.webexMeetingSeries = [saved];
+    mockDiscoverMeetingSeries.mockResolvedValueOnce({
+      candidates: [{ ...saved, title: "Partial result" }],
+      complete: false, warnings: ["UserHub calendar lookup timed out."],
+    });
+    const response = await GET(new NextRequest(
+      "http://example.test/api/tome/projects/example-project/webex-meeting-series?discover=1&lookaheadDays=14",
+    ), context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.subscriptions).toEqual([saved]);
+    expect(body.data).toMatchObject({ lookaheadDays: 14, complete: false, warnings: ["UserHub calendar lookup timed out."] });
+    expect(webexMeetingSeriesDiscoveryWindow).toHaveBeenCalledWith(expect.any(Date), 14);
+    expect(updateOne).not.toHaveBeenCalled();
+  });
+
+  it("reports incomplete discovery instead of claiming a selected series no longer exists", async () => {
+    mockDiscoverMeetingSeries.mockResolvedValueOnce({ candidates: [], complete: false, warnings: ["Calendar timeout"] });
+    const response = await POST(new NextRequest(
+      "http://example.test/api/tome/projects/example-project/webex-meeting-series", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seriesKey: "example-series", lookaheadDays: 30 }),
+      },
+    ), context);
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe("WEBEX_DISCOVERY_INCOMPLETE");
+    expect(updateOne).not.toHaveBeenCalled();
+    expect(mockRequestWebexMeetingOwnerCheck).not.toHaveBeenCalled();
   });
 
   it("allows an Area to subscribe to a recurring meeting", async () => {

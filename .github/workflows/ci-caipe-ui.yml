@@ -558,7 +558,7 @@ jobs:
       contents: read
       packages: read
       id-token: write
-    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@main
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@d262b86f89f00ffc0c03814d8a971757d9c52f46
     with:
       image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-changes.outputs.image_prefix }}caipe-ui
       image-tag: ${{ needs.determine-changes.outputs.tag_version }}

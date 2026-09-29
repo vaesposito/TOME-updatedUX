@@ -50,6 +50,11 @@ export function githubGraphqlUrl(): string {
 
 function repositoryPath(value: string): string {
   const trimmed = value.trim();
+  // Preserve the legacy shorthand accepted by Tome preflight before this
+  // parser was shared: `github.com/owner/repo` without a URL scheme.
+  const githubHostShorthand = trimmed.match(/^(?:www\.)?github\.com\/(.+)$/i);
+  if (githubHostShorthand) return githubHostShorthand[1];
+
   try {
     const url = new URL(trimmed);
     return url.pathname;

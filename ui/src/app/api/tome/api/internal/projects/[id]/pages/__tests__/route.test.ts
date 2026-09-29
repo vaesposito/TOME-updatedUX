@@ -984,6 +984,24 @@ describe("internal pages POST — run lookup is project-scoped", () => {
     expect(findOne).toHaveBeenCalledWith({ report_id: REPORT, project_id: "proj-1" });
   });
 
+  it("rejects a late agent write after the run enters draft review", async () => {
+    const writePage = jest.fn();
+    mockGetPageStore.mockResolvedValue({ writePage, readPage: mockReadPage });
+    mockGetTomeIngestRunsCollection.mockResolvedValue({
+      findOne: jest.fn().mockResolvedValue({ status: "awaiting_review" }),
+    });
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      postRequest({ path: "activity.md", body: "# Late write", report_id: REPORT }),
+      ctx(),
+    );
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({ code: "INGEST_RUN_NOT_RUNNING" });
+    expect(writePage).not.toHaveBeenCalled();
+  });
+
   it("treats a run from another project as absent, not as authorization", async () => {
     // A scoped miss returns null, and `wasAskedFor(null)` is false — so the
     // stable-page guard stays on rather than being waved through.

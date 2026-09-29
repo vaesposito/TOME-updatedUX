@@ -156,6 +156,24 @@ describe("DraftReviewView", () => {
     expect(screen.getByText("Promotion is blocked by the enforced quality policy.")).toBeInTheDocument();
   });
 
+  it("requires file decisions before accepting an interrupted draft", async () => {
+    const original = global.fetch;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/run-example") && !init?.method) {
+        return response({ data: { status: "awaiting_review", interrupted: true } });
+      }
+      return original(input, init);
+    });
+
+    render(<DraftReviewView slug="example-project" runId="run-example" canEdit />);
+
+    expect(await screen.findByText(/This run stopped before completion/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accept all" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject all" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Accept file" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Finish review" })).toBeEnabled());
+  });
+
   it("permits entering a quality override before choosing individual files", async () => {
     mockEnforcedPolicy(true);
     render(<DraftReviewView slug="example-project" runId="run-example" canEdit />);

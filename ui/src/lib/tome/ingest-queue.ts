@@ -12,7 +12,7 @@ import { dispatchQueuedRun, reapStaleRuns, promoteOverdueRuns } from "./ingest-r
 const CONCURRENCY = Math.max(1, Number(process.env.TOME_INGEST_CONCURRENCY) || 3);
 // How often the worker looks for startable runs.
 const TICK_MS = Math.max(1000, Number(process.env.TOME_INGEST_QUEUE_TICK_MS) || 5000);
-// A "running" run older than this is treated as orphaned (worker restart) and failed.
+// A running run with no agent activity for this long is treated as orphaned.
 const STALE_MS = Math.max(60_000, Number(process.env.TOME_INGEST_STALE_MS) || 30 * 60 * 1000);
 
 /**
@@ -69,9 +69,10 @@ export async function tickIngestQueue(): Promise<void> {
     }
 
     // Atomic claim: only the writer that flips queued -> running proceeds.
+    const claimedAt = new Date();
     const claim = await runs.updateOne(
       { _id: run._id, status: "queued" },
-      { $set: { status: "running", started_at: new Date() } },
+      { $set: { status: "running", started_at: claimedAt, last_activity_at: claimedAt } },
     );
     if (claim.modifiedCount !== 1) continue;
 

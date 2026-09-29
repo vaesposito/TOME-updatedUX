@@ -14,7 +14,7 @@
 
 import { randomUUID } from "crypto";
 
-import { ObjectId } from "mongodb";
+import { ObjectId, type Filter } from "mongodb";
 
 import { getCollection } from "@/lib/mongodb";
 import { AGENT_IDENTITIES } from "./agent-identities";
@@ -87,6 +87,7 @@ import { resolveBhagChildren, resolveAreaChildren } from "./bhag";
 export { resolveBhagChildren, resolveAreaChildren };
 
 const inflight = new Set<Promise<void>>();
+const STALE_RUN_ERROR = "stale (worker restart or timeout)";
 
 // One AbortController per in-flight run, keyed by runId — lets `cancelRun`
 // actually tear down the agent's SSE stream instead of just flipping the DB
@@ -208,6 +209,7 @@ async function createRunRecord(
     greenfield: isGreenfield,
     log: [],
     started_at: now,
+    last_activity_at: opts.status === "running" ? now : undefined,
     triggered_by_sub: opts.sub || undefined,
     triggered_by_email: opts.email || undefined,
     triggered_by: opts.triggeredBy ?? "manual",
@@ -682,24 +684,69 @@ export function dispatchQueuedRun(runId: string): void {
   inflight.add(task);
 }
 
-/**
- * Fail runs stuck in "running" past `maxAgeMs` (a worker restart orphaned the
- * in-process stream). Clears each project's lock so the wiki isn't left
- * read-only. Returns the number reaped.
- */
+/** Preserve an interrupted run's drafts for explicit review, without a deadline. */
+async function markInterruptedRun(
+  runId: string,
+  projectId: string,
+  reportId: string | undefined,
+  reason: string,
+  phase: "stream" | "reap",
+  guard: Filter<IngestRun> = {},
+): Promise<"draft" | "failed" | null> {
+  const runs = await getTomeIngestRunsCollection();
+  const draftPaths = reportId
+    ? await (await getPageStore()).listDraftPaths(projectId, reportId)
+    : [];
+  const hasDrafts = draftPaths.length > 0;
+  const result = await runs.updateOne(
+    { ...guard, _id: runId, status: "running" },
+    hasDrafts
+      ? {
+          $set: { status: "awaiting_review", interrupted: true, error: reason },
+          $unset: { review_deadline: "" },
+        }
+      : { $set: { status: "failed", error: reason, finished_at: new Date() } },
+  );
+  if (result.modifiedCount !== 1) return null;
+  await auditRunLifecycle(
+    runId,
+    hasDrafts ? "tome.ingest.awaiting_review" : "tome.ingest.failed",
+    { error: reason, interrupted: true, phase },
+  );
+  return hasDrafts ? "draft" : "failed";
+}
+
+/** Reap runs with no agent activity past `maxAgeMs`, retaining any draft. */
 export async function reapStaleRuns(maxAgeMs: number): Promise<number> {
   const runs = await getTomeIngestRunsCollection();
   const cutoff = new Date(Date.now() - maxAgeMs);
-  const stale = await runs.find({ status: "running", started_at: { $lt: cutoff } }).toArray();
+  const staleFilter: Filter<IngestRun> = {
+    status: "running",
+    $or: [
+      { last_activity_at: { $lt: cutoff } },
+      { last_activity_at: { $exists: false }, started_at: { $lt: cutoff } },
+    ],
+  };
+  const stale = await runs.find(staleFilter).toArray();
+  let reaped = 0;
   for (const r of stale) {
-    await runs.updateOne(
-      { _id: r._id },
-      { $set: { status: "failed", error: "stale (worker restart or timeout)", finished_at: new Date() } },
+    const outcome = await markInterruptedRun(
+      r._id!, r.project_id, r.report_id, STALE_RUN_ERROR, "reap", staleFilter,
     );
-    await auditRunLifecycle(r._id, "tome.ingest.failed", { error: "stale", phase: "reap" });
-    await setProjectLocked(r.project_id, false);
+    if (outcome === "failed") await setProjectLocked(r.project_id, false);
+    if (outcome) reaped += 1;
   }
-  return stale.length;
+  return reaped;
+}
+
+/** A recent agent event keeps a long-running ingest out of the stale reaper. */
+async function touchRunActivity(runId: string): Promise<void> {
+  const runs = await getTomeIngestRunsCollection();
+  const result = await runs.updateOne(
+    { _id: runId, status: "running" },
+    { $set: { last_activity_at: new Date() } },
+  );
+  if (result.matchedCount !== 1) throw new Error("ingest run is no longer active");
 }
 
 async function appendLog(runId: string, line: string): Promise<void> {
@@ -776,7 +823,9 @@ async function auditRunLifecycle(
         status === "running"
           ? `${label} started`
           : status === "awaiting_review"
-            ? `${label} completed — awaiting review`
+            ? run.interrupted
+              ? `${label} interrupted — partial draft awaiting manual review`
+              : `${label} completed — awaiting review`
             : status === "succeeded"
               ? reviewOutcome === "approved"
                 ? `${label} draft approved`
@@ -880,6 +929,7 @@ async function driveIngest(
   const abortController = new AbortController();
   runAbortControllers.set(runId, abortController);
   let cancelled = false;
+  let transitioned = false;
   try {
     // Lock the project for the run's duration — humans can't edit pages (409)
     // while the agent rewrites. Cleared in the finally below.
@@ -901,7 +951,10 @@ async function driveIngest(
       throw new Error(`agent /ingest failed (${res.status}): ${detail.slice(0, 300)}`);
     }
 
+    let sawSuccessfulDone = false;
+    let terminalError: string | null = null;
     for await (const ev of parseSse(res.body)) {
+      await touchRunActivity(runId);
       // Usage snapshots update the run header in place (see IngestRunView),
       // not the log — a per-turn token line floods the tail.
       if (ev.type === "usage") {
@@ -911,10 +964,19 @@ async function driveIngest(
       } else if (ev.type === "done") {
         await setRunCompletionAccounting(runId, ev.data);
         await appendLog(runId, formatIngestEvent(ev));
+        sawSuccessfulDone = ev.data.subtype === "success";
+        if (!sawSuccessfulDone) {
+          terminalError = `agent finished with ${String(ev.data.subtype ?? "unknown status")}`;
+        }
       } else {
         await appendLog(runId, formatIngestEvent(ev));
+        if (ev.type === "error") terminalError = String(ev.data.message ?? "agent stream failed");
       }
     }
+    if (terminalError || !sawSuccessfulDone) {
+      throw new Error(terminalError ?? "agent stream ended without a successful completion event");
+    }
+    await touchRunActivity(runId);
 
     // Finalize: summary from overview.md's first content line. Read with
     // includeDrafts so a draft-review run's own overview.md still produces a
@@ -950,11 +1012,14 @@ async function driveIngest(
     });
 
     if (!awaitReview) {
-      await runs.updateOne(
-        { _id: runId },
+      const result = await runs.updateOne(
+        { _id: runId, status: "running" },
         { $set: { status: "succeeded", finished_at: new Date() } },
       );
-      await auditRunLifecycle(runId, "tome.ingest.finished");
+      if (result.modifiedCount === 1) {
+        transitioned = true;
+        await auditRunLifecycle(runId, "tome.ingest.finished");
+      }
     } else {
       // A delegated MyAgent reply remains untrusted until a human explicitly
       // approves its draft. Do not assign a deadline that could imply (or
@@ -962,8 +1027,8 @@ async function driveIngest(
       const reviewDeadline = requiresExplicitMyAgentReview
         ? undefined
         : new Date(Date.now() + reviewTimeoutMs());
-      await runs.updateOne(
-        { _id: runId },
+      const result = await runs.updateOne(
+        { _id: runId, status: "running" },
         {
           $set: {
             status: "awaiting_review",
@@ -971,7 +1036,10 @@ async function driveIngest(
           },
         },
       );
-      await auditRunLifecycle(runId, "tome.ingest.awaiting_review");
+      if (result.modifiedCount === 1) {
+        transitioned = true;
+        await auditRunLifecycle(runId, "tome.ingest.awaiting_review");
+      }
     }
   } catch (e) {
     cancelled = abortController.signal.aborted;
@@ -979,20 +1047,14 @@ async function driveIngest(
     // user" in the DELETE route — don't clobber that with the generic
     // AbortError message this fetch throws once the signal fires.
     if (!cancelled) {
-      await appendLog(runId, `[--:--:--] ✗ ${String((e as Error)?.message ?? e)}`);
-      await runs.updateOne(
-        { _id: runId },
-        {
-          $set: {
-            status: "failed",
-            error: String((e as Error)?.message ?? e),
-            finished_at: new Date(),
-          },
-        },
-      );
-      await auditRunLifecycle(runId, "tome.ingest.failed", {
-        error: String((e as Error)?.message ?? e),
-      });
+      const current = await runs.findOne({ _id: runId });
+      if (current?.status === "running") {
+        const reason = String((e as Error)?.message ?? e);
+        await appendLog(runId, `[--:--:--] ✗ ${reason}`);
+        transitioned = (await markInterruptedRun(
+          runId, projectId, reportId, reason, "stream",
+        )) !== null;
+      }
     } else {
       await appendLog(runId, "[--:--:--] ✗ Stopped by user");
     }
@@ -1001,7 +1063,7 @@ async function driveIngest(
     // Unlock on success/failure/crash — but keep the wiki read-only while a
     // draft run awaits review; approve/reject/auto-promote clears it.
     const finalRun = await runs.findOne({ _id: runId });
-    if (finalRun?.status !== "awaiting_review") {
+    if ((transitioned || cancelled) && finalRun?.status !== "awaiting_review") {
       await setProjectLocked(projectId, false);
     }
   }
@@ -1025,6 +1087,9 @@ export async function approveDraftRun(runId: string, reviewedBy: string): Promis
   if (!run) throw new Error(`run ${runId} not found`);
   if (run.status !== "awaiting_review") {
     throw new Error(`run ${runId} is not awaiting review (status: ${run.status})`);
+  }
+  if (run.interrupted === true) {
+    throw new Error(`run ${runId} was interrupted; review each draft file before accepting it`);
   }
   if ((run.file_reviews?.length ?? 0) > 0) {
     throw new Error(`run ${runId} has a file-level review in progress; finalize that review instead`);
@@ -1157,6 +1222,9 @@ export async function finalizeDraftFileReview(
     throw new Error(`run ${runId} is not awaiting review (status: ${run.status})`);
   }
   if (!run.report_id) throw new Error(`run ${runId} has no draft report`);
+  if (run.interrupted === true && bulkDecision === "accept") {
+    throw new Error(`run ${runId} was interrupted; review each draft file before accepting it`);
+  }
 
   const store = await getPageStore();
   const summary = summarizeDraftFileReviews(
@@ -1238,7 +1306,7 @@ export async function promoteOverdueRuns(): Promise<number> {
       // Once a human starts making file decisions, only their explicit Done
       // action may resolve the review. MyAgent evidence is also a hard human
       // trust boundary and must never be published by the overdue reaper.
-      if ((run.file_reviews?.length ?? 0) > 0 || run.myagent_evidence_received === true) continue;
+      if ((run.file_reviews?.length ?? 0) > 0 || run.myagent_evidence_received === true || run.interrupted === true) continue;
       if (run.quality_policy_mode && run.quality_policy_mode !== "off") {
         const evaluation = run.quality_evaluation_id
           ? await getArtifactEvaluation(run.quality_evaluation_id)

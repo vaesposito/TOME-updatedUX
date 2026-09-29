@@ -49,6 +49,7 @@ export function DraftReviewView({
   // fetched here so callers can just point this at any run id (a pending
   // draft or one long since terminal) without knowing its status upfront.
   const [reviewable, setReviewable] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
   const [qualityEvaluation, setQualityEvaluation] = useState<ArtifactEvaluation | null>(null);
   const [qualityPolicy, setQualityPolicy] = useState<{
     mode: "off" | "observe" | "enforce";
@@ -69,6 +70,7 @@ export function DraftReviewView({
       .then((j) => {
         if (!cancelled) {
           setReviewable(j?.data?.status === "awaiting_review");
+          setInterrupted(Boolean(j?.data?.interrupted));
           setQualityEvaluation(j?.data?.quality_evaluation ?? null);
           setQualityEvaluationRestricted(Boolean(j?.data?.quality_evaluation_restricted));
           setQualityPolicy(j?.data?.quality_policy ?? null);
@@ -201,6 +203,11 @@ export function DraftReviewView({
   return (
     <div className="flex h-full flex-col">
       <div className="border-b bg-background px-5 py-4">
+        {reviewable && interrupted && (
+          <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+            This run stopped before completion. Check each changed file before accepting; the partial draft will not auto-promote.
+          </p>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-base font-semibold">
@@ -219,9 +226,11 @@ export function DraftReviewView({
               <button
                 type="button"
                 onClick={() => void finalize("accept")}
-                disabled={bulkDisabled || qualityBlocksAccept}
+                disabled={bulkDisabled || qualityBlocksAccept || interrupted}
                 className="flex min-h-10 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                title={qualityBlocksAccept
+                title={interrupted
+                  ? "Review each changed file before accepting an interrupted draft."
+                  : qualityBlocksAccept
                   ? "Resolve the quality gate below before accepting all files."
                   : "Accept every draft file and finish this ingest review immediately, replacing individual choices."}
               >

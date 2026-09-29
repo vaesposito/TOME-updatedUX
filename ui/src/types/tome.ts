@@ -407,6 +407,8 @@ export interface IngestRun {
   log: string[];
   error?: string;
   started_at: Date;
+  /** Last agent event received while running; used to detect abandoned streams. */
+  last_activity_at?: Date;
   finished_at?: Date;
   /** Groups the runs of one cascade level (N child re-ingests + the parent
    * synthesize at that level). A three-tier BHAG cascade nests one of these
@@ -459,6 +461,8 @@ export interface IngestRun {
    * run still awaiting review past this time.
    */
   review_deadline?: Date;
+  /** The worker stopped before a successful completion event. Drafts require manual review. */
+  interrupted?: boolean;
   /** How the run left `awaiting_review`, for the Feed/audit trail. */
   review_outcome?: "approved" | "partially_approved" | "rejected" | "auto_promoted";
   /** Latest per-file decisions. Draft revisions remain pending until the

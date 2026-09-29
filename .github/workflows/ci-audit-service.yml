@@ -398,8 +398,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [determine-changes, build-and-push, merge-manifests, retag-unchanged]
+    needs: [determine-changes, build-and-push, merge-manifests, retag-unchanged, mirror-to-ecr]
     if: |
+      needs.mirror-to-ecr.result == 'success' &&
       always() &&
       needs.determine-changes.outputs.tag_version != '' &&
       !contains(needs.determine-changes.outputs.tag_version, '-')
@@ -432,3 +433,24 @@ jobs:
             }
           }
           EOF
+
+  mirror-to-ecr:
+    name: Mirror caipe-audit-service to ECR
+    needs: [determine-changes, merge-manifests, retag-unchanged]
+    if: >-
+      always() &&
+      needs.determine-changes.result == 'success' &&
+      needs.determine-changes.outputs.tag_version != '' &&
+      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) &&
+      (needs.merge-manifests.result == 'success' || needs.retag-unchanged.result == 'success')
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@main
+    with:
+      image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-changes.outputs.image_prefix }}caipe-audit-service
+      image-tag: ${{ needs.determine-changes.outputs.tag_version }}
+    secrets:
+      vault-approle-role-id: ${{ secrets.VAULT_APPROLE_ROLE_ID }}
+      vault-approle-secret-id: ${{ secrets.VAULT_APPROLE_SECRET_ID }}

@@ -1,5 +1,5 @@
 name: "[CI] Keycloak Init Build and Push"
-description: "Build and push Keycloak init helper Docker image"
+# description: "Build and push Keycloak init helper Docker image"
 
 on:
   push:
@@ -432,8 +432,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [determine-changes, build-and-push, merge-manifests, reconcile-test, strict-secrets-test, idp-hint-test]
+    needs: [determine-changes, build-and-push, merge-manifests, reconcile-test, strict-secrets-test, idp-hint-test, mirror-to-ecr]
     if: |
+      needs.mirror-to-ecr.result == 'success' &&
       always() &&
       needs.determine-changes.outputs.tag_version != '' &&
       !contains(needs.determine-changes.outputs.tag_version, '-') &&
@@ -463,3 +464,24 @@ jobs:
             }
           }
           EOF
+
+  mirror-to-ecr:
+    name: Mirror keycloak-init to ECR
+    needs: [determine-changes, merge-manifests]
+    if: >-
+      always() &&
+      needs.determine-changes.result == 'success' &&
+      needs.determine-changes.outputs.tag_version != '' &&
+      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) &&
+      (needs.merge-manifests.result == 'success')
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@main
+    with:
+      image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-changes.outputs.image_prefix }}keycloak-init
+      image-tag: ${{ needs.determine-changes.outputs.tag_version }}
+    secrets:
+      vault-approle-role-id: ${{ secrets.VAULT_APPROLE_ROLE_ID }}
+      vault-approle-secret-id: ${{ secrets.VAULT_APPROLE_SECRET_ID }}

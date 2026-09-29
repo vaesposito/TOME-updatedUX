@@ -1,6 +1,6 @@
 # assisted-by claude code claude-sonnet-4-6
 name: "[CI] CAIPE RAG Build and Push"
-description: "Build and push CAIPE RAG Docker image"
+# description: "Build and push CAIPE RAG Docker image"
 
 on:
   push:
@@ -620,8 +620,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Required for repository_dispatch via gh api
-    needs: [determine-changes, build-and-push, merge-manifests, retag-unchanged]
+    needs: [determine-changes, build-and-push, merge-manifests, retag-unchanged, mirror-to-ecr]
     if: |
+      needs.mirror-to-ecr.result == 'success' &&
       always() &&
       needs.determine-changes.outputs.tag_version != '' &&
       !contains(needs.determine-changes.outputs.tag_version, '-')
@@ -674,3 +675,33 @@ jobs:
             }
           }
           EOF
+
+  mirror-to-ecr:
+    name: Mirror ${{ matrix.image }} to ECR
+    needs: [load-config, determine-changes, merge-manifests, retag-unchanged]
+    if: >-
+      always() &&
+      needs.determine-changes.result == 'success' &&
+      needs.determine-changes.outputs.tag_version != '' &&
+      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) &&
+      (needs.merge-manifests.result == 'success' || needs.retag-unchanged.result == 'success')
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: caipe-rag-agent-ontology, suffix: '' }
+          - { image: caipe-rag-server, suffix: '' }
+          - { image: caipe-rag-server, suffix: '-huggingface' }
+          - { image: caipe-rag-ingestors, suffix: '' }
+          - { image: caipe-rag-ingestors, suffix: '-slim' }
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@main
+    with:
+      image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-changes.outputs.image_prefix }}${{ matrix.image }}
+      image-tag: ${{ needs.determine-changes.outputs.tag_version }}${{ matrix.suffix }}
+    secrets:
+      vault-approle-role-id: ${{ secrets.VAULT_APPROLE_ROLE_ID }}
+      vault-approle-secret-id: ${{ secrets.VAULT_APPROLE_SECRET_ID }}

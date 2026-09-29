@@ -345,3 +345,21 @@ jobs:
 
       - name: Inspect image
         run: docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+  mirror-to-ecr:
+    name: Mirror caipe-agentic-app-runtime to ECR
+    needs: merge-manifests
+    if: >-
+      needs.merge-manifests.result == 'success' &&
+      (inputs.tag_version != '' || startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@main
+    with:
+      image-path: ${{ inputs.repo_org || github.repository_owner }}/caipe-agentic-app-runtime
+      image-tag: ${{ inputs.tag_version || github.ref_name }}
+    secrets:
+      vault-approle-role-id: ${{ secrets.VAULT_APPROLE_ROLE_ID }}
+      vault-approle-secret-id: ${{ secrets.VAULT_APPROLE_SECRET_ID }}

@@ -36,7 +36,38 @@ All workflows live in `.github/workflows/`. The table below is the quick referen
 | `conventional_commits.yml` | PR | Enforces Conventional Commits on PR title |
 | `check-pinned-deps.yml` | PR / push | Verifies all action dependencies are pinned to a SHA |
 | `check-proprietary-content.yml` | PR | Scans for proprietary or sensitive content |
+| `check-fork-scope.yml` | Every PR and new commit | Rejects changes outside this fork's allowed folders |
 | `coverage-comment.yml` | PR | Posts test coverage delta as a PR comment |
+
+### Fork change scope
+
+The **Fork change scope** check runs when a PR is opened, updated with new
+commits, reopened, or edited (including changing its target branch). It applies
+to all target branches, including draft PRs. Only these folders are allowed:
+
+- `ui/`
+- `ai_platform_engineering/agents/tome/`
+- `docs/`
+
+The check compares the PR head with its merge base against the target branch.
+It checks the full PR, including additions, modifications, deletions, and both
+paths of renames. Existing differences between this fork and upstream are not
+audited. Upstream sync PRs are subject to the same folder restrictions.
+
+Failures list the affected folders and files in the job log and summary:
+
+> File changes in the folders below detected. Please upstream these changes
+> first and remove them from this PR.
+
+Submit those changes to [upstream](https://github.com/caipe-io/ai-platform-engineering)
+and remove them from the fork PR. Root files and `.github/` are outside the
+allowlist, including this workflow itself. Its initial addition therefore fails
+the check and needs a maintainer to land it before enabling it as required.
+
+To block merges, make **Fork change scope** a required status check in the
+repository's branch protection or ruleset. This workflow reports failures; it
+does not configure repository rules. Like other `pull_request` workflows, it
+waits for merge conflicts to be resolved before GitHub runs it.
 
 ## Release
 

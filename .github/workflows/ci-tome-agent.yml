@@ -146,3 +146,21 @@ jobs:
           cache-to: type=gha,mode=min
           provenance: false
           sbom: false
+
+  mirror-to-ecr:
+    name: Mirror caipe-tome-agent to ECR
+    needs: publish
+    if: >-
+      needs.publish.result == 'success' &&
+      (inputs.tag_version != '' || startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@codex/publish-ghcr-images-to-ecr
+    with:
+      image-path: ${{ inputs.repo_org || github.repository_owner }}/caipe-tome-agent
+      image-tag: ${{ inputs.tag_version || github.ref_name }}
+    secrets:
+      vault-approle-role-id: ${{ secrets.VAULT_APPROLE_ROLE_ID }}
+      vault-approle-secret-id: ${{ secrets.VAULT_APPROLE_SECRET_ID }}

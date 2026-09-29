@@ -20,6 +20,21 @@ set `repo_org` to that namespace. The workflow dispatches the local `helm.yml`
 publisher with `publish_all=true` and passes the same namespace to the image
 workflows.
 
+### ECR copies of published containers
+
+Release and manually tagged container builds keep publishing to GHCR. After the
+GHCR manifest is ready, each image workflow calls the shared
+`mirror-ghcr-to-ecr.yaml` workflow in `cisco-eti/gh-reusable-workflows`. The
+copy lands in the central private ECR account and region configured in Vault,
+with the same path and tag, for example:
+
+`ghcr.io/cisco-eti/caipe-ui:1.2.3` →
+`626007623524.dkr.ecr.us-east-2.amazonaws.com/cisco-eti/caipe-ui:1.2.3`
+
+The copy uses the build job's `GITHUB_TOKEN` to read GHCR and AWS OIDC to write
+ECR. Stable release notification waits for the ECR copy to succeed. PR builds
+and temporary prebuild tags remain GHCR only.
+
 ## General Information
 
 ### Monitoring Workflows

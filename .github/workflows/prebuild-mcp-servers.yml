@@ -1,5 +1,5 @@
 name: "[Prebuild][MCP] MCP Servers Docker Build and Push"
-description: "Build and push MCP server Docker images"
+# Build and push MCP server Docker images.
 
 on:
   pull_request:
@@ -107,21 +107,21 @@ jobs:
 
       - name: Detect changed paths (MCP)
         id: filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         with:
           # Use the checked-out base/head SHAs instead of the PR API. The
           # workflow's read-only token is not authorized for listFiles on all
           # pull-request contexts.
           token: ''
-          base: ${{ inputs.base_sha || github.event.pull_request.base.sha }}
-          ref: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
-          filters: ${{ steps.generate-filters.outputs.filters }}
+          base_sha: ${{ inputs.base_sha || github.event.pull_request.base.sha }}
+          sha: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
+          files_yaml: ${{ steps.generate-filters.outputs.filters }}
 
       - name: Set matrix based on changes (MCP)
         id: set-matrix
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          BUILD_ALL: ${{ steps.filter.outputs.shared_inputs == 'true' }}
+          BUILD_ALL: ${{ steps.filter.outputs.shared_inputs_any_modified == 'true' }}
           FILTER_OUTPUTS: ${{ toJson(steps.filter.outputs) }}
         with:
           script: |
@@ -132,7 +132,7 @@ jobs:
             if (buildAll) {
               selected = allAgents;
             } else {
-              selected = allAgents.filter(a => filterOutputs[a] === 'true');
+              selected = allAgents.filter(a => filterOutputs[`${a}_any_modified`] === 'true');
             }
             core.setOutput('agents', JSON.stringify(selected));
             core.setOutput('should_build', String(selected.length > 0));

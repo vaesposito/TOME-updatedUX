@@ -1,5 +1,5 @@
 name: "[Prebuild] CAIPE RAG Build and Push"
-description: "Build and push CAIPE RAG Docker image"
+# Build and push CAIPE RAG Docker image.
 
 on:
   pull_request:
@@ -62,11 +62,11 @@ jobs:
 
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         with:
-          base: ${{ inputs.base_sha || github.event.pull_request.base.sha }}
-          ref: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
-          filters: |
+          base_sha: ${{ inputs.base_sha || github.event.pull_request.base.sha }}
+          sha: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
+          files_yaml: |
             shared:
               - 'ai_platform_engineering/knowledge_bases/rag/common/**'
               - 'ai_platform_engineering/knowledge_bases/rag/requirements.txt'
@@ -85,10 +85,10 @@ jobs:
         id: set-matrix
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          BUILD_ALL: ${{ steps.filter.outputs.shared == 'true' }}
-          CHANGED_AGENT_ONTOLOGY: ${{ steps.filter.outputs.agent-ontology }}
-          CHANGED_SERVER: ${{ steps.filter.outputs.server }}
-          CHANGED_INGESTORS: ${{ steps.filter.outputs.ingestors }}
+          BUILD_ALL: ${{ steps.filter.outputs.shared_any_modified == 'true' }}
+          CHANGED_AGENT_ONTOLOGY: ${{ steps.filter.outputs.agent-ontology_any_modified }}
+          CHANGED_SERVER: ${{ steps.filter.outputs.server_any_modified }}
+          CHANGED_INGESTORS: ${{ steps.filter.outputs.ingestors_any_modified }}
         with:
           script: |
             const allComponents = ['agent-ontology', 'server', 'ingestors'];

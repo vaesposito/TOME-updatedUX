@@ -62,9 +62,9 @@ jobs:
 
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         with:
-          filters: |
+          files_yaml: |
             webex_bot:
               - '.github/workflows/ci-webex-bot.yml'
               - 'ai_platform_engineering/integrations/webex_bot/**'
@@ -75,7 +75,7 @@ jobs:
       - name: Set Outputs
         id: set-outputs
         env:
-          WEBEX_BOT_CHANGED: ${{ steps.filter.outputs.webex_bot }}
+          WEBEX_BOT_CHANGED: ${{ steps.filter.outputs.webex_bot_any_modified }}
           TAG_VERSION: ${{ steps.version.outputs.tag_version }}
           FORCE_BUILD: ${{ inputs.force_build }}
         run: |

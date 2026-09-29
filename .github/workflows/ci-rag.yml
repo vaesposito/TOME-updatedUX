@@ -95,9 +95,9 @@ jobs:
 
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         with:
-          filters: |
+          files_yaml: |
             shared:
               - 'ai_platform_engineering/knowledge_bases/rag/common/**'
             agent-ontology:
@@ -123,10 +123,10 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           FORCE_BUILD: ${{ inputs.force_build }}
           ALL_COMPONENTS: ${{ needs.load-config.outputs.rag_components }}
-          SHARED_CHANGED: ${{ steps.filter.outputs.shared }}
-          CHANGED_AGENT_ONTOLOGY: ${{ steps.filter.outputs.agent-ontology }}
-          CHANGED_SERVER: ${{ steps.filter.outputs.server }}
-          CHANGED_INGESTORS: ${{ steps.filter.outputs.ingestors }}
+          SHARED_CHANGED: ${{ steps.filter.outputs.shared_any_modified }}
+          CHANGED_AGENT_ONTOLOGY: ${{ steps.filter.outputs.agent-ontology_any_modified }}
+          CHANGED_SERVER: ${{ steps.filter.outputs.server_any_modified }}
+          CHANGED_INGESTORS: ${{ steps.filter.outputs.ingestors_any_modified }}
         with:
           script: |
             const allComponents = JSON.parse(process.env.ALL_COMPONENTS);

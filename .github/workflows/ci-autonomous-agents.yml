@@ -51,9 +51,9 @@ jobs:
 
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         with:
-          filters: |
+          files_yaml: |
             autonomous_agents:
               - 'ai_platform_engineering/autonomous_agents/**'
               - 'build/Dockerfile.autonomous-agents'
@@ -61,7 +61,7 @@ jobs:
       - name: Set Outputs
         id: set-outputs
         env:
-          AUTONOMOUS_AGENTS_CHANGED: ${{ steps.filter.outputs.autonomous_agents }}
+          AUTONOMOUS_AGENTS_CHANGED: ${{ steps.filter.outputs.autonomous_agents_any_modified }}
           TAG_VERSION: ${{ steps.version.outputs.tag_version }}
           FORCE_BUILD: ${{ inputs.force_build }}
         run: |

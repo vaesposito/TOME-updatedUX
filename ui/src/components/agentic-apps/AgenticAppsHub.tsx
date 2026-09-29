@@ -106,17 +106,17 @@ export function AgenticAppsHub(): React.ReactElement {
   }
 
   return (
-    <main className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_34rem),radial-gradient(circle_at_80%_20%,rgba(168,85,247,0.12),transparent_28rem),#020617] px-5 py-5 text-slate-100">
+    <main className="flex-1 overflow-y-auto bg-background px-5 py-5 text-foreground">
       <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <header className="relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.045] px-5 py-4 shadow-2xl shadow-cyan-950/30 backdrop-blur">
-          <div className="absolute -right-20 -top-28 h-52 w-52 rounded-full bg-cyan-300/20 blur-3xl" />
+        <header className="relative overflow-hidden rounded-[1.25rem] border border-border bg-card/60 px-5 py-4 shadow-lg backdrop-blur">
+          <div className="absolute -right-20 -top-28 h-52 w-52 rounded-full bg-primary/15 blur-3xl" />
           <div className="relative flex items-center gap-3">
-            <span className="rounded-xl bg-cyan-300/10 p-2 text-cyan-200">
+            <span className="rounded-xl bg-primary/10 p-2 text-primary">
               <LayoutGrid className="h-6 w-6" aria-hidden />
             </span>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Apps</h1>
-              <p className="mt-1 max-w-4xl text-sm leading-5 text-slate-300">
+              <p className="mt-1 max-w-4xl text-sm leading-5 text-muted-foreground">
                 Discover trusted apps with platform-managed sign-in, navigation,
                 authorization, credentials, and policy.
               </p>
@@ -125,26 +125,26 @@ export function AgenticAppsHub(): React.ReactElement {
         </header>
 
         {state.status === "loading" ? (
-          <div className="flex min-h-64 items-center justify-center rounded-xl border border-white/10 bg-slate-900/70">
+          <div className="flex min-h-64 items-center justify-center rounded-xl border border-border bg-card">
             <LoaderCircle
-              className="h-6 w-6 animate-spin text-slate-400"
+              className="h-6 w-6 animate-spin text-muted-foreground"
               aria-label="Loading Apps"
             />
           </div>
         ) : null}
 
         {state.status === "error" ? (
-          <div className="rounded-xl border border-red-300/30 bg-red-400/10 p-6">
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6">
             <h2 className="font-semibold">Could not load Apps</h2>
-            <p className="mt-2 text-sm text-slate-300">{state.message}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{state.message}</p>
           </div>
         ) : null}
 
         {state.status === "ready" ? (
           state.apps.length === 0 ? (
-            <section className="rounded-xl border border-dashed border-slate-700 bg-slate-900/70 p-10 text-center">
+            <section className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
               <h2 className="text-lg font-semibold">No Apps are configured</h2>
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="mt-2 text-sm text-muted-foreground">
                 An operator can add an app through the deployment-owned catalog.
               </p>
             </section>
@@ -152,15 +152,15 @@ export function AgenticAppsHub(): React.ReactElement {
             <>
               <section
                 aria-label="Search Apps"
-                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/70 p-3"
+                className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3"
               >
                 <label className="relative min-w-0 flex-1">
                   <Search
-                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
                     aria-hidden
                   />
                   <input
-                    className="h-11 w-full appearance-none rounded-xl border border-white/10 bg-slate-950/70 py-2 pl-10 pr-11 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 hover:border-white/20 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/15 [&::-webkit-search-cancel-button]:appearance-none"
+                    className="h-11 w-full appearance-none rounded-xl border border-border bg-background py-2 pl-10 pr-11 text-sm text-foreground outline-none transition placeholder:text-muted-foreground hover:border-primary/40 focus:border-primary/60 focus:ring-2 focus:ring-primary/15 [&::-webkit-search-cancel-button]:appearance-none"
                     type="search"
                     placeholder="Search by app, capability, category, or scope"
                     aria-label="Search apps"
@@ -171,7 +171,7 @@ export function AgenticAppsHub(): React.ReactElement {
                     <button
                       type="button"
                       onClick={() => setQuery("")}
-                      className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"
+                      className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
                       aria-label="Clear search"
                     >
                       <X className="h-4 w-4" aria-hidden />
@@ -179,7 +179,7 @@ export function AgenticAppsHub(): React.ReactElement {
                   ) : null}
                 </label>
                 <p
-                  className="shrink-0 px-1 text-xs font-medium text-slate-400"
+                  className="shrink-0 px-1 text-xs font-medium text-muted-foreground"
                   aria-live="polite"
                 >
                   {query.trim()
@@ -189,7 +189,7 @@ export function AgenticAppsHub(): React.ReactElement {
               </section>
 
               {visibleApps.length === 0 ? (
-                <section className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/70 px-6 py-12 text-center text-slate-300">
+                <section className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center text-muted-foreground">
                   No Apps match &ldquo;{query.trim()}&rdquo;.
                 </section>
               ) : (
@@ -229,21 +229,21 @@ function AppCard({
   const blockedLabel = formatBlockedReasons(app.blockedReasons);
 
   return (
-    <article className="group relative flex min-h-64 flex-col overflow-hidden rounded-[1.35rem] border border-white/10 bg-slate-900/78 p-4 shadow-xl shadow-slate-950/40 transition duration-200 hover:-translate-y-1 hover:border-cyan-200/30 hover:bg-slate-900/92">
+    <article className="group relative flex min-h-64 flex-col overflow-hidden rounded-[1.35rem] border border-border bg-card p-4 shadow-md transition duration-200 hover:-translate-y-1 hover:border-primary/30 hover:bg-accent/40">
       <div
         className={`absolute -right-20 -top-24 h-48 w-48 rounded-full bg-gradient-to-br ${presentation.glow} opacity-80 blur-3xl transition group-hover:opacity-100`}
       />
       <div className="pointer-events-none relative z-10 flex items-start justify-between gap-3">
         <div
           aria-label={`${app.displayName} app icon`}
-          className={`flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-gradient-to-br ${presentation.gradient} text-white shadow-2xl shadow-slate-950/30`}
+          className={`flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-gradient-to-br ${presentation.gradient} text-white shadow-md`}
         >
           <Icon className="h-5 w-5" aria-hidden />
         </div>
         <div className="pointer-events-auto flex items-center gap-1.5">
           <button
             type="button"
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition ${isFavorite ? "border-amber-200/50 bg-amber-300/20 text-amber-100" : "border-white/10 bg-white/[0.06] text-slate-300 hover:border-amber-200/40 hover:bg-amber-300/10 hover:text-amber-100"}`}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition ${isFavorite ? "border-amber-500 bg-amber-400 text-amber-950" : "border-border bg-muted/40 text-muted-foreground hover:border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-500"}`}
             onClick={onToggleFavorite}
             aria-label={
               isFavorite
@@ -272,7 +272,7 @@ function AppCard({
           ) : null}
           {app.canLaunch ? (
             <a
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-300/15"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/40 text-primary transition hover:border-primary/40 hover:bg-primary/15"
               href={app.href}
               aria-label={`Open ${app.displayName}`}
               title={`Open ${app.displayName}`}
@@ -281,7 +281,7 @@ function AppCard({
             </a>
           ) : (
             <span
-              className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full border border-amber-200/20 bg-amber-300/10 text-amber-100"
+              className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full border border-amber-500/40 bg-amber-400/20 text-amber-600"
               aria-label={`${app.displayName} launch blocked`}
               title={`Launch blocked: ${blockedLabel}`}
             >
@@ -301,22 +301,22 @@ function AppCard({
         <a
           href={app.href}
           aria-label={`Launch ${app.displayName}`}
-          className="appcard-stretched-link absolute inset-0 z-[5] cursor-pointer rounded-[1.35rem] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
+          className="appcard-stretched-link absolute inset-0 z-[5] cursor-pointer rounded-[1.35rem] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
           <span className="sr-only">Launch {app.displayName}</span>
         </a>
       ) : null}
-      <h2 className="pointer-events-none relative z-10 mt-3 line-clamp-1 text-lg font-semibold text-white">
+      <h2 className="pointer-events-none relative z-10 mt-3 line-clamp-1 text-lg font-semibold text-foreground">
         {app.displayName}
       </h2>
-      <p className="pointer-events-none relative z-10 mt-2 line-clamp-3 flex-1 text-xs leading-5 text-slate-300">
+      <p className="pointer-events-none relative z-10 mt-2 line-clamp-3 flex-1 text-xs leading-5 text-muted-foreground">
         {app.description}
       </p>
-      <p className="pointer-events-none relative z-10 mt-3 text-[11px] text-slate-500">
+      <p className="pointer-events-none relative z-10 mt-3 text-[11px] text-muted-foreground">
         Created by {app.createdBy}
       </p>
       {!app.canLaunch ? (
-        <div className="relative z-10 mt-3 rounded-2xl border border-amber-200/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+        <div className="relative z-10 mt-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
           Launch blocked: {blockedLabel}
         </div>
       ) : null}
@@ -331,7 +331,7 @@ function getAppPresentation(app: PublicAgenticApp) {
       category: "Weather",
       gradient: "from-sky-300 via-cyan-300 to-blue-500",
       glow: "from-sky-300/40 to-cyan-500/10",
-      badge: "bg-sky-400/10 text-sky-200",
+      badge: "bg-sky-500 text-white",
     };
   }
   if (app.appId === "finops" || app.appId === "litellm") {
@@ -340,7 +340,7 @@ function getAppPresentation(app: PublicAgenticApp) {
       category: app.categories[0] ?? "FinOps",
       gradient: "from-emerald-300 via-cyan-300 to-teal-500",
       glow: "from-emerald-300/40 to-cyan-500/10",
-      badge: "bg-emerald-400/10 text-emerald-200",
+      badge: "bg-emerald-500 text-white",
     };
   }
   return {
@@ -348,7 +348,7 @@ function getAppPresentation(app: PublicAgenticApp) {
     category: app.categories[0] ?? "Agentic app",
     gradient: "from-violet-300 via-cyan-300 to-indigo-500",
     glow: "from-violet-300/35 to-cyan-500/10",
-    badge: "bg-violet-400/10 text-violet-200",
+    badge: "bg-violet-500 text-white",
   };
 }
 
@@ -390,10 +390,13 @@ function RuntimeInfoTooltip({
       <button
         ref={buttonRef}
         type="button"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-slate-200 transition hover:border-cyan-200/40 hover:bg-cyan-300/10 hover:text-cyan-100"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/40 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
         aria-label={`Runtime details for ${app.displayName}`}
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
       >
         <Info className="h-3.5 w-3.5" aria-hidden />
       </button>
@@ -401,16 +404,16 @@ function RuntimeInfoTooltip({
         ? createPortal(
             <div
               role="tooltip"
-              className="fixed z-[60] w-72 rounded-2xl border border-white/10 bg-slate-950/95 p-4 text-left text-xs leading-5 text-slate-200 shadow-2xl backdrop-blur"
+              className="fixed z-[60] w-72 rounded-2xl border border-border bg-popover p-4 text-left text-xs leading-5 text-popover-foreground shadow-lg backdrop-blur"
               style={{ top: coords.top, left: coords.left }}
             >
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
                 App runtime
               </p>
-              <p className="mt-2 text-sm font-semibold text-white">
+              <p className="mt-2 text-sm font-semibold text-foreground">
                 {app.runtimeKind === "in-process" ? "In-process" : "Separate process"}
               </p>
-              <p className="mt-1 text-slate-400">
+              <p className="mt-1 text-muted-foreground">
                 This app runs independently and is securely connected through the
                 platform gateway.
               </p>

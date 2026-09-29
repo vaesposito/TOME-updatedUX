@@ -62,8 +62,9 @@ not create a schedule.
 
 1. The browser requests
    `GET /api/tome/projects/<slug>/webex-meetings?lookbackDays=<days>`.
-2. The BFF uses the signed-in user's built-in `webex` connection. The OAuth
-   token is never sent to the browser.
+2. The BFF uses the signed-in user's `TOME_MANUAL_WEBEX_PROVIDER` connection
+   (default `webex`). The connection prompt uses that connector's saved display
+   name, not its provider ID. The OAuth token is never sent to the browser.
 3. The BFF queries recordings and meeting transcripts in parallel, merges them
    by Webex meeting instance ID, and returns newest first.
 4. The picker defaults to the previous 3 days. The user may choose 3, 7, or 30
@@ -229,9 +230,40 @@ Tome invokes the configured `webex_meetings` MCP server directly. It combines:
 - `webex_list_meetings` with `meeting`
 - `webex_userhub_calendar`
 
-The discovery window covers the previous 48 hours and next 90 days. User Hub
-calendar discovery is required because some active recurring meetings do not
-appear reliably through `webex_list_meetings` alone.
+The picker includes the previous 48 hours and defaults to the next **7 days**.
+Its dropdown also offers **14** and **30 days**. Changing the window clears old
+results and performs a fresh lookup. Add uses that same window; onboarding
+creation revalidates up to 30 days without discarding previously selected keys.
+Public series templates are not date-filtered. Calendar-only monthly series
+may require a longer window to appear. This picker choice is not stored on the
+subscription: background checks retain their 48-hour lookback, 90-day horizon,
+and existing per-user/site cadence.
+
+- Fetch series templates once; query scheduled/calendar occurrences in windows
+  of at most seven days, with no gaps. Actual-meeting queries only cover the past.
+- Run at most two MCP requests concurrently. The whole sweep has a configurable
+  `TOME_WEBEX_SERIES_DISCOVERY_TIMEOUT_MS` budget: **45000** by default, capped at
+  120000. No automatic retries are added; remaining windows are marked incomplete
+  when the budget expires. Unrelated MCP callers keep their existing defaults.
+- User Hub receives both `startDate` and inclusive `endDate`; omitting the latter
+  can yield only its default calendar window. Date-only bounds overlap by a day
+  for local timezone safety; the MCP then filters exact timestamps. Deploy the
+  updated Meetings MCP alongside the UI to get this behavior.
+- Failed, timed-out, malformed, or potentially capped results produce a visible
+  **Discovery incomplete** warning. A missing next occurrence is **unknown**, not
+  evidence that no meeting exists. Logs use `[WebexSeries] discovery incomplete`
+  with source, date window, and reason, never credentials or raw responses.
+
+User Hub discovery remains necessary because some active recurring meetings do
+not appear reliably through `webex_list_meetings` alone.
+
+Different `MTID` join links can refer to the same meeting. When otherwise matching
+public/calendar entries have conflicting MTIDs, discovery calls the existing
+`webex_resolve_meeting_link` MCP tool and merges only on a uniquely resolved public
+series ID. Identical links are resolved once per sweep, with at most two calls
+concurrently and within the same discovery deadline. Ambiguous or failed lookups
+keep entries separate and show an incomplete-discovery warning. This does not
+rewrite saved subscriptions or occurrence history.
 
 When an occurrence has no public meeting instance ID, Tome sends its series
 title, start time, and Webex site to `webex_list_transcripts`. The MCP server
@@ -252,6 +284,19 @@ rather than interpreted in the UI worker's timezone.
 Series identity prefers durable Meetings and User Hub series IDs. Meeting
 numbers and personal-room links are weak references: multiple unrelated series
 can reuse them and must not be collapsed into one result.
+
+Discovery, saved-subscription refresh, scheduled checks, and **Sync now** use
+the same identity rules. Exact series IDs take precedence over weak matches,
+and conflicting IDs never match. Link comparisons preserve join identifiers
+such as `MTID`; stripping all query parameters would turn unrelated
+`j.php?MTID=...` meetings into the same address. A weak saved-series match also
+requires the same title and compatible host, and must be unambiguous. Calendar
+title/host joins likewise remain separate when multiple series could match.
+Actual host renames still propagate when the durable identity matches.
+
+These checks do not migrate saved subscriptions, rewrite occurrence IDs, or
+repair previously misattributed history. Existing history needs separate,
+explicitly approved investigation/remediation.
 
 ## Authentication and MCP Selection
 
@@ -321,6 +366,7 @@ already claimed by another retry.
 | `TOME_AUTO_INGEST_ENABLED` | `false` | Must be `true` to start the scheduler, including meeting-series work. |
 | `TOME_AUTO_INGEST_TICK_MS` | `60000` | Local scheduler loop interval. |
 | `TOME_WEBEX_SERIES_REFRESH_MS` | `86400000` | Owner/site calendar refresh interval; minimum five minutes. |
+| `TOME_WEBEX_SERIES_DISCOVERY_TIMEOUT_MS` | `45000` | Total discovery sweep budget in milliseconds, bounded to 1–120 seconds. Expired/failed windows produce incomplete-result warnings in the picker. |
 | `TOME_WEBEX_RETRO_SYNC_LOOKBACK_DAYS` | `30` | Historical window used by **Sync now**; bounded to 1–365 days. |
 | `TOME_WEBEX_ALLOW_NON_HOST_SERIES` | `true` | Allow users to add meeting series hosted by someone else after the recording-access warning. Set `false` to disable this in both onboarding and project settings; write APIs enforce the same policy. Existing subscriptions are not removed. |
 | `TOME_WEBEX_TRANSCRIPT_SETTLE_MS` | `900000` | Required unchanged time before all transcript segments are merged and queued. Set `0` to disable settling. |

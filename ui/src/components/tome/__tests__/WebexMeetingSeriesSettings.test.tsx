@@ -50,6 +50,42 @@ describe("WebexMeetingSeriesSettings", () => {
     }) as jest.Mock;
   });
 
+  it("defaults to seven days and uses the selected 30-day window when adding", async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (_url, init) => ({
+      ok: true,
+      json: async () => ({ data: init?.method === "POST"
+        ? { subscription: { id: "added", seriesKey: "new-series", title: "New review", credentialOwner: { name: "Owner" } } }
+        : { subscriptions: [], occurrences: [], complete: true, warnings: [], candidates: [{ seriesKey: "new-series", title: "New review", canAutoIngest: true }] } }),
+    }));
+    render(<WebexMeetingSeriesSettings slug="example-project" canEdit />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add series" }));
+    await screen.findByText("New review");
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("discover=1&lookaheadDays=7"), expect.any(Object));
+    fireEvent.change(screen.getByRole("combobox", { name: "Upcoming occurrence window" }), { target: { value: "30" } });
+    await screen.findByText("No upcoming occurrence found in the next 30 days");
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("lookaheadDays=30"), expect.any(Object));
+    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+      "/api/tome/projects/example-project/webex-meeting-series",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ seriesKey: "new-series", lookaheadDays: 30 }) }),
+    ));
+  });
+
+  it("shows a partial-calendar warning and unknown occurrence instead of claiming none exist", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({ data: {
+      subscriptions: [], occurrences: [], complete: false,
+      warnings: ["UserHub calendar lookup timed out. Upcoming occurrences may be missing."],
+      candidates: [{ seriesKey: "new-series", title: "New review", canAutoIngest: true }],
+    } }) });
+    render(<WebexMeetingSeriesSettings slug="example-project" canEdit />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add series" }));
+    expect(await screen.findByText("Upcoming occurrence unknown — discovery incomplete")).toBeInTheDocument();
+    expect(screen.getByText(/UserHub calendar lookup timed out/)).toBeInTheDocument();
+    expect(screen.queryByText(/No upcoming occurrence/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh meetings" }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(3));
+  });
+
   it("expands a series into occurrence transcript, review, and log details", async () => {
     render(<WebexMeetingSeriesSettings slug="example-project" canEdit />);
 

@@ -20,6 +20,7 @@ import {
   resolveManagedWebexCredential,
 } from "@/lib/tome/managed-webex";
 import type { GitHubRepositorySource } from "@/types/projects";
+import { webexSpaceConnectionLabel, webexSpaceProvider } from "@/lib/tome/webex-space-provider";
 
 interface SourceOption {
   value: string;
@@ -382,7 +383,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const provider = sp.get("provider")?.trim() ?? "";
   const q = sp.get("q")?.trim() ?? "";
   const webexMode = sp.get("webex_mode") === "managed" ? "managed" : "personal";
-  const requestedCredentialProvider = sp.get("credential_provider")?.trim() ?? "";
   const capabilityOnly = sp.get("capability_only") === "1";
   const forceRefresh = sp.get("refresh") === "1";
 
@@ -441,22 +441,21 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     }
   }
 
+  const connection = provider === "webex" ? await webexSpaceConnectionLabel() : undefined;
+  const connectionInfo = connection ? { connection } : {};
   let token = "";
   try {
     const service = await getProviderConnectionService();
-    const credentialProvider =
-      provider === "webex" && requestedCredentialProvider === "webex_messaging"
-        ? "webex_messaging"
-        : provider;
+    const credentialProvider = provider === "webex" ? webexSpaceProvider() : provider;
     const connection = (await service.listConnections({ type: "user", id: sub })).find(
       (c) => c.provider === credentialProvider && c.status === "connected",
     );
     if (!connection) {
-      return successResponse({ connected: false, options: [], manageUrl });
+      return successResponse({ connected: false, options: [], manageUrl, ...connectionInfo });
     }
     token = (await service.refreshConnection(connection.id)).accessToken;
   } catch {
-    return successResponse({ connected: false, options: [], manageUrl });
+    return successResponse({ connected: false, options: [], manageUrl, ...connectionInfo });
   }
 
   try {
@@ -475,15 +474,10 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
     const [options, account] = await Promise.all([
       optionsFn(token, q),
-      connectedTo(
-        provider === "webex" && requestedCredentialProvider === "webex_messaging"
-          ? "webex_messaging"
-          : provider,
-        token,
-      ),
+      connectedTo(provider, token),
     ]);
-    return successResponse({ connected: true, options, connectedTo: account, manageUrl });
+    return successResponse({ connected: true, options, connectedTo: account, manageUrl, ...connectionInfo });
   } catch {
-    return successResponse({ connected: true, options: [], error: "provider list failed", manageUrl });
+    return successResponse({ connected: true, options: [], error: "provider list failed", manageUrl, ...connectionInfo });
   }
 });

@@ -29,9 +29,9 @@ import { isValidCron } from "@/lib/rbac/cron";
 import { getCollection, isMongoDBConfigured } from "@/lib/mongodb";
 import { auditTome, tomeActorFromAuth, type TomeAuditActor } from "@/lib/tome/audit";
 import {
-  assertManagedWebexRoomsAccessible,
   normalizeWebexCredentialSettings,
 } from "@/lib/tome/managed-webex";
+import { prepareWebexRooms } from "@/lib/tome/webex-room-execution";
 import { resolveUniqueTomeProjectBySlug } from "@/lib/tome/project-resolver";
 import {
   getTomeReadConfiguration,
@@ -45,6 +45,7 @@ import {
   reconcileDataSteward,
   resolveDataSteward,
   resolveStoredDataSteward,
+  tomeSessionSubject,
 } from "@/lib/tome/data-steward";
 import { sessionSub } from "@/lib/tome/agent-proxy";
 import type {
@@ -282,7 +283,7 @@ export const PATCH = withErrorHandler(
         confluence_url?: string;
         confluence_page_scopes?: unknown;
         confluence_page_scope?: unknown;
-        webex_rooms?: Array<{ room_id?: string; name?: string; slug?: string }>;
+        webex_rooms?: Array<Partial<WebexRoomSource>>;
         webex_credential_mode?: WebexCredentialMode;
         webex_credential_provider?: string;
       };
@@ -476,7 +477,7 @@ export const PATCH = withErrorHandler(
         );
       }
       const cleanWebexRooms = (
-        rooms: Array<{ room_id?: string; name?: string; slug?: string }>,
+        rooms: Array<Partial<WebexRoomSource>>,
       ): WebexRoomSource[] =>
         rooms
           .filter((r) => r && typeof r.room_id === "string" && r.room_id.trim())
@@ -484,12 +485,9 @@ export const PATCH = withErrorHandler(
             room_id: r.room_id!.trim(),
             name: (r.name ?? "").trim() || r.room_id!.trim(),
             slug: (r.slug ?? "").trim(),
+            credential_mode: r.credential_mode,
+            credential_provider: r.credential_provider,
           }));
-
-      const changesWebexConfiguration =
-        "webex_credential_mode" in body.sources ||
-        "webex_credential_provider" in body.sources ||
-        Array.isArray(body.sources.webex_rooms);
       const nextWebexSettings = normalizeWebexCredentialSettings({
         mode:
           body.sources.webex_credential_mode ??
@@ -501,19 +499,25 @@ export const PATCH = withErrorHandler(
           "webex",
       });
       const nextWebexRooms = Array.isArray(body.sources.webex_rooms)
-        ? cleanWebexRooms(body.sources.webex_rooms)
+        ? await prepareWebexRooms({
+            rooms: cleanWebexRooms(body.sources.webex_rooms),
+            previousSources: project.sources,
+            subject: tomeSessionSubject(session) ?? "",
+            userEmail: user.email,
+            userName: session.user?.name,
+            defaults: nextWebexSettings,
+          })
         : project.sources?.webex_rooms ?? [];
-      if (changesWebexConfiguration && nextWebexSettings.mode === "managed") {
-        await assertManagedWebexRoomsAccessible({
-          session,
-          userEmail: user.email,
-          rooms: nextWebexRooms,
-        });
-      }
       if (
         "webex_credential_mode" in body.sources ||
         "webex_credential_provider" in body.sources
       ) {
+        const before = normalizeWebexCredentialSettings({ mode: project.sources?.webex_credential_mode,
+          provider: project.sources?.webex_credential_provider });
+        if (nextWebexRooms.some((room) => !room.credential_mode) &&
+            (before.mode !== nextWebexSettings.mode || before.provider !== nextWebexSettings.provider)) {
+          throw new ApiError("Remove and re-add legacy spaces to change their account type.", 409, "WEBEX_LEGACY_ACCOUNT_CHANGE");
+        }
         $set["sources.webex_credential_mode"] = nextWebexSettings.mode;
         $set["sources.webex_credential_provider"] = nextWebexSettings.provider;
       }

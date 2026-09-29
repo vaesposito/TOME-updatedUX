@@ -14,12 +14,7 @@ import {
   githubSourceFromValue,
 } from "@/lib/projects/github-repository";
 import { webexRoomSlug } from "@/lib/projects/webex-room";
-import {
-  assertManagedWebexUserSharesRooms,
-  projectWebexCredentialMode,
-  projectWebexCredentialProvider,
-  resolveManagedWebexCredential,
-} from "./managed-webex";
+import { resolveWebexRoomExecution } from "./webex-room-execution";
 
 import { resolveAreaChildren, resolveBhagChildren } from "./bhag";
 import { listReadableTomeProjects } from "./access";
@@ -70,10 +65,9 @@ export async function resolveCredentialsForSub(
 }
 
 /**
- * Resolve credentials for one project run. Managed Webex replaces only the
- * Webex source credential; GitHub and Atlassian continue to come from the
- * human or configured schedule owner. Managed Webex is never returned for
- * chat, where users read already-ingested pages instead of live messages.
+ * Personal rooms use the run initiator or schedule owner; managed rooms use
+ * the configured generic account. Added-by metadata is never a credential owner.
+ * Chat and meeting tools retain only the requesting user's own credentials.
  */
 export async function resolveProjectCredentials(
   project: Pick<ProjectDocument, "sources">,
@@ -85,41 +79,17 @@ export async function resolveProjectCredentials(
   },
 ): Promise<ForwardedCredentials> {
   const credentials = await resolveCredentialsForSub(sub);
-  if (options.sourceScope === "webex_meetings") return credentials;
+  if (options.sourceScope === "webex_meetings" || options.purpose === "chat") return credentials;
   if ((project.sources?.webex_rooms?.length ?? 0) === 0) return credentials;
 
-  const mode = projectWebexCredentialMode(project);
-  if (mode === "managed") {
-    delete credentials.webex;
-    if (options.purpose === "chat") return credentials;
-    const managed = await resolveManagedWebexCredential({ force: true });
-    if (!managed.capability.available || !managed.accessToken) {
-      throw new Error(
-        managed.capability.reason || "Managed Webex account is unavailable.",
-      );
-    }
-    await assertManagedWebexUserSharesRooms({
-      accessToken: managed.accessToken,
-      userEmail: options.userEmail ?? "",
-      rooms: project.sources?.webex_rooms ?? [],
-    });
+  const resolved = await resolveWebexRoomExecution({ sources: project.sources ?? {}, subject: sub,
+    purpose: "ingest", forwarded: credentials });
+  const failed = resolved.checks.filter((room) => room.mode === "managed" && !room.available);
+  if (failed.length) throw new Error(failed.map((room) => `${room.name}: ${room.detail}`).join(" "));
+  if (credentials.webex || Object.keys(resolved.roomTokens).length) {
     credentials.webex = {
-      access_token: managed.accessToken,
-      messaging_only: "true",
-      credential_mode: "managed",
-    };
-    return credentials;
-  }
-
-  const provider = projectWebexCredentialProvider(project);
-  if (provider === "webex") return credentials;
-  const personal = await collectForwardedCredentials(sub, [provider]);
-  delete credentials.webex;
-  if (personal[provider]) {
-    credentials.webex = {
-      ...personal[provider],
-      messaging_only: "true",
-      credential_mode: "personal",
+      ...credentials.webex,
+      room_tokens: JSON.stringify(resolved.roomTokens),
     };
   }
   return credentials;

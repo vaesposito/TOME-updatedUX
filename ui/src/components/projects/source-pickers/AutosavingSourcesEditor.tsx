@@ -102,8 +102,7 @@ export function AutosavingSourcesEditor({
           setStatus("saved");
           onDirtyChange?.(false);
           const project = body.data.project as ProjectDocument;
-          onSaved?.(
-            consentSources
+          const savedProject = consentSources
               ? {
                   ...project,
                   sources: {
@@ -113,8 +112,11 @@ export function AutosavingSourcesEditor({
                     myagent_consent_revision: consentSources.myagent_consent_revision,
                   },
                 }
-              : project,
-          );
+              : project;
+          // Keep canonical room bindings and the separately saved MyAgent
+          // consent together, without queueing another save.
+          if (savedProject.sources) onChange(savedProject.sources);
+          onSaved?.(savedProject);
         }
       } catch (error) {
         if (version === versionRef.current) {
@@ -126,7 +128,7 @@ export function AutosavingSourcesEditor({
         }
       }
     },
-    [kinds, onDirtyChange, onSaved, slug],
+    [kinds, onChange, onDirtyChange, onSaved, slug],
   );
 
   const enqueuePersist = useCallback(
@@ -187,7 +189,7 @@ export function AutosavingSourcesEditor({
         }
       }}
     >
-      <SourcesEditor kinds={kinds} value={value} onChange={queueSave} />
+      <SourcesEditor kinds={kinds} value={value} onChange={queueSave} settingsProjectSlug={slug} />
       <div
         role="status"
         aria-live="polite"

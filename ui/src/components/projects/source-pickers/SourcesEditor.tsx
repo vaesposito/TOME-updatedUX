@@ -16,6 +16,7 @@ import {
 import { SourcePicker, type SourceKind } from "./index";
 import { MyAgentSourcePicker } from "./MyAgentSourcePicker";
 import { WebexCredentialModePicker } from "./WebexCredentialModePicker";
+import { WebexSettingsSources } from "./WebexSettingsSources";
 import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
 
 /**
@@ -94,6 +95,7 @@ export interface SourcesEditorProps {
   value: ProjectSources;
   onChange: (next: ProjectSources) => void;
   readOnly?: boolean;
+  settingsProjectSlug?: string;
 }
 
 export function SourcesEditor({
@@ -101,6 +103,7 @@ export function SourcesEditor({
   value,
   onChange,
   readOnly = false,
+  settingsProjectSlug,
 }: SourcesEditorProps) {
   if (kinds.length === 0) {
     return (
@@ -154,6 +157,8 @@ export function SourcesEditor({
             ) : null}
             <ReadOnlyKind kind={kind} value={valueFor(kind, value)} />
           </div>
+        ) : kind === "webex" && settingsProjectSlug ? (
+          <WebexSettingsSources key={`${kind}:${settingsProjectSlug}`} slug={settingsProjectSlug} value={value} onChange={onChange} />
         ) : (
           // The picker renders its own bounded card + branded header — no
           // wrapper needed here (see SourceItemPicker.tsx).
@@ -166,6 +171,7 @@ export function SourcesEditor({
                     ...value,
                     webex_credential_mode: mode,
                     webex_credential_provider: provider,
+                    webex_rooms: [],
                   })
                 }
               />

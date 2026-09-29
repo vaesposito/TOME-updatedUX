@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   CheckCircle2,
@@ -18,6 +18,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { WEBEX_SERIES_LOOKAHEAD_DAYS, occurrenceDiscoveryLabel } from "@/lib/tome/webex-series-discovery-options";
 import {
   Dialog,
   DialogContent,
@@ -168,6 +170,11 @@ export function WebexMeetingSeriesSettings({
   const [selectedBackfill, setSelectedBackfill] = useState<Set<string>>(new Set());
   const [syncResult, setSyncResult] = useState("");
   const [retryingOccurrence, setRetryingOccurrence] = useState<string | null>(null);
+  const [lookaheadDays, setLookaheadDays] = useState(7);
+  const [discoveryComplete, setDiscoveryComplete] = useState(true);
+  const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([]);
+  const discoveryRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => discoveryRequest.current?.abort(), []);
 
   const loadSubscriptions = useCallback(async () => {
     setLoading(true);
@@ -191,19 +198,28 @@ export function WebexMeetingSeriesSettings({
     void loadSubscriptions();
   }, [loadSubscriptions]);
 
-  const discover = async () => {
+  const discover = async (days = lookaheadDays) => {
+    discoveryRequest.current?.abort();
+    const controller = new AbortController();
+    discoveryRequest.current = controller;
+    setLookaheadDays(days);
     setDialogOpen(true);
     setDiscovering(true);
     setError("");
     setErrorCode("");
     setSearchQuery("");
+    setCandidates([]);
+    setDiscoveryWarnings([]);
     try {
-      const response = await fetch(`${endpoint}?discover=1`, { cache: "no-store" });
+      const response = await fetch(`${endpoint}?discover=1&lookaheadDays=${days}`, { cache: "no-store", signal: controller.signal });
       const body = (await response.json().catch(() => ({}))) as ApiEnvelope<{
         subscriptions?: WebexMeetingSeriesSubscription[];
         candidates?: Candidate[];
         allowNonHostSeries?: boolean;
+        complete?: boolean;
+        warnings?: string[];
       }>;
+      if (controller.signal.aborted) return;
       if (!response.ok) {
         setErrorCode(body.code ?? "");
         throw new Error(apiError(body, "Could not find recurring meetings."));
@@ -211,10 +227,13 @@ export function WebexMeetingSeriesSettings({
       setSubscriptions(body.data?.subscriptions ?? []);
       setCandidates(body.data?.candidates ?? []);
       setAllowNonHostSeries(body.data?.allowNonHostSeries !== false);
+      setDiscoveryComplete(body.data?.complete !== false);
+      setDiscoveryWarnings(body.data?.warnings ?? []);
     } catch (cause) {
+      if (controller.signal.aborted) return;
       setError(cause instanceof Error ? cause.message : "Could not find recurring meetings.");
     } finally {
-      setDiscovering(false);
+      if (!controller.signal.aborted) setDiscovering(false);
     }
   };
 
@@ -226,7 +245,7 @@ export function WebexMeetingSeriesSettings({
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seriesKey: candidate.seriesKey }),
+        body: JSON.stringify({ seriesKey: candidate.seriesKey, lookaheadDays }),
       });
       const body = (await response.json().catch(() => ({}))) as ApiEnvelope<{
         subscription?: WebexMeetingSeriesSubscription;
@@ -710,9 +729,25 @@ export function WebexMeetingSeriesSettings({
             <DialogDescription>
               Results combine Webex Meetings and User Hub calendar discovery. The selected series
               will use your Webex (Meetings) connection. Series are not date-limited; occurrences
-              are checked from 48 hours ago through the next 90 days.
+              are checked from 48 hours ago through the next {lookaheadDays} days.
+              For less frequent calendar-only series, try a longer window.
             </DialogDescription>
           </DialogHeader>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            Upcoming occurrence window
+            <Select aria-label="Upcoming occurrence window" value={lookaheadDays}
+              disabled={discovering || Boolean(mutating)}
+              onChange={(event) => void discover(Number(event.target.value))}>
+              {WEBEX_SERIES_LOOKAHEAD_DAYS.map((days) => <option key={days} value={days}>Next {days} days</option>)}
+            </Select>
+          </label>
+          {!discovering && discoveryWarnings.length > 0 && (
+            <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              <p className="font-medium">Discovery incomplete — upcoming occurrences may be missing.</p>
+              {discoveryWarnings.map((warning) => <p key={warning}>{warning}</p>)}
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => void discover()}>Refresh meetings</Button>
+            </div>
+          )}
           {discovering ? (
             <p className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Finding recurring meetings…
@@ -732,7 +767,7 @@ export function WebexMeetingSeriesSettings({
               )}
             </div>
           ) : available.length === 0 ? (
-            <p className="py-8 text-sm text-muted-foreground">No unselected recurring meetings were found.</p>
+            <p className="py-8 text-sm text-muted-foreground">{discoveryComplete ? "No unselected recurring meetings were found." : "No unselected series returned from the completed lookups. Refresh to try again."}</p>
           ) : (
             <div className="space-y-3">
               <div className="relative">
@@ -770,9 +805,7 @@ export function WebexMeetingSeriesSettings({
                           )}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {candidate.nextOccurrence
-                            ? `Next: ${new Date(candidate.nextOccurrence.start).toLocaleString()}`
-                            : "No upcoming occurrence in the next 90 days"}
+                          {occurrenceDiscoveryLabel(candidate.nextOccurrence?.start, lookaheadDays, discoveryComplete)}
                           {candidate.hostEmail ? ` · Host: ${candidate.hostEmail}` : ""}
                         </p>
                       </div>

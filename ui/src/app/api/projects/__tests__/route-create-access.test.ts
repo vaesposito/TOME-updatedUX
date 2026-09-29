@@ -17,6 +17,7 @@ const mockDiscoverMeetingSeries = jest.fn();
 const mockInteractiveWebexMeetingInvoker = jest.fn();
 const mockRequestWebexMeetingOwnerCheck = jest.fn();
 const mockIsMyAgentInteractiveBrowserAction = jest.fn();
+const mockPrepareWebexRooms = jest.fn();
 const reservationInsertOne = jest.fn();
 const reservationDeleteOne = jest.fn();
 
@@ -114,6 +115,9 @@ jest.mock("@/lib/tome/myagent-interactive", () => ({
   isMyAgentInteractiveBrowserAction: (...args: unknown[]) =>
     mockIsMyAgentInteractiveBrowserAction(...args),
 }));
+jest.mock("@/lib/tome/webex-room-execution", () => ({
+  prepareWebexRooms: (...args: unknown[]) => mockPrepareWebexRooms(...args),
+}));
 
 jest.mock("@/lib/tome/auto-ingest/cursor", () => ({
   requestWebexMeetingOwnerCheck: (...args: unknown[]) =>
@@ -146,6 +150,7 @@ describe("POST /api/projects access setup failures", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.TOME_WEBEX_ALLOW_NON_HOST_SERIES;
+    mockPrepareWebexRooms.mockImplementation(async ({ rooms }: { rooms: unknown[] }) => rooms);
     mockGetAuthFromBearerOrSession.mockResolvedValue({
       user: { email: "creator@example.test" },
       session: {
@@ -255,13 +260,23 @@ describe("POST /api/projects access setup failures", () => {
     expect(projects.insertOne).not.toHaveBeenCalled();
 
     mockIsMyAgentInteractiveBrowserAction.mockReturnValue(true);
+    const boundRoom = {
+      room_id: "room-a", name: "Example space", slug: "example-space",
+      credential_mode: "managed", credential_provider: "webex_messaging",
+      added_by: { subject: "creator-subject", email: "creator@example.test" },
+    };
+    mockPrepareWebexRooms.mockResolvedValueOnce([boundRoom]);
     const allowed = await POST(createRequest({
       myagent_connectors: ["outlook"],
       myagent_enabled: true,
+      webex_rooms: [{ room_id: "room-a", name: "Example space", slug: "example-space" }],
+      webex_credential_mode: "managed",
+      webex_credential_provider: "webex_messaging",
     }));
 
     expect(allowed.status).toBe(201);
     expect(projects.insertOne.mock.calls[0][0].sources).toMatchObject({
+      webex_rooms: [boundRoom],
       myagent_consents: [
         expect.objectContaining({
           subject: "creator-subject",
@@ -269,6 +284,10 @@ describe("POST /api/projects access setup failures", () => {
         }),
       ],
     });
+    expect(mockPrepareWebexRooms).toHaveBeenCalledWith(expect.objectContaining({
+      subject: "creator-subject", userEmail: "creator@example.test",
+      defaults: { mode: "managed", provider: "webex_messaging" },
+    }));
   });
 
   it("stores the onboarding schedule and a selected non-hosted Webex meeting series atomically", async () => {

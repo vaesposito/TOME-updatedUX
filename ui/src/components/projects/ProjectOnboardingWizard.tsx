@@ -1075,6 +1075,7 @@ export function ProjectOnboardingWizard({
                                 <WebexCredentialModePicker
                                   value={webexCredentialMode}
                                   onChange={(mode, provider) => {
+                                    setWebexRooms([]);
                                     setWebexCredentialMode(mode);
                                     setWebexCredentialProvider(provider);
                                   }}

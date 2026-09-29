@@ -17,10 +17,12 @@ interface Capability {
 export function WebexCredentialModePicker({
   value,
   readOnly = false,
+  browsingOnly = false,
   onChange,
 }: {
   value: WebexCredentialMode;
   readOnly?: boolean;
+  browsingOnly?: boolean;
   onChange: (mode: WebexCredentialMode, provider: string) => void;
 }) {
   const [capability, setCapability] = useState<Capability | null>(null);
@@ -70,7 +72,9 @@ export function WebexCredentialModePicker({
         <button
           type="button"
           aria-pressed={value === "personal"}
-          onClick={() => onChange("personal", "webex")}
+          onClick={() => {
+            if (value !== "personal") onChange("personal", "webex");
+          }}
           className={cn(
             "flex items-start gap-2 rounded-lg border px-3 py-2 text-left transition",
             value === "personal"
@@ -89,9 +93,11 @@ export function WebexCredentialModePicker({
             type="button"
             aria-pressed={value === "managed"}
             disabled={!capability?.available}
-            onClick={() =>
-              onChange("managed", capability?.provider || "webex_messaging")
-            }
+            onClick={() => {
+              if (value !== "managed") {
+                onChange("managed", capability?.provider || "webex_messaging");
+              }
+            }}
             className={cn(
               "flex items-start gap-2 rounded-lg border px-3 py-2 text-left transition",
               value === "managed"
@@ -110,6 +116,13 @@ export function WebexCredentialModePicker({
           </button>
         ) : null}
       </div>
+      {showManaged ? (
+        <p className="text-xs text-muted-foreground">
+          {browsingOnly
+            ? "Switch accounts to browse spaces. Saved project spaces are kept."
+            : "Switching accounts clears selected spaces. Choose spaces again for the new account."}
+        </p>
+      ) : null}
       {value === "managed" && !capability?.available ? (
         <p className="text-xs text-amber-600 dark:text-amber-400">
           {capability?.reason || "Managed Webex account needs reconnection."}

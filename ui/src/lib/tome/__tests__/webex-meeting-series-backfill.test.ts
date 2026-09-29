@@ -1,6 +1,5 @@
 const backgroundInvoker = jest.fn();
 const discoverMeetingSeries = jest.fn();
-const meetingSeriesMatches = jest.fn(() => true);
 const findToArray = jest.fn();
 const updateOne = jest.fn();
 
@@ -14,7 +13,7 @@ jest.mock("@/lib/mongodb", () => ({
 jest.mock("../webex-meeting-series", () => ({
   backgroundWebexMeetingInvoker: (...args: unknown[]) => backgroundInvoker(...args),
   discoverMeetingSeries: (...args: unknown[]) => discoverMeetingSeries(...args),
-  meetingSeriesMatches: (...args: unknown[]) => meetingSeriesMatches(...args),
+  findMatchingMeetingSeries: jest.requireActual("../webex-meeting-series-identity").findMatchingMeetingSeries,
 }));
 
 import type { ProjectDocument, WebexMeetingSeriesSubscription } from "@/types/projects";
@@ -191,5 +190,34 @@ describe("Webex meeting-series historical sync", () => {
       }),
       { upsert: true },
     );
+  });
+
+  it("previews the exact series, not an earlier unrelated calendar result", async () => {
+    discoverMeetingSeries.mockResolvedValueOnce([
+      { seriesKey: "userhub:other", title: "Other meeting", sourceRefs: { userHubSeriesId: "other" }, occurrences: [] },
+      {
+        seriesKey: subscription.seriesKey,
+        title: subscription.title,
+        sourceRefs: subscription.sourceRefs,
+        occurrences: [{
+          occurrenceKey: "correct-occurrence", title: subscription.title,
+          start: "2026-09-01T10:00:00Z", end: "2026-09-01T11:00:00Z",
+          source: "meetings_api", cancelled: false,
+        }],
+      },
+    ]);
+    const preview = await previewWebexMeetingSeriesBackfill(project, subscription, now);
+    expect(preview.missing.map((item) => item.occurrenceKey)).toEqual(["correct-occurrence"]);
+    expect(updateOne).not.toHaveBeenCalled();
+  });
+
+  it("does not return another series when the subscribed series is absent", async () => {
+    discoverMeetingSeries.mockResolvedValueOnce([
+      { seriesKey: "userhub:other", title: "Other meeting", sourceRefs: { userHubSeriesId: "other" }, occurrences: [] },
+    ]);
+    await expect(previewWebexMeetingSeriesBackfill(project, subscription, now)).rejects.toMatchObject({
+      code: "WEBEX_MEETING_SERIES_NOT_FOUND",
+    });
+    expect(updateOne).not.toHaveBeenCalled();
   });
 });

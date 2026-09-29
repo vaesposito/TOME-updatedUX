@@ -117,7 +117,7 @@ class UserHubCalendar(BaseModel):
         Field(
             description=(
                 "Optional ISO-8601 lower bound for occurrence start time. "
-                "Filtering is applied client-side after reading User Hub calendar rows."
+                "The date is sent to User Hub; exact timestamp filtering is applied after reading rows."
             ),
             default=None,
         ),
@@ -127,7 +127,7 @@ class UserHubCalendar(BaseModel):
         Field(
             description=(
                 "Optional ISO-8601 upper bound for occurrence start time. "
-                "Filtering is applied client-side after reading User Hub calendar rows."
+                "The date is sent to User Hub; exact timestamp filtering is applied after reading rows."
             ),
             default=None,
         ),
@@ -611,7 +611,15 @@ def _userhub_calendar_params(args: UserHubCalendar) -> dict[str, Any]:
     }
     from_dt = _parse_iso_datetime(args.from_iso)
     if from_dt is not None:
-        params["startDate"] = from_dt.date().isoformat()
+        # Calendar dates may be interpreted in the user's local timezone.
+        # Overlap by a day at both edges; exact timestamp filtering below
+        # keeps late/early local meetings from falling between UTC chunks.
+        params["startDate"] = (from_dt - timedelta(days=1)).date().isoformat()
+    to_dt = _parse_iso_datetime(args.to_iso)
+    if to_dt is not None:
+        # User Hub's date-only endDate is inclusive; to_iso is exclusive.
+        # Omitting endDate lets User Hub choose its own (usually short) window.
+        params["endDate"] = (to_dt - timedelta(microseconds=1) + timedelta(days=1)).date().isoformat()
     return params
 
 

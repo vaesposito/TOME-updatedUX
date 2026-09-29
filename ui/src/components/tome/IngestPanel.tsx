@@ -46,7 +46,8 @@ import {
 import { preflightState, type PreflightSourceResult } from "@/lib/tome/preflight";
 import { describeRelativeTime, nextCronRun } from "@/lib/tome/auto-ingest/schedule-presets";
 import { cn } from "@/lib/utils";
-import type { AutoIngestConfig, ConfluencePageScope } from "@/types/projects";
+import type { AutoIngestConfig, ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
+import { WebexIngestSources } from "./WebexIngestSources";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ interface WebexMeeting {
 }
 
 interface ProjectSources {
+  webex_credential_mode?: WebexCredentialMode;
   repos: string[];
   confluence_url: string;
   confluence_page_scopes?: unknown;
@@ -89,6 +91,7 @@ interface ProjectSources {
     slug?: string;
     id?: string;
     title?: string;
+    credential_mode?: WebexCredentialMode;
   }>;
   myagent_connectors?: unknown;
   myagent_enabled?: boolean;
@@ -96,6 +99,8 @@ interface ProjectSources {
 
 interface SourceItem {
   label: string;
+  room_id?: string;
+  webexMode?: WebexCredentialMode;
   detail?: string;
   href?: string;
 }
@@ -210,7 +215,8 @@ export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
     rows.push({
       kind: "webex",
       label: "Webex",
-      items: roomLabels.map((room) => ({ label: room })),
+      items: rooms.map((room) => ({ label: room.name || room.title || room.room_id || room.id || "",
+        room_id: room.room_id || room.id, webexMode: room.credential_mode ?? s.webex_credential_mode ?? "personal" })),
       connectorKey: "webex",
     });
   }
@@ -450,6 +456,7 @@ export function IngestPanel({
   const [meetingsOpen, setMeetingsOpen] = useState(false);
   const [meetings, setMeetings] = useState<WebexMeeting[] | null>(null);
   const [meetingsLoading, setMeetingsLoading] = useState(false);
+  const [meetingProviderName, setMeetingProviderName] = useState<string | null>(null);
   const [selectedMeetings, setSelectedMeetings] = useState<Set<string>>(new Set());
   const [meetingFilter, setMeetingFilter] = useState("");
   const [meetingLookbackDays, setMeetingLookbackDays] = useState(3);
@@ -525,6 +532,7 @@ export function IngestPanel({
         );
         if (!res.ok) throw new Error(`fetch failed (${res.status})`);
         const json = await res.json();
+        setMeetingProviderName(json?.data?.connection?.name ?? null);
         setMeetings(json?.data?.meetings ?? []);
       } catch {
         setMeetings([]);
@@ -928,6 +936,9 @@ export function IngestPanel({
                     ) : (
                       sourceRows.map((row) => {
                         const pf = preflight?.find((p) => p.provider === row.kind);
+                        if (row.kind === "webex") {
+                          return <WebexIngestSources key={row.kind} items={row.items} preflight={pf} />;
+                        }
                         const state = preflightState(pf);
                         const inaccessible = pf?.inaccessible ?? [];
                         const accessible = pf?.accessible ?? [];
@@ -1153,7 +1164,7 @@ export function IngestPanel({
                           </ul>
                         ) : !meetings || meetings.length === 0 ? (
                           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-                            No meetings found. Connect Webex in
+                            No meetings found. Connect {meetingProviderName || "your configured meeting app"} in
                             <Link
                               href="/credentials"
                               target="_blank"

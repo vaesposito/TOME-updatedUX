@@ -5,7 +5,7 @@
 import { NextRequest } from "next/server";
 
 import { successResponse, withErrorHandler } from "@/lib/api-middleware";
-import { resolveProjectCredentials, sessionSub } from "@/lib/tome/agent-proxy";
+import { resolveCredentialsForSub, sessionSub } from "@/lib/tome/agent-proxy";
 import { resolveMyAgentWebexCredential } from "@/lib/tome/myagent-webex";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import type { PreflightResult, PreflightSourceResult } from "@/lib/tome/preflight";
@@ -14,6 +14,8 @@ import {
   myAgentConnectorLabel,
   type MyAgentConnector,
 } from "@/lib/projects/myagent-source";
+
+import { resolveWebexRoomExecution } from "@/lib/tome/webex-room-execution";
 
 export const dynamic = "force-dynamic";
 
@@ -90,30 +92,6 @@ async function checkConfluence(
   };
 }
 
-async function checkWebex(
-  rooms: { room_id: string; name?: string }[],
-  token: string,
-): Promise<Omit<PreflightSourceResult, "label" | "provider">> {
-  const results = await Promise.all(
-    rooms.map(async (room) => {
-      const label = room.name || room.room_id;
-      try {
-        const r = await fetch(`https://webexapis.com/v1/rooms/${encodeURIComponent(room.room_id)}`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-        });
-        return { item: label, ok: r.status === 200 };
-      } catch {
-        return { item: label, ok: false };
-      }
-    }),
-  );
-  return {
-    no_token: false,
-    accessible: results.filter((r) => r.ok).map((r) => r.item),
-    inaccessible: results.filter((r) => !r.ok).map((r) => r.item),
-  };
-}
-
 async function checkMyAgent(
   connectors: MyAgentConnector[],
   sub: string,
@@ -143,18 +121,7 @@ async function checkMyAgent(
 export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug } = await ctx.params;
   const tctx = await loadTomeProject(request, slug);
-  let creds: Awaited<ReturnType<typeof resolveProjectCredentials>>;
-  let credentialError = "";
-  try {
-    creds = await resolveProjectCredentials(
-      tctx.project,
-      sessionSub(tctx.session),
-      { purpose: "ingest", userEmail: tctx.user.email },
-    );
-  } catch (error) {
-    creds = {};
-    credentialError = error instanceof Error ? error.message : String(error);
-  }
+  const creds = await resolveCredentialsForSub(sessionSub(tctx.session));
 
   const project = tctx.project;
   const sources = project.sources ?? {};
@@ -181,10 +148,9 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         ? [parseConfluenceUrl(sources.confluence_url as string)].filter(Boolean) as CFSpace[]
         : []
   );
-  const webexRooms: { room_id: string; name?: string }[] = Array.isArray(sources.webex_rooms)
+  const webexRooms = Array.isArray(sources.webex_rooms)
     ? sources.webex_rooms
     : [];
-  const usesManagedWebex = sources.webex_credential_mode === "managed";
   const myAgentConnectors = myAgentConnectorsForSubject(
     sources,
     sessionSub(tctx.session),
@@ -202,21 +168,14 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         : Promise.resolve({ no_token: true, accessible: [], inaccessible: confluenceSpaces.map((s) => s.name || s.space_key) })
       : null,
     webexRooms.length > 0
-      ? creds["webex"]?.access_token
-        ? checkWebex(webexRooms, creds["webex"].access_token)
-        : Promise.resolve({
-            no_token: true,
-            accessible: [],
-            inaccessible: webexRooms.map((r) => r.name || r.room_id),
-            ...(usesManagedWebex
-              ? {
-                  detail:
-                    credentialError ||
-                    "Managed Webex account needs reconnection.",
-                  fixable_by_user: false,
-                }
-              : {}),
-          })
+      ? resolveWebexRoomExecution({ sources, subject: sessionSub(tctx.session), purpose: "ingest", forwarded: creds }).then(({ checks }) => ({
+          no_token: checks.some((room) => room.no_token),
+          accessible: checks.filter((room) => room.available).map((room) => room.name),
+          inaccessible: checks.filter((room) => !room.available).map((room) => room.name),
+          rooms: checks,
+          fixable_by_user: checks.some((room) => room.mode === "personal" && !room.available),
+          detail: checks.filter((room) => !room.available).map((room) => `${room.name}: ${room.detail}`).join(" ") || undefined,
+        }))
       : null,
     myAgentConnectors.length > 0
       ? checkMyAgent(myAgentConnectors, sessionSub(tctx.session))
@@ -228,15 +187,8 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   if (wxResult) {
     results.push({
       provider: "webex",
-      label: usesManagedWebex ? "Managed Webex" : "Webex",
+      label: "Webex",
       ...wxResult,
-      ...(usesManagedWebex && wxResult.inaccessible.length > 0 && !wxResult.detail
-        ? {
-            detail:
-              "The managed Webex account cannot access one or more selected spaces.",
-            fixable_by_user: false,
-          }
-        : {}),
     });
   }
   if (myAgentResult) {

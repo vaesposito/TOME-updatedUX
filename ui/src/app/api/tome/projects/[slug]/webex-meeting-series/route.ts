@@ -9,13 +9,15 @@ import { requestWebexMeetingOwnerCheck } from "@/lib/tome/auto-ingest/cursor";
 import { loadTomeProject, requireTomeEditor } from "@/lib/tome/tome-api";
 import { loadWebexMeetingOccurrenceHistory } from "@/lib/tome/webex-meeting-history";
 import {
-  discoverMeetingSeries,
+  discoverMeetingSeriesWithDiagnostics,
   createWebexMeetingSeriesSubscription,
   interactiveWebexMeetingInvoker,
   meetingSeriesHostEligibility,
   meetingSeriesMatches,
+  findMatchingMeetingSeries,
   nonHostMeetingSeriesAllowed,
   webexMeetingSeriesDiscoveryWindow,
+  webexMeetingSeriesLookaheadDays,
 } from "@/lib/tome/webex-meeting-series";
 import type {
   AutoIngestConfig,
@@ -64,16 +66,18 @@ export const GET = withErrorHandler(async (request: NextRequest, context: Ctx) =
   }
 
   requireTomeEditor(tctx);
+  const lookaheadDays = webexMeetingSeriesLookaheadDays(request.nextUrl.searchParams.get("lookaheadDays"));
   const invoke = await interactiveWebexMeetingInvoker(request, tctx);
   const now = new Date();
-  const candidates = (await discoverMeetingSeries(invoke, webexMeetingSeriesDiscoveryWindow(now))).map((candidate) => ({
+  const discovery = await discoverMeetingSeriesWithDiagnostics(invoke, webexMeetingSeriesDiscoveryWindow(now, lookaheadDays));
+  const candidates = discovery.candidates.map((candidate) => ({
     ...candidate,
     ...meetingSeriesHostEligibility(candidate, tctx.user.email),
   }));
   const ownerSubject = sessionSub(tctx.session);
   const refreshedSubscriptions = subscriptions.map((subscription) => {
-    if (!ownerSubject || subscription.credentialOwner.subject !== ownerSubject) return subscription;
-    const candidate = candidates.find((item) => meetingSeriesMatches(item, subscription));
+    if (!discovery.complete || !ownerSubject || subscription.credentialOwner.subject !== ownerSubject) return subscription;
+    const candidate = findMatchingMeetingSeries(candidates, subscription);
     if (!candidate) return subscription;
     return {
       ...subscription,
@@ -102,6 +106,9 @@ export const GET = withErrorHandler(async (request: NextRequest, context: Ctx) =
     candidates,
     canEdit: true,
     allowNonHostSeries: nonHostMeetingSeriesAllowed(),
+    lookaheadDays,
+    complete: discovery.complete,
+    warnings: discovery.warnings,
   });
 });
 
@@ -110,17 +117,22 @@ export const POST = withErrorHandler(async (request: NextRequest, context: Ctx) 
   const tctx = await loadTomeProject(request, slug);
   requireTomeEditor(tctx);
 
-  const body = (await request.json().catch(() => null)) as { seriesKey?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { seriesKey?: unknown; lookaheadDays?: unknown } | null;
+  const lookaheadDays = webexMeetingSeriesLookaheadDays(body?.lookaheadDays);
   const seriesKey = typeof body?.seriesKey === "string" ? body.seriesKey.trim() : "";
   if (!seriesKey) {
     throw new ApiError("Meeting series is required", 400, "MEETING_SERIES_REQUIRED");
   }
 
   const invoke = await interactiveWebexMeetingInvoker(request, tctx);
-  const candidate = (await discoverMeetingSeries(invoke, webexMeetingSeriesDiscoveryWindow())).find(
+  const discovery = await discoverMeetingSeriesWithDiagnostics(invoke, webexMeetingSeriesDiscoveryWindow(new Date(), lookaheadDays));
+  const candidate = discovery.candidates.find(
     (item) => item.seriesKey === seriesKey,
   );
   if (!candidate) {
+    if (!discovery.complete) {
+      throw new ApiError("Meeting discovery is incomplete. Refresh the meeting list and try again.", 503, "WEBEX_DISCOVERY_INCOMPLETE");
+    }
     throw new ApiError(
       "That recurring meeting is no longer available from Webex.",
       404,
@@ -128,7 +140,14 @@ export const POST = withErrorHandler(async (request: NextRequest, context: Ctx) 
     );
   }
   const existing = tctx.project.autoIngest?.webexMeetingSeries ?? [];
-  const duplicate = existing.find((item) => meetingSeriesMatches(candidate, item));
+  const duplicate = findMatchingMeetingSeries(existing, candidate);
+  if (!duplicate && existing.some((item) => meetingSeriesMatches(candidate, item))) {
+    throw new ApiError(
+      "Multiple saved subscriptions match this meeting. Review the existing series before adding it.",
+      409,
+      "WEBEX_MEETING_SERIES_AMBIGUOUS",
+    );
+  }
   if (duplicate) {
     await requestSubscriptionCalendarRefresh(duplicate, new Date());
     return successResponse({ subscription: duplicate, created: false });

@@ -20,6 +20,14 @@ export interface PreflightSourceResult {
   detail?: string;
   /** False when the signed-in user cannot fix this from their Connections page. */
   fixable_by_user?: boolean;
+  /** Per-space resolved account and its access check (no credentials). */
+  rooms?: import("@/types/projects").WebexRoomCheck[];
+  /** Legacy aggregate identity, retained for consumers of old preflight results. */
+  run_as?: {
+    mode: "personal" | "managed";
+    name: string;
+    email?: string;
+  };
 }
 
 /** Resource-level preflight for one project across all its sources. */

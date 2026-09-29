@@ -42,13 +42,25 @@ describe("OnboardingWebexMeetingSeriesPicker", () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  it("preserves selected series when a changed window does not return them", async () => {
+    render(<Harness />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Platform weekly" }));
+    expect(screen.getByText("1 meeting series selected")).toBeInTheDocument();
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({ data: { candidates: [], complete: true } }) });
+    fireEvent.change(screen.getByRole("combobox", { name: "Upcoming occurrence window" }), { target: { value: "14" } });
+    await screen.findByText(/No recurring Webex meetings were found/);
+    expect(global.fetch).toHaveBeenLastCalledWith("/api/tome/webex-meeting-series?lookaheadDays=14", expect.any(Object));
+    expect(screen.getByText("1 meeting series selected")).toBeInTheDocument();
+  });
+
   it("warns before selecting a non-hosted series", async () => {
     render(<Harness />);
 
     const hosted = await screen.findByRole("checkbox", { name: "Select Platform weekly" });
     const guest = screen.getByRole("checkbox", { name: "Select Customer update" });
-    expect(global.fetch).toHaveBeenCalledWith("/api/tome/webex-meeting-series", {
+    expect(global.fetch).toHaveBeenCalledWith("/api/tome/webex-meeting-series?lookaheadDays=7", {
       cache: "no-store",
+      signal: expect.any(AbortSignal),
     });
     expect(guest).not.toBeDisabled();
 

@@ -8,6 +8,7 @@ import {
   insertArtifactEvaluation,
 } from "@/lib/tome/evaluation-store";
 import { getTomeIngestRunsCollection } from "@/lib/tome/mongo-collections";
+import { tomeAgentAuthorizationHeaders } from "@/lib/tome/agent-auth";
 import { getAllPageTemplates } from "@/lib/tome/page-templates-store";
 import { parseFrontmatter } from "@/lib/tome/schema";
 import { calculateRubrics, type EvaluatorSignals } from "@/lib/tome/rubric-evaluator";
@@ -57,7 +58,10 @@ export async function evaluateDraftQuality(
     try {
       const response = await fetch(`${process.env.TOME_AGENT_URL.replace(/\/$/, "")}/evaluate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...tomeAgentAuthorizationHeaders(),
+        },
         body: JSON.stringify({
           blind_label: `draft-${shaLabel(runId)}`,
           evaluator_model: evaluatorModel,

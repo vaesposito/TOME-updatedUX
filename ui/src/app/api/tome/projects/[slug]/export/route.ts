@@ -137,10 +137,10 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     pages: exportPages,
     tree: buildTree(exportPages, folders, placements),
   });
-  const pageName = requestedPath?.replace(/\.mdx?$/i, "");
-  const base = pageName
-    ? `${safeFilename(slug)}-${safeFilename(pageName)}`
-    : `${safeFilename(slug)}-wiki`;
+  const pageTitle = requestedPath
+    ? document.pages.find((page) => page.path === requestedPath)?.title
+    : null;
+  const base = pageTitle ? safeFilename(pageTitle) : `${safeFilename(slug)}-wiki`;
   const commonHeaders = {
     "Cache-Control": "private, no-store",
     "Content-Disposition": `attachment; filename="${base}.${format === "markdown" ? "md" : format}"`,
@@ -161,10 +161,13 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       projectName: tctx.project.title || tctx.project.name || slug,
       sourceBaseUrl,
     });
+    const pptxFilename = pageTitle
+      ? `${safeFilename(pageTitle)}.pptx`
+      : presentationFilename(slug, deck.title);
     return new Response(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
       headers: {
         ...commonHeaders,
-        "Content-Disposition": `attachment; filename="${presentationFilename(slug, deck.title)}"`,
+        "Content-Disposition": `attachment; filename="${pptxFilename}"`,
         "Content-Length": String(bytes.byteLength),
         "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       },

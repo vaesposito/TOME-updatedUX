@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 
+import {
+  myAgentConsentSelection,
+  sameMyAgentConsentSelection,
+  saveMyAgentConsent,
+  withoutMyAgentConsentFields,
+} from "@/lib/projects/myagent-consent-client";
 import type { ProjectDocument, ProjectSources } from "@/types/projects";
 import type { SourceKind } from "./index";
 import { SourcesEditor } from "./SourcesEditor";
@@ -13,7 +19,7 @@ type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 
 function sourcesPayload(sources: ProjectSources): Record<string, unknown> {
   return {
-    ...sources,
+    ...withoutMyAgentConsentFields(sources),
     repos: (sources.repos ?? []).map((repo) => repo.trim()).filter(Boolean),
     confluence_url: (sources.confluence_url ?? "").trim(),
     confluence_page_scopes: sources.confluence_page_scopes ?? [],
@@ -41,9 +47,20 @@ export function AutosavingSourcesEditor({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSourcesRef = useRef(value);
   const versionRef = useRef(0);
+  const persistedMyAgentConsentRef = useRef(myAgentConsentSelection(value));
+  const hasLocalChangeRef = useRef(false);
+  // Serialize writes from one editor. In particular, a delayed older PUT
+  // must finish before a later Disconnect DELETE, so local user intent is
+  // applied in interaction order rather than network-response order.
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     latestSourcesRef.current = value;
+    // Hydrate a delayed project fetch before the user touches the editor. Do
+    // not overwrite the durable baseline with a draft echoed by `onChange`.
+    if (!hasLocalChangeRef.current) {
+      persistedMyAgentConsentRef.current = myAgentConsentSelection(value);
+    }
   }, [value]);
 
   const persist = useCallback(
@@ -55,6 +72,13 @@ export function AutosavingSourcesEditor({
       setStatus("saving");
       setSaveError("");
       try {
+        const nextMyAgentConsent = myAgentConsentSelection(next);
+        const saveMyAgent =
+          kinds.includes("myagent") &&
+          !sameMyAgentConsentSelection(
+            persistedMyAgentConsentRef.current,
+            nextMyAgentConsent,
+          );
         const response = await fetch(
           `/api/projects/${encodeURIComponent(slug)}`,
           {
@@ -67,12 +91,32 @@ export function AutosavingSourcesEditor({
         if (!response.ok) {
           throw new Error(body.error ?? `Save failed (${response.status})`);
         }
+        const consentSources = saveMyAgent
+          ? await saveMyAgentConsent(slug, next)
+          : undefined;
         if (version === versionRef.current) {
-          // Use canonical, server-verified room bindings without queueing another save.
-          if (body.data?.project?.sources) onChange(body.data.project.sources);
+          if (saveMyAgent) {
+            persistedMyAgentConsentRef.current = nextMyAgentConsent;
+          }
+          hasLocalChangeRef.current = false;
           setStatus("saved");
           onDirtyChange?.(false);
-          onSaved?.(body.data.project as ProjectDocument);
+          const project = body.data.project as ProjectDocument;
+          const savedProject = consentSources
+              ? {
+                  ...project,
+                  sources: {
+                    ...project.sources,
+                    myagent_connectors: consentSources.myagent_connectors,
+                    myagent_enabled: consentSources.myagent_enabled,
+                    myagent_consent_revision: consentSources.myagent_consent_revision,
+                  },
+                }
+              : project;
+          // Keep canonical room bindings and the separately saved MyAgent
+          // consent together, without queueing another save.
+          if (savedProject.sources) onChange(savedProject.sources);
+          onSaved?.(savedProject);
         }
       } catch (error) {
         if (version === versionRef.current) {
@@ -84,13 +128,25 @@ export function AutosavingSourcesEditor({
         }
       }
     },
-    [onChange, onDirtyChange, onSaved, slug],
+    [kinds, onChange, onDirtyChange, onSaved, slug],
+  );
+
+  const enqueuePersist = useCallback(
+    (next: ProjectSources, version: number) => {
+      const task = saveChainRef.current
+        .catch(() => undefined)
+        .then(() => persist(next, version));
+      saveChainRef.current = task;
+      void task;
+    },
+    [persist],
   );
 
   const queueSave = useCallback(
     (next: ProjectSources) => {
       onChange(next);
       onDirtyChange?.(true);
+      hasLocalChangeRef.current = true;
       latestSourcesRef.current = next;
       versionRef.current += 1;
       const version = versionRef.current;
@@ -99,18 +155,18 @@ export function AutosavingSourcesEditor({
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        void persist(next, version);
+        enqueuePersist(next, version);
       }, AUTOSAVE_DELAY_MS);
     },
-    [onChange, onDirtyChange, persist],
+    [enqueuePersist, onChange, onDirtyChange],
   );
 
   const flushPendingSave = useCallback(() => {
     if (!timerRef.current) return;
     clearTimeout(timerRef.current);
     timerRef.current = null;
-    void persist(latestSourcesRef.current, versionRef.current);
-  }, [persist]);
+    enqueuePersist(latestSourcesRef.current, versionRef.current);
+  }, [enqueuePersist]);
 
   useEffect(
     () => () => {
@@ -157,9 +213,7 @@ export function AutosavingSourcesEditor({
             </span>
             <button
               type="button"
-              onClick={() =>
-                void persist(latestSourcesRef.current, versionRef.current)
-              }
+              onClick={() => enqueuePersist(latestSourcesRef.current, versionRef.current)}
               className="font-medium text-foreground underline underline-offset-2"
             >
               Retry

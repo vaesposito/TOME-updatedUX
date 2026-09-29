@@ -1,5 +1,7 @@
 /** Server-side smoke test used by every model-config write path. */
 
+import { tomeAgentAuthorizationHeaders } from "./agent-auth";
+
 export type ModelCheckResult = { ok: true } | { ok: false; error: string };
 
 export async function testTomeModel(model: string): Promise<ModelCheckResult> {
@@ -9,7 +11,10 @@ export async function testTomeModel(model: string): Promise<ModelCheckResult> {
   try {
     const response = await fetch(`${agentUrl.replace(/\/$/, "")}/model-check`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...tomeAgentAuthorizationHeaders(),
+      },
       body: JSON.stringify({ model: model.trim() }),
       cache: "no-store",
     });

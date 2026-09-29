@@ -39,6 +39,7 @@ import {
 import { UserEmailPicker } from "@/components/ui/user-email-picker";
 import { AutosavingSourcesEditor } from "@/components/projects/source-pickers/AutosavingSourcesEditor";
 import { useProjectSourceKinds } from "@/components/projects/source-pickers/useProjectSourceKinds";
+import { withoutMyAgentConsentFields } from "@/lib/projects/myagent-consent-client";
 import { ChildProjectsPanel } from "@/components/tome/BhagProjectsPanel";
 import { EntityModelSettings } from "@/components/tome/EntityModelSettings";
 import { PanelHeader } from "@/components/tome/PanelHeader";
@@ -239,6 +240,9 @@ export function ProjectSettingsPanel({
     repos: [],
     confluence_url: "",
   });
+  const settingsSourceKinds = isSynthesized
+    ? sourceKinds.filter((kind) => kind !== "myagent")
+    : sourceKinds;
 
   // Scoped OpenFGA writer. A user steward can also lend credentials to the
   // source-activity feed; a team steward authorizes all team members but has no
@@ -649,7 +653,7 @@ export function ProjectSettingsPanel({
         title,
         description,
         sources: {
-          ...sources,
+          ...withoutMyAgentConsentFields(sources),
           repos: (sources.repos ?? []).map((r) => r.trim()).filter(Boolean),
           confluence_url: (sources.confluence_url ?? "").trim(),
           confluence_page_scopes: sources.confluence_page_scopes ?? [],
@@ -1344,7 +1348,7 @@ export function ProjectSettingsPanel({
                       <div className="h-9 animate-pulse rounded-lg bg-muted/50" />
                       <div className="h-9 animate-pulse rounded-lg bg-muted/50" />
                     </div>
-                  ) : sourceKinds.length === 0 ? (
+                  ) : settingsSourceKinds.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       No source connectors are configured for this deployment.
                     </p>
@@ -1352,7 +1356,7 @@ export function ProjectSettingsPanel({
                     <>
                       <AutosavingSourcesEditor
                         slug={slug}
-                        kinds={sourceKinds}
+                        kinds={settingsSourceKinds}
                         value={sources}
                         onChange={setSources}
                         onSaved={onSaved}

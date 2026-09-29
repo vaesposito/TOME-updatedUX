@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from opentelemetry import trace as trace_api
+from opentelemetry.instrumentation.utils import suppress_instrumentation
 
 log = logging.getLogger("tome_agent.tracing")
 
@@ -25,9 +26,10 @@ _instrumented = False
 
 def _base_url() -> str:
     """Return the current SDK base-url setting, supporting the legacy name."""
-    return os.environ.get("LANGFUSE_BASE_URL", "").strip() or os.environ.get(
-        "LANGFUSE_HOST", ""
-    ).strip()
+    return (
+        os.environ.get("LANGFUSE_BASE_URL", "").strip()
+        or os.environ.get("LANGFUSE_HOST", "").strip()
+    )
 
 
 def _enabled_by_configuration() -> bool:
@@ -180,3 +182,17 @@ def trace_context(
 def tracing_enabled() -> bool:
     """Expose the effective instrumentation state for health/tests."""
     return _instrumented
+
+
+@contextmanager
+def suppress_sensitive_evidence_tracing() -> Iterator[None]:
+    """Keep untrusted delegated evidence out of SDK telemetry.
+
+    The OpenInference Claude Agent SDK instrumentor honors OpenTelemetry's
+    standard suppression context before it records agent, tool, prompt, or
+    output spans.  Use this only around the restricted MyAgent evidence pass:
+    its prompt includes third-party content that is intentionally not retained
+    in Langfuse.  Normal Tome operations retain their existing tracing.
+    """
+    with suppress_instrumentation():
+        yield

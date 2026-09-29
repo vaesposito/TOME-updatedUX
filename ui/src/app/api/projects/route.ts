@@ -21,6 +21,11 @@ import {
   normalizeConfluencePageScope,
   normalizeConfluencePageScopes,
 } from "@/lib/projects/confluence-source";
+import {
+  myAgentConsentSubjectFromSession,
+  myAgentSourcesForSubject,
+  normalizeMyAgentConnectors,
+} from "@/lib/projects/myagent-source";
 import { projectMatchesLabels, sanitizeLabels } from "@/lib/projects/labels";
 import {
   canAssignProjectToTeam,
@@ -37,6 +42,7 @@ import {
 } from "@/lib/tome/managed-webex";
 import { prepareWebexRooms } from "@/lib/tome/webex-room-execution";
 import { sessionSub } from "@/lib/tome/agent-proxy";
+import { isMyAgentInteractiveBrowserAction } from "@/lib/tome/myagent-interactive";
 import { requestWebexMeetingOwnerCheck } from "@/lib/tome/auto-ingest/cursor";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
 import {
@@ -123,6 +129,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     tomeSessionSubject(session),
     { isAdmin },
   );
+  const currentSubject = sessionSub(session);
 
   // Kind filter. BHAGs share the `projects` collection (type:"bhag") but are a
   // distinct surface, so they must not leak into the normal project grid or any
@@ -254,6 +261,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
       return {
         ...p,
         _id: id,
+        sources: myAgentSourcesForSubject(p.sources, currentSubject),
         page_count: pageCountMap.get(id) ?? null,
         last_ingested_at: lastIngestMap.get(id) ?? null,
         last_edited_at: lastEditMap.get(id) ?? null,
@@ -442,6 +450,31 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     mode: body.webex_credential_mode ?? "personal",
     provider: body.webex_credential_provider ?? "webex",
   });
+  const myAgentConnectors = normalizeMyAgentConnectors(body.myagent_connectors);
+  const myAgentEnabled = body.myagent_enabled === true && myAgentConnectors.length > 0;
+  if (
+    projectType !== "project" &&
+    (myAgentConnectors.length > 0 || body.myagent_enabled === true)
+  ) {
+    throw new ApiError(
+      "MyAgent delegation is available only for project ingestion, not Area or BHAG synthesis.",
+      400,
+      "MYAGENT_PROJECT_ONLY",
+    );
+  }
+  const myAgentConsentSubject = myAgentEnabled
+    ? myAgentConsentSubjectFromSession(session)
+    : null;
+  if (
+    myAgentEnabled &&
+    (!myAgentConsentSubject || !isMyAgentInteractiveBrowserAction(request, session))
+  ) {
+    throw new ApiError(
+      "MyAgent delegation must be authorized from an explicit action in your signed-in browser.",
+      403,
+      "MYAGENT_INTERACTIVE_CONSENT_REQUIRED",
+    );
+  }
   const webexRooms = await prepareWebexRooms({
     rooms: cleanWebexRooms(body.webex_rooms),
     subject: sessionSub(session),
@@ -462,6 +495,18 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     webex_rooms: webexRooms,
     webex_credential_mode: webexCredentialSettings.mode,
     webex_credential_provider: webexCredentialSettings.provider,
+    ...(myAgentEnabled && myAgentConsentSubject
+      ? {
+          myagent_consents: [
+            {
+              subject: myAgentConsentSubject,
+              connectors: myAgentConnectors,
+              granted_at: new Date().toISOString(),
+              revision: randomUUID(),
+            },
+          ],
+        }
+      : {}),
   };
   const sourceIntegrations: Record<string, string> = {};
   if (sources.repos[0]) sourceIntegrations.github_url = sources.repos[0];
@@ -593,9 +638,23 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     projectSlug: slug,
     metadata: { type: projectType, name: doc.title, team_slug: teamSlug },
   });
+  if (myAgentEnabled) {
+    auditTome({
+      action: "tome.source.myagent_consent_grant",
+      actor: tomeActorFromAuth({ user, session }),
+      projectSlug: slug,
+      metadata: { connectors: myAgentConnectors },
+    });
+  }
 
   return successResponse(
-    { project: { ...doc, _id: String(projectId) } },
+    {
+      project: {
+        ...doc,
+        _id: String(projectId),
+        sources: myAgentSourcesForSubject(doc.sources, sessionSub(session)),
+      },
+    },
     201,
   );
 });

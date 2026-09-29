@@ -349,6 +349,8 @@ export interface ModelProvenance {
 
 /** What the queue worker needs to actually start a queued run later. */
 export interface IngestDispatch {
+  /** Optional per-run subset of the user's consented MyAgent sources. Empty disables research. */
+  myAgentSources?: string[];
   /** Agent endpoint: "/ingest" (source pull) or "/synthesize" (BHAG roll-up). */
   endpoint: string;
   /**
@@ -419,6 +421,30 @@ export interface IngestRun {
   /** OIDC sub of the triggering user; the worker re-resolves their forwarded
    *  OAuth credentials at dispatch time (the request session is long gone). */
   triggered_by_sub?: string;
+  /**
+   * True once this run has sent or prepared a user-delegated MyAgent request.
+   * Its raw trace/evaluation is visible only to that run owner or a Tome admin.
+   */
+  myagent_delegated?: boolean;
+  /**
+   * A bounded MyAgent reply was received for this run. Every report-backed
+   * page write is held as a draft and can be promoted only by an explicit
+   * reviewer; it is never eligible for deadline auto-promotion.
+   */
+  myagent_evidence_received?: boolean;
+  /**
+   * Set only when this exact run was created by the consent owner's explicit,
+   * same-origin first-party browser action. A Bearer/OBO/MCP call (including
+   * one that forwards a session cookie) must never turn a stored consent into
+   * a Webex request on that person's behalf.
+   */
+  myagent_interactive_authorized?: boolean;
+  /** Server-owned tool grant for this manual run; rechecked on every question. */
+  myagent_tool_enabled?: boolean;
+  myagent_consent_revision?: string | null;
+  myagent_allowed_sources?: string[];
+  myagent_question_count?: number;
+  myagent_question_in_flight?: boolean;
   /** Email of the triggering user; stored for revision attribution. */
   triggered_by_email?: string;
   /** Params the worker uses to start a queued run; absent on the immediate path. */
@@ -498,6 +524,8 @@ export interface ChatSession {
   title?: string;
   /** Claude Agent SDK session id — a resume hint, not the durable key. */
   sdk_session_id?: string;
+  /** Prevent research transcripts from resuming in a tool-enabled general session. */
+  myagent_research?: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -583,6 +611,14 @@ export interface ChatRun {
   session_id: string;
   project_id: string;
   user_id: string;
+  triggered_by_sub?: string;
+  myagent_interactive_authorized?: boolean;
+  myagent_tool_enabled?: boolean;
+  myagent_consent_revision?: string | null;
+  myagent_allowed_sources?: string[];
+  myagent_question_count?: number;
+  myagent_question_in_flight?: boolean;
+  myagent_seed?: string;
   status: ChatRunStatus;
   events: ChatRunEvent[];
   last_event_id: number;

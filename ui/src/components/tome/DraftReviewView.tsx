@@ -55,6 +55,9 @@ export function DraftReviewView({
     version: number | null;
     allow_steward_override: boolean;
   } | null>(null);
+  const [qualityEvaluationRestricted, setQualityEvaluationRestricted] = useState(false);
+  const [myAgentEvidenceReceived, setMyAgentEvidenceReceived] = useState(false);
+  const [reviewAccessRestricted, setReviewAccessRestricted] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
@@ -67,7 +70,10 @@ export function DraftReviewView({
         if (!cancelled) {
           setReviewable(j?.data?.status === "awaiting_review");
           setQualityEvaluation(j?.data?.quality_evaluation ?? null);
+          setQualityEvaluationRestricted(Boolean(j?.data?.quality_evaluation_restricted));
           setQualityPolicy(j?.data?.quality_policy ?? null);
+          setMyAgentEvidenceReceived(Boolean(j?.data?.myagent_evidence_received));
+          setReviewAccessRestricted(Boolean(j?.data?.review_access_restricted));
         }
       })
       .catch(() => {
@@ -208,7 +214,7 @@ export function DraftReviewView({
                   : `${pages.length} file${pages.length === 1 ? "" : "s"} changed`}
             </p>
           </div>
-          {reviewable && canEdit && (
+          {reviewable && canEdit && !reviewAccessRestricted && (
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -244,13 +250,18 @@ export function DraftReviewView({
               </button>
             </div>
           )}
-          {reviewable && !canEdit && (
+          {reviewable && reviewAccessRestricted && (
+            <p className="text-xs text-muted-foreground">
+              This private draft can be reviewed only by its authorizing user or a Tome administrator.
+            </p>
+          )}
+          {reviewable && !canEdit && !reviewAccessRestricted && (
             <p className="text-xs text-muted-foreground">
               Only the data steward or a Tome admin can review this draft.
             </p>
           )}
         </div>
-        {reviewable && canEdit && (
+        {reviewable && canEdit && !reviewAccessRestricted && (
           <div className={cn(
             "mt-3 rounded-md border px-3 py-2 text-sm",
             pendingCount > 0
@@ -279,6 +290,13 @@ export function DraftReviewView({
         <p className="border-b bg-destructive/10 px-5 py-2 text-sm text-destructive">{error}</p>
       )}
 
+      {myAgentEvidenceReceived && (
+        <div className="border-b bg-amber-500/10 px-5 py-3 text-xs text-muted-foreground">
+          This draft includes delegated MyAgent evidence. It remains private and cannot auto-promote;
+          explicit approval is required before its pages are shared.
+        </div>
+      )}
+
       {qualityPolicy && qualityPolicy.mode !== "off" && (
         <div className="space-y-2 border-b px-5 py-3 text-xs">
           <div className="flex flex-wrap items-center gap-2">
@@ -299,6 +317,12 @@ export function DraftReviewView({
                 </div>
               ))}
             </div>
+          )}
+          {qualityEvaluationRestricted && (
+            <p className="text-muted-foreground">
+              Detailed quality findings include private delegated evidence and are available
+              only to the user who authorized the request or a TOME administrator.
+            </p>
           )}
           {failedBlockingRubrics.flatMap((rubric) => rubric.findings).map((finding) => (
             <p key={finding} className="text-destructive">{finding}</p>

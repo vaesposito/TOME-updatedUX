@@ -45,6 +45,7 @@ class GitHubConnector(Connector[GitHubExtra]):
             "mcp__github__github_search_issues",
             "mcp__github__github_get_codeowners",
             "mcp__github__github_get_file",
+            "mcp__github__github_get_file_chunk",
             "mcp__github__github_list_dir",
             "mcp__github__github_get_readme",
             "mcp__github__github_list_milestones",

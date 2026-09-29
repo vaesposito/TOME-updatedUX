@@ -26,6 +26,7 @@ import type { AgentIssueContext } from "./github-issue-cache";
 import type { ProjectDocument } from "@/types/projects";
 import type { IngestDispatch } from "@/types/tome";
 import { isSynthesizedType } from "@/types/projects";
+import type { MyAgentEvidence } from "./myagent-webex";
 
 /**
  * Wire shape for forwarded user credentials. The agent reads these off the
@@ -165,6 +166,9 @@ export interface ProjectSnapshot {
 
 /** ChatRequest — mirrors contract.ChatRequest. */
 export interface AgentChatRequest {
+  myagent_research?: boolean;
+  myagent_run_id?: string;
+  myagent_sources?: string[];
   message: string;
   sdk_session_id: string | null;
   is_compact?: boolean;
@@ -192,6 +196,14 @@ export interface AgentIngestRequest {
   run_id: string;
   seed: string | null;
   connector_data: Record<string, unknown>;
+  /**
+   * Evidence returned by the server-side, user-delegated MyAgent Webex bridge.
+   * The agent receives no Webex token and cannot invoke MyAgent itself.
+   */
+  myagent_evidence?: MyAgentEvidence;
+  /** Enables only the run-scoped backend research tool, never forwards an OAuth token. */
+  myagent_questions_enabled?: boolean;
+  myagent_sources?: string[];
   snapshot: ProjectSnapshot;
   /** Compact GitHub-backed Decisions/Critical index; bodies hydrate on demand. */
   issue_context: AgentIssueContext;
@@ -443,14 +455,19 @@ export async function loadStablePages(
 /** Assemble the agent `ChatRequest` for one chat turn. */
 export async function buildChatRequest(
   ctx: TomeProjectContext,
-  opts: { message: string; sdkSessionId: string | null; isCompact?: boolean },
+  opts: { message: string; sdkSessionId: string | null; isCompact?: boolean; myAgentResearch?: boolean },
 ): Promise<AgentChatRequest> {
   const [stablePages, credentials] = await Promise.all([
     loadStablePages(ctx.projectId),
-    resolveForwardedCredentials(ctx),
+    opts.myAgentResearch ? Promise.resolve({}) : resolveForwardedCredentials(ctx),
   ]);
   const snapshot = buildSnapshot(ctx);
-  const readableProjects = await listReadableTomeProjects(
+  if (opts.myAgentResearch) {
+    snapshot.repos = [];
+    snapshot.webex_rooms = [];
+    snapshot.confluence_spaces = [];
+  }
+  const readableProjects = opts.myAgentResearch ? [] : await listReadableTomeProjects(
     tomeSessionSubject(ctx.session),
     { isAdmin: ctx.canManageSteward },
   );
@@ -462,7 +479,7 @@ export async function buildChatRequest(
   const readableSlugs = new Set(snapshot.readable_projects.map((project) => project.slug));
   // Synthesized types (BHAG/Area) also carry tagged child-project wikis so chat
   // can read across both those roll-up inputs and directly attached sources.
-  if (isSynthesizedType(ctx.project.type)) {
+  if (!opts.myAgentResearch && isSynthesizedType(ctx.project.type)) {
     snapshot.child_projects = (
       ctx.project.type === "area"
         ? await resolveAreaChildren(ctx.project.slug)
@@ -471,6 +488,7 @@ export async function buildChatRequest(
   }
   return {
     message: opts.message,
+    ...(opts.myAgentResearch ? { myagent_research: true } : {}),
     sdk_session_id: opts.sdkSessionId,
     ...(opts.isCompact ? { is_compact: true } : {}),
     snapshot,
@@ -500,7 +518,15 @@ export function buildIngestRequest(
     isGreenfield: boolean;
     mode?: "full" | "quick";
     connectorData?: Record<string, unknown>;
+    myAgentEvidence?: MyAgentEvidence;
+    myAgentQuestionsEnabled?: boolean;
+    myAgentSources?: string[];
     credentials?: ForwardedCredentials;
+    /**
+     * The server may use a personal Webex token for a one-shot MyAgent bridge
+     * without granting that token to the agent's direct Webex MCP.
+     */
+    omitWebexCredential?: boolean;
     seedStablePages?: boolean;
     actorEmail?: string | null;
     /** BHAG/Area only: tagged child projects to synthesize with direct sources. */
@@ -529,13 +555,19 @@ export function buildIngestRequest(
     report_id: opts.reportId,
     seed: opts.seed,
     connector_data: opts.connectorData ?? {},
+    ...(opts.myAgentEvidence ? { myagent_evidence: opts.myAgentEvidence } : {}),
+    ...(opts.myAgentQuestionsEnabled ? { myagent_questions_enabled: true, myagent_sources: opts.myAgentSources ?? [] } : {}),
     snapshot,
     issue_context: opts.issueContext ?? emptyIssueContext(),
     is_greenfield: opts.isGreenfield,
     mode: opts.isGreenfield ? "full" : (opts.mode ?? "full"),
     seed_stable_pages: opts.seedStablePages ?? false,
     actor_email: opts.actorEmail ?? null,
-    credentials: opts.credentials ?? {},
+    credentials: opts.omitWebexCredential
+      ? Object.fromEntries(
+          Object.entries(opts.credentials ?? {}).filter(([provider]) => provider !== "webex"),
+        )
+      : opts.credentials ?? {},
     triggered_by: opts.triggeredBy ?? "manual",
   };
 }

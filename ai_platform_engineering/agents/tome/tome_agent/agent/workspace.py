@@ -60,16 +60,20 @@ def _materialize(project_id: str, pages: dict[str, str]) -> None:
                 log.warning("materialize: could not prune %s", existing, exc_info=True)
 
 
-async def refresh_project(project_id: str) -> None:
+async def refresh_project(project_id: str) -> bool:
     """Pull a single project's pages from the backend and mirror them to disk.
-    The caller MUST hold `project_lock(project_id)`. Best-effort: on a fetch
-    failure the on-disk copy is left as-is."""
+    The caller MUST hold `project_lock(project_id)`. Returns false on a fetch
+    failure, leaving the on-disk copy unchanged. Callers about to start a
+    credentialed agent turn must fail closed on false rather than let a stale
+    workspace (which could contain an unapproved draft) become model context.
+    Periodic sync intentionally remains best-effort."""
     try:
         pages = await asyncio.to_thread(http_client.fetch_all_pages_sync, project_id)
     except Exception:
         log.warning("refresh_project: fetch failed for %s", project_id, exc_info=True)
-        return
+        return False
     await asyncio.to_thread(_materialize, project_id, pages)
+    return True
 
 
 async def materialize_project_pages(project_id: str, pages: dict[str, str]) -> None:

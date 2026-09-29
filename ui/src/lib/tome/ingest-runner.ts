@@ -18,6 +18,7 @@ import { ObjectId } from "mongodb";
 
 import { getCollection } from "@/lib/mongodb";
 import { AGENT_IDENTITIES } from "./agent-identities";
+import { tomeAgentAuthorizationHeaders } from "./agent-auth";
 import { getPageStore } from "./page-store";
 import { getTomeIngestRunsCollection, getTomeReportsCollection } from "./mongo-collections";
 import {
@@ -63,6 +64,11 @@ import { captureEvidenceBundle } from "./evidence-bundle";
 import { evaluateDraftQuality } from "./draft-quality";
 import { shouldAwaitIngestReview, summarizeDraftFileReviews } from "./ingest-review";
 import type { IngestFileReviewDecision } from "@/types/tome";
+import {
+  myAgentConnectorsForSubject,
+  myAgentConsentRevisionForSubject,
+  myAgentConsentSubjectFromSession,
+} from "@/lib/projects/myagent-source";
 
 /** Load a project by its stable id (string or ObjectId), normalizing `_id` to string. */
 async function loadProjectById(
@@ -144,6 +150,7 @@ async function createRunRecord(
     cascadeRole?: "child" | "parent";
     blockedByCascadeIds?: string[];
     triggeredBy?: "manual" | "auto";
+    myAgentInteractiveAuthorized?: boolean;
   },
 ): Promise<{ runId: string; reportId: string; isGreenfield: boolean }> {
   const projectId = project._id;
@@ -204,6 +211,7 @@ async function createRunRecord(
     triggered_by_sub: opts.sub || undefined,
     triggered_by_email: opts.email || undefined,
     triggered_by: opts.triggeredBy ?? "manual",
+    myagent_interactive_authorized: opts.myAgentInteractiveAuthorized === true || undefined,
     dispatch,
     cascade_id: opts.cascadeId,
     cascade_role: opts.cascadeRole,
@@ -285,6 +293,7 @@ async function prepareRun(
   if (!project) throw new Error(`project ${projectId} not found`);
 
   const dispatch: IngestDispatch = run.dispatch ?? { endpoint: "/ingest" };
+  const endpoint = dispatch.endpoint || "/ingest";
   const isGreenfield = run.greenfield;
   const meetings = dispatch.webexMeetings ?? [];
   const meetingOnly = dispatch.sourceScope === "webex_meetings";
@@ -327,6 +336,13 @@ async function prepareRun(
         ),
       );
     }
+    // Reconciliation writes only GitHub dot paths, but it can overlap a
+    // browser's per-user MyAgent consent mutation. Re-read before deciding
+    // whether to send any delegated Webex request so a stale project snapshot
+    // can never replay a just-revoked (or another user's) consent.
+    const refreshedProject = await loadProjectById(projectId);
+    if (!refreshedProject) throw new Error(`project ${projectId} not found after reconciliation`);
+    project = refreshedProject;
   } else {
     await appendLog(
       runId,
@@ -339,12 +355,39 @@ async function prepareRun(
     meetings.length > 0 || messagingOnly
       ? { webex: { meetings, messaging_only: messagingOnly } }
       : {};
+  // MyAgent evidence is a direct-source input for the ingest endpoint only.
+  // Never send a user-delegated Webex message for compact/synthesize routes
+  // that cannot consume the reply, or for unattended auto-ingest. A scheduled
+  // run must never turn another person's connector consent into a DM.
+  const myAgentConnectors =
+    !meetingOnly &&
+    endpoint === "/ingest" &&
+    run.triggered_by !== "auto" &&
+    run.myagent_interactive_authorized === true
+    ? myAgentConnectorsForSubject(project.sources, run.triggered_by_sub, dispatch.myAgentSources)
+    : [];
+  const myAgentQuestionsEnabled = myAgentConnectors.length > 0;
+  if (myAgentQuestionsEnabled) {
+    // Grant research for this run, but send no generic upfront message. The
+    // agent first reads the project, then asks concrete questions through a
+    // backend tool that rechecks the run, consent and owner on every call.
+    await runs.updateOne({ _id: runId }, { $set: {
+      myagent_delegated: true,
+      myagent_tool_enabled: true,
+      myagent_consent_revision: myAgentConsentRevisionForSubject(project.sources, run.triggered_by_sub ?? ""),
+      myagent_allowed_sources: myAgentConnectors,
+    } });
+  }
+  // A MyAgent-only source uses the user's Webex token solely in this backend
+  // bridge. Do not forward it to the agent's direct Webex MCP unless this run
+  // also has an explicitly attached room or selected meeting to ingest.
+  const agentNeedsWebex =
+    meetings.length > 0 || (!meetingOnly && (project.sources?.webex_rooms?.length ?? 0) > 0);
   const scopedProject = meetingOnly ? { ...project, sources: {} } : project;
 
   // BHAGs and Areas carry their child projects for synthesis/compaction. A
   // meeting-only synthesized-entity run remains scoped to that transcript and
   // reads no unrelated child wiki, matching its attached-source isolation above.
-  const endpoint = dispatch.endpoint || "/ingest";
   const isBhag = project.type === "bhag";
   const isArea = project.type === "area";
   const childProjects = meetingOnly
@@ -354,7 +397,7 @@ async function prepareRun(
       : isArea
         ? await resolveAreaChildren(project.name)
         : [];
-  if (run.quality_policy_mode !== "off") {
+  if (run.quality_policy_mode !== "off" || myAgentQuestionsEnabled) {
     const bundle = await captureEvidenceBundle({
       project: scopedProject,
       childProjects: childProjects.map((child) => ({
@@ -425,7 +468,10 @@ async function prepareRun(
     isGreenfield,
     mode: dispatch.mode,
     connectorData,
+    myAgentQuestionsEnabled,
+    myAgentSources: myAgentConnectors,
     credentials,
+    omitWebexCredential: !agentNeedsWebex,
     seedStablePages: isGreenfield && dispatch.seedStablePages === true,
     actorEmail: run.triggered_by_email ?? null,
     childProjects,
@@ -473,6 +519,9 @@ export async function startIngestRun(
     skipReview?: boolean;
     /** "auto" = fired by the CRON scheduler, not a human clicking "Run ingest". */
     triggeredBy?: "manual" | "auto";
+    /** Set only by the first-party reingest route after browser-origin checks. */
+    myAgentInteractiveAuthorized?: boolean;
+    myAgentSources?: string[];
   },
 ): Promise<{ runId: string }> {
   const projectId = ctx.projectId;
@@ -485,9 +534,13 @@ export async function startIngestRun(
     sub: sessionSub(ctx.session),
     email: ctx.user.email ?? null,
     triggeredBy: opts.triggeredBy,
+    myAgentInteractiveAuthorized:
+      opts.myAgentInteractiveAuthorized === true &&
+      myAgentConsentSubjectFromSession(ctx.session) === sessionSub(ctx.session),
     dispatch: {
       endpoint: opts.agentEndpoint ?? "/ingest",
       seed: opts.seed ?? null,
+      ...(opts.myAgentSources === undefined ? {} : { myAgentSources: opts.myAgentSources }),
       mode: opts.mode,
       seedStablePages: opts.seedStablePages,
       webexMeetings: opts.webexMeetings,
@@ -677,6 +730,14 @@ async function auditRunLifecycle(
     if (!run) return;
     const project = await loadProjectById(run.project_id);
     const sub = run.triggered_by_sub;
+    // A failed agent may echo delegated evidence in an exception. Audit and
+    // project-feed records are broadly readable operational surfaces, so keep
+    // the detailed failure text inside the protected run record instead.
+    const auditExtra = run.myagent_delegated
+      ? Object.fromEntries(
+          Object.entries(extra ?? {}).filter(([key]) => key !== "error"),
+        )
+      : extra;
     auditTome({
       action,
       actor: sub ? { type: "user", id: sub } : { type: "service", id: "tome-system" },
@@ -690,7 +751,7 @@ async function auditRunLifecycle(
         triggered_by: run.triggered_by ?? "manual",
         cascade_id: run.cascade_id ?? undefined,
         cascade_role: run.cascade_role ?? undefined,
-        ...extra,
+        ...auditExtra,
       },
     });
 
@@ -710,7 +771,7 @@ async function auditRunLifecycle(
             : action === "tome.ingest.finished"
               ? "succeeded"
               : "failed";
-      const reviewOutcome = extra?.review_outcome as string | undefined;
+      const reviewOutcome = auditExtra?.review_outcome as string | undefined;
       const content =
         status === "running"
           ? `${label} started`
@@ -726,7 +787,9 @@ async function auditRunLifecycle(
                   : `${label} completed`
               : reviewOutcome === "rejected"
                 ? `${label} draft rejected`
-                : `${label} failed: ${String(extra?.error ?? "unknown error")}`;
+              : run.myagent_delegated
+                ? `${label} failed`
+                : `${label} failed: ${String(auditExtra?.error ?? "unknown error")}`;
       await postEvent(project.slug, {
         sender_handle: AGENT_IDENTITIES.default,
         content,
@@ -826,7 +889,10 @@ async function driveIngest(
     const path = agentEndpoint.startsWith("/") ? agentEndpoint : `/${agentEndpoint}`;
     const res = await fetch(`${agentUrl.replace(/\/$/, "")}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...tomeAgentAuthorizationHeaders(),
+      },
       body: JSON.stringify(req),
       signal: abortController.signal,
     });
@@ -876,9 +942,11 @@ async function driveIngest(
     // project with an incremental ingest that only touched dynamic pages
     // writes everything live — there's nothing to review, so don't lock
     // the wiki or show "awaiting review" for a run with zero drafts.
+    const requiresExplicitMyAgentReview = run?.myagent_evidence_received === true;
     const awaitReview = shouldAwaitIngestReview({
       skipReview: run?.dispatch?.skipReview === true,
       draftPaths: await store.listDraftPaths(projectId, reportId),
+      forceReview: requiresExplicitMyAgentReview,
     });
 
     if (!awaitReview) {
@@ -888,10 +956,20 @@ async function driveIngest(
       );
       await auditRunLifecycle(runId, "tome.ingest.finished");
     } else {
-      const reviewDeadline = new Date(Date.now() + reviewTimeoutMs());
+      // A delegated MyAgent reply remains untrusted until a human explicitly
+      // approves its draft. Do not assign a deadline that could imply (or
+      // accidentally trigger) automatic promotion.
+      const reviewDeadline = requiresExplicitMyAgentReview
+        ? undefined
+        : new Date(Date.now() + reviewTimeoutMs());
       await runs.updateOne(
         { _id: runId },
-        { $set: { status: "awaiting_review", review_deadline: reviewDeadline } },
+        {
+          $set: {
+            status: "awaiting_review",
+            ...(reviewDeadline ? { review_deadline: reviewDeadline } : {}),
+          },
+        },
       );
       await auditRunLifecycle(runId, "tome.ingest.awaiting_review");
     }
@@ -1158,9 +1236,9 @@ export async function promoteOverdueRuns(): Promise<number> {
   for (const run of overdue) {
     try {
       // Once a human starts making file decisions, only their explicit Done
-      // action may resolve the review. This prevents a rejected file from
-      // being silently published when the old auto-promotion timer expires.
-      if ((run.file_reviews?.length ?? 0) > 0) continue;
+      // action may resolve the review. MyAgent evidence is also a hard human
+      // trust boundary and must never be published by the overdue reaper.
+      if ((run.file_reviews?.length ?? 0) > 0 || run.myagent_evidence_received === true) continue;
       if (run.quality_policy_mode && run.quality_policy_mode !== "off") {
         const evaluation = run.quality_evaluation_id
           ? await getArtifactEvaluation(run.quality_evaluation_id)

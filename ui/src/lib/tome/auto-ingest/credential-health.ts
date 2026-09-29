@@ -134,6 +134,8 @@ export function requiredAutoIngestProviders(project: ProjectDocument, connection
       if (!providers.includes(provider)) providers.push(provider);
     }
   }
+  // MyAgent delegation is deliberately manual-only. Scheduled runs never
+  // consume a user's MyAgent consent or personal Webex connection.
   return providers;
 }
 

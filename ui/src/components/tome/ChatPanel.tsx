@@ -23,6 +23,8 @@ import { MarkdownRenderer } from "@/components/shared/timeline";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import type { ChatPart as Part, ModelProvenance } from "@/types/tome";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
+import { requestsMyAgent } from "@/lib/tome/myagent-chat-mode";
+import { MYAGENT_BROWSER_ACTION_HEADER } from "@/lib/tome/myagent-interactive";
 import {
   emptyTomeChatViewState,
   tomeChatKey,
@@ -99,6 +101,7 @@ export function ChatPanel({
     sessionOwner,
     contextUsage,
     resumeRunId,
+    myAgentResearch = false,
   } = chat;
   const [input, setInput] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(!storedChat?.hydrated);
@@ -210,6 +213,7 @@ export function ChatPanel({
           hydrated: true,
           sessionId: data.session?.id ?? null,
           sdkSessionId: data.session?.sdkSessionId ?? null,
+          myAgentResearch: data.session?.myAgentResearch === true,
           readOnly: Boolean(data.readOnly),
           sessionOwner:
             typeof data.sessionOwner === "string"
@@ -383,6 +387,7 @@ export function ChatPanel({
         messages: [],
         sessionId: nextSessionId,
         sdkSessionId: null,
+        myAgentResearch: false,
         contextUsage: null,
         resumeRunId: null,
       }));
@@ -540,12 +545,15 @@ export function ChatPanel({
     };
 
     try {
+      const research = current.myAgentResearch === true || requestsMyAgent(text);
+      updateChat(chatKey, (chat) => ({ ...chat, myAgentResearch: research }));
       const res = await fetch(`/api/tome/projects/${slug}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", [MYAGENT_BROWSER_ACTION_HEADER]: "1" },
         body: JSON.stringify({
           message: text,
           sdk_session_id: current.sdkSessionId,
+          myagent_research: research,
         }),
       });
 
@@ -735,6 +743,12 @@ export function ChatPanel({
 
       {/* Floating composer — no hard divider above it; sits over the transcript. */}
       <div className="pointer-events-none px-4 pb-5 pt-2">
+        <label className="pointer-events-auto mx-auto mb-2 flex max-w-4xl items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={myAgentResearch}
+            disabled={readOnlyView || streaming || compacting}
+            onChange={(event) => updateChat(chatKey, (chat) => ({ ...chat, myAgentResearch: event.target.checked }))} />
+          Ask MyAgent · selected Outlook, SharePoint and Salesforce sources
+        </label>
         <div className="pointer-events-auto mx-auto flex max-w-4xl items-center gap-2 rounded-2xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur transition focus-within:ring-2 focus-within:ring-ring">
           <TextareaAutosize
             value={input}

@@ -33,6 +33,7 @@ from claude_agent_sdk import (
 
 from tome_agent.agent.http_client import ModelResolution
 from tome_agent.orchestrator.contract import IngestEventPayload
+from tome_agent.tracing import suppress_sensitive_evidence_tracing
 
 log = logging.getLogger("tome_agent.agent.run_stream")
 
@@ -146,18 +147,23 @@ def extract_usage(usage: dict | None) -> dict[str, int]:
     return out
 
 
-async def consume_agent_query(
+async def _consume_agent_query(
     prompt: str,
     options,
     log_buf: list[IngestEventPayload],
     *,
     model_provenance: ModelResolution | None = None,
+    redact_sensitive_content: bool = False,
 ) -> AsyncIterator[IngestEventPayload]:
     """Run the SDK query and translate each message into IngestEventPayloads,
     draining `log_buf` (the persist hook's `page_written` events) as it goes.
 
     `log_buf` is the same list the caller's `on_write` hook appends to; passing
-    it in lets page-write events interleave with tool/text events in order."""
+    it in lets page-write events interleave with tool/text events in order.
+
+    `redact_sensitive_content` is used solely for the bounded MyAgent evidence
+    pass. The model can see delegated content there, but run logs must not.
+    """
     result_seen = False
     tool_call_count = 0
     tool_call_names: dict[str, str] = {}
@@ -189,9 +195,12 @@ async def consume_agent_query(
                         if isinstance(block, ToolUseBlock):
                             short = block.name.replace("mcp__github__", "gh.")
                             if nested:
-                                yield emit_log(
-                                    f"    ↳ {short} {stringify_tool_input(block.input)}"
+                                detail = (
+                                    "[input suppressed]"
+                                    if redact_sensitive_content
+                                    else stringify_tool_input(block.input)
                                 )
+                                yield emit_log(f"    ↳ {short} {detail}")
                                 continue
                             tool_call_count += 1
                             tool_call_names[block.id] = short
@@ -200,7 +209,11 @@ async def consume_agent_query(
                                 data={
                                     "id": block.id,
                                     "tool": short,
-                                    "input": stringify_tool_input(block.input),
+                                    "input": (
+                                        "[input suppressed]"
+                                        if redact_sensitive_content
+                                        else stringify_tool_input(block.input)
+                                    ),
                                     "ts": now_iso(),
                                 },
                             )
@@ -208,9 +221,14 @@ async def consume_agent_query(
                             text = (block.text or "").strip()
                             if text:
                                 prefix = "    ↳ ~" if nested else "~"
-                                for line in text.splitlines():
-                                    if line.strip():
-                                        yield emit_log(f"{prefix} {line}")
+                                if redact_sensitive_content:
+                                    yield emit_log(
+                                        f"{prefix} [assistant text suppressed]"
+                                    )
+                                else:
+                                    for line in text.splitlines():
+                                        if line.strip():
+                                            yield emit_log(f"{prefix} {line}")
                     # Fold this turn's additive usage into the running total. Emit a
                     # live snapshot only on top-level turns — subagent turns are
                     # already summed in, and the next top-level snapshot reflects them.
@@ -242,10 +260,15 @@ async def consume_agent_query(
                                 },
                             )
                         except Exception:
-                            log.debug(
-                                "get_context_usage failed; skipping snapshot",
-                                exc_info=True,
-                            )
+                            if redact_sensitive_content:
+                                log.debug(
+                                    "restricted evidence context usage unavailable; details suppressed"
+                                )
+                            else:
+                                log.debug(
+                                    "get_context_usage failed; skipping snapshot",
+                                    exc_info=True,
+                                )
                 elif isinstance(message, UserMessage):
                     # Skip a subagent's internal tool results — the task_progress
                     # heartbeat already conveys the subagent is alive and working.
@@ -272,7 +295,11 @@ async def consume_agent_query(
                                 if isinstance(block, dict)
                                 else None
                             )
-                            coverage = confluence_tree_coverage(label, content)
+                            coverage = (
+                                None
+                                if redact_sensitive_content
+                                else confluence_tree_coverage(label, content)
+                            )
                             if coverage and not is_error:
                                 limit_note = (
                                     " · source limit reached"
@@ -301,7 +328,11 @@ async def consume_agent_query(
                                 },
                             )
                 elif isinstance(message, TaskStartedMessage):
-                    desc = (message.description or "subagent").strip()
+                    desc = (
+                        "[description suppressed]"
+                        if redact_sensitive_content
+                        else (message.description or "subagent").strip()
+                    )
                     subagent_desc[message.task_id] = desc
                     kind = f" [{message.task_type}]" if message.task_type else ""
                     yield emit_log(f"  ↳ subagent started{kind}: {desc[:160]}")
@@ -315,9 +346,12 @@ async def consume_agent_query(
                 elif isinstance(message, TaskNotificationMessage):
                     subagent_desc.pop(message.task_id, None)
                     subagent_last_tool.pop(message.task_id, None)
-                    raw = (message.summary or "").strip()
-                    summary = raw.splitlines()[0] if raw else ""
-                    tail = f": {summary[:160]}" if summary else ""
+                    if redact_sensitive_content:
+                        tail = ": [summary suppressed]"
+                    else:
+                        raw = (message.summary or "").strip()
+                        summary = raw.splitlines()[0] if raw else ""
+                        tail = f": {summary[:160]}" if summary else ""
                     yield emit_log(f"  ↳ subagent {message.status}{tail}")
                 elif isinstance(message, TaskUpdatedMessage):
                     # Terminal state can arrive only as a TaskUpdated (e.g. killed).
@@ -338,11 +372,16 @@ async def consume_agent_query(
                         getattr(message, "is_error", False)
                         and message.subtype != "success"
                     ):
-                        log.warning(
-                            "ResultMessage has is_error=True: subtype=%s errors=%s",
-                            message.subtype,
-                            getattr(message, "errors", None),
-                        )
+                        if redact_sensitive_content:
+                            log.warning(
+                                "restricted evidence run returned an error; details suppressed"
+                            )
+                        else:
+                            log.warning(
+                                "ResultMessage has is_error=True: subtype=%s errors=%s",
+                                message.subtype,
+                                getattr(message, "errors", None),
+                            )
                     yield IngestEventPayload(
                         type="done",
                         data={
@@ -364,12 +403,65 @@ async def consume_agent_query(
 
     except Exception as e:
         if result_seen:
-            log.warning(
-                "agent stream raised after ResultMessage (skill tool-deny artifact, ignoring)",
-                exc_info=True,
-            )
+            if redact_sensitive_content:
+                log.warning(
+                    "restricted evidence stream raised after result; details suppressed"
+                )
+            else:
+                log.warning(
+                    "agent stream raised after ResultMessage (skill tool-deny artifact, ignoring)",
+                    exc_info=True,
+                )
         else:
-            log.exception("agent stream failed")
+            if redact_sensitive_content:
+                log.warning(
+                    "restricted evidence agent stream failed; details suppressed"
+                )
+            else:
+                log.exception("agent stream failed")
             yield IngestEventPayload(
-                type="error", data={"message": f"{type(e).__name__}: {e}"}
+                type="error",
+                data={
+                    "message": (
+                        "restricted evidence agent stream failed"
+                        if redact_sensitive_content
+                        else f"{type(e).__name__}: {e}"
+                    )
+                },
             )
+
+
+async def consume_agent_query(
+    prompt: str,
+    options,
+    log_buf: list[IngestEventPayload],
+    *,
+    model_provenance: ModelResolution | None = None,
+    redact_sensitive_content: bool = False,
+) -> AsyncIterator[IngestEventPayload]:
+    """Run one agent turn, suppressing telemetry only for delegated evidence.
+
+    OpenInference wraps the Claude SDK at process scope. Its standard
+    OpenTelemetry suppression context must therefore cover the client query and
+    response stream themselves, not just prompt construction. The inner loop
+    separately avoids emitting model/tool data into the persisted ingest log.
+    """
+    if redact_sensitive_content:
+        with suppress_sensitive_evidence_tracing():
+            async for event in _consume_agent_query(
+                prompt,
+                options,
+                log_buf,
+                model_provenance=model_provenance,
+                redact_sensitive_content=True,
+            ):
+                yield event
+        return
+
+    async for event in _consume_agent_query(
+        prompt,
+        options,
+        log_buf,
+        model_provenance=model_provenance,
+    ):
+        yield event

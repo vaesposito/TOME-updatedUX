@@ -34,7 +34,7 @@ export interface ProjectOnboardingStepConfig {
    * `source` provider: which connector this step attaches. Each renders its own
    * live-fetch picker UX. Selections populate the project's sources at create.
    */
-  source?: "github" | "confluence" | "webex";
+  source?: "github" | "confluence" | "webex" | "myagent";
   /** http provider: target URL; supports `${ENV_VAR}` interpolation. */
   endpoint?: string;
   /**
@@ -156,7 +156,10 @@ function normalizeConfig(raw: unknown): ProjectOnboardingConfig {
         gradient: typeof s.gradient === "string" ? s.gradient : undefined,
         provider,
         source:
-          s.source === "github" || s.source === "confluence" || s.source === "webex"
+          s.source === "github" ||
+          s.source === "confluence" ||
+          s.source === "webex" ||
+          s.source === "myagent"
             ? s.source
             : undefined,
         endpoint: typeof s.endpoint === "string" ? s.endpoint : undefined,

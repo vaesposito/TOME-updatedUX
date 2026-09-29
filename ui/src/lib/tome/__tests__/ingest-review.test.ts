@@ -27,6 +27,16 @@ describe("shouldAwaitIngestReview", () => {
       }),
     ).toBe(true);
   });
+
+  it("never lets a received MyAgent reply bypass explicit review", () => {
+    expect(
+      shouldAwaitIngestReview({
+        skipReview: true,
+        draftPaths: [],
+        forceReview: true,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("summarizeDraftFileReviews", () => {

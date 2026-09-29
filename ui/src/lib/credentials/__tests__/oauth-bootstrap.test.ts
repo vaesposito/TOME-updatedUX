@@ -27,6 +27,38 @@ function connectorMetadata(input: Partial<CreateConnectorInput> & { id?: string 
 }
 
 describe("OAuth connector env bootstrap", () => {
+  it("bootstraps a separately scoped MyAgent app without changing general Webex", () => {
+    const inputs = buildOAuthConnectorBootstrapInputs({
+      NEXTAUTH_URL: "https://app.example.com",
+      WEBEX_CLIENT_ID: "general-client",
+      WEBEX_CLIENT_SECRET: "general-secret",
+      WEBEX_REDIRECT_URI: "https://app.example.com/api/credentials/oauth/webex/callback",
+      WEBEX_MYAGENT_CLIENT_ID: "delegated-client",
+      WEBEX_MYAGENT_CLIENT_SECRET: "delegated-secret",
+      WEBEX_MYAGENT_REDIRECT_URI: "https://app.example.com/api/credentials/oauth/webex_myagent/callback",
+    });
+    expect(inputs).toHaveLength(2);
+    expect(inputs.find((input) => input.provider === "webex_myagent")).toMatchObject({
+      name: "MyAgent (Webex)", clientId: "delegated-client", clientSecret: "delegated-secret",
+      redirectUri: "https://app.example.com/api/credentials/oauth/webex_myagent/callback",
+      scopes: ["spark:kms", "spark:messages_read", "spark:messages_write"],
+    });
+    expect(inputs.find((input) => input.provider === "webex")).toMatchObject({
+      clientId: "general-client", clientSecret: "general-secret",
+      redirectUri: "https://app.example.com/api/credentials/oauth/webex/callback",
+      scopes: expect.arrayContaining(["spark:rooms_read", "spark:people_read", "spark:memberships_read", "meeting:transcripts_read"]),
+    });
+    expect(inputs.find((input) => input.provider === "webex")?.scopes).not.toContain("spark:messages_write");
+  });
+
+  it("never uses general Webex client credentials to bootstrap MyAgent", () => {
+    const inputs = buildOAuthConnectorBootstrapInputs({
+      WEBEX_CLIENT_ID: "general-client", WEBEX_CLIENT_SECRET: "general-secret",
+      WEBEX_REDIRECT_URI: "https://app.example.com/api/credentials/oauth/webex/callback",
+    });
+    expect(inputs.map((input) => input.provider)).toEqual(["webex"]);
+  });
+
   it("builds provider connector inputs from env without exposing secret values", () => {
     const inputs = buildOAuthConnectorBootstrapInputs({
       GITHUB_CLIENT_ID: "github-client",

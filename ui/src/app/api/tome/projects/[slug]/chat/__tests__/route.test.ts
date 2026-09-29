@@ -114,11 +114,33 @@ describe("POST TOME chat", () => {
       "example-model",
       undefined,
     );
-    expect(mockSetSdkSessionId).toHaveBeenCalledWith(session._id, "sdk-1");
+    expect(mockSetSdkSessionId).toHaveBeenCalledWith(session._id, "sdk-1", false);
     expect(mockFinishChatRun).toHaveBeenCalledWith(
       "run-1",
       "completed",
       undefined,
     );
+  });
+
+  it("grants MyAgent to an explicit browser chat request instead of advertising no integration", async () => {
+    process.env.NEXTAUTH_URL = "http://example.test";
+    mockLoadTomeProject.mockResolvedValue({
+      projectId: "project-1", user: { email: "test-user@example.com" },
+      session: { sub: "owner-1", authMethod: "session" },
+      project: { sources: { myagent_consents: [{ subject: "owner-1", connectors: ["outlook"], granted_at: "2026-01-01", revision: "rev-1" }] } },
+    });
+    global.fetch = jest.fn().mockResolvedValue(new Response('event: done\ndata: {}\n\n'));
+    const response = await POST(new NextRequest("http://example.test/api/tome/projects/example-project/chat", {
+      method: "POST", headers: { "Content-Type": "application/json", origin: "http://example.test", "x-tome-myagent-browser-action": "1" },
+      body: JSON.stringify({ message: "can you talk to myagent to get my emails?" }),
+    }), context);
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(mockCreateChatRun).toHaveBeenCalledWith(session, expect.objectContaining({ subject: "owner-1", sources: ["outlook"], revision: "rev-1" }));
+    const payload = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(payload.myagent_run_id).toBe("run-1");
+    expect(payload.myagent_sources).toEqual(["outlook"]);
+    expect(mockBuildChatRequest.mock.calls[0][1].myAgentResearch).toBe(true);
+    delete process.env.NEXTAUTH_URL;
   });
 });

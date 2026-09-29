@@ -28,3 +28,11 @@ steps:
     provider: source
     source: webex
     default_enabled: false
+
+  - id: myagent_sources
+    title: MyAgent
+    subtitle: Opt in to delegated Outlook, Salesforce, and SharePoint context
+    icon: bot
+    provider: source
+    source: myagent
+    default_enabled: false

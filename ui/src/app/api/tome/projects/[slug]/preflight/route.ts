@@ -6,8 +6,14 @@ import { NextRequest } from "next/server";
 
 import { successResponse, withErrorHandler } from "@/lib/api-middleware";
 import { resolveCredentialsForSub, sessionSub } from "@/lib/tome/agent-proxy";
+import { resolveMyAgentWebexCredential } from "@/lib/tome/myagent-webex";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 import type { PreflightResult, PreflightSourceResult } from "@/lib/tome/preflight";
+import {
+  myAgentConnectorsForSubject,
+  myAgentConnectorLabel,
+  type MyAgentConnector,
+} from "@/lib/projects/myagent-source";
 
 import { resolveWebexRoomExecution } from "@/lib/tome/webex-room-execution";
 
@@ -86,6 +92,32 @@ async function checkConfluence(
   };
 }
 
+async function checkMyAgent(
+  connectors: MyAgentConnector[],
+  sub: string,
+): Promise<Omit<PreflightSourceResult, "label" | "provider">> {
+  const labels = connectors.map(myAgentConnectorLabel);
+  const credential = await resolveMyAgentWebexCredential(sub);
+  if (credential.available) {
+    return {
+      no_token: false,
+      accessible: [],
+      inaccessible: [],
+      unverified: labels,
+      connection_ready: true,
+      detail: "Connected. Review your enabled sources in MyAgent settings.",
+      fixable_by_user: false,
+    };
+  }
+  return {
+    no_token: credential.fixableByUser === true,
+    accessible: [],
+    inaccessible: labels,
+    detail: credential.reason || "MyAgent delegation is unavailable.",
+    fixable_by_user: credential.fixableByUser,
+  };
+}
+
 export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug } = await ctx.params;
   const tctx = await loadTomeProject(request, slug);
@@ -119,8 +151,12 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const webexRooms = Array.isArray(sources.webex_rooms)
     ? sources.webex_rooms
     : [];
+  const myAgentConnectors = myAgentConnectorsForSubject(
+    sources,
+    sessionSub(tctx.session),
+  );
 
-  const [ghResult, cfResult, wxResult] = await Promise.all([
+  const [ghResult, cfResult, wxResult, myAgentResult] = await Promise.all([
     repos.length > 0
       ? creds["github"]?.access_token
         ? checkGitHub(repos, creds["github"].access_token)
@@ -141,6 +177,9 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
           detail: checks.filter((room) => !room.available).map((room) => `${room.name}: ${room.detail}`).join(" ") || undefined,
         }))
       : null,
+    myAgentConnectors.length > 0
+      ? checkMyAgent(myAgentConnectors, sessionSub(tctx.session))
+      : null,
   ]);
 
   if (ghResult) results.push({ provider: "github", label: "GitHub", ...ghResult });
@@ -150,6 +189,13 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       provider: "webex",
       label: "Webex",
       ...wxResult,
+    });
+  }
+  if (myAgentResult) {
+    results.push({
+      provider: "myagent",
+      label: "MyAgent",
+      ...myAgentResult,
     });
   }
 

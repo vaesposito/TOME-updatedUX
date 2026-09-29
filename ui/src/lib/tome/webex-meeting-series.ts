@@ -558,6 +558,7 @@ export function normalizeMeetingSeries(input: {
   scheduledMeetings: unknown;
   meetingInstances: unknown;
   userHubCalendar: unknown;
+  resolvedCalendarLinks?: ReadonlyMap<string, string>;
   now?: Date;
 }): WebexMeetingSeriesCandidate[] {
   const now = input.now ?? new Date();
@@ -613,6 +614,7 @@ export function normalizeMeetingSeries(input: {
     title: stringValue(item.subject),
     hostEmail: hostEmailFromItem(item),
     sourceRefs: {
+      meetingSeriesId: input.resolvedCalendarLinks?.get(normalizedSeriesWebLink(stringValue(item.webLink))),
       userHubSeriesId: stringValue(item.seriesId) || undefined,
       webLink: stringValue(item.webLink) || undefined,
     },
@@ -621,12 +623,18 @@ export function normalizeMeetingSeries(input: {
     const userHubSeriesId = stringValue(item.seriesId);
     const occurrenceType = stringValue(item.occurrenceType).toLowerCase();
     const refs: WebexMeetingSeriesSourceRefs = {
+      meetingSeriesId: calendarIdentities[index].sourceRefs.meetingSeriesId,
       userHubSeriesId: userHubSeriesId || undefined,
       webLink: stringValue(item.webLink) || undefined,
     };
-    let candidate = userHubSeriesId
-      ? candidates.find((existing) => existing.sourceRefs.userHubSeriesId === userHubSeriesId)
-      : undefined;
+    // Different invitation MTIDs can resolve to the same public series. Only
+    // the official link resolver may bridge that difference; never strip MTID.
+    // A resolved public ID also prevents a title fallback to a different series.
+    let candidate = refs.meetingSeriesId
+      ? candidates.find((existing) => existing.sourceRefs.meetingSeriesId === refs.meetingSeriesId)
+      : userHubSeriesId
+        ? candidates.find((existing) => existing.sourceRefs.userHubSeriesId === userHubSeriesId)
+        : undefined;
     // User Hub often returns a concrete calendar occurrence without a stable
     // series id or recurrence marker. In that case, join it to a public
     // meetingSeries template by exact title + compatible organizer. This is

@@ -41,7 +41,7 @@ function meetingLinkId(link: string | undefined): string {
   return "";
 }
 
-/** Title-based cross-source joins must not override contradictory evidence. */
+/** Weak title-based joins must not assume that different join links are aliases. */
 export function compatibleSeriesMetadata(left: MeetingSeriesIdentity, right: MeetingSeriesIdentity): boolean {
   const title = left.title?.trim().toLowerCase();
   if (!title || title !== right.title?.trim().toLowerCase()) return false;
@@ -54,6 +54,8 @@ export function compatibleSeriesMetadata(left: MeetingSeriesIdentity, right: Mee
   if (leftRefs.meetingNumber && rightRefs.meetingNumber && leftRefs.meetingNumber !== rightRefs.meetingNumber) return false;
   const leftLinkId = meetingLinkId(leftRefs.webLink);
   const rightLinkId = meetingLinkId(rightRefs.webLink);
+  // Different MTIDs need verification, not automatic merging or a claim that
+  // the meetings differ. Discovery resolves possible aliases to public IDs.
   return !(leftLinkId && rightLinkId && leftLinkId !== rightLinkId);
 }
 

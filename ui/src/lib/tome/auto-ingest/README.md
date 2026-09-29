@@ -257,6 +257,14 @@ and existing per-user/site cadence.
 User Hub discovery remains necessary because some active recurring meetings do
 not appear reliably through `webex_list_meetings` alone.
 
+Different `MTID` join links can refer to the same meeting. When otherwise matching
+public/calendar entries have conflicting MTIDs, discovery calls the existing
+`webex_resolve_meeting_link` MCP tool and merges only on a uniquely resolved public
+series ID. Identical links are resolved once per sweep, with at most two calls
+concurrently and within the same discovery deadline. Ambiguous or failed lookups
+keep entries separate and show an incomplete-discovery warning. This does not
+rewrite saved subscriptions or occurrence history.
+
 When an occurrence has no public meeting instance ID, Tome sends its series
 title, start time, and Webex site to `webex_list_transcripts`. The MCP server
 matches the nearest User Hub recording and returns its `meetingInstanceId` with

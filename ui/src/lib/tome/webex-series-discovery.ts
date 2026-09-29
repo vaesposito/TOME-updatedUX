@@ -1,5 +1,6 @@
 import { ApiError } from "@/lib/api-error";
 import type { Invoke } from "./webex-meeting-series";
+import { resolveCalendarSeriesLinks } from "./webex-series-link-resolution";
 
 const DAY_MS = 24 * 60 * 60_000;
 type Source = "meetingSeries" | "scheduledMeetings" | "meetingInstances" | "userHubCalendar";
@@ -98,5 +99,11 @@ export async function queryWebexMeetingSeries(invoke: Invoke, input: SeriesDisco
   };
   await Promise.all([worker(), worker()]);
   if (!completed) throw new ApiError("Meeting discovery failed or timed out. Refresh to try again.", 504, "WEBEX_DISCOVERY_FAILED");
-  return { ...pages, complete: warnings.size === 0, warnings: [...warnings] };
+  const resolved = await resolveCalendarSeriesLinks({
+    invoke, deadline,
+    publicRows: [...pages.meetingSeries.items, ...pages.scheduledMeetings.items, ...pages.meetingInstances.items],
+    calendarRows: pages.userHubCalendar.items,
+  });
+  for (const warning of resolved.warnings) warnings.add(warning);
+  return { ...pages, resolvedCalendarLinks: resolved.seriesIds, complete: warnings.size === 0, warnings: [...warnings] };
 }

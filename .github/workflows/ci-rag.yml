@@ -698,7 +698,7 @@ jobs:
           - { image: caipe-rag-server, suffix: '-huggingface' }
           - { image: caipe-rag-ingestors, suffix: '' }
           - { image: caipe-rag-ingestors, suffix: '-slim' }
-    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@codex/publish-ghcr-images-to-ecr
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@main
     with:
       image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-changes.outputs.image_prefix }}${{ matrix.image }}
       image-tag: ${{ needs.determine-changes.outputs.tag_version }}${{ matrix.suffix }}

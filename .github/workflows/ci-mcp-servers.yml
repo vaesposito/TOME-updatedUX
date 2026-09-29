@@ -619,7 +619,7 @@ jobs:
       fail-fast: false
       matrix:
         agent: ${{ fromJSON(needs.load-config.outputs.all_agents) }}
-    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@codex/publish-ghcr-images-to-ecr
+    uses: cisco-eti/gh-reusable-workflows/.github/workflows/mirror-ghcr-to-ecr.yaml@main
     with:
       image-path: ${{ inputs.repo_org || github.repository_owner }}/${{ needs.determine-agents.outputs.image_prefix }}mcp-${{ matrix.agent }}
       image-tag: ${{ needs.determine-agents.outputs.tag_version }}

@@ -21,6 +21,10 @@ import {
 } from "@/lib/tome/managed-webex";
 import type { GitHubRepositorySource } from "@/types/projects";
 import { webexSpaceConnectionLabel, webexSpaceProvider } from "@/lib/tome/webex-space-provider";
+import {
+  githubApiBaseUrl,
+  githubFullName,
+} from "@/lib/projects/github-repository";
 
 interface SourceOption {
   value: string;
@@ -33,6 +37,7 @@ const GH_HEADERS = (token: string) => ({
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
 });
+const GH_API = githubApiBaseUrl();
 
 interface GitHubRepositoryResponse {
   id?: number;
@@ -69,7 +74,7 @@ async function githubSearchRepos(token: string, cql: string): Promise<SourceOpti
   // recency-capped first page. This is what makes name search actually find
   // private/older repos with the user's token.
   const res = await fetch(
-    `https://api.github.com/search/repositories?per_page=50&q=${encodeURIComponent(cql)}`,
+    `${GH_API}/search/repositories?per_page=50&q=${encodeURIComponent(cql)}`,
     { headers: GH_HEADERS(token) },
   );
   if (!res.ok) return [];
@@ -88,14 +93,14 @@ async function githubSearchRepos(token: string, cql: string): Promise<SourceOpti
 //   - "cisco-eti/act"           → SEARCH the org for repos named *act* (token-
 //                                 scoped Search API → full coverage incl. private)
 async function githubRepos(token: string, q: string): Promise<SourceOption[]> {
-  const path = q.replace(/^https?:\/\/github\.com\//i, "").trim();
+  const path = githubFullName(q);
   const [owner, ...rest] = path.split("/");
   const namePart = rest.join("/").trim();
 
   if (!owner) {
     return githubFetchRepos(
       token,
-      "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member",
+      `${GH_API}/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member`,
     );
   }
 
@@ -113,12 +118,12 @@ async function githubRepos(token: string, q: string): Promise<SourceOption[]> {
   const enc = encodeURIComponent(owner);
   const orgRepos = await githubFetchRepos(
     token,
-    `https://api.github.com/orgs/${enc}/repos?per_page=100&sort=updated&type=all`,
+    `${GH_API}/orgs/${enc}/repos?per_page=100&sort=updated&type=all`,
   );
   if (orgRepos.length > 0) return orgRepos;
   return githubFetchRepos(
     token,
-    `https://api.github.com/users/${enc}/repos?per_page=100&sort=updated&type=all`,
+    `${GH_API}/users/${enc}/repos?per_page=100&sort=updated&type=all`,
   );
 }
 
@@ -355,7 +360,7 @@ async function webexRooms(token: string, q: string): Promise<SourceOption[]> {
 async function connectedTo(provider: string, token: string): Promise<string> {
   try {
     if (provider === "github") {
-      const r = await fetch("https://api.github.com/user", {
+      const r = await fetch(`${GH_API}/user`, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
       });
       if (!r.ok) return "";

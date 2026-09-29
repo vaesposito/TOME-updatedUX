@@ -9,9 +9,12 @@ import {
 import type { SourceAdapter } from "./SourceItemPicker";
 import type { BrowsableSourceKind } from "./index";
 
-const stripGh = (v: string) => v.replace(/^https?:\/\/github\.com\//i, "");
+const stripGh = (v: string) => v.replace(/^https?:\/\/[^/]+\//i, "");
 
-const NON_GITHUB_URL = /^https?:\/\/(?!(www\.)?github\.com)/i;
+// GitHub Enterprise hosts commonly use names such as wwwin-github.cisco.com.
+// Keep rejecting obvious Confluence/Webex URLs while accepting GitHub.com and
+// GHES repository URLs.
+const NON_GITHUB_URL = /^https?:\/\/(?![^/]*github[^/]*\.)/i;
 
 const rejectNonGithubUrl = (input: string): string | null => {
   const trimmed = input.trim();

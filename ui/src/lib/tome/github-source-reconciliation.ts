@@ -9,6 +9,7 @@
  */
 
 import {
+  githubApiBaseUrl,
   githubFullName,
   githubRepoSlug,
   githubSourceFromValue,
@@ -64,14 +65,14 @@ function configuredGitHubSources(project: ProjectDocument): GitHubRepositorySour
 
 function repositoryApiUrl(source: GitHubRepositorySource): string {
   if (typeof source.id === "number") {
-    return `https://api.github.com/repositories/${source.id}`;
+    return `${githubApiBaseUrl()}/repositories/${source.id}`;
   }
   const fullName = githubFullName(source.full_name || source.html_url);
   const [owner, repo, ...extra] = fullName.split("/");
   if (!owner || !repo || extra.length > 0) {
     throw new Error(`Invalid GitHub repository source: ${source.full_name || source.html_url}`);
   }
-  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  return `${githubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 }
 
 /** Resolve stable identity plus current canonical GitHub metadata. */

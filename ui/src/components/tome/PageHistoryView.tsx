@@ -393,6 +393,7 @@ export function PageHistoryView({
                   : "(empty)"
               }
               rightTitle={`${selected.author} · ${new Date(selected.created_at).toLocaleString()}${selected.status === "draft" ? " · DRAFT" : ""}`}
+              styles={{ diffContainer: { minWidth: 0 } }}
             />
           </div>
         )}

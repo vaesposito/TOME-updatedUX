@@ -1,20 +1,12 @@
 const mockCollectForwardedCredentials = jest.fn();
-const mockResolveManagedWebexCredential = jest.fn();
-const mockAssertManagedWebexUserSharesRooms = jest.fn();
+const mockResolveRooms = jest.fn();
 
 jest.mock("@/lib/projects/onboarding-providers", () => ({
   collectForwardedCredentials: (...args: unknown[]) =>
     mockCollectForwardedCredentials(...args),
 }));
-jest.mock("../managed-webex", () => ({
-  assertManagedWebexUserSharesRooms: (...args: unknown[]) =>
-    mockAssertManagedWebexUserSharesRooms(...args),
-  projectWebexCredentialMode: (project: ProjectDocument) =>
-    project.sources?.webex_credential_mode === "managed" ? "managed" : "personal",
-  projectWebexCredentialProvider: (project: ProjectDocument) =>
-    project.sources?.webex_credential_provider || "webex",
-  resolveManagedWebexCredential: (...args: unknown[]) =>
-    mockResolveManagedWebexCredential(...args),
+jest.mock("../webex-room-execution", () => ({
+  resolveWebexRoomExecution: (...args: unknown[]) => mockResolveRooms(...args),
 }));
 jest.mock("../bhag", () => ({
   resolveAreaChildren: jest.fn(),
@@ -81,61 +73,48 @@ beforeEach(() => {
     github: { access_token: "github-token" },
     webex: { access_token: "personal-webex-token" },
   });
-  mockResolveManagedWebexCredential.mockResolvedValue({
-    capability: { available: true },
-    accessToken: "managed-webex-token",
-  });
-  mockAssertManagedWebexUserSharesRooms.mockResolvedValue(undefined);
+  mockResolveRooms.mockResolvedValue({ checks: [{ name: "Example room", mode: "managed", available: true }],
+    roomTokens: { "room-id": "bound-owner-token" } });
 });
 
-it("uses managed Webex only for project ingest while retaining human-owned credentials", async () => {
+it("forwards scoped room tokens without replacing the caller's meeting token", async () => {
   const project = synthesizedProject("project");
-  project.sources = { ...project.sources, webex_credential_mode: "managed" };
-
-  await expect(
-    resolveProjectCredentials(project, "human-sub", {
-      purpose: "ingest",
-      userEmail: "human@example.com",
-    }),
-  ).resolves.toEqual({
+  await expect(resolveProjectCredentials(project, "caller", { purpose: "ingest" })).resolves.toEqual({
     github: { access_token: "github-token" },
-    webex: {
-      access_token: "managed-webex-token",
-      credential_mode: "managed",
-      messaging_only: "true",
-    },
+    webex: { access_token: "personal-webex-token", room_tokens: '{"room-id":"bound-owner-token"}' },
   });
-  expect(mockAssertManagedWebexUserSharesRooms).toHaveBeenCalledWith({
-    accessToken: "managed-webex-token",
-    userEmail: "human@example.com",
-    rooms: project.sources?.webex_rooms,
-  });
+  expect(mockResolveRooms).toHaveBeenCalledWith(expect.objectContaining({ sources: project.sources, subject: "caller", purpose: "ingest" }));
 });
 
-it("never forwards the managed Webex credential to Tome chat", async () => {
-  const project = synthesizedProject("project");
-  project.sources = { ...project.sources, webex_credential_mode: "managed" };
-
-  await expect(
-    resolveProjectCredentials(project, "human-sub", { purpose: "chat" }),
-  ).resolves.toEqual({ github: { access_token: "github-token" } });
-  expect(mockResolveManagedWebexCredential).not.toHaveBeenCalled();
+it("works without the caller having any Webex connection", async () => {
+  mockCollectForwardedCredentials.mockResolvedValue({});
+  await expect(resolveProjectCredentials(synthesizedProject("project"), "caller", { purpose: "ingest" }))
+    .resolves.toEqual({ webex: { room_tokens: '{"room-id":"bound-owner-token"}' } });
 });
 
-it("keeps meeting-only ingestion on the human's Webex credential", async () => {
-  const project = synthesizedProject("project");
-  project.sources = { ...project.sources, webex_credential_mode: "managed" };
+it.each(["chat", "meeting"] as const)("never resolves delegated credentials for %s", async (purpose) => {
+  await expect(resolveProjectCredentials(synthesizedProject("project"), "caller",
+    purpose === "chat" ? { purpose } : { purpose: "ingest", sourceScope: "webex_meetings" }))
+    .resolves.toEqual({ github: { access_token: "github-token" }, webex: { access_token: "personal-webex-token" } });
+  expect(mockResolveRooms).not.toHaveBeenCalled();
+});
 
-  await expect(
-    resolveProjectCredentials(project, "human-sub", {
-      purpose: "ingest",
-      sourceScope: "webex_meetings",
-    }),
-  ).resolves.toEqual({
-    github: { access_token: "github-token" },
-    webex: { access_token: "personal-webex-token" },
-  });
-  expect(mockResolveManagedWebexCredential).not.toHaveBeenCalled();
+it("blocks dispatch rather than silently skipping a failed room", async () => {
+  mockResolveRooms.mockResolvedValue({ checks: [{ name: "Room A", mode: "managed", available: false, detail: "Managed account lost access" }], roomTokens: {} });
+  await expect(resolveProjectCredentials(synthesizedProject("project"), "caller", { purpose: "ingest" }))
+    .rejects.toThrow("Room A: Managed account lost access");
+});
+
+it("retains personal-source access errors instead of aborting other sources or borrowing another user's token", async () => {
+  mockResolveRooms.mockResolvedValue({ checks: [{ name: "Room A", mode: "personal", available: false }], roomTokens: { "room-id": "personal-webex-token" } });
+  await expect(resolveProjectCredentials(synthesizedProject("project"), "caller", { purpose: "ingest" }))
+    .resolves.toMatchObject({ webex: { access_token: "personal-webex-token" } });
+});
+
+it("does not make a credential-less scheduled personal run appear connected", async () => {
+  mockCollectForwardedCredentials.mockResolvedValue({});
+  mockResolveRooms.mockResolvedValue({ checks: [{ name: "Room A", mode: "personal", available: false }], roomTokens: {} });
+  await expect(resolveProjectCredentials(synthesizedProject("project"), "owner", { purpose: "ingest" })).resolves.toEqual({});
 });
 
 describe.each(["bhag", "area"] as const)(
@@ -290,6 +269,32 @@ it("excludes every attached project source from a Webex meeting-only ingest", ()
     webex: {
       meetings: [{ id: "meeting-1", title: "Weekly sync", start: "2026-09-03T10:00:00Z" }],
     },
+  });
+});
+
+it("does not forward a bridge-only Webex credential to the agent", () => {
+  const request = buildIngestRequest(synthesizedProject("project"), {
+    runId: "run-1",
+    reportId: "report-1",
+    seed: null,
+    isGreenfield: false,
+    credentials: {
+      github: { access_token: "github-token" },
+      webex: { access_token: "personal-webex-token" },
+    },
+    omitWebexCredential: true,
+    myAgentEvidence: {
+      capabilities: ["outlook"],
+      status: "received",
+      content: "Delegated evidence",
+    },
+  });
+
+  expect(request.credentials).toEqual({ github: { access_token: "github-token" } });
+  expect(request.myagent_evidence).toEqual({
+    capabilities: ["outlook"],
+    status: "received",
+    content: "Delegated evidence",
   });
 });
 

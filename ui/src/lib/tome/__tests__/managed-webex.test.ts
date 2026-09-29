@@ -135,6 +135,17 @@ describe("managed Webex credential", () => {
     expect(mockRefreshConnection).not.toHaveBeenCalled();
   });
 
+  it("does not require membership scope for ingestion or reuse that result for discovery", async () => {
+    mockListConnections.mockResolvedValue([{ id: "connection-1", provider: "webex_messaging",
+      owner: { type: "user", id: "managed-owner" }, status: "connected",
+      grantedScopes: ["spark:rooms_read", "spark:messages_read"] }]);
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ emails: ["managed@example.com"] }))) as typeof fetch;
+    const ingest = await resolveManagedWebexCredential({ force: true, requireMemberships: false, fetchImpl });
+    expect(ingest.capability.available).toBe(true);
+    const discovery = await resolveManagedWebexCredential();
+    expect(discovery.capability.available).toBe(false);
+  });
+
   it("keeps the managed connection outside generic token paths", () => {
     expect(
       isProtectedManagedWebexConnection({

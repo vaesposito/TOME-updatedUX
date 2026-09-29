@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { CalendarDays, Loader2, RefreshCw, Search, TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { WEBEX_SERIES_LOOKAHEAD_DAYS, occurrenceDiscoveryLabel } from "@/lib/tome/webex-series-discovery-options";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +26,7 @@ interface Candidate {
 }
 
 interface ApiEnvelope {
-  data?: { candidates?: Candidate[]; allowNonHostSeries?: boolean };
+  data?: { candidates?: Candidate[]; allowNonHostSeries?: boolean; complete?: boolean; warnings?: string[] };
   error?: string | { message?: string };
   message?: string;
   code?: string;
@@ -51,14 +53,26 @@ export function OnboardingWebexMeetingSeriesPicker({
   const [searchQuery, setSearchQuery] = useState("");
   const [accessWarningCandidate, setAccessWarningCandidate] = useState<Candidate | null>(null);
   const [allowNonHostSeries, setAllowNonHostSeries] = useState(true);
+  const [lookaheadDays, setLookaheadDays] = useState(7);
+  const [discoveryComplete, setDiscoveryComplete] = useState(true);
+  const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([]);
+  const discoveryRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => discoveryRequest.current?.abort(), []);
 
-  const discover = useCallback(async () => {
+  const discover = useCallback(async (days = lookaheadDays) => {
+    discoveryRequest.current?.abort();
+    const controller = new AbortController();
+    discoveryRequest.current = controller;
+    setLookaheadDays(days);
     setLoading(true);
     setError("");
     setErrorCode("");
+    setCandidates([]);
+    setDiscoveryWarnings([]);
     try {
-      const response = await fetch("/api/tome/webex-meeting-series", { cache: "no-store" });
+      const response = await fetch(`/api/tome/webex-meeting-series?lookaheadDays=${days}`, { cache: "no-store", signal: controller.signal });
       const body = (await response.json().catch(() => ({}))) as ApiEnvelope;
+      if (controller.signal.aborted) return;
       if (!response.ok) {
         setErrorCode(body.code ?? "");
         throw new Error(errorMessage(body));
@@ -67,18 +81,16 @@ export function OnboardingWebexMeetingSeriesPicker({
       const nextAllowNonHostSeries = body.data?.allowNonHostSeries !== false;
       setCandidates(nextCandidates);
       setAllowNonHostSeries(nextAllowNonHostSeries);
-      const availableKeys = new Set(
-        nextCandidates
-          .filter((candidate) => candidate.canAutoIngest || nextAllowNonHostSeries)
-          .map((candidate) => candidate.seriesKey),
-      );
-      onSelectedSeriesKeysChange(selectedSeriesKeys.filter((key) => availableKeys.has(key)));
+      setDiscoveryComplete(body.data?.complete !== false);
+      setDiscoveryWarnings(body.data?.warnings ?? []);
+      // A narrower window or partial response must not erase prior selections.
     } catch (cause) {
+      if (controller.signal.aborted) return;
       setError(cause instanceof Error ? cause.message : "Could not find recurring Webex meetings.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [onSelectedSeriesKeysChange, selectedSeriesKeys]);
+  }, [lookaheadDays]);
 
   useEffect(() => {
     void discover();
@@ -131,6 +143,19 @@ export function OnboardingWebexMeetingSeriesPicker({
         </button>
       </div>
 
+      <label className="mt-3 block space-y-1 text-xs text-muted-foreground">
+        Upcoming occurrence window (includes the previous 48 hours)
+        <Select aria-label="Upcoming occurrence window" value={lookaheadDays} disabled={loading}
+          onChange={(event) => void discover(Number(event.target.value))}>
+          {WEBEX_SERIES_LOOKAHEAD_DAYS.map((days) => <option key={days} value={days}>Next {days} days</option>)}
+        </Select>
+      </label>
+      {!loading && discoveryWarnings.length > 0 && (
+        <div role="status" className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+          <p className="font-medium">Discovery incomplete — upcoming occurrences may be missing.</p>
+          {discoveryWarnings.map((warning) => <p key={warning}>{warning}</p>)}
+        </div>
+      )}
       {loading ? (
         <p className="flex items-center gap-2 py-6 text-xs text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Finding recurring meetings…
@@ -152,7 +177,7 @@ export function OnboardingWebexMeetingSeriesPicker({
           )}
         </div>
       ) : candidates.length === 0 ? (
-        <p className="py-6 text-xs text-muted-foreground">No recurring Webex meetings were found.</p>
+        <p className="py-6 text-xs text-muted-foreground">{discoveryComplete ? "No recurring Webex meetings were found. Try a longer window for less frequent calendar-only series." : "No series returned from the completed lookups. Refresh to try again."}</p>
       ) : (
         <div className="mt-3 space-y-3">
           <div className="relative">
@@ -196,9 +221,7 @@ export function OnboardingWebexMeetingSeriesPicker({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{candidate.title}</span>
                       <span className="block text-xs text-muted-foreground">
-                        {candidate.nextOccurrence
-                          ? `Next: ${new Date(candidate.nextOccurrence.start).toLocaleString()}`
-                          : "No upcoming occurrence in the next 90 days"}
+                        {occurrenceDiscoveryLabel(candidate.nextOccurrence?.start, lookaheadDays, discoveryComplete)}
                         {candidate.hostEmail ? ` · Host: ${candidate.hostEmail}` : ""}
                       </span>
                       {!candidate.canAutoIngest && (
@@ -221,11 +244,12 @@ export function OnboardingWebexMeetingSeriesPicker({
               })}
             </div>
           )}
-          <p className="text-xs text-muted-foreground">
-            {selectedSeriesKeys.length} meeting series selected
-          </p>
         </div>
       )}
+
+      <p className="mt-3 text-xs text-muted-foreground">
+        {selectedSeriesKeys.length} meeting series selected
+      </p>
 
       <Dialog
         open={Boolean(accessWarningCandidate)}

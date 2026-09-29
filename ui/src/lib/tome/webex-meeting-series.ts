@@ -3,7 +3,7 @@
  * `webex_meetings` MCP server. No Webex REST calls live in Tome's BFF.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api-error";
@@ -22,6 +22,14 @@ import type {
   WebexMeetingSeriesSubscription,
 } from "@/types/projects";
 import type { WebexMeetingIngestItem } from "@/types/tome";
+import {
+  compatibleSeriesMetadata,
+  normalizedSeriesWebLink,
+} from "./webex-meeting-series-identity";
+import { queryWebexMeetingSeries, webexSeriesDiscoveryTimeoutMs, type SeriesDiscoveryInput } from "./webex-series-discovery";
+import { WEBEX_SERIES_LOOKAHEAD_DAYS } from "./webex-series-discovery-options";
+
+export { findMatchingMeetingSeries, meetingSeriesMatches } from "./webex-meeting-series-identity";
 
 const SERVER_ID = "webex_meetings";
 const PROVIDER = "webex_meetings";
@@ -91,14 +99,22 @@ export interface WebexMeetingSeriesHostEligibility {
   unavailableReason?: string;
 }
 
-export function webexMeetingSeriesDiscoveryWindow(now = new Date()): {
+export function webexMeetingSeriesLookaheadDays(value: unknown): number {
+  const days = value === undefined || value === null ? 7 : Number(value);
+  if (!WEBEX_SERIES_LOOKAHEAD_DAYS.some((allowed) => allowed === days)) {
+    throw new ApiError("Choose a 7, 14, or 30 day discovery window.", 400, "INVALID_DISCOVERY_WINDOW");
+  }
+  return days;
+}
+
+export function webexMeetingSeriesDiscoveryWindow(now = new Date(), lookaheadDays = 7): {
   from: Date;
   to: Date;
   now: Date;
 } {
   return {
     from: new Date(now.getTime() - 48 * 60 * 60 * 1000),
-    to: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000),
+    to: new Date(now.getTime() + webexMeetingSeriesLookaheadDays(lookaheadDays) * 24 * 60 * 60 * 1000),
     now,
   };
 }
@@ -162,7 +178,7 @@ export function meetingSeriesHostEligibility(
   return { canAutoIngest: false, unavailableReason: HOST_REQUIRED_REASON };
 }
 
-export type Invoke = (toolName: string, params: Record<string, unknown>) => Promise<unknown>;
+export type Invoke = (toolName: string, params: Record<string, unknown>, options?: { timeoutMs?: number }) => Promise<unknown>;
 
 export interface ManualWebexMeetingSelection
   extends Omit<WebexMeetingIngestItem, "transcript"> {
@@ -306,7 +322,7 @@ export async function interactiveWebexMeetingInvoker(
       "WEBEX_MEETINGS_CONNECTION_REQUIRED",
     );
   }
-  return async (toolName, params) => {
+  return async (toolName, params, options) => {
     const response = await invokeHttpMcpTool({
       request,
       session,
@@ -315,6 +331,7 @@ export async function interactiveWebexMeetingInvoker(
       toolName,
       params: webexMcpToolArguments(params),
       credentialResolution,
+      timeoutMs: options?.timeoutMs ?? webexSeriesDiscoveryTimeoutMs(),
     });
     if (!response.ok) {
       throw new ApiError(
@@ -338,13 +355,13 @@ export async function backgroundWebexMeetingInvoker(ownerSubject: string): Promi
       "WEBEX_MEETINGS_CONNECTION_REQUIRED",
     );
   }
-  return async (toolName, params) => {
+  return async (toolName, params, options) => {
     const response = await invokeDirectHttpMcpTool({
       endpoint: server.endpoint,
       toolName,
       params: webexMcpToolArguments(params),
       headers: { "X-CAIPE-Provider-Token": token },
-      timeoutMs: toolName === "webex_list_transcripts" ? 75_000 : 30_000,
+      timeoutMs: options?.timeoutMs ?? (toolName === "webex_list_transcripts" ? 75_000 : webexSeriesDiscoveryTimeoutMs()),
     });
     if (!response.ok) {
       throw new ApiError(
@@ -402,33 +419,6 @@ function normalizedWebLink(value: unknown): string {
   } catch {
     return raw.toLowerCase();
   }
-}
-
-export function meetingSeriesMatches(
-  candidate: WebexMeetingSeriesCandidate,
-  stored: { seriesKey: string; sourceRefs: WebexMeetingSeriesSourceRefs },
-): boolean {
-  if (candidate.seriesKey === stored.seriesKey) return true;
-  const left = candidate.sourceRefs;
-  const right = stored.sourceRefs;
-  if (left.meetingSeriesId && left.meetingSeriesId === right.meetingSeriesId) return true;
-  if (left.userHubSeriesId && left.userHubSeriesId === right.userHubSeriesId) return true;
-  if (left.scheduledMeetingId && left.scheduledMeetingId === right.scheduledMeetingId) return true;
-
-  // A personal-room meeting number/link is not a series identity: several
-  // unrelated recurring series can deliberately reuse it. Only use those
-  // weak refs when the two records do not carry conflicting same-source IDs.
-  if (
-    (left.meetingSeriesId && right.meetingSeriesId) ||
-    (left.userHubSeriesId && right.userHubSeriesId)
-  ) {
-    return false;
-  }
-  return Boolean(
-    (left.meetingNumber && left.meetingNumber === right.meetingNumber) ||
-      (normalizedWebLink(left.webLink) &&
-        normalizedWebLink(left.webLink) === normalizedWebLink(right.webLink)),
-  );
 }
 
 function rawMeetingRefs(item: Record<string, unknown>): WebexMeetingSeriesSourceRefs {
@@ -568,6 +558,7 @@ export function normalizeMeetingSeries(input: {
   scheduledMeetings: unknown;
   meetingInstances: unknown;
   userHubCalendar: unknown;
+  resolvedCalendarLinks?: ReadonlyMap<string, string>;
   now?: Date;
 }): WebexMeetingSeriesCandidate[] {
   const now = input.now ?? new Date();
@@ -617,39 +608,57 @@ export function normalizeMeetingSeries(input: {
     );
   }
 
-  for (const item of arrayItems(input.userHubCalendar)) {
+  const userHubRows = arrayItems(input.userHubCalendar);
+  const calendarIdentities = userHubRows.map((item) => ({
+    seriesKey: "",
+    title: stringValue(item.subject),
+    hostEmail: hostEmailFromItem(item),
+    sourceRefs: {
+      meetingSeriesId: input.resolvedCalendarLinks?.get(normalizedSeriesWebLink(stringValue(item.webLink))),
+      userHubSeriesId: stringValue(item.seriesId) || undefined,
+      webLink: stringValue(item.webLink) || undefined,
+    },
+  }));
+  for (const [index, item] of userHubRows.entries()) {
     const userHubSeriesId = stringValue(item.seriesId);
     const occurrenceType = stringValue(item.occurrenceType).toLowerCase();
     const refs: WebexMeetingSeriesSourceRefs = {
+      meetingSeriesId: calendarIdentities[index].sourceRefs.meetingSeriesId,
       userHubSeriesId: userHubSeriesId || undefined,
       webLink: stringValue(item.webLink) || undefined,
     };
-    let candidate = userHubSeriesId
-      ? candidates.find((existing) => existing.sourceRefs.userHubSeriesId === userHubSeriesId)
-      : undefined;
+    // Different invitation MTIDs can resolve to the same public series. Only
+    // the official link resolver may bridge that difference; never strip MTID.
+    // A resolved public ID also prevents a title fallback to a different series.
+    let candidate = refs.meetingSeriesId
+      ? candidates.find((existing) => existing.sourceRefs.meetingSeriesId === refs.meetingSeriesId)
+      : userHubSeriesId
+        ? candidates.find((existing) => existing.sourceRefs.userHubSeriesId === userHubSeriesId)
+        : undefined;
     // User Hub often returns a concrete calendar occurrence without a stable
     // series id or recurrence marker. In that case, join it to a public
     // meetingSeries template by exact title + compatible organizer. This is
     // the key fallback for Webex templates that say "expired" even though the
     // user's calendar contains current recurring occurrences.
     if (!candidate) {
-      const subject = stringValue(item.subject).trim().toLowerCase();
-      const organizerEmail = hostEmailFromItem(item)?.trim().toLowerCase();
-      const titleMatches = candidates.filter((existing) => {
-        if (!subject || existing.title.trim().toLowerCase() !== subject) return false;
-        const existingHost = existing.hostEmail?.trim().toLowerCase();
-        return !organizerEmail || !existingHost || organizerEmail === existingHost;
-      });
-      // Ambiguous title/host matches must stay separate instead of silently
-      // merging two distinct recurring series.
-      if (titleMatches.length === 1) candidate = titleMatches[0];
-    }
-    if (!candidate && refs.webLink) {
-      const webLink = normalizedWebLink(refs.webLink);
-      const linkMatches = candidates.filter(
-        (existing) => normalizedWebLink(existing.sourceRefs.webLink) === webLink,
+      const titleMatches = candidates.filter((existing) =>
+        compatibleSeriesMetadata(existing, calendarIdentities[index]),
       );
-      if (linkMatches.length === 1) candidate = linkMatches[0];
+      // Ambiguous title/host matches must stay separate instead of silently
+      // merging two distinct recurring series. Check both sides: a single
+      // public template can still have several compatible calendar series.
+      if (titleMatches.length === 1) {
+        const match = titleMatches[0];
+        const metadata = {
+          ...match,
+          sourceRefs: { ...match.sourceRefs, userHubSeriesId: undefined },
+        };
+        const calendarSeriesIds = new Set(calendarIdentities
+          .filter((identity) => compatibleSeriesMetadata(metadata, identity))
+          .map((identity) => identity.sourceRefs.userHubSeriesId)
+          .filter(Boolean));
+        if (calendarSeriesIds.size <= 1) candidate = match;
+      }
     }
     const explicitlyRecurring =
       Boolean(userHubSeriesId) ||
@@ -657,8 +666,15 @@ export function normalizeMeetingSeries(input: {
       occurrenceType.includes("recurr");
     if (!candidate && !explicitlyRecurring) continue;
     if (!candidate) {
-      const fallbackKey = userHubSeriesId || normalizedWebLink(refs.webLink);
-      if (!fallbackKey) continue;
+      const webLink = normalizedSeriesWebLink(refs.webLink);
+      if (!userHubSeriesId && !webLink) continue;
+      // ID-less recurring rows need more than a shared personal-room address.
+      // Hash the composite identity rather than embedding private join URLs.
+      const fallbackKey = userHubSeriesId || `link:${createHash("sha256").update(JSON.stringify([
+        webLink,
+        stringValue(item.subject).trim().toLowerCase(),
+        hostEmailFromItem(item)?.trim().toLowerCase() ?? "",
+      ])).digest("hex")}`;
       candidate = {
         seriesKey: `userhub:${fallbackKey}`,
         title: stringValue(item.subject) || "Untitled meeting series",
@@ -695,38 +711,18 @@ export function normalizeMeetingSeries(input: {
 
 export async function discoverMeetingSeries(
   invoke: Invoke,
-  input: { from: Date; to: Date; siteUrl?: string; now?: Date },
+  input: SeriesDiscoveryInput,
 ): Promise<WebexMeetingSeriesCandidate[]> {
-  const common = {
-    from_iso: input.from.toISOString(),
-    to_iso: input.to.toISOString(),
-    max_results: 100,
+  return (await discoverMeetingSeriesWithDiagnostics(invoke, input)).candidates;
+}
+
+export async function discoverMeetingSeriesWithDiagnostics(invoke: Invoke, input: SeriesDiscoveryInput) {
+  const result = await queryWebexMeetingSeries(invoke, input);
+  return {
+    candidates: normalizeMeetingSeries({ ...result, now: input.now }),
+    complete: result.complete,
+    warnings: result.warnings,
   };
-  const results = await Promise.allSettled([
-    invoke("webex_list_meetings", { meeting_type: "meetingSeries", max_results: 100 }),
-    invoke("webex_list_meetings", { ...common, meeting_type: "scheduledMeeting" }),
-    invoke("webex_list_meetings", { ...common, meeting_type: "meeting" }),
-    invoke("webex_userhub_calendar", {
-      ...common,
-      ...(input.siteUrl ? { site_url: input.siteUrl } : {}),
-      meeting_list_type: "All",
-      max_results: 500,
-    }),
-  ]);
-  if (results.every((result) => result.status === "rejected")) {
-    throw results[0].status === "rejected" ? results[0].reason : new Error("Webex discovery failed");
-  }
-  const value = (index: number): unknown => {
-    const result = results[index];
-    return result?.status === "fulfilled" ? result.value : { items: [] };
-  };
-  return normalizeMeetingSeries({
-    meetingSeries: value(0),
-    scheduledMeetings: value(1),
-    meetingInstances: value(2),
-    userHubCalendar: value(3),
-    now: input.now,
-  });
 }
 
 export async function resolveOccurrenceMeetingId(

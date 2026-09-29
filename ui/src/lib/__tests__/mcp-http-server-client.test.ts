@@ -14,7 +14,7 @@ jest.mock("@/lib/mcp-credential-headers", () => ({
   resolveMcpHeaderCredentials: jest.fn(),
 }));
 
-import { listHttpMcpTools } from "@/lib/mcp-http-server-client";
+import { invokeHttpMcpTool, listHttpMcpTools } from "@/lib/mcp-http-server-client";
 
 function response(input: {
   status: number;
@@ -32,6 +32,34 @@ function response(input: {
     text: async () => typeof input.body === "string" ? input.body : JSON.stringify(input.body),
   } as Response;
 }
+
+describe("per-call MCP time budgets", () => {
+  const originalFetch = global.fetch;
+  afterEach(() => { global.fetch = originalFetch; jest.useRealTimers(); });
+
+  it.each([undefined, 45000])("keeps default callers at 15s but honors an override of %s", async (timeoutMs) => {
+    jest.useFakeTimers();
+    global.fetch = jest.fn(async (_url, init) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (body.method === "initialize") return response({ status: 200, sessionId: "session", body: { result: {} } });
+      if (body.method !== "tools/call") return response({ status: 204, body: "" });
+      return new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(response({ status: 200, body: { result: { items: [] } } })), 20000);
+        init?.signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); });
+      });
+    });
+    const pending = invokeHttpMcpTool({
+      request: {} as never, session: { sub: "test-user" },
+      server: { _id: "test", endpoint: "http://example-mcp:8000/mcp", source: "manual", transport: "http", enabled: true } as never,
+      serverId: "test", toolName: "calendar", params: {},
+      credentialResolution: { headers: {}, sources: [] }, timeoutMs,
+    }).catch((error: Error) => error);
+    await jest.advanceTimersByTimeAsync(21000);
+    const result = await pending;
+    if (timeoutMs === undefined) expect(result).toMatchObject({ name: "AbortError" });
+    else expect(result).toMatchObject({ ok: true, status: 200 });
+  });
+});
 
 describe("listHttpMcpTools", () => {
   const originalFetch = global.fetch;

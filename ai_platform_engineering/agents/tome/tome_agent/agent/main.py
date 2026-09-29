@@ -18,14 +18,12 @@ Endpoints:
 - `GET /metrics` — Prometheus exposition (see `tome_agent.metrics`), served by
   `PrometheusHTTPMiddleware` rather than a route handler.
 
-Auth boundary: the **backend** authenticates requests to these endpoints
-by virtue of routing — only the backend can reach the agent on the
-internal docker network. Outbound callbacks from agent → backend
-include the per-agent bearer (`TTT_AGENT_TOKEN` env), validated by the
-backend's `/internal/...` auth dependency.
+Auth boundary: every agent-operation route requires the shared bearer in
+``Authorization: Bearer <token>``. The UI sends `TOME_AGENT_TOKEN`; the agent
+validates the matching `TTT_AGENT_TOKEN`. The same token also authenticates
+agent → backend callbacks. Only health/readiness probes and the passive
+Prometheus scrape endpoint remain unauthenticated.
 """
-
-# ruff: noqa: E402 — tracing must be initialized before SDK-bound imports.
 
 from __future__ import annotations
 
@@ -39,7 +37,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from tome_agent.tracing import flush_tracing, initialize_tracing, trace_context
+from tome_agent.tracing import (
+    flush_tracing,
+    initialize_tracing,
+    suppress_sensitive_evidence_tracing,
+    trace_context,
+)
 
 # Install the SDK wrapper before importing any Tome modules that bind
 # `claude_agent_sdk.query` locally. This keeps every existing SDK entry point
@@ -47,15 +50,15 @@ from tome_agent.tracing import flush_tracing, initialize_tracing, trace_context
 initialize_tracing()
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
-from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from tome_agent.agent import http_client, workspace
+from tome_agent.agent import drift, http_client, workspace
 from tome_agent.agent.chat import stream_chat
 from tome_agent.agent.compact import stream_compaction
-from tome_agent.agent import drift
 from tome_agent.agent.drift import build_drift_report, classify_structural
 from tome_agent.agent.evaluator import evaluate_artifact, evaluator_prompt_contract
+from tome_agent.agent.inbound_auth import has_valid_bearer_token
 from tome_agent.agent.ingestor import expected_template_pages, stream_ingest
 from tome_agent.agent.presentation import (
     generate_presentation,
@@ -110,6 +113,18 @@ metrics.uptime_seconds.set_function(
 )
 
 
+async def _require_fresh_workspace(project_id: str) -> None:
+    """Refresh a credentialed agent's workspace or fail closed.
+
+    A best-effort periodic sync is useful operationally, but it is not a
+    security boundary: a stale file can retain an unapproved delegated-evidence
+    draft. Every normal tool-enabled entry point uses this helper while holding
+    its project lock before offering the filesystem to a model.
+    """
+    if not await workspace.refresh_project(project_id):
+        raise RuntimeError("Could not refresh the live wiki workspace; refusing a stale agent turn")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     initialize_tracing()
@@ -119,6 +134,8 @@ async def lifespan(app: FastAPI):
         )
     if not os.environ.get("TTT_BACKEND_URL"):
         log.warning("agent missing TTT_BACKEND_URL — requests will fail at callback time")
+    if not os.environ.get("TTT_AGENT_TOKEN", "").strip():
+        raise RuntimeError("TTT_AGENT_TOKEN must be configured")
 
     # Persistent workspace: materialize every project's wiki to disk before
     # serving, then keep them fresh on a timer. Best-effort — a backend hiccup
@@ -148,6 +165,28 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="tome-agent", lifespan=lifespan)
 app.add_middleware(PrometheusHTTPMiddleware)
+
+
+@app.middleware("http")
+async def require_inbound_agent_token(request: Request, call_next):
+    """Require the UI's shared bearer before any agent operation executes.
+
+    Liveness/readiness and passive metric collection are intentionally left
+    available to local probes. Every other path, including FastAPI's generated
+    docs, is denied before route dispatch when the token is absent or invalid.
+    """
+    if request.url.path in {"/healthz", "/readyz", "/metrics"}:
+        return await call_next(request)
+
+    expected = os.environ.get("TTT_AGENT_TOKEN", "").strip()
+    if not expected:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "agent token is not configured"},
+        )
+    if not has_valid_bearer_token(request.headers.get("authorization"), expected):
+        return JSONResponse(status_code=401, content={"detail": "invalid agent token"})
+    return await call_next(request)
 
 
 # ---------- health / readiness / metrics ----------
@@ -468,22 +507,33 @@ async def chat_endpoint(body: ChatRequest):
         run_start = run_started()
         success = False
         try:
-            with trace_context(
-                snapshot=body.snapshot,
-                actor_email=body.actor_email,
-                session_id=body.sdk_session_id,
-                operation="chat",
-            ):
-                async for event in stream_chat(
-                    user_message=body.message,
-                    sdk_session_id=body.sdk_session_id,
+            # A prior restricted MyAgent pass may have left draft-only files
+            # in the on-disk working copy. Refresh under the same project lock
+            # before a normal, credentialed chat starts so it can observe only
+            # the PageStore's live pages; the internal page endpoint excludes
+            # pending drafts. Holding the lock also prevents a chat from
+            # racing an ingest's workspace write/persist cycle.
+            async with workspace.project_lock(body.snapshot.project_id):
+                await _require_fresh_workspace(body.snapshot.project_id)
+                with (suppress_sensitive_evidence_tracing() if body.myagent_research else trace_context(
                     snapshot=body.snapshot,
-                    stable_pages=body.stable_pages,
-                    issue_context=body.issue_context,
                     actor_email=body.actor_email,
-                    is_compact=body.is_compact,
-                ):
-                    yield _sse_format(event)
+                    session_id=body.sdk_session_id,
+                    operation="chat",
+                )):
+                    async for event in stream_chat(
+                        user_message=body.message,
+                        sdk_session_id=body.sdk_session_id,
+                        snapshot=body.snapshot,
+                        stable_pages=body.stable_pages,
+                        issue_context=body.issue_context,
+                        actor_email=body.actor_email,
+                        is_compact=body.is_compact,
+                        myagent_research=body.myagent_research,
+                        myagent_run_id=str(body.myagent_run_id) if body.myagent_run_id else None,
+                        myagent_sources=body.myagent_sources,
+                    ):
+                        yield _sse_format(event)
             success = True
         finally:
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
@@ -528,21 +578,32 @@ async def ingest_endpoint(body: IngestRequest):
                         pid, body.experiment.frozen_pages
                     )
                 else:
-                    await workspace.refresh_project(pid)
-                async for event in stream_ingest(
-                    run_id=body.run_id,
-                    seed=body.seed,
-                    connector_data=body.connector_data,
-                    snapshot=body.snapshot,
-                    is_greenfield=body.is_greenfield,
-                    issue_context=body.issue_context,
-                    seed_stable_pages=body.seed_stable_pages,
-                    report_id=body.report_id,
-                    actor_email=body.actor_email,
-                    quick=body.mode == "quick" and not body.is_greenfield,
-                    experiment=body.experiment,
-                ):
-                    yield _sse_format(event)
+                    await _require_fresh_workspace(pid)
+                try:
+                    async for event in stream_ingest(
+                        run_id=body.run_id,
+                        seed=body.seed,
+                        connector_data=body.connector_data,
+                        myagent_evidence=None if body.experiment is not None else body.myagent_evidence,
+                        myagent_questions_enabled=body.myagent_questions_enabled and body.experiment is None,
+                        myagent_sources=body.myagent_sources,
+                        snapshot=body.snapshot,
+                        is_greenfield=body.is_greenfield,
+                        issue_context=body.issue_context,
+                        seed_stable_pages=body.seed_stable_pages,
+                        report_id=body.report_id,
+                        actor_email=body.actor_email,
+                        quick=body.mode == "quick" and not body.is_greenfield,
+                        experiment=body.experiment,
+                    ):
+                        yield _sse_format(event)
+                finally:
+                    # `stream_ingest` can leave draft-only MyAgent output in
+                    # the workspace. Re-materialize the live PageStore before
+                    # releasing the lock so no later normal agent session can
+                    # read unapproved delegated evidence from stale files.
+                    if body.experiment is None:
+                        await workspace.refresh_project(pid)
             success = True
         finally:
             http_client.set_active_experiment(None, None)
@@ -584,7 +645,7 @@ async def compact_endpoint(body: IngestRequest):
                         pid, body.experiment.frozen_pages
                     )
                 else:
-                    await workspace.refresh_project(pid)
+                    await _require_fresh_workspace(pid)
                 async for event in stream_compaction(
                     run_id=body.run_id,
                     seed=body.seed,
@@ -631,7 +692,7 @@ async def synthesize_endpoint(body: IngestRequest):
                         pid, body.experiment.frozen_pages
                     )
                 else:
-                    await workspace.refresh_project(pid)
+                    await _require_fresh_workspace(pid)
                 # Refresh each child's on-disk wiki from the source of truth so
                 # the synthesis reads the latest committed state. Each under its
                 # own lock.
@@ -645,7 +706,7 @@ async def synthesize_endpoint(body: IngestRequest):
                                 ),
                             )
                         else:
-                            await workspace.refresh_project(child.project_id)
+                            await _require_fresh_workspace(child.project_id)
                 async for event in stream_synthesis(
                     run_id=body.run_id,
                     seed=body.seed,

@@ -10,6 +10,11 @@ It runs the **Claude Agent SDK** ingest + chat loops. The UI proxies
 `/api/tome/api/internal/...` endpoints for the project snapshot, page bodies,
 and persistence. CAIPE Mongo is the system of record.
 
+Every agent-operation endpoint requires `Authorization: Bearer <token>`.
+The UI's `TOME_AGENT_TOKEN` must match this service's `TTT_AGENT_TOKEN`; the
+same bearer is used for agent-to-UI callbacks. Only `/healthz`, `/readyz`, and
+the passive `/metrics` scrape endpoint are unauthenticated.
+
 ## Endpoints
 
 | Method | Path | Purpose |
@@ -29,7 +34,7 @@ and persistence. CAIPE Mongo is the system of record.
 |---|---|
 | `TTT_PROJECT_ID` | CAIPE project id/slug (opaque; used to build callback URLs) |
 | `TTT_BACKEND_URL` | Base for the UI's tome API, e.g. `http://caipe-ui:3000/api/tome` |
-| `TTT_AGENT_TOKEN` | Shared bearer for the internal callbacks (non-empty) |
+| `TTT_AGENT_TOKEN` | Required shared bearer for UI → agent operations and agent → UI callbacks (non-empty) |
 | `TTT_PROJECT_ROOT` | Working-copy dir for the agent's file tools (rehydrated each run) |
 | `TTT_AGENT_ROLE` | `editor` \| `viewer` |
 | `TTT_CHAT_MODEL` / `TTT_INGEST_MODEL` / `TTT_PRESENTATION_MODEL` | Deployment fallback model ids when no exact/type/global setting exists |
@@ -41,9 +46,15 @@ and persistence. CAIPE Mongo is the system of record.
 
 Webex request credentials may include `messaging_only: true`. In that mode the
 embedded Webex MCP registers only room, message, and people tools; meeting,
-recording, transcript, and summary tools are unavailable. CAIPE UI uses this
-mode for the deployment-owned Webex space-ingest account. It is request-scoped
-and does not create an ambient service credential inside Tome Agent.
+recording, transcript, and summary tools are unavailable.
+
+Mixed personal/managed space ingestion supplies `credentials.webex.room_tokens`
+as a JSON map of attached room IDs to tokens. Each room uses only its mapped
+token; missing or malformed mappings never fall back to another account.
+Message/person detail lookups with mapped credentials require IDs previously
+seen in that room's messages. Meeting tools use only `webex.access_token`
+(the caller's own credential), never a generic room token. The UI does not
+forward room-token mappings to chat. No ambient service credential is created.
 
 The endpoint, models, and credentials are config-driven — nothing host- or
 product-specific is hardcoded. Model resolution is exact entity, entity type,
@@ -78,7 +89,9 @@ label and evidence hashes, never the candidate model identity.
 ## Run (local dev)
 
 ```bash
-uv run uvicorn tome_agent.agent.main:app --host 0.0.0.0 --port 8766
+TTT_AGENT_TOKEN="$(openssl rand -hex 32)" \\
+uv run uvicorn tome_agent.agent.main:app --host 127.0.0.1 --port 8766
 ```
 
-Point the UI at it with `TOME_AGENT_URL` (e.g. `http://host.docker.internal:8766`).
+Point the UI at it with `TOME_AGENT_URL` (e.g. `http://127.0.0.1:8766`) and
+set its `TOME_AGENT_TOKEN` to the same value.

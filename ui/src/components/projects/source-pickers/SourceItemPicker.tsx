@@ -42,7 +42,7 @@ export interface SourceAdapter {
   emptyNone: string;
   emptyNoMatch?: string;
   /** Not-connected copy: rich (with a Connections link) and the bare fallback. */
-  notConnectedHowTo: (connectionsLink: ReactNode) => ReactNode;
+  notConnectedHowTo: (connectionsLink: ReactNode, connectionName?: string) => ReactNode;
   notConnectedBare: string;
   /**
    * Shown under the loading skeleton once a first load runs past ~2.5s, so a
@@ -84,15 +84,20 @@ interface Row {
 
 export function SourceItemPicker({
   adapter,
+  embedded = false,
   selected,
+  excludedKeys = [],
   onChange,
   confluencePageScopes = [],
   onConfluencePageScopesChange,
   webexCredentialMode,
   webexCredentialProvider,
+  onRefresh,
 }: {
   adapter: SourceAdapter;
+  embedded?: boolean;
   selected: string[];
+  excludedKeys?: string[];
   onChange: (next: string[]) => void;
   confluencePageScopes?: ConfluencePageScope[];
   onConfluencePageScopesChange?: (
@@ -101,9 +106,11 @@ export function SourceItemPicker({
   ) => void;
   webexCredentialMode?: WebexCredentialMode;
   webexCredentialProvider?: string;
+  onRefresh?: () => void;
 }) {
   const {
     connected,
+    connection,
     connectedTo,
     options,
     loading,
@@ -193,7 +200,7 @@ export function SourceItemPicker({
       };
     });
     const rest: Row[] = options
-      .filter((o) => !selectedKeySet.has(optionKeyOf(o)))
+      .filter((o) => !selectedKeySet.has(optionKeyOf(o)) && !excludedKeys.includes(optionKeyOf(o)))
       .map((o) => ({
         key: optionKeyOf(o),
         label: o.label,
@@ -202,7 +209,7 @@ export function SourceItemPicker({
       }));
     return [...pinned, ...rest];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options, selected, selectedKeySet, adapter]);
+  }, [options, selected, selectedKeySet, adapter, excludedKeys]);
 
   const addManual = () => {
     const rejectReason = adapter.manualAdd?.rejectReason?.(manual) ?? null;
@@ -236,13 +243,14 @@ export function SourceItemPicker({
   const managedWebex =
     adapter.provider === "webex" && webexCredentialMode === "managed";
   const managedAccountEmail = managedCapability?.accountEmail;
+  const hasAlreadyAddedSpaces = options.some((option) => excludedKeys.includes(optionKeyOf(option)));
   const emptyListCopy =
     managedWebex && error
       ? error
       : managedWebex && managedAccountEmail
       ? query.trim()
-        ? "No shared Webex spaces match your search."
-        : `No shared spaces found. You and ${managedAccountEmail} must both be members.`
+        ? `No ${hasAlreadyAddedSpaces ? "new " : ""}shared Webex spaces match your search.`
+        : `No ${hasAlreadyAddedSpaces ? "new " : ""}shared spaces found. You and ${managedAccountEmail} must both be members.`
       : query.trim()
         ? adapter.emptyNoMatch ?? adapter.emptyNone
         : adapter.emptyNone;
@@ -270,18 +278,20 @@ export function SourceItemPicker({
   ) : null;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <div className={embedded ? "space-y-3" : "overflow-hidden rounded-2xl border border-border bg-card"}>
       {/* Header: brand chip + title/subtitle + connection status + refresh — one
           row, so each connector reads as its own distinct unit at a glance. */}
-      <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-3">
-        <span className={cn("flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg", adapter.chipClass)}>
-          <ProviderLogo provider={adapter.provider} className="h-[15px] w-[15px] object-contain" />
-        </span>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold leading-tight">{adapter.title}</div>
-          <div className="truncate text-xs text-muted-foreground">{adapter.subtitle}</div>
-        </div>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className={cn("flex items-center gap-2.5", !embedded && "border-b border-border bg-muted/40 px-4 py-3")}>
+        {!embedded ? <>
+          <span className={cn("flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg", adapter.chipClass)}>
+            <ProviderLogo provider={adapter.provider} className="h-[15px] w-[15px] object-contain" />
+          </span>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold leading-tight">{adapter.title}</div>
+            <div className="truncate text-xs text-muted-foreground">{adapter.subtitle}</div>
+          </div>
+        </> : null}
+        <span className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground", !embedded && "ml-auto")}>
           <span
             className={cn(
               "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -306,12 +316,12 @@ export function SourceItemPicker({
             managedWebex ? "Managed account unavailable" : "Not connected"
           )}
         </span>
-        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" onClick={reload} title="Refresh">
+        <Button variant="ghost" size="sm" className={cn("h-7 w-7 shrink-0 p-0", embedded && "ml-auto")} onClick={() => { reload(); onRefresh?.(); }} title="Refresh">
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </Button>
       </div>
 
-      <div className="space-y-3 p-4">
+      <div className={cn("space-y-3", !embedded && "p-4")}>
         {managedWebex && connected && managedAccountEmail ? (
           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             <p>
@@ -338,7 +348,7 @@ export function SourceItemPicker({
               ? managedCapability?.reason ||
                 "The managed Webex account needs reconnection."
               : manageUrl
-                ? adapter.notConnectedHowTo(connectionsLink)
+                ? adapter.notConnectedHowTo(connectionsLink, connection?.name)
                 : adapter.notConnectedBare}
           </p>
         )}

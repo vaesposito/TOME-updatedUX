@@ -10,11 +10,12 @@ import { isMongoDBConfigured } from "@/lib/mongodb";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
 import { isTomeServerEnabled } from "@/lib/tome/guard";
 import {
-  discoverMeetingSeries,
+  discoverMeetingSeriesWithDiagnostics,
   interactiveWebexMeetingInvoker,
   meetingSeriesHostEligibility,
   nonHostMeetingSeriesAllowed,
   webexMeetingSeriesDiscoveryWindow,
+  webexMeetingSeriesLookaheadDays,
 } from "@/lib/tome/webex-meeting-series";
 
 export const dynamic = "force-dynamic";
@@ -29,12 +30,14 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
   const { user, session } = await getAuthFromBearerOrSession(request);
   requireInteractiveTomePrincipal(session);
+  const lookaheadDays = webexMeetingSeriesLookaheadDays(request.nextUrl.searchParams.get("lookaheadDays"));
   const invoke = await interactiveWebexMeetingInvoker(request, { user, session });
-  const candidates = (await discoverMeetingSeries(invoke, webexMeetingSeriesDiscoveryWindow())).map(
+  const discovery = await discoverMeetingSeriesWithDiagnostics(invoke, webexMeetingSeriesDiscoveryWindow(new Date(), lookaheadDays));
+  const candidates = discovery.candidates.map(
     (candidate) => ({
       ...candidate,
       ...meetingSeriesHostEligibility(candidate, user.email),
     }),
   );
-  return successResponse({ candidates, allowNonHostSeries: nonHostMeetingSeriesAllowed() });
+  return successResponse({ candidates, allowNonHostSeries: nonHostMeetingSeriesAllowed(), lookaheadDays, complete: discovery.complete, warnings: discovery.warnings });
 });

@@ -5,11 +5,15 @@ import { SOURCE_ADAPTERS } from "./adapters";
 import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
 
 /** The connectors a project can draw sources from (YAML `source:` values). */
-export type SourceKind = "github" | "confluence" | "webex";
+export type SourceKind = "github" | "confluence" | "webex" | "myagent";
+export type BrowsableSourceKind = Exclude<SourceKind, "myagent">;
 
 export interface SourcePickerProps {
+  /** Render controls inside a parent source card without a second branded card. */
+  embedded?: boolean;
   /** Selected values (github: repo URLs/refs; confluence: one space/page URL; webex: room IDs). */
   selected: string[];
+  excludedKeys?: string[];
   onChange: (next: string[]) => void;
   confluencePageScopes?: ConfluencePageScope[];
   onConfluencePageScopesChange?: (
@@ -18,6 +22,7 @@ export interface SourcePickerProps {
   ) => void;
   webexCredentialMode?: WebexCredentialMode;
   webexCredentialProvider?: string;
+  onRefresh?: () => void;
 }
 
 /**
@@ -28,14 +33,17 @@ export interface SourcePickerProps {
  */
 export function SourcePicker({
   source,
+  embedded,
   selected,
+  excludedKeys,
   onChange,
   confluencePageScopes,
   onConfluencePageScopesChange,
   webexCredentialMode,
   webexCredentialProvider,
+  onRefresh,
 }: { source?: string } & SourcePickerProps) {
-  const adapter = source ? SOURCE_ADAPTERS[source as SourceKind] : undefined;
+  const adapter = source ? SOURCE_ADAPTERS[source as BrowsableSourceKind] : undefined;
   if (!adapter) {
     return (
       <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -46,12 +54,15 @@ export function SourcePicker({
   return (
     <SourceItemPicker
       adapter={adapter}
+      embedded={embedded}
       selected={selected}
+      excludedKeys={excludedKeys}
       onChange={onChange}
       confluencePageScopes={confluencePageScopes}
       onConfluencePageScopesChange={onConfluencePageScopesChange}
       webexCredentialMode={webexCredentialMode}
       webexCredentialProvider={webexCredentialProvider}
+      onRefresh={onRefresh}
     />
   );
 }

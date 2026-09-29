@@ -14,6 +14,9 @@ import {
   normalizeConfluencePageScope,
   normalizeConfluencePageScopes,
 } from "@/lib/projects/confluence-source";
+import {
+  myAgentSourcesForSubject,
+} from "@/lib/projects/myagent-source";
 import { runOnboardingDeletes, runOnboardingUpdates } from "@/lib/projects/onboarding-providers";
 import { normalizeGitHubRepositorySource } from "@/lib/projects/github-repository";
 import {
@@ -26,9 +29,9 @@ import { isValidCron } from "@/lib/rbac/cron";
 import { getCollection, isMongoDBConfigured } from "@/lib/mongodb";
 import { auditTome, tomeActorFromAuth, type TomeAuditActor } from "@/lib/tome/audit";
 import {
-  assertManagedWebexRoomsAccessible,
   normalizeWebexCredentialSettings,
 } from "@/lib/tome/managed-webex";
+import { prepareWebexRooms } from "@/lib/tome/webex-room-execution";
 import { resolveUniqueTomeProjectBySlug } from "@/lib/tome/project-resolver";
 import {
   getTomeReadConfiguration,
@@ -42,7 +45,9 @@ import {
   reconcileDataSteward,
   resolveDataSteward,
   resolveStoredDataSteward,
+  tomeSessionSubject,
 } from "@/lib/tome/data-steward";
+import { sessionSub } from "@/lib/tome/agent-proxy";
 import type {
   DataStewardInput,
   ProjectDocument,
@@ -72,7 +77,8 @@ async function resolveTeamByIdOrSlug(
 
 /** Emit `tome.source.attach`/`detach` events for what changed between the
  * project's sources before and after a PATCH. Repos + Confluence URL compared
- * by value; Webex rooms by `room_id`. */
+ * by value; Webex rooms by `room_id`. MyAgent consent is deliberately handled
+ * by its own subject-scoped endpoint and is never accepted here. */
 function auditSourceChanges(
   slug: string,
   actor: TomeAuditActor,
@@ -136,6 +142,7 @@ export const GET = withErrorHandler(
       project: {
         ...project,
         _id: String(project._id),
+        sources: myAgentSourcesForSubject(project.sources, sessionSub(session)),
       },
       permissions: {
         can_read: permissions.canRead,
@@ -276,7 +283,7 @@ export const PATCH = withErrorHandler(
         confluence_url?: string;
         confluence_page_scopes?: unknown;
         confluence_page_scope?: unknown;
-        webex_rooms?: Array<{ room_id?: string; name?: string; slug?: string }>;
+        webex_rooms?: Array<Partial<WebexRoomSource>>;
         webex_credential_mode?: WebexCredentialMode;
         webex_credential_provider?: string;
       };
@@ -457,8 +464,20 @@ export const PATCH = withErrorHandler(
       else $unset["optionality"] = "";
     }
     if (body.sources) {
+      if (
+        "myagent_connectors" in body.sources ||
+        "myagent_enabled" in body.sources ||
+        "myagent_consent_revision" in body.sources ||
+        "myagent_consents" in (body.sources as Record<string, unknown>)
+      ) {
+        throw new ApiError(
+          "MyAgent delegation must be changed through its dedicated consent endpoint.",
+          400,
+          "MYAGENT_CONSENT_ENDPOINT_REQUIRED",
+        );
+      }
       const cleanWebexRooms = (
-        rooms: Array<{ room_id?: string; name?: string; slug?: string }>,
+        rooms: Array<Partial<WebexRoomSource>>,
       ): WebexRoomSource[] =>
         rooms
           .filter((r) => r && typeof r.room_id === "string" && r.room_id.trim())
@@ -466,12 +485,9 @@ export const PATCH = withErrorHandler(
             room_id: r.room_id!.trim(),
             name: (r.name ?? "").trim() || r.room_id!.trim(),
             slug: (r.slug ?? "").trim(),
+            credential_mode: r.credential_mode,
+            credential_provider: r.credential_provider,
           }));
-
-      const changesWebexConfiguration =
-        "webex_credential_mode" in body.sources ||
-        "webex_credential_provider" in body.sources ||
-        Array.isArray(body.sources.webex_rooms);
       const nextWebexSettings = normalizeWebexCredentialSettings({
         mode:
           body.sources.webex_credential_mode ??
@@ -483,19 +499,25 @@ export const PATCH = withErrorHandler(
           "webex",
       });
       const nextWebexRooms = Array.isArray(body.sources.webex_rooms)
-        ? cleanWebexRooms(body.sources.webex_rooms)
+        ? await prepareWebexRooms({
+            rooms: cleanWebexRooms(body.sources.webex_rooms),
+            previousSources: project.sources,
+            subject: tomeSessionSubject(session) ?? "",
+            userEmail: user.email,
+            userName: session.user?.name,
+            defaults: nextWebexSettings,
+          })
         : project.sources?.webex_rooms ?? [];
-      if (changesWebexConfiguration && nextWebexSettings.mode === "managed") {
-        await assertManagedWebexRoomsAccessible({
-          session,
-          userEmail: user.email,
-          rooms: nextWebexRooms,
-        });
-      }
       if (
         "webex_credential_mode" in body.sources ||
         "webex_credential_provider" in body.sources
       ) {
+        const before = normalizeWebexCredentialSettings({ mode: project.sources?.webex_credential_mode,
+          provider: project.sources?.webex_credential_provider });
+        if (nextWebexRooms.some((room) => !room.credential_mode) &&
+            (before.mode !== nextWebexSettings.mode || before.provider !== nextWebexSettings.provider)) {
+          throw new ApiError("Remove and re-add legacy spaces to change their account type.", 409, "WEBEX_LEGACY_ACCOUNT_CHANGE");
+        }
         $set["sources.webex_credential_mode"] = nextWebexSettings.mode;
         $set["sources.webex_credential_provider"] = nextWebexSettings.provider;
       }
@@ -594,7 +616,13 @@ export const PATCH = withErrorHandler(
     if (!updated) throw new ApiError("Project not found after update", 500, "UPDATE_FAILED");
 
     const sub = (session as { sub?: string } | undefined)?.sub;
-    const externalUpdates = await runOnboardingUpdates(updated, sub);
+    const externalUpdates = await runOnboardingUpdates(
+      {
+        ...updated,
+        sources: myAgentSourcesForSubject(updated.sources, sub),
+      },
+      sub,
+    );
 
     const actor = tomeActorFromAuth({ user, session });
     // Metadata edit vs source change are distinct audit actions; a PATCH can be
@@ -629,7 +657,11 @@ export const PATCH = withErrorHandler(
     const updatedReadConfiguration = await getTomeReadConfiguration(updated);
     const updatedSteward = await resolveStoredDataSteward(updated.data_steward).catch(() => null);
     return successResponse({
-      project: { ...updated, _id: String(updated._id) },
+      project: {
+        ...updated,
+        _id: String(updated._id),
+        sources: myAgentSourcesForSubject(updated.sources, sessionSub(session)),
+      },
       rbac: {
         ...updatedReadConfiguration,
         dataSteward: updatedSteward

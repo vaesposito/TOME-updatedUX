@@ -14,11 +14,24 @@ const mockRemoveTomeReadAccess = jest.fn(async () => undefined);
 const mockReconcileDataSteward = jest.fn(async () => undefined);
 const mockInvalidateTomeReadAccessCatalogCache = jest.fn();
 const mockDeleteReservation = jest.fn(async () => ({ deletedCount: 1 }));
+const mockPrepareRooms = jest.fn();
+
+jest.mock("@/lib/tome/webex-room-execution", () => ({
+  prepareWebexRooms: (...args: unknown[]) => mockPrepareRooms(...args),
+}));
 
 jest.mock("@/lib/api-middleware", () => {
-  const actual = jest.requireActual("@/lib/api-middleware");
+  class ApiError extends Error {
+    constructor(
+      message: string,
+      public status = 500,
+      public code = "INTERNAL_ERROR",
+    ) {
+      super(message);
+    }
+  }
   return {
-    ...actual,
+    ApiError,
     getAuthFromBearerOrSession: jest.fn(async () => ({
       user: { email: "steward@example.test" },
       session: {
@@ -26,6 +39,27 @@ jest.mock("@/lib/api-middleware", () => {
         user: { email: "steward@example.test" },
       },
     })),
+    successResponse: (data: unknown) => Response.json({ success: true, data }),
+    withErrorHandler: (handler: (...args: unknown[]) => unknown) => async (...args: unknown[]) => {
+      try {
+        return await handler(...args);
+      } catch (error) {
+        if (
+          error instanceof ApiError ||
+          (error &&
+            typeof error === "object" &&
+            ("status" in error || "statusCode" in error) &&
+            "code" in error)
+        ) {
+          const apiError = error as ApiError & { statusCode?: number };
+          return Response.json(
+            { success: false, error: apiError.message, code: apiError.code },
+            { status: apiError.status ?? apiError.statusCode ?? 500 },
+          );
+        }
+        throw error;
+      }
+    },
   };
 });
 
@@ -43,7 +77,12 @@ jest.mock("@/lib/mongodb", () => ({
   ),
 }));
 
+jest.mock("@/lib/auth-config", () => ({
+  isBootstrapAdmin: jest.fn(() => false),
+}));
+
 jest.mock("@/lib/tome/data-steward", () => ({
+  tomeSessionSubject: () => "steward-subject",
   dataStewardOpenFgaSubject: jest.fn(),
   getTomeProjectPermissions: (...args: unknown[]) =>
     mockGetTomeProjectPermissions(...args),
@@ -236,6 +275,38 @@ describe("PATCH /api/projects/[slug] review policy", () => {
       },
     );
   });
+
+  it("refuses MyAgent consent fields so stale project PATCHes cannot replace per-user scope", async () => {
+    const project = {
+      _id: "project-id",
+      slug: "example-project",
+      name: "Example Project",
+      title: "Example Project",
+      type: "project",
+      team_id: "example-team-id",
+      team_slug: "example-team",
+      team_name: "Example Team",
+      sources: {},
+    };
+    mockFindBySlug.mockReturnValue({
+      limit: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([project]),
+      }),
+    });
+
+    const response = await PATCH(
+      patchRequest("example-project", {
+        sources: { myagent_connectors: ["outlook"], myagent_enabled: true },
+      }),
+      { params: Promise.resolve({ slug: "example-project" }) },
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "MYAGENT_CONSENT_ENDPOINT_REQUIRED",
+    });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
 });
 
 describe("PATCH /api/projects/[slug] report visibility", () => {
@@ -303,6 +374,35 @@ describe("PATCH /api/projects/[slug] report visibility", () => {
     );
 
     expect(response.status).toBe(400);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH Webex source authorization and attribution", () => {
+  const retained = { room_id: "other", name: "Other room", slug: "other" };
+  const added = { room_id: "new", name: "New room", slug: "new", credential_mode: "managed", credential_provider: "webex_messaging" };
+  const project = { _id: "example-id", slug: "example", type: "project", sources: { webex_rooms: [retained] } };
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrepareRooms.mockImplementation(async ({ rooms }) => rooms);
+    mockGetTomeProjectPermissions.mockResolvedValue({ canRead: true, canEdit: true, canManageSteward: false });
+    mockFindBySlug.mockReturnValue({ limit: () => ({ toArray: async () => [project] }) });
+    mockFindOne.mockResolvedValue(project);
+  });
+  async function save() {
+    return PATCH(patchRequest("example", { sources: { webex_rooms: [retained, added] } }), { params: Promise.resolve({ slug: "example" }) });
+  }
+  it("passes authenticated attribution and prior records to the shared validator", async () => {
+    expect((await save()).status).toBe(200);
+    expect(mockPrepareRooms).toHaveBeenCalledWith(expect.objectContaining({
+      subject: "steward-subject", userEmail: "steward@example.test", previousSources: project.sources,
+      rooms: expect.arrayContaining([expect.objectContaining(added)]),
+    }));
+  });
+  it("rejects unauthorized project edits before checking Webex access", async () => {
+    mockGetTomeProjectPermissions.mockResolvedValue({ canRead: true, canEdit: false });
+    expect((await save()).status).toBe(403);
+    expect(mockPrepareRooms).not.toHaveBeenCalled();
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 });

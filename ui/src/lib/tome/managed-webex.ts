@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api-error";
+import { webexSpaceProvider } from "./webex-space-provider";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import type { ProviderConnectionMetadata } from "@/lib/credentials/oauth-service";
 import type { ResourceAuthzSession } from "@/lib/rbac/resource-authz";
@@ -88,6 +89,8 @@ function profileMatches(profile: WebexProfile, config: ManagedWebexConfig): bool
 export async function resolveManagedWebexCredential(options?: {
   force?: boolean;
   fetchImpl?: typeof fetch;
+  /** Discovery/attachment editing needs membership scope; ingestion does not. */
+  requireMemberships?: boolean;
 }): Promise<ManagedWebexCredentialResult> {
   const config = getManagedWebexConfig();
   if (!config.enabled) return unavailable(config, "Managed Webex is disabled.");
@@ -95,7 +98,7 @@ export async function resolveManagedWebexCredential(options?: {
     return unavailable(config, "Managed Webex identity is not fully configured.");
   }
 
-  const cacheKey = configCacheKey(config);
+  const cacheKey = `${configCacheKey(config)}:${options?.requireMemberships !== false}`;
   const now = Date.now();
   if (
     !options?.force &&
@@ -129,7 +132,7 @@ export async function resolveManagedWebexCredential(options?: {
     if (!connection) {
       result = unavailable(config, "Managed Webex account needs reconnection.");
     } else if (
-      connection.grantedScopes?.length &&
+      options?.requireMemberships !== false && connection.grantedScopes?.length &&
       !connection.grantedScopes.includes("spark:memberships_read")
     ) {
       result = unavailable(
@@ -145,6 +148,7 @@ export async function resolveManagedWebexCredential(options?: {
             Authorization: `Bearer ${refreshed.accessToken}`,
             Accept: "application/json",
           },
+          signal: AbortSignal.timeout(10_000),
         },
       );
       if (!profileResponse.ok) {
@@ -227,7 +231,7 @@ export function normalizeWebexCredentialSettings(input: {
     typeof input.provider === "string" && input.provider.trim()
       ? input.provider.trim()
       : "webex";
-  if (provider !== "webex" && provider !== "webex_messaging") {
+  if (provider !== "webex" && provider !== "webex_messaging" && provider !== webexSpaceProvider()) {
     throw new ApiError(
       "Unsupported personal Webex credential provider.",
       400,
@@ -278,6 +282,7 @@ export async function listManagedWebexSharedRoomIds(input: {
             Accept: "application/json",
           },
           cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
         });
         if (!response.ok) {
           console.warn(

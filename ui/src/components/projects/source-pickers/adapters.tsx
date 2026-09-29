@@ -7,7 +7,7 @@ import {
   githubSourceKey,
 } from "@/lib/projects/github-repository";
 import type { SourceAdapter } from "./SourceItemPicker";
-import type { SourceKind } from "./index";
+import type { BrowsableSourceKind } from "./index";
 
 const stripGh = (v: string) => v.replace(/^https?:\/\/github\.com\//i, "");
 
@@ -108,7 +108,7 @@ const webex: SourceAdapter = {
   searchPlaceholder: "Search rooms…",
   emptyNone: "No rooms to show.",
   emptyNoMatch: "No rooms match.",
-  notConnectedHowTo: (link) => <>Webex not connected — link Webex in {link}.</>,
+  notConnectedHowTo: (link, connectionName = "Webex") => <>{connectionName} not connected — link {connectionName} in {link}.</>,
   notConnectedBare: "Webex not connected.",
   // `selected` carries encoded {room_id, name} blobs; match options by room_id
   // so checkmarks survive name drift.
@@ -123,7 +123,7 @@ const webex: SourceAdapter = {
     ) : null,
 };
 
-export const SOURCE_ADAPTERS: Record<SourceKind, SourceAdapter> = {
+export const SOURCE_ADAPTERS: Record<BrowsableSourceKind, SourceAdapter> = {
   github,
   confluence,
   webex,

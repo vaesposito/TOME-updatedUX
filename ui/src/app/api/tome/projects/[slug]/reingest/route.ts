@@ -8,11 +8,13 @@ import { loadTomeProject, requireTomeEditor } from "@/lib/tome/tome-api";
 import { auditTome, tomeActorFromAuth } from "@/lib/tome/audit";
 import { tomeSessionSubject } from "@/lib/tome/data-steward";
 import { startIngestRun, IngestInProgressError } from "@/lib/tome/ingest-runner";
+import { isMyAgentInteractiveBrowserIngest } from "@/lib/tome/myagent-interactive";
 import {
   prefetchManualWebexMeetingTranscripts,
   type ManualWebexMeetingSelection,
 } from "@/lib/tome/webex-meeting-series";
 import { isSynthesizedType } from "@/types/projects";
+import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +50,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     sourceScope?: "project" | "webex_meetings";
     seedStablePages?: boolean;
     skipReview?: boolean;
+    myAgentSources?: unknown;
   };
 
   if (body.sourceScope && !["project", "webex_meetings"].includes(body.sourceScope)) {
@@ -70,11 +73,16 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       : undefined;
     const { runId } = await startIngestRun(tctx, {
       seed: body.seed ?? null,
+      myAgentSources: body.myAgentSources === undefined ? undefined : normalizeMyAgentConnectors(body.myAgentSources),
       mode: body.mode,
       webexMeetings,
       sourceScope: body.sourceScope,
       seedStablePages: body.seedStablePages,
       skipReview: body.skipReview,
+      // A valid session alone is insufficient: MCP can forward that cookie.
+      // Only the first-party UI's explicit, same-origin action may delegate a
+      // MyAgent Webex request for this run.
+      myAgentInteractiveAuthorized: isMyAgentInteractiveBrowserIngest(request, tctx.session),
     });
     auditTome({
       action: "tome.ingest.trigger",

@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------- shared identity / project snapshot ----------
 
@@ -134,6 +134,9 @@ class IssueContext(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    myagent_research: bool = False
+    myagent_run_id: UUID | None = None
+    myagent_sources: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(default_factory=list, max_length=3)
     message: str
     sdk_session_id: str | None = None
     is_compact: bool = False
@@ -245,10 +248,47 @@ class ExperimentRunContext(BaseModel):
     max_budget_usd: float | None = Field(default=None, gt=0)
 
 
+class MyAgentEvidence(BaseModel):
+    """Bounded result from the CAIPE-owned, user-delegated Webex bridge.
+
+    This is evidence only: it deliberately carries no Webex credential and
+    never grants the agent a tool or authority to contact MyAgent directly.
+    """
+
+    capabilities: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(
+        default_factory=list, max_length=3
+    )
+    status: Literal["received", "unavailable", "timed_out"]
+    content: str | None = Field(default=None, max_length=8_000)
+    detail: str | None = Field(default=None, max_length=1_000)
+
+    @field_validator("capabilities")
+    @classmethod
+    def require_unique_capabilities(
+        cls, value: list[Literal["outlook", "salesforce", "sharepoint"]]
+    ) -> list[Literal["outlook", "salesforce", "sharepoint"]]:
+        if len(set(value)) != len(value):
+            raise ValueError("MyAgent capabilities must not contain duplicates")
+        return value
+
+    @model_validator(mode="after")
+    def require_evidence_for_received_status(self) -> MyAgentEvidence:
+        if self.status == "received":
+            if not self.capabilities:
+                raise ValueError("received MyAgent evidence requires at least one capability")
+            if not self.content or not self.content.strip():
+                raise ValueError("received MyAgent evidence requires content")
+        return self
+
+
 class IngestRequest(BaseModel):
     run_id: UUID
     seed: str | None = None
     connector_data: dict[str, Any] = Field(default_factory=dict)
+    myagent_evidence: MyAgentEvidence | None = None
+    """Validated external evidence from the user-approved MyAgent source."""
+    myagent_questions_enabled: bool = False
+    myagent_sources: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(default_factory=list, max_length=3)
     snapshot: ProjectSnapshot
     issue_context: IssueContext = Field(default_factory=IssueContext)
     is_greenfield: bool
@@ -536,6 +576,7 @@ __all__ = [
     "IssueContextItem",
     "ModelCheckRequest",
     "ModelCheckResponse",
+    "MyAgentEvidence",
     "ProjectSnapshot",
     "RepoSnapshot",
     "WebexRoomSnapshot",

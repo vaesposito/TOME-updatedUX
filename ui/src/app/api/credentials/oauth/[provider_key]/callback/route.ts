@@ -81,6 +81,7 @@ const PROVIDER_BRANDING: Record<string, { name: string }> = {
   pagerduty: { name: "PagerDuty" },
   webex: { name: "Webex" },
   webex_messaging: { name: "Webex Messaging" },
+  webex_myagent: { name: "MyAgent (Webex)" },
 };
 
 function providerBranding(providerKey: string): { name: string } {

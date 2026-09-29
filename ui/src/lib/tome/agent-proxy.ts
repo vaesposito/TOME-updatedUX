@@ -14,12 +14,7 @@ import {
   githubSourceFromValue,
 } from "@/lib/projects/github-repository";
 import { webexRoomSlug } from "@/lib/projects/webex-room";
-import {
-  assertManagedWebexUserSharesRooms,
-  projectWebexCredentialMode,
-  projectWebexCredentialProvider,
-  resolveManagedWebexCredential,
-} from "./managed-webex";
+import { resolveWebexRoomExecution } from "./webex-room-execution";
 
 import { resolveAreaChildren, resolveBhagChildren } from "./bhag";
 import { listReadableTomeProjects } from "./access";
@@ -31,6 +26,7 @@ import type { AgentIssueContext } from "./github-issue-cache";
 import type { ProjectDocument } from "@/types/projects";
 import type { IngestDispatch } from "@/types/tome";
 import { isSynthesizedType } from "@/types/projects";
+import type { MyAgentEvidence } from "./myagent-webex";
 
 /**
  * Wire shape for forwarded user credentials. The agent reads these off the
@@ -69,10 +65,9 @@ export async function resolveCredentialsForSub(
 }
 
 /**
- * Resolve credentials for one project run. Managed Webex replaces only the
- * Webex source credential; GitHub and Atlassian continue to come from the
- * human or configured schedule owner. Managed Webex is never returned for
- * chat, where users read already-ingested pages instead of live messages.
+ * Personal rooms use the run initiator or schedule owner; managed rooms use
+ * the configured generic account. Added-by metadata is never a credential owner.
+ * Chat and meeting tools retain only the requesting user's own credentials.
  */
 export async function resolveProjectCredentials(
   project: Pick<ProjectDocument, "sources">,
@@ -84,41 +79,17 @@ export async function resolveProjectCredentials(
   },
 ): Promise<ForwardedCredentials> {
   const credentials = await resolveCredentialsForSub(sub);
-  if (options.sourceScope === "webex_meetings") return credentials;
+  if (options.sourceScope === "webex_meetings" || options.purpose === "chat") return credentials;
   if ((project.sources?.webex_rooms?.length ?? 0) === 0) return credentials;
 
-  const mode = projectWebexCredentialMode(project);
-  if (mode === "managed") {
-    delete credentials.webex;
-    if (options.purpose === "chat") return credentials;
-    const managed = await resolveManagedWebexCredential({ force: true });
-    if (!managed.capability.available || !managed.accessToken) {
-      throw new Error(
-        managed.capability.reason || "Managed Webex account is unavailable.",
-      );
-    }
-    await assertManagedWebexUserSharesRooms({
-      accessToken: managed.accessToken,
-      userEmail: options.userEmail ?? "",
-      rooms: project.sources?.webex_rooms ?? [],
-    });
+  const resolved = await resolveWebexRoomExecution({ sources: project.sources ?? {}, subject: sub,
+    purpose: "ingest", forwarded: credentials });
+  const failed = resolved.checks.filter((room) => room.mode === "managed" && !room.available);
+  if (failed.length) throw new Error(failed.map((room) => `${room.name}: ${room.detail}`).join(" "));
+  if (credentials.webex || Object.keys(resolved.roomTokens).length) {
     credentials.webex = {
-      access_token: managed.accessToken,
-      messaging_only: "true",
-      credential_mode: "managed",
-    };
-    return credentials;
-  }
-
-  const provider = projectWebexCredentialProvider(project);
-  if (provider === "webex") return credentials;
-  const personal = await collectForwardedCredentials(sub, [provider]);
-  delete credentials.webex;
-  if (personal[provider]) {
-    credentials.webex = {
-      ...personal[provider],
-      messaging_only: "true",
-      credential_mode: "personal",
+      ...credentials.webex,
+      room_tokens: JSON.stringify(resolved.roomTokens),
     };
   }
   return credentials;
@@ -195,6 +166,9 @@ export interface ProjectSnapshot {
 
 /** ChatRequest — mirrors contract.ChatRequest. */
 export interface AgentChatRequest {
+  myagent_research?: boolean;
+  myagent_run_id?: string;
+  myagent_sources?: string[];
   message: string;
   sdk_session_id: string | null;
   is_compact?: boolean;
@@ -222,6 +196,14 @@ export interface AgentIngestRequest {
   run_id: string;
   seed: string | null;
   connector_data: Record<string, unknown>;
+  /**
+   * Evidence returned by the server-side, user-delegated MyAgent Webex bridge.
+   * The agent receives no Webex token and cannot invoke MyAgent itself.
+   */
+  myagent_evidence?: MyAgentEvidence;
+  /** Enables only the run-scoped backend research tool, never forwards an OAuth token. */
+  myagent_questions_enabled?: boolean;
+  myagent_sources?: string[];
   snapshot: ProjectSnapshot;
   /** Compact GitHub-backed Decisions/Critical index; bodies hydrate on demand. */
   issue_context: AgentIssueContext;
@@ -473,14 +455,19 @@ export async function loadStablePages(
 /** Assemble the agent `ChatRequest` for one chat turn. */
 export async function buildChatRequest(
   ctx: TomeProjectContext,
-  opts: { message: string; sdkSessionId: string | null; isCompact?: boolean },
+  opts: { message: string; sdkSessionId: string | null; isCompact?: boolean; myAgentResearch?: boolean },
 ): Promise<AgentChatRequest> {
   const [stablePages, credentials] = await Promise.all([
     loadStablePages(ctx.projectId),
-    resolveForwardedCredentials(ctx),
+    opts.myAgentResearch ? Promise.resolve({}) : resolveForwardedCredentials(ctx),
   ]);
   const snapshot = buildSnapshot(ctx);
-  const readableProjects = await listReadableTomeProjects(
+  if (opts.myAgentResearch) {
+    snapshot.repos = [];
+    snapshot.webex_rooms = [];
+    snapshot.confluence_spaces = [];
+  }
+  const readableProjects = opts.myAgentResearch ? [] : await listReadableTomeProjects(
     tomeSessionSubject(ctx.session),
     { isAdmin: ctx.canManageSteward },
   );
@@ -492,7 +479,7 @@ export async function buildChatRequest(
   const readableSlugs = new Set(snapshot.readable_projects.map((project) => project.slug));
   // Synthesized types (BHAG/Area) also carry tagged child-project wikis so chat
   // can read across both those roll-up inputs and directly attached sources.
-  if (isSynthesizedType(ctx.project.type)) {
+  if (!opts.myAgentResearch && isSynthesizedType(ctx.project.type)) {
     snapshot.child_projects = (
       ctx.project.type === "area"
         ? await resolveAreaChildren(ctx.project.slug)
@@ -501,6 +488,7 @@ export async function buildChatRequest(
   }
   return {
     message: opts.message,
+    ...(opts.myAgentResearch ? { myagent_research: true } : {}),
     sdk_session_id: opts.sdkSessionId,
     ...(opts.isCompact ? { is_compact: true } : {}),
     snapshot,
@@ -530,7 +518,15 @@ export function buildIngestRequest(
     isGreenfield: boolean;
     mode?: "full" | "quick";
     connectorData?: Record<string, unknown>;
+    myAgentEvidence?: MyAgentEvidence;
+    myAgentQuestionsEnabled?: boolean;
+    myAgentSources?: string[];
     credentials?: ForwardedCredentials;
+    /**
+     * The server may use a personal Webex token for a one-shot MyAgent bridge
+     * without granting that token to the agent's direct Webex MCP.
+     */
+    omitWebexCredential?: boolean;
     seedStablePages?: boolean;
     actorEmail?: string | null;
     /** BHAG/Area only: tagged child projects to synthesize with direct sources. */
@@ -559,13 +555,19 @@ export function buildIngestRequest(
     report_id: opts.reportId,
     seed: opts.seed,
     connector_data: opts.connectorData ?? {},
+    ...(opts.myAgentEvidence ? { myagent_evidence: opts.myAgentEvidence } : {}),
+    ...(opts.myAgentQuestionsEnabled ? { myagent_questions_enabled: true, myagent_sources: opts.myAgentSources ?? [] } : {}),
     snapshot,
     issue_context: opts.issueContext ?? emptyIssueContext(),
     is_greenfield: opts.isGreenfield,
     mode: opts.isGreenfield ? "full" : (opts.mode ?? "full"),
     seed_stable_pages: opts.seedStablePages ?? false,
     actor_email: opts.actorEmail ?? null,
-    credentials: opts.credentials ?? {},
+    credentials: opts.omitWebexCredential
+      ? Object.fromEntries(
+          Object.entries(opts.credentials ?? {}).filter(([provider]) => provider !== "webex"),
+        )
+      : opts.credentials ?? {},
     triggered_by: opts.triggeredBy ?? "manual",
   };
 }

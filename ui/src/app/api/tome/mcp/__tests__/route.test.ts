@@ -391,6 +391,60 @@ describe("Tome MCP authentication challenge", () => {
     }
   });
 
+  it("does not present MyAgent's external connector authorization as confirmed", async () => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(
+      Response.json({
+        success: true,
+        data: {
+          can_ingest: true,
+          credentials_url: "https://grid.example.test/credentials",
+          sources: [
+            {
+              provider: "myagent",
+              label: "MyAgent",
+              no_token: false,
+              accessible: [],
+              inaccessible: [],
+              unverified: ["Outlook"],
+              connection_ready: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+          method: "POST",
+          headers: { authorization: "Bearer redacted" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 12,
+            method: "tools/call",
+            params: {
+              name: "tome_preflight_ingest",
+              arguments: { project_slug: "example-project" },
+            },
+          }),
+        }),
+      );
+      const body = await response.json();
+      const text = body.result.content[0].text;
+
+      expect(text).toContain("MyAgent: connected");
+      expect(text).toContain("https://circuit.cisco.com/myagent/settings/connectors");
+      expect(text).not.toContain("MyAgent: all sources accessible");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("reads auto-ingest settings through the caller-authenticated project route", async () => {
     mockGetAuthFromBearerOrSession.mockResolvedValue({
       user: { email: "editor@example.test" },

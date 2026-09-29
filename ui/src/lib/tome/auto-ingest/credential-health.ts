@@ -1,6 +1,8 @@
+import { webexRoomAccount } from "@/lib/projects/webex-room-account";
 import type { ProviderConnectionMetadata } from "@/lib/credentials/oauth-service";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCollection } from "@/lib/mongodb";
+import { personalWebexSpaceConnection, webexSpaceProvider } from "../webex-space-provider";
 import {
   dataStewardLabel,
   type AutoIngestCredentialOwner,
@@ -20,7 +22,8 @@ export const AUTO_INGEST_PROVIDERS = [
   "webex",
   "webex_messaging",
 ] as const;
-export type AutoIngestProvider = (typeof AUTO_INGEST_PROVIDERS)[number];
+// Deployments may give their personal Webex space connector a custom ID.
+export type AutoIngestProvider = string;
 
 export type AutoIngestCredentialStatus =
   | "healthy"
@@ -109,7 +112,7 @@ function stewardType(project: ProjectDocument): AutoIngestCredentialHealthRow["d
 }
 
 /** Providers whose credentials this project's configured sources consume. */
-export function requiredAutoIngestProviders(project: ProjectDocument): AutoIngestProvider[] {
+export function requiredAutoIngestProviders(project: ProjectDocument, connections?: ProviderConnectionMetadata[]): AutoIngestProvider[] {
   const sources = project.sources;
   if (!sources) return [];
   const providers: AutoIngestProvider[] = [];
@@ -124,16 +127,15 @@ export function requiredAutoIngestProviders(project: ProjectDocument): AutoInges
   ) {
     providers.push("atlassian");
   }
-  if (
-    (sources.webex_rooms?.length ?? 0) > 0 &&
-    sources.webex_credential_mode !== "managed"
-  ) {
-    providers.push(
-      sources.webex_credential_provider === "webex_messaging"
-        ? "webex_messaging"
-        : "webex",
-    );
+  for (const room of sources.webex_rooms ?? []) {
+    const account = webexRoomAccount(room, sources);
+    if (account.mode === "personal") {
+      const provider = connections ? personalWebexSpaceConnection(connections)?.provider ?? webexSpaceProvider() : webexSpaceProvider();
+      if (!providers.includes(provider)) providers.push(provider);
+    }
   }
+  // MyAgent delegation is deliberately manual-only. Scheduled runs never
+  // consume a user's MyAgent consent or personal Webex connection.
   return providers;
 }
 
@@ -267,7 +269,9 @@ export async function refreshAutoIngestCredentialHealth(
       listError = error;
     }
 
-    for (const provider of providers) {
+    const effectiveProviders = new Set([...providers].map((provider) => provider === webexSpaceProvider()
+      ? personalWebexSpaceConnection(connections)?.provider ?? provider : provider));
+    for (const provider of effectiveProviders) {
       const _id = healthId(owner.subject, provider);
       activeIds.push(_id);
       const base = {
@@ -356,6 +360,7 @@ export async function getAutoIngestCredentialHealth(
   const documents = await health.find({}).toArray();
   const byId = new Map(documents.map((document) => [document._id, document]));
   const rows: AutoIngestCredentialHealthRow[] = [];
+  const ownerConnections = new Map<string, Promise<ProviderConnectionMetadata[]>>();
 
   for (const project of projects) {
     const projectBase = {
@@ -377,7 +382,18 @@ export async function getAutoIngestCredentialHealth(
       continue;
     }
     const ownerView = { email: owner.email, name: owner.name };
-    const providers = requiredAutoIngestProviders(project);
+    let connections: ProviderConnectionMetadata[] | undefined;
+    if (project.sources?.webex_rooms?.some((room) => webexRoomAccount(room, project.sources).mode === "personal")) {
+      let pending = ownerConnections.get(owner.subject);
+      if (!pending) {
+        pending = getProviderConnectionService()
+          .then((service) => service.listConnections({ type: "user", id: owner.subject }))
+          .catch(() => []);
+        ownerConnections.set(owner.subject, pending);
+      }
+      connections = await pending;
+    }
+    const providers = requiredAutoIngestProviders(project, connections);
     if (providers.length === 0) {
       rows.push({
         ...projectBase,

@@ -4,6 +4,12 @@
 **Date:** 2026-09-09  
 **Scope:** Tome Webex space discovery, manual ingest, and scheduled auto-ingest
 
+> Updated behavior: see [the UI README](../../../ui/README.md#managed-webex-space-ingest)
+> for the current contract. Shared membership applies to discovery and adding/removing
+> attachments, not managed ingestion. New attachments store adder attribution and
+> account type per space; personal ingestion still uses the caller/schedule owner.
+> Earlier project-wide account and ingest-time membership proposals below are historical.
+
 ## Summary
 
 Add a deployment-configured, global Webex user account that Tome can use to

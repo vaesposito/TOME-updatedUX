@@ -15,6 +15,7 @@
 
 import { getServerOnlyConfig } from "@/lib/config";
 import { getCollection } from "@/lib/mongodb";
+import { hasMyAgentConsent } from "@/lib/projects/myagent-source";
 import { getTomeChatMessagesCollection } from "@/lib/tome/mongo-collections";
 import type { Document } from "mongodb";
 import { dataStewardLabel, type ProjectDocument } from "@/types/projects";
@@ -379,6 +380,7 @@ export function hasConfiguredTomeSource(sources: ProjectDocument["sources"] | un
       sources.confluence_url?.trim() ||
       sources.confluence_spaces?.length ||
       sources.webex_rooms?.length ||
+      hasMyAgentConsent(sources) ||
       sources.component_urls?.length,
   );
 }

@@ -20,7 +20,8 @@ jest.mock("@/lib/mongodb", () => ({ isMongoDBConfigured: true }));
 jest.mock("@/lib/tome/guard", () => ({ isTomeServerEnabled: () => true }));
 jest.mock("@/lib/tome/principal", () => ({ requireInteractiveTomePrincipal: jest.fn() }));
 jest.mock("@/lib/tome/webex-meeting-series", () => ({
-  discoverMeetingSeries: (...args: unknown[]) => mockDiscoverMeetingSeries(...args),
+  discoverMeetingSeriesWithDiagnostics: async (...args: unknown[]) => ({ candidates: await mockDiscoverMeetingSeries(...args), complete: true, warnings: [] }),
+  webexMeetingSeriesLookaheadDays: (value: unknown) => value == null ? 7 : Number(value),
   interactiveWebexMeetingInvoker: (...args: unknown[]) =>
     mockInteractiveWebexMeetingInvoker(...args),
   meetingSeriesHostEligibility: (candidate: { hostEmail?: string }, callerEmail: string) => ({

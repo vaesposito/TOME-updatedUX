@@ -7,6 +7,7 @@ import {
   type AgentExperimentRunContext,
   type AgentIngestRequest,
 } from "@/lib/tome/agent-proxy";
+import { tomeAgentAuthorizationHeaders } from "@/lib/tome/agent-auth";
 import { resolveAreaChildren, resolveBhagChildren } from "@/lib/tome/bhag";
 import { captureEvidenceBundle } from "@/lib/tome/evidence-bundle";
 import { resolveExperimentTerminalOutcome } from "@/lib/tome/experiment-outcome";
@@ -200,6 +201,7 @@ async function loadEvaluatorPromptContract(
   try {
     const response = await fetch(
       `${agentUrl.replace(/\/$/, "")}/evaluate/prompt?mode=${mode === "quick" ? "quick" : "deep"}`,
+      { headers: tomeAgentAuthorizationHeaders() },
     );
     if (!response.ok) {
       console.warn(`[TomeExperiment] evaluator prompt snapshot unavailable (${response.status})`);
@@ -339,7 +341,10 @@ async function runCandidate(
     `${agentUrl.replace(/\/$/, "")}/${experiment.config.operation}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...tomeAgentAuthorizationHeaders(),
+      },
       body: JSON.stringify(request),
       signal,
     },
@@ -519,7 +524,10 @@ async function evaluateFile(input: {
             assertEvaluationRequestFits(body, profile);
             const response = await fetch(`${agentUrl.replace(/\/$/, "")}/evaluate`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...tomeAgentAuthorizationHeaders(),
+              },
               signal: abortSignalWithTimeout(input.signal, timeoutMs),
               body: JSON.stringify(body),
             });

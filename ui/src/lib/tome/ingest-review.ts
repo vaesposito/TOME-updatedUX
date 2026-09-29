@@ -2,13 +2,17 @@ import type { IngestFileReview, IngestFileReviewDecision } from "@/types/tome";
 
 /**
  * Decide whether a completed ingest must stop at the human-review gate.
- * An explicit per-run bypass wins; otherwise only runs that actually wrote
- * at least one draft have anything to review.
+ * An explicit per-run bypass wins except for a received MyAgent reply: that
+ * external, delegated evidence always requires an explicit human review
+ * before it can enter ordinary wiki context. Otherwise only runs that
+ * actually wrote at least one draft have anything to review.
  */
 export function shouldAwaitIngestReview(args: {
   skipReview: boolean;
   draftPaths: string[];
+  forceReview?: boolean;
 }): boolean {
+  if (args.forceReview) return true;
   return !args.skipReview && args.draftPaths.length > 0;
 }
 

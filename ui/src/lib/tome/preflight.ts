@@ -4,18 +4,30 @@
 
 /** Per-provider resource access result for one project. */
 export interface PreflightSourceResult {
-  provider: "github" | "confluence" | "webex";
+  provider: "github" | "confluence" | "webex" | "myagent";
   label: string;
   /** Items that passed the resource-level access check. */
   accessible: string[];
   /** Items where the check returned 403/404 (no access or not found). */
   inaccessible: string[];
+  /** Items that require external authorization TOME cannot verify directly. */
+  unverified?: string[];
+  /** MyAgent transport is ready; external source permissions remain managed there. */
+  connection_ready?: boolean;
   /** True when the provider token is missing entirely (not just per-item failures). */
   no_token: boolean;
   /** Safe provider-specific explanation for an unavailable managed credential. */
   detail?: string;
   /** False when the signed-in user cannot fix this from their Connections page. */
   fixable_by_user?: boolean;
+  /** Per-space resolved account and its access check (no credentials). */
+  rooms?: import("@/types/projects").WebexRoomCheck[];
+  /** Legacy aggregate identity, retained for consumers of old preflight results. */
+  run_as?: {
+    mode: "personal" | "managed";
+    name: string;
+    email?: string;
+  };
 }
 
 /** Resource-level preflight for one project across all its sources. */
@@ -27,17 +39,24 @@ export interface PreflightResult {
 
 /**
  * The access state of a single source, for UI display:
- *  - ok           — connected and every resource is accessible
+ *  - ok           — ready (MyAgent checks its Webex connection, not external permissions)
  *  - access_issue — connected but some resources are blocked (amber)
  *  - no_token     — provider not connected at all (red)
  *  - unknown      — not checked yet / no result
  */
-export type PreflightState = "ok" | "access_issue" | "no_token" | "unknown";
+export type PreflightState =
+  | "ok"
+  | "access_issue"
+  | "no_token"
+  | "unverified"
+  | "unknown";
 
 export function preflightState(pf: PreflightSourceResult | undefined): PreflightState {
   if (!pf) return "unknown";
   if (pf.no_token) return "no_token";
   if (pf.inaccessible.length > 0) return "access_issue";
+  if (pf.provider === "myagent" && pf.connection_ready) return "ok";
+  if (pf.unverified?.length) return "unverified";
   return "ok";
 }
 
@@ -51,5 +70,6 @@ export function preflightRollup(result: PreflightResult | undefined): PreflightS
   const states = result.sources.map(preflightState);
   if (states.includes("no_token")) return "no_token";
   if (states.includes("access_issue")) return "access_issue";
+  if (states.includes("unverified")) return "unverified";
   return "ok";
 }

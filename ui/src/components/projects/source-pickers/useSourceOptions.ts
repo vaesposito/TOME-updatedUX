@@ -12,6 +12,7 @@ export interface SourceOption {
 
 export interface SourceOptionsState {
   connected: boolean;
+  connection?: { provider: string; name: string };
   connectedTo?: string;
   options: SourceOption[];
   loading: boolean;
@@ -30,6 +31,13 @@ export interface SourceOptionsState {
 }
 
 type Loaded = Omit<SourceOptionsState, "loading">;
+
+const EMPTY_STATE: SourceOptionsState = {
+  connected: false,
+  options: [],
+  loading: true,
+  manageUrl: null,
+};
 
 /** Pure fetch — no React state — so callers control when state updates. */
 async function loadSourceOptions(
@@ -52,6 +60,8 @@ async function loadSourceOptions(
   const d = json?.data ?? {};
   return {
     connected: Boolean(d.connected),
+    connection: typeof d.connection?.provider === "string" && typeof d.connection?.name === "string"
+      ? { provider: d.connection.provider, name: d.connection.name } : undefined,
     connectedTo: typeof d.connectedTo === "string" ? d.connectedTo : undefined,
     options: Array.isArray(d.options) ? d.options : [],
     error: typeof d.error === "string" ? d.error : undefined,
@@ -75,45 +85,70 @@ export function useSourceOptions(
     webexCredentialProvider?: string;
   },
 ): SourceOptionsState & { search: (q: string) => void; reload: () => void } {
-  const [state, setState] = useState<SourceOptionsState>({
-    connected: false,
-    options: [],
-    loading: true,
-    manageUrl: null,
-  });
+  const webexMode = options?.webexMode;
+  const webexCredentialProvider = options?.webexCredentialProvider;
+  const key = JSON.stringify([provider, webexMode, webexCredentialProvider]);
+  const [result, setResult] = useState({ key, data: EMPTY_STATE });
+  // Discard rather than cache the previous account's results, including when
+  // switching back before the intervening account's request has finished.
+  if (result.key !== key) setResult({ key, data: EMPTY_STATE });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestId = useRef(0);
+  const previousKey = useRef<string | null>(null);
 
-  // Initial load: setState only inside the promise callback (not the effect body).
+  // Account changes hide the old results immediately (see return below), then
+  // bypass the server cache. Neither old searches nor refreshes may replace them.
   useEffect(() => {
-    let cancelled = false;
+    const id = ++requestId.current;
+    const switchedAccount = previousKey.current !== null && previousKey.current !== key;
+    previousKey.current = key;
     loadSourceOptions(
       provider,
       undefined,
-      options?.webexMode,
-      options?.webexCredentialProvider,
+      webexMode,
+      webexCredentialProvider,
+      switchedAccount,
     )
-      .then((d) => !cancelled && setState({ ...d, loading: false }))
-      .catch(() => !cancelled && setState((s) => ({ ...s, loading: false })));
+      .then((d) => {
+        if (id === requestId.current) setResult({ key, data: { ...d, loading: false } });
+      })
+      .catch(() => {
+        if (id === requestId.current) {
+          setResult({ key, data: { ...EMPTY_STATE, loading: false, error: "Unable to load sources. Try refreshing." } });
+        }
+      });
     return () => {
-      cancelled = true;
+      requestId.current += 1;
+      if (timer.current) clearTimeout(timer.current);
     };
-  }, [provider, options?.webexMode, options?.webexCredentialProvider]);
+  }, [provider, webexMode, webexCredentialProvider, key]);
 
   // Event-handler refetch (allowed to setState directly).
   const run = useCallback(
     (q?: string, forceRefresh = false) => {
-      setState((s) => ({ ...s, loading: true }));
+      if (timer.current) clearTimeout(timer.current);
+      const id = ++requestId.current;
+      setResult((s) => ({
+        key,
+        data: { ...(s.key === key ? s.data : EMPTY_STATE), loading: true },
+      }));
       loadSourceOptions(
         provider,
         q,
-        options?.webexMode,
-        options?.webexCredentialProvider,
+        webexMode,
+        webexCredentialProvider,
         forceRefresh,
       )
-        .then((d) => setState({ ...d, loading: false }))
-        .catch(() => setState((s) => ({ ...s, loading: false })));
+        .then((d) => {
+          if (id === requestId.current) setResult({ key, data: { ...d, loading: false } });
+        })
+        .catch(() => {
+          if (id === requestId.current) {
+            setResult({ key, data: { ...EMPTY_STATE, loading: false, error: "Unable to load sources. Try refreshing." } });
+          }
+        });
     },
-    [provider, options?.webexMode, options?.webexCredentialProvider],
+    [provider, webexMode, webexCredentialProvider, key],
   );
 
   const search = useCallback(
@@ -126,5 +161,5 @@ export function useSourceOptions(
 
   const reload = useCallback(() => run(undefined, true), [run]);
 
-  return { ...state, search, reload };
+  return { ...(result.key === key ? result.data : EMPTY_STATE), search, reload };
 }

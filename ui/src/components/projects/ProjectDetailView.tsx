@@ -29,7 +29,13 @@ import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
 import { SourcesEditor } from "@/components/projects/source-pickers/SourcesEditor";
 import { useProjectSourceKinds } from "@/components/projects/source-pickers/useProjectSourceKinds";
-import type { ProjectDocument, ProjectSources } from "@/types/projects";
+import {
+  myAgentConsentSelection,
+  sameMyAgentConsentSelection,
+  saveMyAgentConsent,
+} from "@/lib/projects/myagent-consent-client";
+import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
+import { isSynthesizedType, type ProjectDocument, type ProjectSources } from "@/types/projects";
 
 export function ProjectDetailView({ slug }: { slug: string }) {
   const { kinds: sourceKinds } = useProjectSourceKinds();
@@ -49,6 +55,9 @@ export function ProjectDetailView({ slug }: { slug: string }) {
     repos: [],
     confluence_url: "",
   });
+  const visibleSourceKinds = isSynthesizedType(project?.type)
+    ? sourceKinds.filter((kind) => kind !== "myagent")
+    : sourceKinds;
 
   async function confirmDelete() {
     if (!project) return;
@@ -83,6 +92,12 @@ export function ProjectDetailView({ slug }: { slug: string }) {
         project.sources?.webex_credential_mode === "managed" ? "managed" : "personal",
       webex_credential_provider:
         project.sources?.webex_credential_provider ?? "webex",
+      myagent_connectors: normalizeMyAgentConnectors(project.sources?.myagent_connectors),
+      myagent_enabled: project.sources?.myagent_enabled === true,
+      myagent_consent_revision:
+        typeof project.sources?.myagent_consent_revision === "string"
+          ? project.sources.myagent_consent_revision
+          : null,
     });
     setEditOpen(true);
   }
@@ -91,6 +106,11 @@ export function ProjectDetailView({ slug }: { slug: string }) {
     if (!project) return;
     setSaving(true);
     try {
+      const previousMyAgentConsent = myAgentConsentSelection(project.sources);
+      const nextMyAgentConsent = myAgentConsentSelection(editSources);
+      const myAgentConsentChanged =
+        !isSynthesizedType(project.type) &&
+        !sameMyAgentConsentSelection(previousMyAgentConsent, nextMyAgentConsent);
       const res = await fetch(`/api/projects/${encodeURIComponent(slug)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -117,7 +137,18 @@ export function ProjectDetailView({ slug }: { slug: string }) {
         throw new Error(body.error ?? `Save failed (${res.status})`);
       }
       const data = await res.json();
-      setProject(data.data.project as ProjectDocument);
+      const updatedProject = data.data.project as ProjectDocument;
+      const consentSources = myAgentConsentChanged
+        ? await saveMyAgentConsent(slug, editSources)
+        : undefined;
+      setProject(
+        consentSources
+          ? {
+              ...updatedProject,
+              sources: { ...updatedProject.sources, ...consentSources },
+            }
+          : updatedProject,
+      );
       setEditOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -423,13 +454,13 @@ export function ProjectDetailView({ slug }: { slug: string }) {
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
               </div>
-              {sourceKinds.length > 0 ? (
+              {visibleSourceKinds.length > 0 ? (
                 <div>
                   <label className="mb-2 block text-xs font-medium text-muted-foreground">
                     Sources
                   </label>
                   <SourcesEditor
-                    kinds={sourceKinds}
+                    kinds={visibleSourceKinds}
                     value={editSources}
                     onChange={setEditSources}
                   />

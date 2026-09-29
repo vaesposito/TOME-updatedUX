@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -24,6 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Check changed paths
+        id: check-paths
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -94,7 +96,35 @@ jobs:
           report.extend(f"- `{prefix}`" for prefix in allowed_prefixes)
           report.extend(["", "### Allowed files", ""])
           report.extend(f"- `{path}`" for path in allowed_files)
+          report_text = "\n".join(report) + "\n"
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
-              summary.write("\n".join(report) + "\n")
+              summary.write(report_text)
+          if violations:
+              (Path(os.environ["RUNNER_TEMP"]) / "fork-scope-report.md").write_text(
+                  report_text, encoding="utf-8"
+              )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as outputs:
+              outputs.write(f"violations_found={str(bool(violations)).lower()}\n")
 
           raise SystemExit(1 if violations else 0)
+
+      - name: Comment on PR with scope violations
+        if: failure() && steps.check-paths.outputs.violations_found == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = `<!-- fork-change-scope:${context.payload.pull_request.head.sha} -->`;
+            const report = fs.readFileSync(`${process.env.RUNNER_TEMP}/fork-scope-report.md`, 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100
+            });
+            if (!comments.some(comment =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            )) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body: `${marker}\n${report}`
+              });
+            }

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { buildSnapshotFromProject } from "@/lib/tome/agent-proxy";
 import { githubRepoSlug } from "@/lib/projects/github-repository";
+import { getFetchLedgerEntries } from "@/lib/tome/fetch-ledger-store";
 import { getPageStore } from "@/lib/tome/page-store";
 import { getAllPageTemplates } from "@/lib/tome/page-templates-store";
 import type { MyAgentEvidence } from "@/lib/tome/myagent-webex";
@@ -91,9 +92,17 @@ export async function captureEvidenceBundle(input: {
   seed?: string | null;
   /** Correlated external evidence already returned for this exact run. */
   myAgentEvidence?: MyAgentEvidence;
+  /**
+   * When present, includes that ingestion run's successful fetch-ledger
+   * entries as `source_fetch` evidence items. Omitted (the default) leaves
+   * bundle assembly byte-identical to before this existed — see
+   * docs/docs/specs/2026-09-28-tome-source-fetch-ledger/contracts/
+   * evidence-bundle-source-fetch-kind.md.
+   */
+  runId?: string;
 }): Promise<EvidenceBundle> {
   const capturedAt = new Date().toISOString();
-  const [pages, templates, childPages] = await Promise.all([
+  const [pages, templates, childPages, fetchLedgerEntries] = await Promise.all([
     getPageStore().then((store) => store.listPages(input.project._id)),
     getAllPageTemplates(),
     Promise.all(
@@ -102,6 +111,7 @@ export async function captureEvidenceBundle(input: {
         pages: await getPageStore().then((store) => store.listPages(project._id)),
       })),
     ),
+    input.runId ? getFetchLedgerEntries(input.runId) : Promise.resolve([]),
   ]);
   const snapshot = buildSnapshotFromProject(input.project);
   const items: EvidenceItem[] = [
@@ -145,6 +155,16 @@ export async function captureEvidenceBundle(input: {
         capturedAt,
       ),
     ),
+    // Raw fetches, not LLM-authored pages — kept distinct from the
+    // github/confluence/webex kinds above by construction (this is a
+    // separate branch, not a change to pageEvidenceKind()). Only successful
+    // fetches are included; failures remain visible via the ledger's own
+    // retrieval endpoint but have no content for the evaluator to use.
+    ...fetchLedgerEntries
+      .filter((entry) => entry.status === "success" && entry.content)
+      .map((entry) =>
+        item("source_fetch", entry.canonical_uri, entry.content as string, entry.timestamp),
+      ),
   ];
   if (input.seed?.trim()) {
     items.push(item("seed", `tome-seed://${input.project.slug}`, input.seed.trim(), capturedAt));

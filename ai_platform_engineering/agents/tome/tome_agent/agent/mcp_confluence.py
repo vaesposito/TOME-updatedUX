@@ -26,12 +26,37 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from html.parser import HTMLParser
 from typing import Any, ClassVar
 from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
+
+from tome_agent.agent.connectors.base import record_fetch
+
+# None of today's tools take a free-text argument (CQL is built internally
+# from these fields, never passed through) — but the allowlist stays
+# explicit so a future free-text argument is redacted by default rather
+# than needing someone to remember to add it here.
+_CONFLUENCE_ALLOWED_ARGS = frozenset({"space_key", "page_id", "limit"})
+
+
+def _confluence_canonical_uri(tool_name: str, args: dict[str, Any]) -> str:
+    if args.get("page_id"):
+        return f"confluence://pages/{args['page_id']}"
+    if args.get("space_key"):
+        return f"confluence://spaces/{args['space_key']}"
+    return "confluence://spaces"
+
+
+_record_fetch = partial(
+    record_fetch,
+    connector="confluence",
+    allowed_arg_keys=_CONFLUENCE_ALLOWED_ARGS,
+    canonical_uri=_confluence_canonical_uri,
+)
 
 _TREE_PAGE_LIMIT = 500
 _TREE_CONTENT_BUDGET_CHARS = 32_000
@@ -260,6 +285,7 @@ def build_confluence_mcp(
         "confluence_get_pages.",
         {},
     )
+    @_record_fetch(tool_name="confluence_list_spaces")
     async def list_spaces(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")
@@ -293,6 +319,7 @@ def build_confluence_mcp(
         "changed recently. Optional `limit` (default 25).",
         {"space_key": str, "limit": int},
     )
+    @_record_fetch(tool_name="confluence_get_pages")
     async def get_pages(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")
@@ -341,6 +368,7 @@ def build_confluence_mcp(
         "continuation call is needed. `page_id` is the selected root page.",
         {"page_id": str},
     )
+    @_record_fetch(tool_name="confluence_get_page_tree")
     async def get_page_tree(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")
@@ -540,6 +568,7 @@ def build_confluence_mcp(
         "last-modified time.",
         {"page_id": str},
     )
+    @_record_fetch(tool_name="confluence_get_page_content")
     async def get_page_content(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")

@@ -563,6 +563,12 @@ async def ingest_endpoint(body: IngestRequest):
             body.experiment.experiment_id if body.experiment else None,
             body.experiment.artifact_id if body.experiment else None,
         )
+        # Scope fetch-ledger recording (connectors/base.py's record_fetch) to
+        # this run, so every GitHub/Confluence/Webex tool call it makes is
+        # attributed to it. Experiment runs disable live connector tools
+        # anyway (nothing to record), but setting this unconditionally keeps
+        # the ingest/compact/synthesize endpoints symmetric.
+        http_client.set_active_run_id(body.run_id)
         _state.in_flight_runs += 1
         _state.last_activity_at = datetime.now(UTC)
         run_start = run_started()
@@ -607,6 +613,7 @@ async def ingest_endpoint(body: IngestRequest):
             success = True
         finally:
             http_client.set_active_experiment(None, None)
+            http_client.set_active_run_id(None)
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
             _state.last_activity_at = datetime.now(UTC)
             run_finished("ingest", run_start, success)
@@ -634,6 +641,7 @@ async def compact_endpoint(body: IngestRequest):
             body.experiment.experiment_id if body.experiment else None,
             body.experiment.artifact_id if body.experiment else None,
         )
+        http_client.set_active_run_id(body.run_id)
         _state.in_flight_runs += 1
         _state.last_activity_at = datetime.now(UTC)
         run_start = run_started()
@@ -657,6 +665,7 @@ async def compact_endpoint(body: IngestRequest):
             success = True
         finally:
             http_client.set_active_experiment(None, None)
+            http_client.set_active_run_id(None)
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
             _state.last_activity_at = datetime.now(UTC)
             run_finished("compact", run_start, success)
@@ -681,6 +690,7 @@ async def synthesize_endpoint(body: IngestRequest):
             body.experiment.experiment_id if body.experiment else None,
             body.experiment.artifact_id if body.experiment else None,
         )
+        http_client.set_active_run_id(body.run_id)
         _state.in_flight_runs += 1
         _state.last_activity_at = datetime.now(UTC)
         run_start = run_started()
@@ -721,6 +731,7 @@ async def synthesize_endpoint(body: IngestRequest):
             success = True
         finally:
             http_client.set_active_experiment(None, None)
+            http_client.set_active_run_id(None)
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
             _state.last_activity_at = datetime.now(UTC)
             run_finished("synthesize", run_start, success)

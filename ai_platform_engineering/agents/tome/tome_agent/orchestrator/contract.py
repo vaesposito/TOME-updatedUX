@@ -339,6 +339,37 @@ class AppendLogRequest(BaseModel):
     line: str
 
 
+class AppendFetchLedgerEntryRequest(BaseModel):
+    """POST /internal/projects/{id}/runs/{run_id}/fetch-ledger — one recorded
+    source-system fetch made by the ingestion agent, regardless of whether the
+    agent goes on to cite it. `id`/`run_id`/`project_id` are not carried here —
+    the route derives them from the URL, not the body."""
+
+    connector: str = Field(min_length=1)
+    """The connector slug (`github`/`confluence`/`webex` today). Deliberately
+    not a closed Literal — a new connector must be able to produce ledger
+    entries without a change to this shared contract (FR-005)."""
+    tool_name: str
+    tool_args: dict[str, Any] = Field(default_factory=dict)
+    """Redacted before this model is constructed — see connectors/base.py's
+    `redact_tool_args()`. Non-allowlisted fields never reach this payload."""
+    canonical_uri: str
+    status: Literal["success", "error"]
+    content: str | None = None
+    content_hash: str | None = None
+    error_message: str | None = Field(default=None, max_length=500)
+    timestamp: datetime
+
+    @model_validator(mode="after")
+    def require_content_pair_matching_status(self) -> AppendFetchLedgerEntryRequest:
+        if self.status == "success":
+            if not self.content or not self.content_hash:
+                raise ValueError("a successful fetch-ledger entry requires content and content_hash")
+        elif self.content is not None or self.content_hash is not None:
+            raise ValueError("a failed fetch-ledger entry must not carry content or content_hash")
+        return self
+
+
 # ---------- SSE event wire format ----------
 
 # Both /chat and /ingest stream `text/event-stream`. Each event has an `event`
@@ -552,6 +583,7 @@ class HealthResponse(BaseModel):
 
 
 __all__ = [
+    "AppendFetchLedgerEntryRequest",
     "AppendLogRequest",
     "ArtifactEvaluationRequest",
     "ArtifactEvaluationResponse",

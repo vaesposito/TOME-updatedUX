@@ -24,6 +24,14 @@ Candidate workspaces are reconstructed from this bundle and run without live con
 The run records model provenance, prompt/template hashes, policy version, token usage, turns, cost,
 and latency. Repeats use deterministic run identifiers and deterministic-but-balanced blind labels.
 
+The bundle's "ground truth" is the wiki's own prior accepted state, not the originating systems.
+Source-mirror pages (GitHub, Confluence, Webex) are themselves LLM-authored summaries produced by
+an earlier ingest run; they pass through this same evaluation gate the first time they are written,
+then graduate into frozen evidence for later runs once accepted. The evaluator never re-queries the
+live source system, so it cannot detect a summary that is internally consistent but unfaithful to the
+real GitHub issue, Confluence page, or Webex transcript it was drawn from — only drift or fabrication
+relative to what TOME has already accepted.
+
 ## Evaluator safeguards
 
 - Candidate models and the evaluator must have versioned TOME capability profiles.
@@ -81,6 +89,9 @@ Rejected and losing artifacts are retained.
 
 The evaluator is an LLM judge, not an independent source of truth. Blinding reduces identity bias but
 does not remove model bias, shared-provider failure modes, prompt sensitivity, or correlated errors.
+Grounding is measured against the frozen evidence bundle, which is prior accepted TOME output, not
+the live GitHub, Confluence, or Webex system. An ingestion-time summarization error that entered the
+wiki unnoticed becomes trusted evidence for every later run until a human catches and corrects it.
 Use multiple repeats, inspect claim-level evidence, and calibrate fixtures before enforcing a policy.
 Treat very low evaluator confidence, abstentions, malformed output, or missing required signals as a
 review condition. Cost and latency must not substitute for grounding.

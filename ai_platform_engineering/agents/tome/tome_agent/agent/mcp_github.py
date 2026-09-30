@@ -27,15 +27,63 @@ Tools returned by `build_github_mcp(repos, token)`:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+from functools import partial
 from typing import Any
 
 import httpx
-
 from claude_agent_sdk import create_sdk_mcp_server, tool
+
+from tome_agent.agent.connectors.base import record_fetch
 
 API = "https://api.github.com"
 DEFAULT_PER_PAGE = 30
+
+# Identifier-shaped args kept verbatim in the fetch ledger; anything else
+# (currently just `search_issues`' free-text `query`) is redacted — see
+# connectors/base.py's redact_tool_args().
+_GITHUB_ALLOWED_ARGS = frozenset(
+    {"repo", "since", "state", "number", "path", "ref", "offset", "limit", "project_number"}
+)
+
+
+def _github_canonical_uri(tool_name: str, args: dict[str, Any]) -> str:
+    """Best-effort identifier for what a GitHub tool call fetched. Listing
+    tools (no single-item id) get a collection-scoped URI; item tools get an
+    item-scoped one."""
+    repo = args.get("repo") or "unknown-repo"
+    ref = (args.get("ref") or "").strip() or "HEAD"
+    if tool_name in ("github_get_file", "github_get_file_chunk"):
+        return f"github://{repo}/blob/{ref}/{args.get('path', '')}"
+    if tool_name == "github_list_dir":
+        return f"github://{repo}/tree/{ref}/{args.get('path', '')}"
+    if tool_name == "github_get_readme":
+        return f"github://{repo}/readme/{ref}"
+    if tool_name == "github_get_codeowners":
+        return f"github://{repo}/codeowners"
+    if tool_name in ("github_get_issue", "github_list_issue_comments"):
+        return f"github://{repo}/issues/{args.get('number')}"
+    if tool_name == "github_get_pr":
+        return f"github://{repo}/pulls/{args.get('number')}"
+    if tool_name == "github_get_milestone":
+        return f"github://{repo}/milestones/{args.get('number')}"
+    if tool_name == "github_list_project_items":
+        return f"github://{repo}/projects/{args.get('project_number')}"
+    if tool_name == "github_search_issues":
+        query_hash = hashlib.sha256((args.get("query") or "").encode("utf-8")).hexdigest()[:16]
+        return f"github://search/issues?q_hash={query_hash}"
+    # list_commits / list_releases / list_issues / list_pulls / list_milestones / list_projects
+    suffix = tool_name.removeprefix("github_list_").removeprefix("github_")
+    return f"github://{repo}/{suffix}"
+
+
+_record_fetch = partial(
+    record_fetch,
+    connector="github",
+    allowed_arg_keys=_GITHUB_ALLOWED_ARGS,
+    canonical_uri=_github_canonical_uri,
+)
 
 
 def _normalize_repo(repo: str, allowed: set[str]) -> str | None:
@@ -126,6 +174,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List commits on a repo. `since` is RFC3339 (e.g. 2026-04-01T00:00:00Z).",
         {"repo": str, "since": str},
     )
+    @_record_fetch(tool_name="github_list_commits")
     async def list_commits(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -154,6 +203,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List releases on a repo, newest first.",
         {"repo": str},
     )
+    @_record_fetch(tool_name="github_list_releases")
     async def list_releases(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -181,6 +231,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List issues on a repo (excludes PRs). `since` RFC3339, `state` open|closed|all.",
         {"repo": str, "since": str, "state": str},
     )
+    @_record_fetch(tool_name="github_list_issues")
     async def list_issues(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -206,6 +257,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Get a single issue with body, labels, assignees, and recent comments count.",
         {"repo": str, "number": int},
     )
+    @_record_fetch(tool_name="github_get_issue")
     async def get_issue(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -224,6 +276,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List recent comments for a single issue. Fetch only after the compact issue index identifies a relevant issue.",
         {"repo": str, "number": int},
     )
+    @_record_fetch(tool_name="github_list_issue_comments")
     async def list_issue_comments(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -253,6 +306,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List pull requests on a repo. `state` open|closed|all.",
         {"repo": str, "state": str},
     )
+    @_record_fetch(tool_name="github_list_pulls")
     async def list_pulls(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -288,6 +342,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Get a PR with reviewers, requested reviewers, merge state.",
         {"repo": str, "number": int},
     )
+    @_record_fetch(tool_name="github_get_pr")
     async def get_pr(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -317,6 +372,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Run a GitHub issue search. Use full GH search syntax. Scoped to project repos automatically.",
         {"query": str},
     )
+    @_record_fetch(tool_name="github_search_issues")
     async def search_issues(args: dict) -> dict[str, Any]:
         # Scope to project repos so the agent can't fish across all of GH.
         scope = " ".join(f"repo:{r}" for r in sorted(allowed))
@@ -336,6 +392,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Read CODEOWNERS for a repo (tries .github/CODEOWNERS, CODEOWNERS, docs/CODEOWNERS).",
         {"repo": str},
     )
+    @_record_fetch(tool_name="github_get_codeowners")
     async def get_codeowners(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -355,6 +412,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Read a file from a repo at `path` (no leading slash). Optional `ref` is a branch/tag/sha; defaults to the repo's default branch. Returns up to 16,000 characters. If `truncated` is true, continue with `github_get_file_chunk` using `next_offset`.",
         {"repo": str, "path": str, "ref": str},
     )
+    @_record_fetch(tool_name="github_get_file")
     async def get_file(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -404,6 +462,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Read the next bounded slice of a GitHub file. Pass the same `repo`, `path`, and `ref` used for `github_get_file`; `offset` is a character offset (use the previous response's `next_offset`), and `limit` must be 1–8,000. Use an empty `ref` for the default branch. Repeat until `next_offset` is null.",
         {"repo": str, "path": str, "ref": str, "offset": int, "limit": int},
     )
+    @_record_fetch(tool_name="github_get_file_chunk")
     async def get_file_chunk(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args.get("repo", ""), allowed)
         if not repo:
@@ -459,6 +518,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List entries in a repo directory. `path` empty = repo root. Returns name, path, type (file|dir|symlink|submodule), size.",
         {"repo": str, "path": str, "ref": str},
     )
+    @_record_fetch(tool_name="github_list_dir")
     async def list_dir(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -490,6 +550,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Get the repo README (any variant: README.md, README.rst, etc.).",
         {"repo": str, "ref": str},
     )
+    @_record_fetch(tool_name="github_get_readme")
     async def get_readme(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -514,6 +575,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List milestones on a repo — due dates, open/closed issue counts, descriptions. `state` open|closed|all.",
         {"repo": str, "state": str},
     )
+    @_record_fetch(tool_name="github_list_milestones")
     async def list_milestones(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -533,6 +595,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "Get a single milestone with its full description.",
         {"repo": str, "number": int},
     )
+    @_record_fetch(tool_name="github_get_milestone")
     async def get_milestone(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -550,6 +613,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List GitHub Projects (v2) boards linked to a repo — the actual planning surface, not just issues that happen to be on one. Use `github_list_project_items` with the returned `number` to read a board's items.",
         {"repo": str},
     )
+    @_record_fetch(tool_name="github_list_projects")
     async def list_projects(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:
@@ -576,6 +640,7 @@ def build_github_mcp(repos: list[str], token: str = ""):
         "List items on a repo-linked Projects (v2) board — status/column, custom fields (priority, etc.), and the linked issue/PR. Get `project_number` from `github_list_projects`.",
         {"repo": str, "project_number": int},
     )
+    @_record_fetch(tool_name="github_list_project_items")
     async def list_project_items(args: dict) -> dict[str, Any]:
         repo = _normalize_repo(args["repo"], allowed)
         if not repo:

@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 
 import { ApiError, withErrorHandler } from "@/lib/api-middleware";
-import { loadOwnedChatRun } from "@/lib/tome/chat-run-store";
+import {
+  failStaleChatRuns,
+  isChatRunStale,
+  loadOwnedChatRun,
+} from "@/lib/tome/chat-run-store";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +78,11 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
                 );
               }
               break;
+            }
+            // Nothing will ever finish an orphaned run; fail it and re-read so
+            // the terminal branch above emits its error and closes the stream.
+            if (isChatRunStale(run) && (await failStaleChatRuns({ _id: runId }))) {
+              continue;
             }
             await wait(POLL_INTERVAL_MS);
           }

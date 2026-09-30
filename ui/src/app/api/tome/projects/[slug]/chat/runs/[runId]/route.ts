@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
 
-import { ApiError, withErrorHandler } from "@/lib/api-middleware";
+import { ApiError, successResponse, withErrorHandler } from "@/lib/api-middleware";
 import {
-  failStaleChatRuns,
-  isChatRunStale,
+  failOrphanedChatRuns,
+  isChatRunOrphaned,
   loadOwnedChatRun,
+  stopChatRun,
 } from "@/lib/tome/chat-run-store";
 import { loadTomeProject } from "@/lib/tome/tome-api";
 
@@ -81,7 +82,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
             }
             // Nothing will ever finish an orphaned run; fail it and re-read so
             // the terminal branch above emits its error and closes the stream.
-            if (isChatRunStale(run) && (await failStaleChatRuns({ _id: runId }))) {
+            if (isChatRunOrphaned(run) && (await failOrphanedChatRuns({ _id: runId }))) {
               continue;
             }
             await wait(POLL_INTERVAL_MS);
@@ -105,4 +106,21 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       "X-Accel-Buffering": "no",
     },
   });
+});
+
+/**
+ * Stop the caller's own in-flight run. This only flips it to failed in Mongo;
+ * the replica consuming the upstream stream sees that on its next heartbeat
+ * and drops the agent connection, which cancels the agent's turn.
+ */
+export const DELETE = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
+  const { slug, runId } = await ctx.params;
+  const tctx = await loadTomeProject(request, slug);
+  const userId = userIdOf(tctx.user.email);
+  const run = await loadOwnedChatRun(runId, tctx.projectId, userId);
+  if (!run) {
+    throw new ApiError("Chat run not found", 404, "RUN_NOT_FOUND");
+  }
+  const stopped = await stopChatRun(runId, tctx.projectId, userId);
+  return successResponse({ stopped });
 });

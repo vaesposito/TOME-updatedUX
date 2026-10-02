@@ -624,6 +624,8 @@ export interface ChatRun {
   last_event_id: number;
   created_at: Date;
   updated_at: Date;
+  /** Renewed by the UI process consuming the upstream stream; see watchChatRun. */
+  heartbeat_at?: Date;
   finished_at?: Date;
   error?: string;
   /** Mongo TTL cleanup; the transcript is retained separately. */

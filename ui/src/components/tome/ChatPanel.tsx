@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowUp, Bot, Eraser, Loader2, Sparkles, Wrench } from "lucide-react";
+import { ArrowUp, Bot, Eraser, Loader2, Sparkles, Square, Wrench } from "lucide-react";
 import TextareaAutosize from "react-textarea-autosize";
 
 import { AuditNotice } from "@/components/chat/AuditNotice";
@@ -57,6 +57,11 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CONTEXT_COMPACT_THRESHOLD = 75;
+
+// The browser-side reader for each chat's live send, so Stop can detach it and
+// a late frame from the stopped turn can't land on the next one. Module scope
+// because a send outlives the ChatPanel that started it (navigation).
+const liveSendAborts = new Map<string, AbortController>();
 
 function isTomeSessionId(id: string | null | undefined): id is string {
   return typeof id === "string" && UUID_RE.test(id);
@@ -214,6 +219,7 @@ export function ChatPanel({
               : data.session?.userId ?? null,
           contextUsage: null,
           resumeRunId: activeRunId,
+          activeRunId,
           ...(activeRunId
             ? {
                 streamDestination: {
@@ -342,6 +348,7 @@ export function ChatPanel({
             ...current,
             streaming: false,
             resumeRunId: null,
+            activeRunId: null,
           }));
         }
       }
@@ -479,6 +486,7 @@ export function ChatPanel({
         label: projectTitle ?? slug,
       },
       resumeRunId: null,
+      activeRunId: null,
       messages: [
         ...chat.messages,
         { id: newMessageId(), role: "user", parts: [{ kind: "text", text }] },
@@ -536,6 +544,9 @@ export function ChatPanel({
       });
     };
 
+    const abort = new AbortController();
+    liveSendAborts.set(chatKey, abort);
+
     try {
       const research = current.myAgentResearch === true || requestsMyAgent(text);
       updateChat(chatKey, (chat) => ({ ...chat, myAgentResearch: research }));
@@ -547,6 +558,7 @@ export function ChatPanel({
           sdk_session_id: current.sdkSessionId,
           myagent_research: research,
         }),
+        signal: abort.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -563,12 +575,12 @@ export function ChatPanel({
       // session id (created on the very first message) so the client can keep
       // pointing at it for reads/feedback grouping.
       const persistedSessionId = res.headers.get("X-Tome-Session-Id");
-      if (persistedSessionId) {
-        updateChat(chatKey, (chat) => ({
-          ...chat,
-          sessionId: persistedSessionId,
-        }));
-      }
+      const runId = res.headers.get("X-Tome-Run-Id");
+      updateChat(chatKey, (chat) => ({
+        ...chat,
+        ...(persistedSessionId ? { sessionId: persistedSessionId } : {}),
+        activeRunId: runId,
+      }));
 
       let turnModel: string | null = null;
       let turnModelProvenance: ModelProvenance | null = null;
@@ -600,9 +612,14 @@ export function ChatPanel({
         modelProvenance: turnModelProvenance ?? undefined,
       }));
     } catch (e) {
+      // Stop already settled this turn's message and state.
+      if (abort.signal.aborted) return;
       pushErrorIfEmpty(String((e as Error)?.message ?? e));
     } finally {
-      updateChat(chatKey, (chat) => ({ ...chat, streaming: false }));
+      if (liveSendAborts.get(chatKey) === abort) liveSendAborts.delete(chatKey);
+      if (!abort.signal.aborted) {
+        updateChat(chatKey, (chat) => ({ ...chat, streaming: false, activeRunId: null }));
+      }
     }
   }, [autoCompact, chatKey, handleCompact, onPagesChanged, projectTitle, sessionContextTooLarge, slug, updateChat, updateMessages]);
 
@@ -620,6 +637,34 @@ export function ChatPanel({
   );
 
   // Stable references, required for `MessageRow`/`Composer` memoization.
+  // Settle the turn locally right away, then ask the server to stop the run.
+  // Clearing resumeRunId tears down a reload-resume stream via its effect.
+  const handleStop = useCallback(() => {
+    const current = useTomeChatStore.getState().chats[chatKey];
+    const runId = current?.activeRunId;
+    if (!current?.streaming || !runId) return;
+    liveSendAborts.get(chatKey)?.abort();
+    liveSendAborts.delete(chatKey);
+    updateChat(chatKey, (chat) => {
+      const messages = chat.messages.slice();
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const message = messages[i];
+        if (message.role !== "assistant" || !message.pending) continue;
+        messages[i] = {
+          ...message,
+          pending: false,
+          parts: [...message.parts, { kind: "text", text: "\n\n_Stopped._" }],
+        };
+        break;
+      }
+      return { ...chat, messages, streaming: false, resumeRunId: null, activeRunId: null };
+    });
+    void fetch(
+      `/api/tome/projects/${slug}/chat/runs/${encodeURIComponent(runId)}`,
+      { method: "DELETE" },
+    ).catch((error) => console.error("Failed to stop TOME chat run", error));
+  }, [chatKey, slug, updateChat]);
+
   const handleComposerSend = useCallback(
     (text: string) => void send(text),
     [send],
@@ -759,6 +804,8 @@ export function ChatPanel({
         onInitialPromptConsumed={onInitialPromptConsumed}
         viewSessionId={viewSessionId}
         onSend={handleComposerSend}
+        canStop={streaming && Boolean(chat.activeRunId)}
+        onStop={handleStop}
       />
 
       <Dialog open={confirmDialog === "compact"} onOpenChange={(open) => !open && setConfirmDialog(null)}>
@@ -843,6 +890,8 @@ const Composer = memo(function Composer({
   onInitialPromptConsumed,
   viewSessionId,
   onSend,
+  canStop,
+  onStop,
 }: {
   readOnlyView: boolean;
   streaming: boolean;
@@ -855,6 +904,8 @@ const Composer = memo(function Composer({
   onInitialPromptConsumed?: () => void;
   viewSessionId: string | null;
   onSend: (text: string) => void;
+  canStop: boolean;
+  onStop: () => void;
 }) {
   const [input, setInput] = useState("");
 
@@ -906,19 +957,32 @@ const Composer = memo(function Composer({
           placeholder={readOnlyView ? "Read-only session view" : loadingHistory ? "Loading conversation…" : compacting ? "Compacting…" : sessionContextTooLarge ? "Start a new chat to continue" : "Ask about this project…"}
           className="flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-relaxed outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
         />
-        <Button
-          size="icon"
-          className="shrink-0 rounded-full"
-          onClick={submit}
-          disabled={readOnlyView || loadingHistory || !input.trim() || streaming || compacting || sessionContextTooLarge}
-          title={compacting ? "Compacting…" : "Send"}
-        >
-          {streaming ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
+        {streaming ? (
+          <Button
+            size="icon"
+            className="shrink-0 rounded-full"
+            onClick={onStop}
+            disabled={!canStop}
+            title="Stop"
+            aria-label="Stop"
+          >
+            {canStop ? (
+              <Square className="h-3.5 w-3.5 fill-current" />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            className="shrink-0 rounded-full"
+            onClick={submit}
+            disabled={readOnlyView || loadingHistory || !input.trim() || compacting || sessionContextTooLarge}
+            title={compacting ? "Compacting…" : "Send"}
+          >
             <ArrowUp className="h-4 w-4" />
-          )}
-        </Button>
+          </Button>
+        )}
       </div>
       <p className="pointer-events-none mt-1.5 text-center text-xs text-muted-foreground">
         <AuditNotice />

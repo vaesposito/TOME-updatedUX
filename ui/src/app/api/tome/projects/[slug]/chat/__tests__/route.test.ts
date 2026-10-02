@@ -11,6 +11,8 @@ const mockCreateChatRun = jest.fn();
 const mockAppendChatRunEvents = jest.fn();
 const mockFinishChatRun = jest.fn();
 const mockMarkChatRunRunning = jest.fn();
+const mockWatchChatRun = jest.fn();
+const mockUnwatch = jest.fn();
 
 jest.mock("@/lib/tome/tome-api", () => ({
   loadTomeProject: (...args: unknown[]) => mockLoadTomeProject(...args),
@@ -28,6 +30,7 @@ jest.mock("@/lib/tome/chat-run-store", () => ({
   appendChatRunEvents: (...args: unknown[]) => mockAppendChatRunEvents(...args),
   finishChatRun: (...args: unknown[]) => mockFinishChatRun(...args),
   markChatRunRunning: (...args: unknown[]) => mockMarkChatRunRunning(...args),
+  watchChatRun: (...args: unknown[]) => mockWatchChatRun(...args),
 }));
 jest.mock("@/lib/tome/github-issue-scope", () => ({
   readableTomeRollupProjects: jest.fn().mockResolvedValue([]),
@@ -72,6 +75,7 @@ beforeEach(() => {
   mockFinishChatRun.mockResolvedValue(undefined);
   mockMarkChatRunRunning.mockResolvedValue(undefined);
   mockSetSdkSessionId.mockResolvedValue(undefined);
+  mockWatchChatRun.mockReturnValue(mockUnwatch);
 });
 
 afterAll(() => {
@@ -120,6 +124,44 @@ describe("POST TOME chat", () => {
       "completed",
       undefined,
     );
+    expect(mockWatchChatRun).toHaveBeenCalledWith("run-1", expect.any(Function));
+    expect(mockUnwatch).toHaveBeenCalled();
+  });
+
+  it("aborts the agent stream when the run is stopped from another replica", async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    global.fetch = jest.fn().mockImplementation((_url: string, init: RequestInit) => {
+      upstreamSignal = init.signal ?? undefined;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: token\ndata: {"text":"partial"}\n\n'));
+          upstreamSignal?.addEventListener("abort", () =>
+            controller.error(new DOMException("aborted", "AbortError")),
+          );
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    });
+    const response = await POST(
+      new NextRequest("http://example.test/api/tome/projects/example-project/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Explain the project" }),
+      }),
+      context,
+    );
+    expect(response.status).toBe(200);
+    void response.text().catch(() => undefined);
+
+    const onInactive = mockWatchChatRun.mock.calls[0][1] as () => void;
+    onInactive();
+    expect(upstreamSignal?.aborted).toBe(true);
+
+    for (let i = 0; i < 10 && mockFinishChatRun.mock.calls.length === 0; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(mockFinishChatRun).toHaveBeenCalledWith("run-1", "failed", expect.any(String));
+    expect(mockUnwatch).toHaveBeenCalled();
   });
 
   it("grants MyAgent to an explicit browser chat request instead of advertising no integration", async () => {

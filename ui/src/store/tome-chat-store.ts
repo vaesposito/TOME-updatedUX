@@ -31,6 +31,8 @@ export interface TomeChatViewState {
   contextUsage: { percentage: number } | null;
   /** Backend run being replayed after a browser reload. */
   resumeRunId: string | null;
+  /** Backend run behind the in-flight turn, once known; what Stop cancels. */
+  activeRunId?: string | null;
   /** Where the global live-response banner should return for this stream. */
   streamDestination?: {
     href: string;

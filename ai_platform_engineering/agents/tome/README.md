@@ -22,6 +22,7 @@ the passive `/metrics` scrape endpoint are unauthenticated.
 | POST | `/chat` | Chat turn → `text/event-stream` (`token`/`tool_call`/`tool_result`/`session`/`done`/`error`) |
 | POST | `/ingest` | Ingest run → `text/event-stream` (`log`/`tool_call`/`page_written`/`done`/`error`) |
 | POST | `/evaluate` | Blinded, structured claim and fidelity evaluation against frozen evidence |
+| POST | `/evaluate/chat` | Claim and relevance/completeness evaluation for a chat transcript's final answer against frozen evidence |
 | POST | `/presentation` | Toolless generation or revision of a structured, source-grounded slide deck |
 | POST | `/presentation/stream` | SSE stream of deck generation followed by the validated editable deck |
 | POST | `/presentation/requirements/stream` | SSE stream of AI Assist output followed by a validated editable brief |

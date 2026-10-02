@@ -9,11 +9,14 @@ from tome_agent.agent.evaluator import (
     __test__,
     _extract_json,
     evaluate_artifact,
+    evaluate_chat_transcript,
     evaluator_prompt_contract,
 )
 from tome_agent.orchestrator.contract import (
     ArtifactEvaluationRequest,
     ArtifactEvaluationResponse,
+    ChatEvaluationRequest,
+    ChatEvaluationResponse,
     EvaluatorModelProfile,
 )
 
@@ -92,6 +95,22 @@ def evaluation_request(**overrides: object) -> ArtifactEvaluationRequest:
     }
     values.update(overrides)
     return ArtifactEvaluationRequest(**values)
+
+
+def chat_request(**overrides: object) -> ChatEvaluationRequest:
+    values = {
+        "blind_label": "chat-candidate-x",
+        "evaluator_model": "provider/model-judge",
+        "evaluator_profile": evaluator_profile(),
+        "evaluator_prompt_version": "tome-chat-evaluator-v1",
+        "transcript": [
+            {"role": "user", "content": "What is the status?"},
+            {"role": "assistant", "content": "Example output"},
+        ],
+        "evidence": [],
+    }
+    values.update(overrides)
+    return ChatEvaluationRequest(**values)
 
 
 @pytest.mark.parametrize(
@@ -474,3 +493,330 @@ async def test_evaluator_does_not_retry_refusal(
     with pytest.raises(ValueError, match="human review"):
         await evaluate_artifact(evaluation_request())
     assert calls == 1
+
+
+# ---------- chat evaluation (POST /evaluate/chat) ----------
+
+
+def chat_claim_payload() -> dict:
+    return {
+        "claims": [
+            {
+                "exact_text": "The launch is on 2026-01-01",
+                "classification": "contradicted",
+                "reason": "Evidence says 2026-02-01.",
+                "confidence": 0.9,
+                "evidence": [{
+                    "evidence_item_id": "evidence-1",
+                    "quote": "Launch date is 2026-02-01.",
+                }],
+                "critical_kind": "date_or_deadline",
+                "fabricated_entities": [],
+                "fabricated_quantitative_details": [],
+            },
+            {
+                "exact_text": "owned by the payments team",
+                "classification": "supported",
+                "reason": "Matches evidence.",
+                "confidence": 0.95,
+                "evidence": [{
+                    "evidence_item_id": "evidence-1",
+                    "quote": "Owner: payments team.",
+                }],
+                "critical_kind": "ownership",
+                "fabricated_entities": [],
+                "fabricated_quantitative_details": [],
+            },
+        ],
+    }
+
+
+def relevance_completeness_payload() -> dict:
+    return {
+        "relevance": {
+            "score": 0.9,
+            "rationale": "Answers the question asked.",
+            "findings": [],
+        },
+        "completeness": {
+            "score": 0.6,
+            "rationale": "Misses the blocked status noted in evidence.",
+            "findings": ["Evidence also notes the migration is blocked on a schema review."],
+        },
+    }
+
+
+def chat_result_message(session_id: str, structured_output: dict, **overrides: object) -> ResultMessage:
+    values = {
+        "subtype": "success",
+        "duration_ms": 1,
+        "duration_api_ms": 1,
+        "is_error": False,
+        "num_turns": 1,
+        "session_id": session_id,
+        "result": "",
+        "structured_output": structured_output,
+        "usage": {"input_tokens": 10, "output_tokens": 20},
+        "total_cost_usd": 0.01,
+    }
+    values.update(overrides)
+    return ResultMessage(**values)
+
+
+def test_chat_request_requires_an_assistant_turn() -> None:
+    with pytest.raises(ValidationError, match="assistant turn"):
+        chat_request(transcript=[{"role": "user", "content": "Hello?"}])
+
+
+def test_chat_request_prompt_includes_answer_and_evidence() -> None:
+    body = chat_request(
+        evidence=[{
+            "id": "evidence-1",
+            "canonical_uri": "https://example.test/evidence",
+            "content_hash": "example-hash",
+            "content": "Launch date is 2026-02-01.",
+        }],
+    )
+
+    prompt = evaluator._chat_request_prompt(body, "Example output")
+
+    assert "Example output" in prompt
+    assert "Launch date is 2026-02-01." in prompt
+    assert "chat-candidate-x" in prompt
+
+
+def test_chat_claims_output_schema_omits_signals() -> None:
+    schema = evaluator._chat_claims_output_schema(max_claims=5)
+
+    assert schema["properties"]["claims"]["maxItems"] == 5
+    assert "signals" not in schema["properties"]
+    assert schema["required"] == ["claims"]
+
+
+def test_chat_token_budget_check_rejects_oversized_evidence() -> None:
+    body = chat_request(
+        evaluator_profile=evaluator_profile(
+            context_window_tokens=1_000,
+            max_output_tokens=100,
+        ),
+        evidence=[{
+            "id": "evidence-1",
+            "canonical_uri": "https://example.test/evidence",
+            "content_hash": "example-hash",
+            "content": "x" * 5_000,
+        }],
+    )
+    request_prompt = evaluator._chat_request_prompt(body, "Example output")
+
+    with pytest.raises(ValueError, match="evaluator input budget"):
+        evaluator._check_chat_token_budget(body, evaluator._CHAT_SYSTEM_PROMPT, request_prompt)
+
+
+@pytest.mark.anyio
+async def test_chat_evaluation_classifies_claims_and_scores_default_rubric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    messages = [
+        chat_result_message("chat-claims", chat_claim_payload()),
+        chat_result_message(
+            "chat-rubric", relevance_completeness_payload(), total_cost_usd=0.002,
+            usage={"input_tokens": 5, "output_tokens": 8},
+        ),
+    ]
+
+    async def fake_query(*, prompt: str, options: object):
+        assert "assistant_answer" in prompt
+        yield messages.pop(0)
+
+    monkeypatch.setattr(evaluator, "query", fake_query)
+
+    body = chat_request(
+        transcript=[
+            {"role": "user", "content": "When does the migration launch, and who owns it?"},
+            {
+                "role": "assistant",
+                "content": "The launch is on 2026-01-01 and is owned by the payments team.",
+            },
+        ],
+        evidence=[{
+            "id": "evidence-1",
+            "canonical_uri": "https://example.test/evidence",
+            "content_hash": "example-hash",
+            "content": "Launch date is 2026-02-01. Owner: payments team.",
+        }],
+    )
+
+    response = await evaluate_chat_transcript(body)
+
+    assert [claim.classification for claim in response.claims] == ["contradicted", "supported"]
+    assert all(claim.page == "transcript" for claim in response.claims)
+    assert response.relevance_completeness.method == "rubric"
+    assert response.relevance_completeness.relevance.score == 0.9
+    assert response.relevance_completeness.completeness.score == 0.6
+    assert response.relevance_completeness.rubric_applied == evaluator._DEFAULT_CHAT_RUBRIC
+    assert response.tokens == {"input": 15, "output": 28}
+    assert response.cost_usd == pytest.approx(0.012)
+    assert response.turns == 2
+    assert response.attempts == 2
+    assert response.batches == 1
+
+
+@pytest.mark.anyio
+async def test_chat_evaluation_flags_fabricated_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claim_payload = {
+        "claims": [{
+            "exact_text": "revenue grew 40% thanks to our new partner Acme Corp",
+            "classification": "unsupported",
+            "reason": "No partner or percentage appears in evidence.",
+            "confidence": 0.85,
+            "evidence": [],
+            "critical_kind": "partner_or_customer",
+            "fabricated_entities": ["Acme Corp"],
+            "fabricated_quantitative_details": ["40%"],
+        }],
+    }
+    messages = [
+        chat_result_message("chat-fab-claims", claim_payload),
+        chat_result_message("chat-fab-rubric", relevance_completeness_payload()),
+    ]
+
+    async def fake_query(*, prompt: str, options: object):
+        yield messages.pop(0)
+
+    monkeypatch.setattr(evaluator, "query", fake_query)
+
+    body = chat_request(
+        transcript=[{
+            "role": "assistant",
+            "content": "revenue grew 40% thanks to our new partner Acme Corp",
+        }],
+        evidence=[],
+    )
+
+    response = await evaluate_chat_transcript(body)
+
+    assert response.claims[0].fabricated_entities == ["Acme Corp"]
+    assert response.claims[0].fabricated_quantitative_details == ["40%"]
+    assert response.claims[0].critical_kind == "partner_or_customer"
+
+
+def close_match_payload() -> dict:
+    return {
+        "relevance": {"score": 0.95, "rationale": "Matches the reference closely.", "findings": []},
+        "completeness": {"score": 0.9, "rationale": "Covers the same points as the reference.", "findings": []},
+    }
+
+
+def off_topic_payload() -> dict:
+    return {
+        "relevance": {
+            "score": 0.1,
+            "rationale": "Answers a different question than the reference addresses.",
+            "findings": ["Reference discusses the migration deadline; answer discusses unrelated topic."],
+        },
+        "completeness": {
+            "score": 0.1,
+            "rationale": "Covers none of the reference's points.",
+            "findings": ["Reference discusses the migration deadline; answer discusses unrelated topic."],
+        },
+    }
+
+
+async def _evaluate_chat_with_rubric_and_reference_responses(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    rc_payload: dict,
+    **request_overrides: object,
+) -> ChatEvaluationResponse:
+    messages = [
+        chat_result_message("chat-claims", chat_claim_payload()),
+        chat_result_message("chat-rc", rc_payload),
+    ]
+
+    async def fake_query(*, prompt: str, options: object):
+        yield messages.pop(0)
+
+    monkeypatch.setattr(evaluator, "query", fake_query)
+    return await evaluate_chat_transcript(chat_request(**request_overrides))
+
+
+@pytest.mark.anyio
+async def test_chat_evaluation_scores_against_a_closely_matching_reference_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = await _evaluate_chat_with_rubric_and_reference_responses(
+        monkeypatch,
+        rc_payload=close_match_payload(),
+        reference_answer="Example output",
+    )
+
+    assert response.relevance_completeness.method == "reference_answer"
+    assert response.relevance_completeness.rubric_applied is None
+    assert response.relevance_completeness.relevance.score == 0.95
+    assert response.relevance_completeness.completeness.score == 0.9
+
+
+@pytest.mark.anyio
+async def test_chat_evaluation_scores_low_against_a_substantially_different_reference_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = await _evaluate_chat_with_rubric_and_reference_responses(
+        monkeypatch,
+        rc_payload=off_topic_payload(),
+        reference_answer="A completely different answer about an unrelated topic.",
+    )
+
+    assert response.relevance_completeness.method == "reference_answer"
+    assert response.relevance_completeness.relevance.score == 0.1
+    assert response.relevance_completeness.completeness.score == 0.1
+    assert response.relevance_completeness.completeness.findings
+
+
+@pytest.mark.anyio
+async def test_chat_evaluation_reference_answer_takes_precedence_over_rubric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = await _evaluate_chat_with_rubric_and_reference_responses(
+        monkeypatch,
+        rc_payload=close_match_payload(),
+        reference_answer="Example output",
+        rubric=[{"id": "custom", "description": "Custom criterion that should be ignored."}],
+    )
+
+    assert response.relevance_completeness.method == "reference_answer"
+    assert response.relevance_completeness.rubric_applied is None
+
+
+@pytest.mark.anyio
+async def test_chat_evaluation_applies_a_custom_rubric_when_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_rubric = [
+        {"id": "tone", "description": "Answer is written in a professional tone."},
+    ]
+
+    response = await _evaluate_chat_with_rubric_and_reference_responses(
+        monkeypatch,
+        rc_payload=close_match_payload(),
+        rubric=custom_rubric,
+    )
+
+    assert response.relevance_completeness.method == "rubric"
+    assert [c.id for c in response.relevance_completeness.rubric_applied] == ["tone"]
+    assert response.relevance_completeness.rubric_applied != evaluator._DEFAULT_CHAT_RUBRIC
+
+
+@pytest.mark.anyio
+async def test_chat_evaluation_scores_low_relevance_for_off_topic_answer_under_default_rubric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = await _evaluate_chat_with_rubric_and_reference_responses(
+        monkeypatch,
+        rc_payload=off_topic_payload(),
+    )
+
+    assert response.relevance_completeness.method == "rubric"
+    assert response.relevance_completeness.rubric_applied == evaluator._DEFAULT_CHAT_RUBRIC
+    assert response.relevance_completeness.relevance.score == 0.1

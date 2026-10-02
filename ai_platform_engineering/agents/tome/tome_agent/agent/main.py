@@ -57,7 +57,11 @@ from tome_agent.agent import drift, http_client, workspace
 from tome_agent.agent.chat import stream_chat
 from tome_agent.agent.compact import stream_compaction
 from tome_agent.agent.drift import build_drift_report, classify_structural
-from tome_agent.agent.evaluator import evaluate_artifact, evaluator_prompt_contract
+from tome_agent.agent.evaluator import (
+    evaluate_artifact,
+    evaluate_chat_transcript,
+    evaluator_prompt_contract,
+)
 from tome_agent.agent.inbound_auth import has_valid_bearer_token
 from tome_agent.agent.ingestor import expected_template_pages, stream_ingest
 from tome_agent.agent.presentation import (
@@ -77,6 +81,8 @@ from tome_agent.metrics import (
 from tome_agent.orchestrator.contract import (
     ArtifactEvaluationRequest,
     ArtifactEvaluationResponse,
+    ChatEvaluationRequest,
+    ChatEvaluationResponse,
     ChatEventPayload,
     ChatRequest,
     EvaluatorPromptContract,
@@ -459,6 +465,19 @@ async def evaluate_endpoint(
         raise HTTPException(503, "agent not ready")
     try:
         return await evaluate_artifact(body)
+    except ValueError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/evaluate/chat", response_model=ChatEvaluationResponse)
+async def evaluate_chat_endpoint(
+    body: ChatEvaluationRequest,
+) -> ChatEvaluationResponse:
+    """Evaluate one chat transcript's final assistant answer against its frozen evidence."""
+    if not _state.ready:
+        raise HTTPException(503, "agent not ready")
+    try:
+        return await evaluate_chat_transcript(body)
     except ValueError as exc:
         raise HTTPException(502, str(exc)) from exc
 

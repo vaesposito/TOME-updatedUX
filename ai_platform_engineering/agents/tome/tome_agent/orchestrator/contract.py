@@ -572,6 +572,62 @@ class ArtifactEvaluationResponse(BaseModel):
     peak_estimated_input_tokens: int | None = Field(default=None, ge=1)
 
 
+# ---------- agent /evaluate/chat ----------
+
+
+class ChatTranscriptTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class RubricCriterion(BaseModel):
+    id: str
+    description: str
+    weight: float = Field(default=1.0, gt=0)
+
+
+class DimensionScore(BaseModel):
+    score: float = Field(ge=0, le=1)
+    rationale: str
+    findings: list[str] = Field(default_factory=list)
+
+
+class RelevanceCompletenessResult(BaseModel):
+    method: Literal["reference_answer", "rubric"]
+    relevance: DimensionScore
+    completeness: DimensionScore
+    rubric_applied: list[RubricCriterion] | None = None
+
+
+class ChatEvaluationRequest(BaseModel):
+    blind_label: str
+    evaluator_model: str
+    evaluator_profile: EvaluatorModelProfile | None = None
+    evaluator_prompt_version: str | None = None
+    max_claims: int | None = Field(default=None, ge=1, le=50)
+    transcript: list[ChatTranscriptTurn]
+    evidence: list[EvaluationEvidenceItem]
+    reference_answer: str | None = None
+    rubric: list[RubricCriterion] | None = None
+    max_cost_usd: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _require_assistant_turn(self) -> ChatEvaluationRequest:
+        if not any(turn.role == "assistant" for turn in self.transcript):
+            raise ValueError("transcript must contain at least one assistant turn")
+        return self
+
+
+class ChatEvaluationResponse(BaseModel):
+    claims: list[EvaluationClaim]
+    relevance_completeness: RelevanceCompletenessResult
+    tokens: dict[str, int] = Field(default_factory=dict)
+    turns: int = 1
+    cost_usd: float | None = None
+    batches: int = Field(default=1, ge=1)
+    attempts: int = Field(default=1, ge=1)
+
+
 # ---------- agent /healthz, /readyz ----------
 
 
@@ -587,11 +643,15 @@ __all__ = [
     "AppendLogRequest",
     "ArtifactEvaluationRequest",
     "ArtifactEvaluationResponse",
+    "ChatEvaluationRequest",
+    "ChatEvaluationResponse",
     "ChatEventPayload",
     "ChatEventType",
     "ChatRequest",
+    "ChatTranscriptTurn",
     "ChildProjectSnapshot",
     "ConfluenceSpaceSnapshot",
+    "DimensionScore",
     "EvaluationClaim",
     "EvaluationClaimEvidence",
     "EvaluationEvidenceItem",
@@ -610,7 +670,9 @@ __all__ = [
     "ModelCheckResponse",
     "MyAgentEvidence",
     "ProjectSnapshot",
+    "RelevanceCompletenessResult",
     "RepoSnapshot",
+    "RubricCriterion",
     "WebexRoomSnapshot",
     "WritePageRequest",
 ]

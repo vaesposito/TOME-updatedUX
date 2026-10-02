@@ -36,6 +36,7 @@ import { SourcePicker } from "@/components/projects/source-pickers";
 import { MyAgentSourcePicker } from "@/components/projects/source-pickers/MyAgentSourcePicker";
 import { WebexCredentialModePicker } from "@/components/projects/source-pickers/WebexCredentialModePicker";
 import { getConfig } from "@/lib/config";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import {
   toHierarchyOptions,
   type HierarchyOption,
@@ -237,6 +238,7 @@ export function ProjectOnboardingWizard({
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(initialOpen);
   const [configSteps, setConfigSteps] = useState<OnboardingStepConfig[]>([]);
+  const myAgentFeatureEnabled = useMyAgentEnabled() === true;
   // Which integrations the user has enabled (id → on), seeded from the config's
   // `default_enabled`. Drives the Integrations step + which apps provision.
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
@@ -296,16 +298,22 @@ export function ProjectOnboardingWizard({
       selectedAreaSlug
     : null;
 
+  const availableConfigSteps = useMemo(
+    () => myAgentFeatureEnabled
+      ? configSteps
+      : configSteps.filter((step) => !isSourceStep(step) || step.source !== "myagent"),
+    [configSteps, myAgentFeatureEnabled],
+  );
   const wizardSteps = useMemo(
-    () => buildWizardSteps(configSteps, entityType),
-    [configSteps, entityType],
+    () => buildWizardSteps(availableConfigSteps, entityType),
+    [availableConfigSteps, entityType],
   );
   const entityConfigSteps = useMemo(
     () =>
       entityType === "project"
-        ? configSteps
-        : configSteps.filter((step) => isSourceStep(step) && step.source !== "myagent"),
-    [configSteps, entityType],
+        ? availableConfigSteps
+        : availableConfigSteps.filter((step) => isSourceStep(step) && step.source !== "myagent"),
+    [availableConfigSteps, entityType],
   );
   const phase = wizardSteps[phaseIndex] ?? wizardSteps[0];
   // Flow: type=0, create, [slt], access, [integrations], review. Review is

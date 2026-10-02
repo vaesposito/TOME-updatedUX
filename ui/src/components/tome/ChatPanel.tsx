@@ -23,6 +23,7 @@ import { MarkdownRenderer } from "@/components/shared/timeline";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import type { ChatPart as Part, ModelProvenance } from "@/types/tome";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import { requestsMyAgent } from "@/lib/tome/myagent-chat-mode";
 import { MYAGENT_BROWSER_ACTION_HEADER } from "@/lib/tome/myagent-interactive";
 import {
@@ -111,8 +112,15 @@ export function ChatPanel({
   const [loadingHistory, setLoadingHistory] = useState(!storedChat?.hydrated);
   const [confirmDialog, setConfirmDialog] = useState<"clear" | "compact" | null>(null);
   const [autoCompact, setAutoCompact] = useState(true);
+  const myAgentEnabled = useMyAgentEnabled();
   const [sessionContextTooLarge, setSessionContextTooLarge] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (myAgentEnabled === false) {
+      updateChat(chatKey, (current) => ({ ...current, myAgentResearch: false }));
+    }
+  }, [chatKey, myAgentEnabled, updateChat]);
 
   const updateMessages = useCallback(
     (updater: (messages: ChatMsg[]) => ChatMsg[]) => {
@@ -548,7 +556,7 @@ export function ChatPanel({
     liveSendAborts.set(chatKey, abort);
 
     try {
-      const research = current.myAgentResearch === true || requestsMyAgent(text);
+      const research = myAgentEnabled === true && (current.myAgentResearch === true || requestsMyAgent(text));
       updateChat(chatKey, (chat) => ({ ...chat, myAgentResearch: research }));
       const res = await fetch(`/api/tome/projects/${slug}/chat`, {
         method: "POST",
@@ -621,7 +629,7 @@ export function ChatPanel({
         updateChat(chatKey, (chat) => ({ ...chat, streaming: false, activeRunId: null }));
       }
     }
-  }, [autoCompact, chatKey, handleCompact, onPagesChanged, projectTitle, sessionContextTooLarge, slug, updateChat, updateMessages]);
+  }, [autoCompact, chatKey, handleCompact, myAgentEnabled, onPagesChanged, projectTitle, sessionContextTooLarge, slug, updateChat, updateMessages]);
 
   // Regenerate: re-sends the same prompt as a fresh turn (append, not
   // in-place replace — the SDK session already has the prior answer in its
@@ -799,6 +807,7 @@ export function ChatPanel({
         loadingHistory={loadingHistory}
         sessionContextTooLarge={sessionContextTooLarge}
         myAgentResearch={myAgentResearch}
+        myAgentEnabled={myAgentEnabled === true}
         onMyAgentResearchChange={handleMyAgentResearchChange}
         initialPrompt={initialPrompt}
         onInitialPromptConsumed={onInitialPromptConsumed}
@@ -885,6 +894,7 @@ const Composer = memo(function Composer({
   loadingHistory,
   sessionContextTooLarge,
   myAgentResearch,
+  myAgentEnabled,
   onMyAgentResearchChange,
   initialPrompt,
   onInitialPromptConsumed,
@@ -899,6 +909,7 @@ const Composer = memo(function Composer({
   loadingHistory: boolean;
   sessionContextTooLarge: boolean;
   myAgentResearch: boolean;
+  myAgentEnabled: boolean;
   onMyAgentResearchChange: (checked: boolean) => void;
   initialPrompt?: string | null;
   onInitialPromptConsumed?: () => void;
@@ -935,12 +946,14 @@ const Composer = memo(function Composer({
 
   return (
     <div className="pointer-events-none px-4 pb-5 pt-2">
-      <label className="pointer-events-auto mx-auto mb-2 flex max-w-4xl items-center gap-2 text-xs text-muted-foreground">
-        <input type="checkbox" checked={myAgentResearch}
-          disabled={readOnlyView || streaming || compacting}
-          onChange={(event) => onMyAgentResearchChange(event.target.checked)} />
-        Ask MyAgent · selected Outlook, SharePoint and Salesforce sources
-      </label>
+      {myAgentEnabled && (
+        <label className="pointer-events-auto mx-auto mb-2 flex max-w-4xl items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={myAgentResearch}
+            disabled={readOnlyView || streaming || compacting}
+            onChange={(event) => onMyAgentResearchChange(event.target.checked)} />
+          Ask MyAgent · selected Outlook, SharePoint and Salesforce sources
+        </label>
+      )}
       <div className="pointer-events-auto mx-auto flex max-w-4xl items-center gap-2 rounded-2xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur transition focus-within:ring-2 focus-within:ring-ring">
         <TextareaAutosize
           value={input}

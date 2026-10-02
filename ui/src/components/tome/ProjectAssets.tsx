@@ -12,6 +12,7 @@ import {
   saveMyAgentConsent,
 } from "@/lib/projects/myagent-consent-client";
 import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import { isSynthesizedType, type ProjectSources, type ProjectType } from "@/types/projects";
 
 /**
@@ -39,6 +40,7 @@ export function ProjectAssets({
   canEdit: boolean;
 }) {
   const { kinds, loading: kindsLoading } = useProjectSourceKinds();
+  const myAgentEnabled = useMyAgentEnabled() === true;
   const [sources, setSources] = useState<ProjectSources | null>(null);
   const [projectType, setProjectType] = useState<ProjectType | undefined>();
   const [editing, setEditing] = useState(false);
@@ -136,9 +138,9 @@ export function ProjectAssets({
     }
   }, [slug, draft, load, projectType, sources]);
 
-  const visibleKinds = isSynthesizedType(projectType)
-    ? kinds.filter((kind) => kind !== "myagent")
-    : kinds;
+  const visibleKinds = kinds.filter(
+    (kind) => kind !== "myagent" || (!isSynthesizedType(projectType) && myAgentEnabled),
+  );
   const hasSources = visibleKinds.length > 0;
 
   return (

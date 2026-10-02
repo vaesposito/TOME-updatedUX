@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
 import { SourcesEditor } from "@/components/projects/source-pickers/SourcesEditor";
 import { useProjectSourceKinds } from "@/components/projects/source-pickers/useProjectSourceKinds";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import {
   myAgentConsentSelection,
   sameMyAgentConsentSelection,
@@ -39,6 +40,7 @@ import { isSynthesizedType, type ProjectDocument, type ProjectSources } from "@/
 
 export function ProjectDetailView({ slug }: { slug: string }) {
   const { kinds: sourceKinds } = useProjectSourceKinds();
+  const myAgentEnabled = useMyAgentEnabled() === true;
   const [project, setProject] = useState<ProjectDocument | null>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [catalogYaml, setCatalogYaml] = useState("");
@@ -55,9 +57,9 @@ export function ProjectDetailView({ slug }: { slug: string }) {
     repos: [],
     confluence_url: "",
   });
-  const visibleSourceKinds = isSynthesizedType(project?.type)
-    ? sourceKinds.filter((kind) => kind !== "myagent")
-    : sourceKinds;
+  const visibleSourceKinds = sourceKinds.filter(
+    (kind) => kind !== "myagent" || (!isSynthesizedType(project?.type) && myAgentEnabled),
+  );
 
   async function confirmDelete() {
     if (!project) return;

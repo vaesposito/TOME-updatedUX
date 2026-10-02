@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ChildProjectsPanel } from "@/components/tome/BhagProjectsPanel";
 import { PanelShell } from "@/components/tome/PanelHeader";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import {
   normalizeConfluencePageScope,
@@ -419,6 +420,7 @@ export function IngestPanel({
    * `isSynthesized`. */
   entityKind?: "bhag" | "area";
 }) {
+  const myAgentEnabled = useMyAgentEnabled() === true;
   // Run state
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [seed, setSeed] = useState("");
@@ -498,7 +500,9 @@ export function IngestPanel({
         setProjectName(proj.slug ?? "");
         setAutoIngest(proj.autoIngest);
         const s = proj.sources ?? {};
-        const allowed = s.myagent_enabled ? normalizeMyAgentConnectors(s.myagent_connectors) : [];
+        const allowed = myAgentEnabled && s.myagent_enabled
+          ? normalizeMyAgentConnectors(s.myagent_connectors)
+          : [];
         setMyAgentAllowed(allowed);
         setMyAgentSelection(allowed);
         // MyAgent delegated evidence is intentionally unsupported for Area and
@@ -506,7 +510,9 @@ export function IngestPanel({
         // synthesis never dispatches it, and showing it would misleadingly
         // suggest that it can be used from this surface.
         setSourceRows(
-          sourcesFromProject(s).filter((row) => !isSynthesized || row.kind !== "myagent"),
+          sourcesFromProject(s).filter(
+            (row) => row.kind !== "myagent" || (myAgentEnabled && !isSynthesized),
+          ),
         );
         setPreflight(preflightJson?.data?.sources ?? null);
       })
@@ -518,7 +524,7 @@ export function IngestPanel({
       });
 
     return () => { cancelled = true; };
-  }, [slug, isSynthesized]);
+  }, [slug, isSynthesized, myAgentEnabled]);
 
   // ── Meetings ───────────────────────────────────────────────────────────────
 
@@ -637,7 +643,7 @@ export function IngestPanel({
       : {
           seed: seed.trim() || undefined,
           mode,
-          myAgentSources: preflightLoading ? undefined : myAgentSelection,
+          myAgentSources: myAgentEnabled && !preflightLoading ? myAgentSelection : [],
           webexMeetings: selectedList.length > 0 ? selectedList : undefined,
           sourceScope: action === "meeting" ? "webex_meetings" : undefined,
           seedStablePages: isGreenfield ? seedPages : undefined,
@@ -668,7 +674,7 @@ export function IngestPanel({
     } finally {
       setStarting(false);
     }
-  }, [slug, seed, action, meetings, selectedMeetings, myAgentSelection, preflightLoading, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
+  }, [slug, seed, action, meetings, selectedMeetings, myAgentEnabled, myAgentSelection, preflightLoading, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
 
   // Compaction — an in-place editing pass (tighten prose, fix stale tome:// links).
   // Its own run through the shared lifecycle; shows in the same log + history.

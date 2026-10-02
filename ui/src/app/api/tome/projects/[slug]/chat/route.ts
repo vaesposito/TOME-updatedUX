@@ -49,6 +49,7 @@ import type { ChatPart, ChatSession, ModelProvenance } from "@/types/tome";
 import { myAgentConnectorsForSubject, myAgentConsentRevisionForSubject, myAgentConsentSubjectFromSession } from "@/lib/projects/myagent-source";
 import { isMyAgentInteractiveBrowserAction } from "@/lib/tome/myagent-interactive";
 import { compatibleChatResume, requestsMyAgent } from "@/lib/tome/myagent-chat-mode";
+import { getMyAgentWebexConfig } from "@/lib/tome/myagent-webex";
 
 export const dynamic = "force-dynamic";
 
@@ -88,8 +89,9 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   }
 
   const ownedSession = await ensureSession(tctx.projectId, userIdOf(tctx.user.email));
-  const research = body.is_compact ? ownedSession.myagent_research === true
-    : body.myagent_research === true || requestsMyAgent(body.message ?? "");
+  const research = getMyAgentWebexConfig().enabled && (body.is_compact
+    ? ownedSession.myagent_research === true
+    : body.myagent_research === true || requestsMyAgent(body.message ?? ""));
   const subject = myAgentConsentSubjectFromSession(tctx.session);
   const sources = research ? myAgentConnectorsForSubject(tctx.project.sources, subject) : [];
   const revision = subject ? myAgentConsentRevisionForSubject(tctx.project.sources, subject) : null;

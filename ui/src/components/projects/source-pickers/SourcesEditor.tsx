@@ -4,6 +4,7 @@ import { GitBranch } from "lucide-react";
 
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import type { ProjectSources } from "@/types/projects";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import {
   decodeWebexRoom,
   toWebexRoomSource,
@@ -105,7 +106,10 @@ export function SourcesEditor({
   readOnly = false,
   settingsProjectSlug,
 }: SourcesEditorProps) {
-  if (kinds.length === 0) {
+  const myAgentEnabled = useMyAgentEnabled() === true;
+  const visibleKinds = myAgentEnabled ? kinds : kinds.filter((kind) => kind !== "myagent");
+
+  if (visibleKinds.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
         No sources are configured for this deployment.
@@ -115,7 +119,7 @@ export function SourcesEditor({
 
   return (
     <div className="space-y-5">
-      {kinds.map((kind) => {
+      {visibleKinds.map((kind) => {
         if (kind === "myagent") {
           return (
             <div key={kind} className="space-y-3">

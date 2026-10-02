@@ -138,14 +138,22 @@ jobs:
         id: set-matrix
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          FILTER_OUTPUTS: ${{ toJson(steps.filter.outputs) }}
+          MODIFIED_KEYS: ${{ steps.filter.outputs.modified_keys }}
           TAG_VERSION: ${{ steps.version.outputs.tag_version }}
           MANUAL_BUILD_ALL: ${{ inputs.build_all || 'false' }}
           SELECTED_AGENTS: ${{ inputs.agents || '' }}
         with:
           script: |
             const configuredAgents = JSON.parse(process.env.ALL_AGENTS);
-            const filterOutputs = JSON.parse(process.env.FILTER_OUTPUTS);
+            // Pass only the changed filter names. Serializing all changed-files
+            // outputs also includes every changed path and can exceed the
+            // runner's process argument limit on large release diffs.
+            const modifiedKeys = new Set(
+              (process.env.MODIFIED_KEYS || '')
+                .split(',')
+                .map(key => key.trim())
+                .filter(Boolean)
+            );
             const tagVersion = process.env.TAG_VERSION;
             const manualBuildAll = process.env.MANUAL_BUILD_ALL === 'true';
             const selectedAgents = process.env.SELECTED_AGENTS
@@ -174,8 +182,8 @@ jobs:
             const preReleaseMatch = tagVersion ? tagVersion.match(/-(dev|rc|hotfix)\.(\d+)$/) : null;
             const isPreRelease = !!preReleaseMatch;
             const preReleaseNum = preReleaseMatch ? parseInt(preReleaseMatch[2]) : 0;
-            const isSharedChanged = filterOutputs.shared_config_any_modified === 'true' ||
-                                   filterOutputs.shared_dockerfile_any_modified === 'true';
+            const isSharedChanged = modifiedKeys.has('shared_config') ||
+                                   modifiedKeys.has('shared_dockerfile');
 
             // GHCR prefix: -rc.N and -hotfix.N go to pre-release/
             const imagePrefix = tagVersion && /-(rc|hotfix)\.\d+/.test(tagVersion) ? 'pre-release/' : '';
@@ -193,11 +201,11 @@ jobs:
               agentsToBuild = allAgents;
             } else if (isPreRelease && preReleaseNum > 1) {
               console.log(`🏷️ Pre-release N>1 (${tagVersion}): build changed / retag unchanged`);
-              agentsToBuild = allAgents.filter(a => filterOutputs[`${a}_any_modified`] === 'true');
-              agentsToRetag = allAgents.filter(a => filterOutputs[`${a}_any_modified`] !== 'true');
+              agentsToBuild = allAgents.filter(a => modifiedKeys.has(a));
+              agentsToRetag = allAgents.filter(a => !modifiedKeys.has(a));
             } else {
               console.log("🔍 Standard PR: building only changed agents");
-              agentsToBuild = allAgents.filter(a => filterOutputs[`${a}_any_modified`] === 'true');
+              agentsToBuild = allAgents.filter(a => modifiedKeys.has(a));
             }
 
             core.setOutput('agents_to_build', JSON.stringify(agentsToBuild));

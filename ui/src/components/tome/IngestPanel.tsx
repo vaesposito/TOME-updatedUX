@@ -721,13 +721,13 @@ export function IngestPanel({
           {/* Draft awaiting review — a blocking state, called out above the
               card rather than folded into "what do you want to do". */}
           {reviewRun && (
-            <div className="rounded-lg border border-amber-800/30 bg-amber-950/20 px-4 py-3">
+            <div className="rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 dark:border-amber-800/30 dark:bg-amber-950/20">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-amber-300">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
                     Draft awaiting review
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-xs text-amber-800 dark:text-muted-foreground">
                     {reviewRun.myagent_evidence_received
                       ? "This run includes private delegated MyAgent evidence. It remains a draft until you explicitly approve it and will never auto-promote."
                       : "This run's page changes are held as a draft until approved."}
@@ -737,7 +737,7 @@ export function IngestPanel({
                     <button
                       type="button"
                       onClick={() => onOpenRun(reviewRun.id)}
-                      className="text-primary hover:underline"
+                      className="text-[color-mix(in_srgb,hsl(var(--primary))_60%,black)] hover:underline dark:text-primary"
                     >
                       Open log
                     </button>
@@ -747,7 +747,7 @@ export function IngestPanel({
                       {draftPaths.map((p) => (
                         <li
                           key={p}
-                          className="rounded bg-amber-900/30 px-1.5 py-0.5 text-[11px] text-amber-200"
+                          className="rounded bg-amber-200 px-1.5 py-0.5 text-[11px] text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
                         >
                           {p}
                         </li>
@@ -756,7 +756,7 @@ export function IngestPanel({
                   )}
                 </div>
                 {reviewRun.review_access_restricted ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-amber-800 dark:text-muted-foreground">
                     This draft can be reviewed only by its authorizing user or a Tome administrator.
                   </p>
                 ) : (

@@ -55,7 +55,7 @@ class SynthesisSourcePromptTest(TestCase):
         self.assertEqual(payload["included_body_chars"], 31_950)
         self.assertEqual(
             payload["page_url_template"],
-            "https://example.atlassian.net/wiki/pages/{id}",
+            "https://example.atlassian.net/wiki/spaces/EXAMPLE/pages/{id}",
         )
 
     def test_confluence_max_tree_stays_in_one_bounded_result(self) -> None:

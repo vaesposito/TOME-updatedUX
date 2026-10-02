@@ -29,7 +29,7 @@ import json
 from functools import partial
 from html.parser import HTMLParser
 from typing import Any, ClassVar
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, quote, urlsplit
 
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
@@ -173,6 +173,17 @@ def _bound_tree_page_bodies(
     return included_chars, truncated_pages
 
 
+def _page_url(site_url: str, space_key: str, page_id: str) -> str:
+    """Build a canonical, routable Confluence Cloud page URL.
+
+    `/wiki/pages/{id}` (no space segment) is a Server/Data Center path that
+    Confluence Cloud does not route, so every link built that way 404s
+    regardless of whether the id is valid. Cloud requires the space-scoped
+    form.
+    """
+    return f"{site_url}/wiki/spaces/{quote(space_key, safe='')}/pages/{page_id}"
+
+
 def _ok(payload: Any, *, compact: bool = False) -> dict[str, Any]:
     text = (
         json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -213,7 +224,7 @@ def _tree_result(
             "content_included": True,
             "body_format": "plain_text_excerpt",
             "page_url_template": (
-                f"{site_url.rstrip('/')}/wiki/pages/{{id}}" if site_url else None
+                _page_url(site_url.rstrip("/"), space_key, "{id}") if site_url else None
             ),
             "content_budget_chars": _TREE_CONTENT_BUDGET_CHARS,
             "included_body_chars": included_chars,
@@ -356,7 +367,7 @@ def build_confluence_mcp(
                 "friendly_last_modified": r.get("friendlyLastModified"),
             }
             if page_id and _site_url:
-                entry["url"] = f"{_site_url}/wiki/pages/{page_id}"
+                entry["url"] = _page_url(_site_url, space_key, page_id)
             out.append(entry)
         return _ok(out)
 
@@ -433,7 +444,7 @@ def build_confluence_mcp(
             ),
         }
         if _site_url:
-            root["url"] = f"{_site_url}/wiki/pages/{root_id}"
+            root["url"] = _page_url(_site_url, root_space, root_id)
 
         descendants: list[dict[str, Any]] = []
         seen_page_ids: set[str] = set()
@@ -515,7 +526,7 @@ def build_confluence_mcp(
                     ),
                 }
                 if _site_url:
-                    child["url"] = f"{_site_url}/wiki/pages/{child_id}"
+                    child["url"] = _page_url(_site_url, root_space, child_id)
                 descendants.append(child)
                 if len(descendants) >= limit:
                     break
@@ -627,7 +638,7 @@ def build_confluence_mcp(
             "last_modified": result.get("lastModified") or version.get("when"),
         }
         if resolved_id and _site_url:
-            out["url"] = f"{_site_url}/wiki/pages/{resolved_id}"
+            out["url"] = _page_url(_site_url, page_space, resolved_id)
         return _ok(out)
 
     return create_sdk_mcp_server(

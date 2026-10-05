@@ -80,9 +80,21 @@ jobs:
       image_prefix: ${{ steps.set-matrix.outputs.image_prefix }}
     env:
       ALL_AGENTS: ${{ needs.load-config.outputs.all_agents }}
-      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || secrets.GHA_APP_ID || secrets.CI_RELEASE_APP_ID }}
-      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || secrets.GHA_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
+      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || env.GITHUB_APP_ID || secrets.CI_RELEASE_APP_ID }}
+      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
     steps:
+      - name: Import GitHub App credentials from Vault
+        uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
+        with:
+          url: ${{ vars.KEEPER_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_APPROLE_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_APPROLE_SECRET_ID }}
+          namespace: ${{ vars.VAULT_NAMESPACE }}
+          secrets: |
+            ${{ vars.VAULT_SECRET_PATH }} GITHUB_APP_ID | GITHUB_APP_ID ;
+            ${{ vars.VAULT_SECRET_PATH }} GITHUB_APP_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY
+
       - name: 🔑 Generate GitHub App token
         id: app-token
         if: ${{ env.CI_MCP_APP_ID != '' && env.CI_MCP_APP_PRIVATE_KEY != '' }}
@@ -567,9 +579,21 @@ jobs:
       needs.determine-agents.outputs.tag_version != '' &&
       !contains(needs.determine-agents.outputs.tag_version, '-')
     env:
-      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || secrets.GHA_APP_ID || secrets.CI_RELEASE_APP_ID }}
-      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || secrets.GHA_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
+      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || env.GITHUB_APP_ID || secrets.CI_RELEASE_APP_ID }}
+      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
     steps:
+      - name: Import GitHub App credentials from Vault
+        uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
+        with:
+          url: ${{ vars.KEEPER_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_APPROLE_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_APPROLE_SECRET_ID }}
+          namespace: ${{ vars.VAULT_NAMESPACE }}
+          secrets: |
+            ${{ vars.VAULT_SECRET_PATH }} GITHUB_APP_ID | GITHUB_APP_ID ;
+            ${{ vars.VAULT_SECRET_PATH }} GITHUB_APP_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY
+
       - name: 🔑 Generate GitHub App token
         id: app-token
         if: ${{ env.CI_MCP_APP_ID != '' && env.CI_MCP_APP_PRIVATE_KEY != '' }}

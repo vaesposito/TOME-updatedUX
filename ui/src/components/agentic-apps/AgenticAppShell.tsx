@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AgenticAppAssistantOverlay } from "@/components/agentic-apps/AgenticAppAssistantOverlay";
 import { apiClient, type AgenticAppListItem } from "@/lib/api-client";
 import { validateAssistantContextMessage } from "@/lib/agentic-apps/assistant-context";
+import { isLightColorTheme } from "@/lib/color-theme";
 import { buildAgenticAppPublicPath } from "@/lib/agentic-apps/runtime";
 import {
   resolveUsableChatAgent,
@@ -291,5 +292,6 @@ function normalizePreferencesByApp(value: unknown): AppPreferencesById {
 }
 
 function normalizeTheme(value: unknown): "dark" | "light" | "system" {
-  return value === "dark" || value === "light" ? value : "system";
+  if (value === "system" || typeof value !== "string") return "system";
+  return isLightColorTheme(value) ? "light" : "dark";
 }

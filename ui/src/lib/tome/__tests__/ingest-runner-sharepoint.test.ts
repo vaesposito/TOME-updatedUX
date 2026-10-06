@@ -30,7 +30,7 @@ jest.mock("../agent-proxy", () => ({
 jest.mock("../github-source-reconciliation", () => ({ reconcileGitHubSourcesForIngest: async (project: unknown) => ({ project, canonicalized: [], tombstonedPaths: [] }) }));
 jest.mock("../github-issue-scope", () => ({ selectTomeRollupProjects: () => [], rollupGitHubRepos: () => [] }));
 jest.mock("../github-issue-cache", () => ({ loadTomeIssueCache: jest.fn(), buildTomeIssueContext: async () => ({}) }));
-jest.mock("../page-store", () => ({}));
+jest.mock("../page-store", () => ({ getPageStore: async () => ({ listPages: async () => ({}) }) }));
 jest.mock("../sharepoint", () => ({ resolveSharePointDocuments: (...args: unknown[]) => mockResolveSharePointDocuments(...args) }));
 jest.mock("../page-templates-store", () => ({}));
 jest.mock("../audit", () => ({ auditTome: jest.fn() }));
@@ -101,7 +101,7 @@ it("never copies per-run context into a later unattended run", async () => {
 
 it.each(["manual", "auto"] as const)("resolves a folder during %s run preparation without changing project sources", async (triggeredBy) => {
   const sourceProject = project("example-folder-project");
-  const folder = { kind: "folder" as const, drive_id: "drive-1", item_id: "folder-1", name: "Example folder" };
+  const folder = { kind: "folder" as const, drive_id: "drive-1", item_id: "folder-1", name: "Example folder", selected_item_ids: ["selected-file"], excluded_item_ids: ["unchecked-file"] };
   sourceProject.sources!.sharepoint_documents = [folder];
   projectRecords.set(sourceProject._id, sourceProject);
   const runId = await enqueueRun(sourceProject, { sub: "test-user", triggeredBy, dispatch: { endpoint: "/ingest" } });
@@ -110,7 +110,7 @@ it.each(["manual", "auto"] as const)("resolves a folder during %s run preparatio
   });
   dispatchQueuedRun(runId);
   expect((await captured).resolvedSharepointDocuments).toEqual([contextDocument]);
-  expect(mockResolveSharePointDocuments).toHaveBeenCalledWith([folder], undefined);
+  expect(mockResolveSharePointDocuments).toHaveBeenCalledWith([folder], undefined, { existingPages: {} });
   expect(sourceProject.sources!.sharepoint_documents).toEqual([folder]);
   await new Promise((resolve) => setImmediate(resolve));
 });

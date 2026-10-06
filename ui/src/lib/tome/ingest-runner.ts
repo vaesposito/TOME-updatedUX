@@ -466,11 +466,13 @@ async function prepareRun(
   const hasFolders = scopedProject.sources?.sharepoint_documents?.some((source) => source.kind === "folder");
   const resolvedSharepointDocuments = hasFolders
     ? (!meetingOnly && endpoint !== "/compact" && (isGreenfield || dispatch.mode !== "quick")
-      ? await resolveSharePointDocuments(scopedProject.sources?.sharepoint_documents ?? [], dispatch.sharepointDocuments)
+      ? await resolveSharePointDocuments(scopedProject.sources?.sharepoint_documents ?? [], dispatch.sharepointDocuments, {
+        existingPages: await (await getPageStore()).listPages(projectId),
+      })
       : [])
     : undefined;
   if (hasFolders && resolvedSharepointDocuments) {
-    await appendLog(runId, infoLine(`SharePoint: resolved ${resolvedSharepointDocuments.length} direct document(s); subfolders excluded`));
+    await appendLog(runId, infoLine(`SharePoint: resolved ${resolvedSharepointDocuments.length} new/changed direct document(s); unchanged versions and subfolders excluded`));
   }
   const req = buildIngestRequest(scopedProject, {
     runId,

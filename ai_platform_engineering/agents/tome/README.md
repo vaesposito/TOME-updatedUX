@@ -139,29 +139,42 @@ plan, and design rationale.
 
 Manual and scheduled ingestion of selected folders' direct **PPTX and PDF** documents, using
 the deployment's app-only SharePoint MCP. No personal Microsoft connection is
-required. Files are explicitly selected, never a whole-site crawl.
+required. Folders are explicitly attached, never a whole-site crawl.
 
 - Enable a `provider: source`, `source: sharepoint` onboarding step to expose
   the picker in project creation and **Settings → Sources**.
 - **Settings → Sources** and project creation attach folders only. Browse libraries,
-  search folders, and preview the direct document count and total size before adding.
+  search folders, and choose which direct PDF/PPTX files to attach. The saved folder
+  stores `selected_item_ids` for the initial batch and a server-validated
+  `excluded_item_ids` list for existing files left unchecked. Later additions remain eligible.
   A folder never includes nested folders; attach a child folder separately if needed.
-  Up to ten source references can be saved; existing individual file sources remain
-  supported and removable, without an automatic migration.
-- Each manual/scheduled run freshly lists the folder's direct children, so newly
-  added files and current versions are included. Overlapping selections are deduplicated
-  by drive/item ID. At most ten unique PDF/PPTX files can be ingested in one run;
+  Up to ten source references can be saved. **Choose files** reopens a saved folder
+  for an explicit selection edit; changes apply only when **Save file selection**
+  is pressed. An explicit save captures current unchecked files as excluded.
+  Existing individual files and legacy direct-all/fixed-selection folders are not
+  automatically rewritten. For a previously saved fixed selection, **Choose files →
+  Save file selection**, then save project sources, enables later additions.
+- Each manual/scheduled run freshly lists direct children. Initially selected files
+  and files added after the selection are eligible; existing unchecked IDs stay excluded,
+  even if those files change. A folder with 500 files can be browsed and attached with
+  up to ten initial files. Current Graph tags are compared against persisted, live
+  dedicated summary pages before applying the batch limit. Unchanged successfully
+  ingested versions and user-protected pages do not consume the batch allowance.
+  Overlapping references are deduplicated by drive/item ID. At most ten unique
+  new/changed PDF/PPTX documents across sources/context are ingested in one run;
   the aggregate size for folder runs is bounded by the MCP's configured
   `SHAREPOINT_MAX_DOCUMENT_BYTES` (2 GiB by default). Larger selections fail explicitly
-  before agent document ingestion; nothing is silently truncated or automatically
-  retried. Folder previews scan at most 1000 direct entries, paginate fully within
-  that bound, and exclude unsupported types/remote shortcuts. Empty folders may be
-  attached for future supported files. Whole libraries cannot be attached.
+  before agent document ingestion with an explicit instruction to choose files in
+  Sources; there is no arbitrary ordering, silent partial batch, or automatic retry.
+  Folder previews scan at most 1000 direct entries, paginate fully within
+  that bound, and exclude unsupported types/remote shortcuts. New folder selections
+  require at least one file. Whole libraries cannot be attached. Removed, moved or
+  unsupported selected files fail explicitly; no replacement is picked automatically.
 - **Run ingest → Full ingest** includes the selected documents alongside other
   attached sources. The preview shows their application execution identity.
-- Each selected document gets a dedicated summary page under the **SharePoint**
+- Each included document gets a dedicated summary page under the **SharePoint**
   wiki folder, marked with the SharePoint logo. This also applies to documents
-  whose topic does not match the project's charter: explicit selection keeps
+  whose topic does not match the project's charter: attaching the source keeps
   the document; only relevant evidence is merged into the project's main pages.
 - Document pages cite the original file and source pages/slides. Paths use a
   stable drive/item identity (`sharepoint/doc-<identity>.md`); titles use the
@@ -176,7 +189,8 @@ required. Files are explicitly selected, never a whole-site crawl.
   to this run alongside saved sources (also available during Area/BHAG synthesis).
   These references are stored on the run, never on the project's sources or
   auto-ingest configuration. Cascade runs keep this context on the parent only.
-  Folder contents, saved legacy files, and one-off files are deduplicated by drive/item ID, with ten files total.
+  Folder additions, saved legacy files, and one-off files are deduplicated by drive/item ID,
+  with ten new/changed files total for folder-backed runs.
   Submit rechecks current app access; file preparation happens in the agent.
   Quick edits, compaction and meeting-only runs do not include this context.
 - For a single file, use the one-off context picker rather than Settings. SharePoint
@@ -184,8 +198,11 @@ required. Files are explicitly selected, never a whole-site crawl.
 - **Settings → Auto-ingest** uses the existing cadence, queue, history and
   review settings. The confirmed schedule owner remains the run's actor, but
   SharePoint access uses the static application rather than that owner's OAuth.
-- Each run checks current metadata. Unchanged versions reuse prepared artifacts;
-  changed versions are prepared anew. This is not a change-only Graph poller:
+- Each run checks current metadata. Unchanged versions reuse prepared artifacts.
+  Files whose dedicated persisted summary already matches the current source version
+  skip the document model pass; new/changed versions are processed. A prepared cache
+  alone is not proof of ingestion: a missing/failed summary still needs processing.
+  User-protected pages remain unchanged. This is not a change-only Graph poller:
   scheduled runs still execute the existing ingest/review workflow.
 - Deleted/inaccessible files fail with an administrator-facing explanation;
   no sources, failed runs, or existing records are automatically repaired.

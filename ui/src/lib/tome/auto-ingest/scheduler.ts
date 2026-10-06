@@ -103,10 +103,10 @@ async function maybeFireForProject(
   }
   const sharePointDocuments = project.sources?.sharepoint_documents ?? [];
   if (sharePointDocuments.length > 0) {
-    const check = await checkSharePointSources(sharePointDocuments);
+    const check = await checkSharePointSources(sharePointDocuments, project._id);
     if (check.inaccessible.length > 0) {
       await recordLastRun(project._id, { at: now.toISOString(), status: "failed",
-        reason: `SharePoint unavailable: ${check.inaccessible.join(", ")}. Contact an administrator.` });
+        reason: check.detail || `SharePoint unavailable: ${check.inaccessible.join(", ")}. Contact an administrator.` });
       return;
     }
   }

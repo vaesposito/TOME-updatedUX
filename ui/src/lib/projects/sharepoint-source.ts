@@ -1,6 +1,7 @@
 import type { SharePointDocumentSource, SharePointSource } from "@/types/projects";
 
 export const SHAREPOINT_SELECTION_LIMIT = 10;
+export const SHAREPOINT_FOLDER_LIST_LIMIT = 1000;
 
 export interface SharePointFolderPreview {
   folder: Extract<SharePointSource, { kind: "folder" }>;
@@ -32,9 +33,14 @@ export function parseSharePointSources(value: unknown): SharePointSource[] {
   return parseSelection(value, true);
 }
 
-function parseSelection(value: unknown, allowFolders: boolean): SharePointSource[] {
-  if (!Array.isArray(value) || value.length > SHAREPOINT_SELECTION_LIMIT) {
-    throw new Error(`Select at most ${SHAREPOINT_SELECTION_LIMIT} SharePoint documents.`);
+/** A metadata listing is not an ingestion selection; large folders remain browsable. */
+export function parseSharePointFolderDocuments(value: unknown): SharePointDocumentSource[] {
+  return parseSelection(value, false, SHAREPOINT_FOLDER_LIST_LIMIT) as SharePointDocumentSource[];
+}
+
+function parseSelection(value: unknown, allowFolders: boolean, limit = SHAREPOINT_SELECTION_LIMIT): SharePointSource[] {
+  if (!Array.isArray(value) || value.length > limit) {
+    throw new Error(`Select at most ${limit} SharePoint documents.`);
   }
   const unique = new Map<string, SharePointSource>();
   for (const candidate of value) {
@@ -44,6 +50,19 @@ function parseSelection(value: unknown, allowFolders: boolean): SharePointSource
       throw new Error("Choose individual SharePoint files for one-off context.");
     }
     if ("include_subfolders" in row || "include_descendants" in row) throw new Error("Recursive SharePoint sources are not supported.");
+    if ("selected_item_ids" in row && (row.kind !== "folder" || !Array.isArray(row.selected_item_ids)
+      || row.selected_item_ids.length < 1 || row.selected_item_ids.length > SHAREPOINT_SELECTION_LIMIT
+      || !row.selected_item_ids.every(validSharePointId)
+      || new Set(row.selected_item_ids).size !== row.selected_item_ids.length)) {
+      throw new Error("Choose 1–10 unique direct files for this SharePoint folder.");
+    }
+    if ("excluded_item_ids" in row && (row.kind !== "folder" || !Array.isArray(row.selected_item_ids)
+      || !Array.isArray(row.excluded_item_ids) || row.excluded_item_ids.length > SHAREPOINT_FOLDER_LIST_LIMIT
+      || !row.excluded_item_ids.every(validSharePointId)
+      || new Set(row.excluded_item_ids).size !== row.excluded_item_ids.length
+      || row.excluded_item_ids.some((id) => (row.selected_item_ids as string[]).includes(id)))) {
+      throw new Error("Invalid SharePoint folder exclusions.");
+    }
     if (!validSharePointId(row.drive_id) || !validSharePointId(row.item_id)) {
       throw new Error("Invalid SharePoint document identifier.");
     }
@@ -51,6 +70,8 @@ function parseSelection(value: unknown, allowFolders: boolean): SharePointSource
       drive_id: row.drive_id, item_id: row.item_id,
       name: typeof row.name === "string" ? row.name.slice(0, 512) : row.item_id,
       ...(row.kind === "folder" ? { kind: "folder" as const } : row.kind === "file" ? { kind: "file" as const } : {}),
+      ...(row.kind === "folder" && Array.isArray(row.selected_item_ids) ? { selected_item_ids: [...row.selected_item_ids] as string[] } : {}),
+      ...(row.kind === "folder" && Array.isArray(row.excluded_item_ids) ? { excluded_item_ids: [...row.excluded_item_ids] as string[] } : {}),
     };
     if (typeof row.web_url === "string") {
       try {
@@ -61,6 +82,7 @@ function parseSelection(value: unknown, allowFolders: boolean): SharePointSource
       } catch { /* Display metadata is optional; IDs alone identify a file. */ }
     }
     if (typeof row.size === "number" && Number.isSafeInteger(row.size) && row.size >= 0) source.size = row.size;
+    if (typeof row.version === "string" && row.version.length > 0 && row.version.length <= 4096) source.version = row.version;
     unique.set(sharePointSourceKey(source), source);
   }
   return [...unique.values()];

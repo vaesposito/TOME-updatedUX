@@ -70,7 +70,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     if (body.sharepointDocuments !== undefined && (body.mode === "quick" || body.sourceScope === "webex_meetings")) {
       throw new ApiError("SharePoint context can only be added to a full project ingest.", 400, "INVALID_SHAREPOINT_CONTEXT");
     }
-    const sharepointDocuments = await prepareManualSharePointDocuments(body.sharepointDocuments, tctx.project.sources?.sharepoint_documents);
+    const sharepointDocuments = await prepareManualSharePointDocuments(body.sharepointDocuments, tctx.project.sources?.sharepoint_documents, tctx.projectId);
     const webexMeetings = body.webexMeetings?.length
       ? await prefetchManualWebexMeetingTranscripts(
           tomeSessionSubject(tctx.session),

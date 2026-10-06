@@ -199,7 +199,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
 
   if (sources.sharepoint_documents?.length) {
     results.push({ provider: "sharepoint", label: "SharePoint",
-      ...await checkSharePointSources(sources.sharepoint_documents) });
+      ...await checkSharePointSources(sources.sharepoint_documents, tctx.projectId) });
   }
 
   const can_ingest =

@@ -143,8 +143,10 @@ async def test_local_file_without_confirmed_persistence_does_not_count(monkeypat
 @pytest.mark.asyncio
 async def test_unchanged_existing_document_needs_no_rewrite(monkeypatch, tmp_path) -> None:
     source = document(tmp_path)
-    events, _ = await run_document_pass(monkeypatch, tmp_path, [source], existing={source.wiki_path: markdown(source)})
+    events, calls = await run_document_pass(monkeypatch, tmp_path, [source], existing={source.wiki_path: markdown(source)})
     assert events[-1].type == "done"
+    assert events[-1].data["tool_calls"] == 0
+    assert calls == []
     assert not any(event.type == "page_written" for event in events)
 
 
@@ -167,10 +169,28 @@ async def test_human_pinned_document_is_preserved_without_an_alternate_copy(monk
 
 
 @pytest.mark.asyncio
-async def test_new_write_is_validated_even_when_prior_version_was_current(monkeypatch, tmp_path) -> None:
+async def test_unchanged_page_never_starts_a_model_rewrite(monkeypatch, tmp_path) -> None:
     source = document(tmp_path)
-    events, _ = await run_document_pass(monkeypatch, tmp_path, [source], existing={source.wiki_path: markdown(source)}, writes={source.wiki_path: "An invalid replacement."})
-    assert events[-1].type == "error"
+    events, calls = await run_document_pass(monkeypatch, tmp_path, [source], existing={source.wiki_path: markdown(source)}, writes={source.wiki_path: "An invalid replacement."})
+    assert events[-1].type == "done"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_mixed_selection_sends_only_new_and_changed_files_to_the_model(monkeypatch, tmp_path) -> None:
+    unchanged = document(tmp_path)
+    changed = document(tmp_path, item_id="item-2", version="v2")
+    old = document(tmp_path, item_id="item-2", version="v1")
+    new = document(tmp_path, item_id="item-3")
+    existing = {unchanged.wiki_path: markdown(unchanged), old.wiki_path: markdown(old)}
+    events, calls = await run_document_pass(monkeypatch, tmp_path, [unchanged, changed, new], existing=existing,
+        writes={changed.wiki_path: markdown(changed), new.wiki_path: markdown(new)})
+    assert events[-1].type == "done"
+    assert len(calls) == 1
+    prompt = calls[0]["options"]["system_prompt"]
+    assert f"Required dedicated wiki page: `{unchanged.wiki_path}`" not in prompt
+    assert f"Required dedicated wiki page: `{changed.wiki_path}`" in prompt
+    assert f"Required dedicated wiki page: `{new.wiki_path}`" in prompt
 
 
 @pytest.mark.asyncio

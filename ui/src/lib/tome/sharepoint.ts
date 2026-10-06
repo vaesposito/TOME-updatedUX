@@ -1,7 +1,10 @@
 /** Server-only bridge to the authenticated SharePoint MCP's bounded document routes. */
 import { ApiError } from "@/lib/api-error";
-import { mergeSharePointSelections, parseSharePointSelection, parseSharePointSources, sharePointSourceKey, type SharePointFolderPreview } from "@/lib/projects/sharepoint-source";
+import { createHash } from "crypto";
+import { SHAREPOINT_FOLDER_LIST_LIMIT, SHAREPOINT_SELECTION_LIMIT, mergeSharePointSelections, parseSharePointFolderDocuments, parseSharePointSelection, parseSharePointSources, sharePointSourceKey, type SharePointFolderPreview } from "@/lib/projects/sharepoint-source";
 import type { SharePointDocumentSource, SharePointSource } from "@/types/projects";
+import { parseFrontmatter } from "./schema";
+import { getPageStore } from "./page-store";
 
 export function sharePointConfigured(): boolean {
   return Boolean(process.env.TOME_SHAREPOINT_API_URL?.trim() && process.env.TOME_SHAREPOINT_API_TOKEN?.trim());
@@ -59,6 +62,7 @@ export async function prepareSharePointSources(value: unknown, previous: SharePo
   const previews = new Map<string, SharePointFolderPreview>();
   const deadline = AbortSignal.timeout(45_000);
   const additions = refs.filter((ref) => !saved.has(sharePointSourceKey(ref)));
+  let changed = false;
   if (additions.some((ref) => ref.kind !== "folder")) {
     throw new ApiError("Add folders as SharePoint sources. For a single PDF or PowerPoint file, use Run ingest → Add context: SharePoint documents.", 400, "INVALID_SHAREPOINT_SOURCE");
   }
@@ -66,21 +70,34 @@ export async function prepareSharePointSources(value: unknown, previous: SharePo
     const retained = saved.get(sharePointSourceKey(ref));
     if (retained) {
       if (retained.kind !== ref.kind) throw new ApiError("A saved SharePoint source cannot change type.", 400, "INVALID_SHAREPOINT_SOURCE");
-      result.push(retained);
-    } else {
-      const preview = await sharePointFolderPreview(ref, deadline);
-      previews.set(sharePointSourceKey(ref), preview);
-      result.push(preview.folder);
+      if (ref.kind !== "folder" || retained.kind !== "folder"
+        || (JSON.stringify([...ref.selected_item_ids ?? []].sort()) === JSON.stringify([...retained.selected_item_ids ?? []].sort())
+          && JSON.stringify(ref.excluded_item_ids?.slice().sort()) === JSON.stringify(retained.excluded_item_ids?.slice().sort()))) {
+        result.push(retained);
+        continue;
+      }
     }
+    if (ref.kind !== "folder" || !ref.selected_item_ids) throw new ApiError("Choose 1–10 existing files for this SharePoint folder. Files added later are discovered automatically.", 400, "INVALID_SHAREPOINT_SOURCE");
+    const preview = await sharePointFolderPreview(ref, deadline);
+    previews.set(sharePointSourceKey(ref), preview);
+    const selectedIds = new Set(ref.selected_item_ids);
+    // The server, not caller-supplied exclusions, captures files explicitly left unchecked.
+    // Keep exclusions for temporarily absent items; restoring an old ID must not enable it.
+    const excludedIds = new Set(retained?.kind === "folder" ? retained.excluded_item_ids ?? [] : []);
+    for (const file of preview.documents) if (!selectedIds.has(file.item_id)) excludedIds.add(file.item_id);
+    for (const id of selectedIds) excludedIds.delete(id);
+    if (excludedIds.size > SHAREPOINT_FOLDER_LIST_LIMIT) throw new ApiError("This folder's exclusions exceed the safe listing limit. Contact an administrator.", 413, "SHAREPOINT_FOLDER_LIMIT");
+    result.push({ ...preview.folder, selected_item_ids: [...ref.selected_item_ids], excluded_item_ids: [...excludedIds] });
+    changed = true;
   }
-  // Only a new addition triggers current count/size validation; removal never repairs saved sources.
-  if (additions.length) await resolveSharePointDocuments(result, [], previews, deadline);
+  // Only explicit additions/selection edits trigger validation; removal never repairs saved sources.
+  if (changed) await resolveSharePointDocuments(result, [], { previews, signal: deadline, initialSelectionOnly: true });
   return result;
 }
 
 export async function sharePointFolderPreview(ref: SharePointSource, signal?: AbortSignal): Promise<SharePointFolderPreview> {
   parseSharePointSources([ref]);
-  const row = await sharePointRequest<SharePointFolderPreview>(`documents/${encodeURIComponent(ref.drive_id)}/${encodeURIComponent(ref.item_id)}/folder`, undefined, signal);
+  const row = await sharePointRequest<SharePointFolderPreview>(`documents/${encodeURIComponent(ref.drive_id)}/${encodeURIComponent(ref.item_id)}/folder`, new URLSearchParams({ select_files: "true" }), signal);
   try {
     const folder = parseSharePointSources([row.folder])[0];
     if (folder.kind !== "folder" || sharePointSourceKey(folder) !== sharePointSourceKey(ref)) throw new Error("Wrong folder");
@@ -88,38 +105,67 @@ export async function sharePointFolderPreview(ref: SharePointSource, signal?: Ab
     if (!counts.every((value) => Number.isSafeInteger(value) && value >= 0)
       || typeof row.within_limits !== "boolean" || row.limits?.max_documents !== 10
       || !Number.isSafeInteger(row.limits.max_total_bytes) || row.limits.max_total_bytes <= 0) throw new Error("Invalid limits");
-    const documents = parseSharePointSelection(row.documents);
+    const documents = parseSharePointFolderDocuments(row.documents);
     if (documents.some((document) => document.drive_id !== ref.drive_id || !Number.isSafeInteger(document.size))
-      || (row.within_limits && (documents.length !== row.document_count || row.document_count > 10
-        || row.total_size > row.limits.max_total_bytes
-        || documents.reduce((sum, document) => sum + document.size!, 0) !== row.total_size))) throw new Error("Invalid children");
+      || documents.length !== row.document_count
+      || documents.reduce((sum, document) => sum + document.size!, 0) !== row.total_size
+      || row.within_limits !== (row.document_count <= 10 && row.total_size <= row.limits.max_total_bytes)) throw new Error("Invalid children");
     return { ...row, folder, documents };
   } catch { throw new ApiError("SharePoint returned an invalid folder preview. Contact an administrator.", 502, "INVALID_SHAREPOINT_RESPONSE"); }
 }
 
+/** Same identity/version contract as PreparedDocument.matches_wiki_page; a cache alone is not ingestion. */
+function currentSharePointSummary(file: SharePointDocumentSource, pages: Record<string, string>): boolean {
+  const key = "doc-" + createHash("sha256").update(JSON.stringify([file.drive_id, file.item_id])).digest("hex").slice(0, 24);
+  const [frontmatter, body] = parseFrontmatter(pages[`sharepoint/${key}.md`] ?? "");
+  if (!body.trim() || frontmatter.source_provider !== "sharepoint" || frontmatter.source_document_key !== key) return false;
+  if (frontmatter.kind === "stable" || frontmatter.kind === "hidden") return true;
+  return Boolean(file.version && frontmatter.kind === "dynamic"
+    && frontmatter.source_version === "sha256:" + createHash("sha256").update(file.version).digest("hex"));
+}
+
+interface ResolveSharePointOptions {
+  previews?: Map<string, SharePointFolderPreview>;
+  signal?: AbortSignal;
+  existingPages?: Record<string, string>;
+  /** Source edits validate the chosen initial batch, not unrelated later additions. */
+  initialSelectionOnly?: boolean;
+}
+
 /** Resolve current direct children once per run; no recursion, stored-source rewrites, or automatic recovery. */
-export async function resolveSharePointDocuments(sources: SharePointSource[], context: SharePointDocumentSource[] = [], previews = new Map<string, SharePointFolderPreview>(), signal?: AbortSignal): Promise<SharePointDocumentSource[]> {
+export async function resolveSharePointDocuments(sources: SharePointSource[], context: SharePointDocumentSource[] = [], options: ResolveSharePointOptions = {}): Promise<SharePointDocumentSource[]> {
   const refs = parseSharePointSources(sources);
   const files = refs.filter((ref): ref is SharePointDocumentSource => ref.kind !== "folder");
   const folders = refs.filter((ref) => ref.kind === "folder");
   if (!folders.length) return mergeSharePointSelections(files, context);
-  const deadline = signal ?? AbortSignal.timeout(45_000);
+  const deadline = options.signal ?? AbortSignal.timeout(45_000);
   const children: SharePointDocumentSource[] = [];
   let byteLimit = Number.MAX_SAFE_INTEGER;
   for (const folder of folders) {
-    const preview = previews.get(sharePointSourceKey(folder)) ?? await sharePointFolderPreview(folder, deadline);
-    if (!preview.within_limits) throw new ApiError(`SharePoint folder "${preview.folder.name}" exceeds the limit (${preview.document_count} documents, ${preview.total_size} bytes). Choose a smaller folder or use one-off files.`, 413, "SHAREPOINT_FOLDER_LIMIT");
+    const preview = options.previews?.get(sharePointSourceKey(folder)) ?? await sharePointFolderPreview(folder, deadline);
     byteLimit = Math.min(byteLimit, preview.limits.max_total_bytes);
-    children.push(...preview.documents);
+    if (folder.selected_item_ids) {
+      const available = new Map(preview.documents.map((file) => [file.item_id, file]));
+      const missing = folder.selected_item_ids.filter((id) => !available.has(id));
+      if (missing.length) throw new ApiError(`${missing.length} selected file(s) in SharePoint folder "${preview.folder.name}" are no longer available as direct PDF/PPTX files. Review the folder's file selection in Sources. No replacement files were selected.`, 404, "SHAREPOINT_SELECTED_FILE_MISSING");
+      if (folder.excluded_item_ids && !options.initialSelectionOnly) {
+        const excluded = new Set(folder.excluded_item_ids);
+        children.push(...preview.documents.filter((file) => !excluded.has(file.item_id)));
+      } else children.push(...folder.selected_item_ids.map((id) => available.get(id)!));
+    } else {
+      // Preserve legacy direct-all sources; never silently convert their persisted selection.
+      if (!options.existingPages && !preview.within_limits) throw new ApiError(`SharePoint folder "${preview.folder.name}" exceeds the limit (${preview.document_count} documents, ${preview.total_size} bytes). Choose up to 10 files for this folder in Sources.`, 413, "SHAREPOINT_FOLDER_LIMIT");
+      children.push(...preview.documents);
+    }
   }
-  // Dedupe overlapping folders and files before enforcing the existing ten-document limit.
-  let documents: SharePointDocumentSource[];
-  try { documents = mergeSharePointSelections(files, context, ...children.map((file) => [file])); }
-  catch { throw new ApiError("Selected SharePoint folders and files contain more than 10 unique documents. Choose smaller folders or fewer one-off files.", 413, "SHAREPOINT_FOLDER_LIMIT"); }
+  // Deduplicate and remove already-ingested versions BEFORE enforcing the per-run limit.
+  const candidates = [...new Map([...files, ...context, ...children].map((file) => [sharePointSourceKey(file), file])).values()];
   const childKeys = new Set(children.map(sharePointSourceKey));
-  for (let index = 0; index < documents.length; index++) {
-    if (!childKeys.has(sharePointSourceKey(documents[index]))) documents[index] = await sharePointMetadata(documents[index], deadline);
+  for (let index = 0; index < candidates.length; index++) {
+    if (!childKeys.has(sharePointSourceKey(candidates[index]))) candidates[index] = await sharePointMetadata(candidates[index], deadline);
   }
+  const documents = options.existingPages ? candidates.filter((file) => !currentSharePointSummary(file, options.existingPages!)) : candidates;
+  if (documents.length > SHAREPOINT_SELECTION_LIMIT) throw new ApiError(`${documents.length} new or changed SharePoint documents need ingestion: more than ${SHAREPOINT_SELECTION_LIMIT} unique documents in one run. Choose up to ${SHAREPOINT_SELECTION_LIMIT} files in Sources or fewer one-off documents. No partial batch was started.`, 413, "SHAREPOINT_FOLDER_LIMIT");
   if (documents.some((document) => !Number.isSafeInteger(document.size))
     || documents.reduce((sum, document) => sum + document.size!, 0) > byteLimit) {
     throw new ApiError("Selected SharePoint documents exceed the total size limit. Choose smaller folders or fewer files.", 413, "SHAREPOINT_FOLDER_LIMIT");
@@ -128,7 +174,7 @@ export async function resolveSharePointDocuments(sources: SharePointSource[], co
 }
 
 /** Fresh metadata preflight for optional per-run context; never saves project sources. */
-export async function prepareManualSharePointDocuments(value: unknown, saved: SharePointSource[] = []): Promise<SharePointDocumentSource[] | undefined> {
+export async function prepareManualSharePointDocuments(value: unknown, saved: SharePointSource[] = [], projectId?: string): Promise<SharePointDocumentSource[] | undefined> {
   if (value === undefined) return undefined;
   let refs: SharePointDocumentSource[];
   try {
@@ -140,16 +186,20 @@ export async function prepareManualSharePointDocuments(value: unknown, saved: Sh
   for (let offset = 0; offset < refs.length; offset += 2) {
     result.push(...await Promise.all(refs.slice(offset, offset + 2).map((ref) => sharePointMetadata(ref, deadline))));
   }
-  if (refs.length && saved.some((source) => source.kind === "folder")) await resolveSharePointDocuments(saved, result, undefined, deadline);
+  if (refs.length && saved.some((source) => source.kind === "folder")) await resolveSharePointDocuments(saved, result, {
+    signal: deadline, existingPages: projectId ? await (await getPageStore()).listPages(projectId) : undefined,
+  });
   return result;
 }
 
-export async function checkSharePointSources(refs: SharePointSource[]) {
+export async function checkSharePointSources(refs: SharePointSource[], projectId?: string) {
   if (refs.some((source) => source.kind === "folder")) {
     try {
-      const documents = await resolveSharePointDocuments(refs);
+      const documents = await resolveSharePointDocuments(refs, [], {
+        existingPages: projectId ? await (await getPageStore()).listPages(projectId) : undefined,
+      });
       return { accessible: refs.map((ref) => ref.name), inaccessible: [], no_token: false, fixable_by_user: false,
-        detail: `${documents.length} direct PDF/PPTX document(s). Subfolders are excluded. Runs as the configured SharePoint application.` };
+        detail: `${documents.length} PDF/PPTX document(s) need ingestion. Selected existing files and later folder additions are included; unchecked existing files and subfolders are excluded. Unchanged ingested versions are skipped. Runs as the configured SharePoint application.` };
     } catch (error) {
       return { accessible: [], inaccessible: refs.map((ref) => ref.name), no_token: false, fixable_by_user: false,
         detail: error instanceof ApiError ? error.message : "SharePoint folder access failed. Contact an administrator." };

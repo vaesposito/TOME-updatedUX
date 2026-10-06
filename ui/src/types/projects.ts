@@ -226,10 +226,16 @@ export interface SharePointDocumentSource {
   name: string;
   web_url?: string;
   size?: number;
+  /** Current Graph tag, used only for read-only change detection. */
+  version?: string;
 }
 
 export interface SharePointFolderSource extends Omit<SharePointDocumentSource, "kind"> {
   kind: "folder";
+  /** Files explicitly chosen from the folder's existing contents. */
+  selected_item_ids?: string[];
+  /** Existing files explicitly left unchecked. New IDs remain eligible on later runs. */
+  excluded_item_ids?: string[];
 }
 
 export type SharePointSource = SharePointDocumentSource | SharePointFolderSource;

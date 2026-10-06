@@ -498,6 +498,28 @@ async def stream_sharepoint_documents(
     quick: bool = False,
 ) -> AsyncIterator[IngestEventPayload]:
     """Shared document pass for project ingest and Area/BHAG synthesis."""
+    pending: list[PreparedDocument] = []
+    unchanged = protected = 0
+    for document in documents:
+        prior = existing_pages.get(document.wiki_path, "")
+        if document.matches_wiki_page(prior):
+            unchanged += 1
+        elif document.matches_wiki_page(prior, allow_protected=True):
+            protected += 1
+        else:
+            pending.append(document)
+    if unchanged:
+        yield emit_log(f"· SharePoint: {unchanged} document(s) already ingested at the current version; skipped the document model pass for those files")
+    if protected:
+        yield emit_log(f"· SharePoint: preserved {protected} user-protected document page(s); source changes were not applied to those pages")
+    if not pending:
+        yield IngestEventPayload(type="done", data={
+            "subtype": "success", "model": model_provenance["model"],
+            "model_provenance": dict(model_provenance), "turns": 0,
+            "tool_calls": 0, "cost_usd": 0, "tokens": {}, "ts": now_iso(),
+        })
+        return
+    documents = pending
     log_buf: list[IngestEventPayload] = []
     persisted_paths: set[str] = set()
 

@@ -105,7 +105,7 @@ describe("tickAutoIngestScheduler", () => {
       autoIngest: { enabled: true, cron: "0 2 * * *", credentialOwner: owner } })]);
     resolveProjectCredentials.mockResolvedValue({});
     await tickAutoIngestScheduler(dueNow);
-    expect(mockCheckSharePointSources).toHaveBeenCalledWith(selected);
+    expect(mockCheckSharePointSources).toHaveBeenCalledWith(selected, "proj-1");
     expect(startIngestRun).toHaveBeenCalledWith(expect.objectContaining({ project: expect.objectContaining({ sources: { sharepoint_documents: selected } }) }), { triggeredBy: "auto" });
   });
 
@@ -116,6 +116,32 @@ describe("tickAutoIngestScheduler", () => {
     await tickAutoIngestScheduler(dueNow);
     expect(startIngestRun).not.toHaveBeenCalled();
     expect(updateOne).toHaveBeenCalledWith({ _id: "proj-1" }, { $set: { "autoIngest.lastRun": expect.objectContaining({ status: "failed", reason: expect.stringContaining("SharePoint unavailable") }) } });
+  });
+
+  it("uses the project's existing summary versions before checking a folder subscription's batch limit", async () => {
+    const source = { kind: "folder" as const, drive_id: "drive-1", item_id: "folder-1", name: "Example folder",
+      selected_item_ids: Array.from({ length: 10 }, (_, n) => `file-${n}`), excluded_item_ids: ["unchecked"] };
+    const saved = project({ slug: "example-folder", sources: { sharepoint_documents: [source] },
+      autoIngest: { enabled: true, cron: "0 2 * * *", credentialOwner: owner } });
+    findToArray.mockResolvedValue([saved]);
+    resolveProjectCredentials.mockResolvedValue({});
+    mockCheckSharePointSources.mockImplementation(async (_sources, projectId) => ({
+      accessible: projectId === saved._id ? [source.name] : [],
+      inaccessible: projectId === saved._id ? [] : [source.name],
+    }));
+    await tickAutoIngestScheduler(dueNow);
+    expect(mockCheckSharePointSources).toHaveBeenCalledWith([source], saved._id);
+    expect(startIngestRun).toHaveBeenCalledWith(expect.objectContaining({ projectId: saved._id }), { triggeredBy: "auto" });
+    expect(saved.sources?.sharepoint_documents).toEqual([source]);
+  });
+
+  it("keeps the actionable over-limit explanation in scheduled-run history", async () => {
+    findToArray.mockResolvedValue([project({ sources: { sharepoint_documents: [{ kind: "folder", drive_id: "drive-1", item_id: "folder-1", name: "Example folder" }] },
+      autoIngest: { enabled: true, cron: "0 2 * * *", credentialOwner: owner } })]);
+    mockCheckSharePointSources.mockResolvedValue({ accessible: [], inaccessible: ["Example folder"], detail: "11 new or changed documents need ingestion. Choose up to 10 files in Sources." });
+    await tickAutoIngestScheduler(dueNow);
+    expect(startIngestRun).not.toHaveBeenCalled();
+    expect(updateOne).toHaveBeenCalledWith({ _id: "proj-1" }, { $set: { "autoIngest.lastRun": expect.objectContaining({ status: "failed", reason: expect.stringContaining("Choose up to 10 files") }) } });
   });
 
   it("fires when the cron matches and a credential owner is confirmed", async () => {

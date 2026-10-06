@@ -110,7 +110,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   }
 
   try {
-    const sharepointDocuments = await prepareManualSharePointDocuments(body.sharepointDocuments, tctx.project.sources?.sharepoint_documents);
+    const sharepointDocuments = await prepareManualSharePointDocuments(body.sharepointDocuments, tctx.project.sources?.sharepoint_documents, tctx.projectId);
     // Cascade: enqueue a re-ingest per child, then the synthesize. The queue
     // worker drains them; the parent runs once all children are terminal.
     if (body.refreshChildren) {

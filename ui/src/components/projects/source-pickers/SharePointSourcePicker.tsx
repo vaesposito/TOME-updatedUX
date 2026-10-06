@@ -5,10 +5,11 @@ import Link from "next/link";
 import { FileText, Folder, RefreshCw } from "lucide-react";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { Button } from "@/components/ui/button";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { SearchablePicker } from "@/components/ui/searchable-picker";
 import { SHAREPOINT_SELECTION_LIMIT, sharePointSourceKey, type SharePointFolderPreview } from "@/lib/projects/sharepoint-source";
 import { formatBytes } from "@/lib/tome/format";
-import type { SharePointDocumentSource, SharePointSource } from "@/types/projects";
+import type { SharePointDocumentSource, SharePointFolderSource, SharePointSource } from "@/types/projects";
 
 interface CatalogItem { id: string; name: string; webUrl?: string; size?: number; folder?: boolean; supported?: boolean }
 interface CatalogPage { configured: boolean; items: CatalogItem[]; has_more: boolean; next_cursor?: string | null }
@@ -117,6 +118,7 @@ export function SharePointSourcePicker({ selected, onChange, readOnly = false, p
   readOnly?: boolean;
   projectSlug?: string;
 }) {
+  const [editingSource, setEditingSource] = useState<SharePointFolderSource>();
   return <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-label="SharePoint source">
     <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-3">
       <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-[#038387]/10">
@@ -130,33 +132,53 @@ export function SharePointSourcePicker({ selected, onChange, readOnly = false, p
         {selected.map((source) => <li className="flex items-center justify-between gap-3 py-2" key={sharePointSourceKey(source)}>
           <div className="min-w-0">
             <p className="break-words text-sm">{source.name}</p>
-            <p className="text-xs text-muted-foreground">{source.kind === "folder" ? "Folder · Direct PDF/PPTX files only; subfolders excluded" : "Previously attached individual file"}</p>
+            <p className="text-xs text-muted-foreground">{source.kind === "folder"
+              ? source.selected_item_ids ? source.excluded_item_ids
+                ? `Folder · ${source.selected_item_ids.length} initially selected file(s) + future additions`
+                : `Previously saved fixed selection · ${source.selected_item_ids.length} file(s); choose files and save to enable future additions`
+                : "Previously attached folder · All direct PDF/PPTX files; subfolders excluded"
+              : "Previously attached individual file"}</p>
             <p className="text-xs text-muted-foreground">Runs as: configured SharePoint application</p>
           </div>
-          {!readOnly && <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${source.name}`}
-            onClick={() => onChange(selected.filter((item) => sharePointSourceKey(item) !== sharePointSourceKey(source)))}>Remove</Button>}
+          {!readOnly && <div className="flex shrink-0 gap-1">
+            {source.kind === "folder" && <Button type="button" size="sm" variant="ghost" aria-label={`Choose files in ${source.name}`}
+              onClick={() => setEditingSource({ ...source })}>Choose files</Button>}
+            <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${source.name}`}
+              onClick={() => onChange(selected.filter((item) => sharePointSourceKey(item) !== sharePointSourceKey(source)))}>Remove</Button>
+          </div>}
         </li>)}
       </ul>}
     </section>
     {!readOnly && <section aria-label="Add a SharePoint folder" className="space-y-3 border-t border-border px-4 py-4">
       <h4 className="text-sm font-medium">Add a SharePoint folder</h4>
-      <p className="text-xs text-muted-foreground">Folders are ongoing sources. Only directly contained PDF/PPTX files are included; nested folders must be added separately.</p>
+      <p className="text-xs text-muted-foreground">Choose up to 10 existing direct PDF/PPTX files for the initial ingest. Future manual and auto-ingests discover files added later and changes to included files. Existing files you leave unchecked stay excluded. Nested folders must be added separately.</p>
       <p className="text-xs text-muted-foreground">For a single PDF or PowerPoint file, use {projectSlug
         ? <Link className="text-primary hover:underline" href={`/projects/${encodeURIComponent(projectSlug)}/tome/ingest`}>Run ingest → Add context: SharePoint documents</Link>
         : "Run ingest → Add context: SharePoint documents after creating the project"} for one-off ingestion. SharePoint site pages are not supported yet.</p>
-      <SharePointFolderBrowser selected={selected} onChange={onChange} projectSlug={projectSlug} />
+      <SharePointFolderBrowser selected={selected} onChange={onChange} projectSlug={projectSlug} editingSource={editingSource} />
     </section>}
   </section>;
 }
 
-function SharePointFolderBrowser({ selected, onChange, projectSlug }: {
-  selected: SharePointSource[]; onChange: (sources: SharePointSource[]) => void; projectSlug?: string;
+function SharePointFolderBrowser({ selected, onChange, projectSlug, editingSource }: {
+  selected: SharePointSource[]; onChange: (sources: SharePointSource[]) => void; projectSlug?: string; editingSource?: SharePointFolderSource;
 }) {
   const [library, setLibrary] = useState<CatalogItem>();
   const [folders, setFolders] = useState<CatalogItem[]>([]);
   const [query, setQuery] = useState("");
   const [previewState, setPreviewState] = useState<{ key: string; preview?: SharePointFolderPreview; error?: string }>({ key: "" });
   const [revision, setRevision] = useState(0);
+  const [choice, setChoice] = useState<{ key: string; ids: string[] }>({ key: "", ids: [] });
+  const [selectionError, setSelectionError] = useState<{ key: string; message: string }>();
+  useEffect(() => {
+    if (!editingSource) return;
+    setLibrary({ id: editingSource.drive_id, name: "Document library" });
+    setFolders([{ id: editingSource.item_id, name: editingSource.name, folder: true }]);
+    setQuery("");
+    const key = sharePointSourceKey(editingSource);
+    setChoice({ key, ids: [...editingSource.selected_item_ids ?? []] });
+    setSelectionError(undefined);
+  }, [editingSource]);
   const root = new URLSearchParams(projectSlug ? { project_slug: projectSlug } : {});
   const libraries = useCatalog(root);
   const params = new URLSearchParams(root);
@@ -191,7 +213,18 @@ function SharePointFolderBrowser({ selected, onChange, projectSlug }: {
   }, [previewKey, revision]);
   const preview = previewState.key === previewKey ? previewState.preview : undefined;
   const error = previewState.key === previewKey ? previewState.error : undefined;
-  const alreadyAdded = Boolean(library && folder && selected.some((source) => sharePointSourceKey(source) === `${library.id}/${folder.id}`));
+  const folderKey = library && folder ? `${library.id}/${folder.id}` : "";
+  const savedFolder = selected.find((source): source is SharePointFolderSource => source.kind === "folder" && sharePointSourceKey(source) === folderKey);
+  const chosenIds = choice.key === folderKey ? choice.ids : savedFolder?.selected_item_ids ?? [];
+  const available = new Map(preview?.documents.map((file) => [file.item_id, file]) ?? []);
+  const missing = chosenIds.filter((id) => !available.has(id));
+  const selectedBytes = chosenIds.reduce((sum, id) => sum + (available.get(id)?.size ?? 0), 0);
+  const tooLarge = Boolean(preview && selectedBytes > preview.limits.max_total_bytes);
+  const combinedKeys = new Set(selected.filter((source) => sharePointSourceKey(source) !== folderKey).flatMap((source) => source.kind === "folder"
+    ? (source.selected_item_ids ?? []).map((id) => `${source.drive_id}/${id}`) : [sharePointSourceKey(source)]));
+  for (const id of chosenIds) combinedKeys.add(`${library?.id}/${id}`);
+  const tooMany = combinedKeys.size > SHAREPOINT_SELECTION_LIMIT;
+  const alreadyAdded = Boolean(savedFolder);
   const selectedLimit = selected.length >= SHAREPOINT_SELECTION_LIMIT;
   return <div className="space-y-3">
     {libraries.page?.configured === false ? <p className="text-sm text-muted-foreground">SharePoint is not configured. Contact an administrator.</p> : <>
@@ -222,13 +255,29 @@ function SharePointFolderBrowser({ selected, onChange, projectSlug }: {
           {preview ? <>
             <p className="text-xs text-muted-foreground">{preview.document_count} direct PDF/PPTX document(s) · {formatBytes(preview.total_size)}</p>
             <p className="text-xs text-muted-foreground">{preview.child_folder_count} subfolder(s) excluded · {preview.unsupported_count} unsupported file(s) or shortcut(s) excluded.</p>
-            <p className="text-xs text-muted-foreground">Limit: {preview.limits.max_documents} unique documents per ingest · {formatBytes(preview.limits.max_total_bytes)} total. No recursive ingestion.</p>
-            {!preview.within_limits && <p role="alert" className="text-xs text-destructive">This folder exceeds ingestion limits. Choose a smaller folder or use individual files from Run ingest.</p>}
-            {preview.document_count === 0 && <p className="text-xs text-muted-foreground">No supported files yet. Future direct PDF/PPTX files will be included.</p>}
+            <p className="text-xs text-muted-foreground">Select up to {preview.limits.max_documents} unique documents across your sources · {formatBytes(preview.limits.max_total_bytes)} selected total. No recursive ingestion.</p>
+            <MultiSelect options={[...new Set([...available.keys(), ...chosenIds])]} selected={chosenIds}
+              formatOption={(id) => available.has(id) ? `${available.get(id)!.name} · ${formatBytes(available.get(id)!.size ?? 0)}` : `Unavailable selected file (${id})`}
+              onChange={(ids) => {
+                if (ids.length > SHAREPOINT_SELECTION_LIMIT) { setSelectionError({ key: folderKey, message: "Select at most 10 files. Unselect a file before adding another." }); return; }
+                setChoice({ key: folderKey, ids }); setSelectionError(undefined);
+              }} placeholder="Choose files to ingest" searchPlaceholder="Search files in this folder" emptyLabel="No direct PDF/PPTX files found" badgeLabel="files" />
+            <p className="text-xs text-muted-foreground">{chosenIds.length} selected · {formatBytes(selectedBytes)} for the initial ingest. Future runs also include new files added to this folder and changes to included files. Existing unchecked files stay excluded. At most 10 new/changed files per run.</p>
+            {selectionError?.key === folderKey && <p role="alert" className="text-xs text-destructive">{selectionError.message}</p>}
+            {tooLarge && <p role="alert" className="text-xs text-destructive">The selected files exceed the total size limit. Choose fewer or smaller files.</p>}
+            {tooMany && <p role="alert" className="text-xs text-destructive">Your saved sources and this selection exceed 10 unique files. Unselect files before saving.</p>}
+            {missing.length > 0 && <p role="alert" className="text-xs text-destructive">{missing.length} selected file(s) are unavailable. Remove them from the selection before saving; replacements are never selected automatically.</p>}
+            {preview.document_count === 0 && <p className="text-xs text-muted-foreground">No direct PDF/PPTX files here. Browse a subfolder to select its files.</p>}
           </> : error ? <p role="alert" className="text-xs text-destructive">{error}</p> : <p role="status" className="text-xs text-muted-foreground">Checking document count and total size…</p>}
           {selectedLimit && !alreadyAdded && <p className="text-xs text-destructive">At most {SHAREPOINT_SELECTION_LIMIT} SharePoint sources can be attached.</p>}
-          <Button type="button" size="sm" disabled={!preview?.within_limits || alreadyAdded || selectedLimit}
-            onClick={() => { if (preview) onChange([...selected, preview.folder]); }}> {alreadyAdded ? "Folder already added" : "Add this folder"}</Button>
+          <Button type="button" size="sm" disabled={!preview || !chosenIds.length || missing.length > 0 || tooLarge || tooMany || (!alreadyAdded && selectedLimit)}
+            onClick={() => {
+              if (!preview) return;
+              const excluded = new Set([...(savedFolder?.excluded_item_ids ?? []), ...preview.documents.map((file) => file.item_id)]);
+              for (const id of chosenIds) excluded.delete(id);
+              const source = { ...preview.folder, selected_item_ids: [...chosenIds], excluded_item_ids: [...excluded] };
+              onChange(alreadyAdded ? selected.map((item) => sharePointSourceKey(item) === folderKey ? source : item) : [...selected, source]);
+            }}>{alreadyAdded ? "Save file selection" : "Add this folder"}</Button>
         </div>}
       </>}
     </>}

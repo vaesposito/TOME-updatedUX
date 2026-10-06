@@ -169,7 +169,9 @@ export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
   if (s.sharepoint_documents?.length) {
     rows.push({ kind: "sharepoint", label: "SharePoint", connectorKey: "sharepoint",
       items: s.sharepoint_documents.map((document) => ({ sourceKey: sharePointSourceKey(document), label: document.name, href: document.web_url,
-        detail: document.kind === "folder" ? "Folder · Direct PDF/PPTX files only · Runs as: configured SharePoint application" : "Runs as: configured SharePoint application" })) });
+        detail: document.kind === "folder"
+          ? `${document.selected_item_ids ? `Folder · ${document.selected_item_ids.length} initially selected file(s)${document.excluded_item_ids ? " + future additions" : " · previously saved fixed selection"}` : "Previously attached folder · All direct PDF/PPTX files"} · Runs as: configured SharePoint application`
+          : "Runs as: configured SharePoint application" })) });
   }
   const repos = Array.isArray(s.repos) ? s.repos.filter(Boolean) : [];
   if (repos.length > 0) {

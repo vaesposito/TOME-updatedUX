@@ -704,6 +704,7 @@ def build_agent_options(
     myagent_run_kind: str = "ingest",
     read_only: bool = False,
     max_budget_usd: float | None = None,
+    max_buffer_size: int | None = None,
     expected_template_pages: dict[str, Any] | None = None,
 ) -> ClaudeAgentOptions:
     """Compose ClaudeAgentOptions for chat and ingest in the agent
@@ -867,6 +868,7 @@ def build_agent_options(
         include_partial_messages=include_partial_messages,
         max_turns=max_turns,
         max_budget_usd=max_budget_usd,
+        max_buffer_size=max_buffer_size,
         hooks={
             "PreToolUse": [
                 *(

@@ -20,6 +20,13 @@ COPY tome_agent ./tome_agent
 FROM python:3.12-slim
 WORKDIR /app
 
+# Trusted local PPTX rendering fallback. The renderer is run with filesystem
+# and network restrictions, not exposed as an agent shell tool.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libreoffice-impress libseccomp2 fonts-liberation \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # The bundled Claude CLI writes config/state under $HOME on its `initialize`
 # handshake; without a writable HOME the handshake hangs and the SDK's
 # initialize control request times out. Give the runtime user a writable home.

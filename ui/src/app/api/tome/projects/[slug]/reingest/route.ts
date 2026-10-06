@@ -15,6 +15,7 @@ import {
 } from "@/lib/tome/webex-meeting-series";
 import { isSynthesizedType } from "@/types/projects";
 import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
+import { prepareManualSharePointDocuments } from "@/lib/tome/sharepoint";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     seed?: string;
     mode?: "full" | "quick";
     webexMeetings?: ManualWebexMeetingSelection[];
+    sharepointDocuments?: unknown;
     sourceScope?: "project" | "webex_meetings";
     seedStablePages?: boolean;
     skipReview?: boolean;
@@ -65,6 +67,10 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   }
 
   try {
+    if (body.sharepointDocuments !== undefined && (body.mode === "quick" || body.sourceScope === "webex_meetings")) {
+      throw new ApiError("SharePoint context can only be added to a full project ingest.", 400, "INVALID_SHAREPOINT_CONTEXT");
+    }
+    const sharepointDocuments = await prepareManualSharePointDocuments(body.sharepointDocuments, tctx.project.sources?.sharepoint_documents);
     const webexMeetings = body.webexMeetings?.length
       ? await prefetchManualWebexMeetingTranscripts(
           tomeSessionSubject(tctx.session),
@@ -76,6 +82,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       myAgentSources: body.myAgentSources === undefined ? undefined : normalizeMyAgentConnectors(body.myAgentSources),
       mode: body.mode,
       webexMeetings,
+      sharepointDocuments,
       sourceScope: body.sourceScope,
       seedStablePages: body.seedStablePages,
       skipReview: body.skipReview,

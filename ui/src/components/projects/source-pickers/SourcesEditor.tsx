@@ -16,6 +16,7 @@ import {
 } from "@/lib/projects/github-repository";
 import { SourcePicker, type SourceKind } from "./index";
 import { MyAgentSourcePicker } from "./MyAgentSourcePicker";
+import { SharePointSourcePicker } from "./SharePointSourcePicker";
 import { WebexCredentialModePicker } from "./WebexCredentialModePicker";
 import { WebexSettingsSources } from "./WebexSettingsSources";
 import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
@@ -34,6 +35,7 @@ const LABELS: Record<SourceKind, string> = {
   confluence: "Confluence source",
   webex: "Webex",
   myagent: "MyAgent",
+  sharepoint: "SharePoint",
 };
 
 /** Source kind → credentials provider id (for the shared ProviderLogo). */
@@ -41,6 +43,7 @@ const PROVIDER_FOR_KIND: Record<Exclude<SourceKind, "myagent">, string> = {
   github: "github",
   confluence: "atlassian",
   webex: "webex",
+  sharepoint: "sharepoint",
 };
 
 /** Canonical ProjectSources ↔ per-connector string[] (the picker contract). */
@@ -120,6 +123,9 @@ export function SourcesEditor({
   return (
     <div className="space-y-5">
       {visibleKinds.map((kind) => {
+        if (kind === "sharepoint") return <SharePointSourcePicker key={kind}
+          selected={value.sharepoint_documents ?? []} readOnly={readOnly} projectSlug={settingsProjectSlug}
+          onChange={(next) => onChange({ ...value, sharepoint_documents: next })} />;
         if (kind === "myagent") {
           return (
             <div key={kind} className="space-y-3">

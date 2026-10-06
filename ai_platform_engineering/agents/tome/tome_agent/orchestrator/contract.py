@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ---------- shared identity / project snapshot ----------
 
@@ -281,10 +281,31 @@ class MyAgentEvidence(BaseModel):
         return self
 
 
+class SharePointDocumentRef(BaseModel):
+    """Stable configured-site item IDs, never a caller-provided download URL."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    drive_id: str = Field(min_length=1, max_length=512, pattern=r"^[A-Za-z0-9!._~-]+$")
+    item_id: str = Field(min_length=1, max_length=512, pattern=r"^[A-Za-z0-9!._~-]+$")
+
+    @field_validator("drive_id", "item_id")
+    @classmethod
+    def reject_dot_segments(cls, value: str) -> str:
+        if value in {".", ".."}:
+            raise ValueError("A document ID cannot be a URL dot segment")
+        return value
+
+
+class SharePointSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    documents: list[SharePointDocumentRef] = Field(default_factory=list, max_length=10)
+
+
 class IngestRequest(BaseModel):
     run_id: UUID
     seed: str | None = None
     connector_data: dict[str, Any] = Field(default_factory=dict)
+
     myagent_evidence: MyAgentEvidence | None = None
     """Validated external evidence from the user-approved MyAgent source."""
     myagent_questions_enabled: bool = False
@@ -316,6 +337,22 @@ class IngestRequest(BaseModel):
     """When present, run from the supplied frozen workspace, force the named
     candidate model, disable live connector tools, and route every page write
     to an experiment artifact instead of normal wiki revisions."""
+
+    @field_validator("connector_data")
+    @classmethod
+    def validate_sharepoint_selection(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if "sharepoint" in value:
+            selection = SharePointSelection.model_validate(value["sharepoint"])
+            return {**value, "sharepoint": selection.model_dump()}
+        return value
+
+    @model_validator(mode="after")
+    def reject_live_documents_in_frozen_experiment(self) -> IngestRequest:
+        if self.experiment and self.connector_data.get("sharepoint", {}).get("documents"):
+            raise ValueError("Frozen experiments cannot prepare live SharePoint documents")
+        return self
+
+
 # ---------- agent → backend callbacks ----------
 
 

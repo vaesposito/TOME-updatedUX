@@ -135,6 +135,158 @@ kinds are LLM-authored wiki pages, not raw fetches (see
 See `docs/docs/specs/2026-09-28-tome-source-fetch-ledger/` for the full spec,
 plan, and design rationale.
 
+## SharePoint document preparation
+
+Manual and scheduled ingestion of selected folders' direct **PPTX and PDF** documents, using
+the deployment's app-only SharePoint MCP. No personal Microsoft connection is
+required. Files are explicitly selected, never a whole-site crawl.
+
+- Enable a `provider: source`, `source: sharepoint` onboarding step to expose
+  the picker in project creation and **Settings → Sources**.
+- **Settings → Sources** and project creation attach folders only. Browse libraries,
+  search folders, and preview the direct document count and total size before adding.
+  A folder never includes nested folders; attach a child folder separately if needed.
+  Up to ten source references can be saved; existing individual file sources remain
+  supported and removable, without an automatic migration.
+- Each manual/scheduled run freshly lists the folder's direct children, so newly
+  added files and current versions are included. Overlapping selections are deduplicated
+  by drive/item ID. At most ten unique PDF/PPTX files can be ingested in one run;
+  the aggregate size for folder runs is bounded by the MCP's configured
+  `SHAREPOINT_MAX_DOCUMENT_BYTES` (2 GiB by default). Larger selections fail explicitly
+  before agent document ingestion; nothing is silently truncated or automatically
+  retried. Folder previews scan at most 1000 direct entries, paginate fully within
+  that bound, and exclude unsupported types/remote shortcuts. Empty folders may be
+  attached for future supported files. Whole libraries cannot be attached.
+- **Run ingest → Full ingest** includes the selected documents alongside other
+  attached sources. The preview shows their application execution identity.
+- Each selected document gets a dedicated summary page under the **SharePoint**
+  wiki folder, marked with the SharePoint logo. This also applies to documents
+  whose topic does not match the project's charter: explicit selection keeps
+  the document; only relevant evidence is merged into the project's main pages.
+- Document pages cite the original file and source pages/slides. Paths use a
+  stable drive/item identity (`sharepoint/doc-<identity>.md`); titles use the
+  filename. Renames, version changes, and repeat ingests reuse that same path;
+  different files with the same name remain separate. These are document
+  summaries, not binary copies or full transcripts of the original files.
+- A successful document pass must have saved every new/changed document page.
+  A memory-only update or a local file whose persistence failed is an explicit
+  ingest error, with no automatic retry/recovery. Unchanged versions can keep
+  their existing page; user-pinned stable/hidden pages are preserved and reported.
+- **Run ingest → Add context: SharePoint documents** adds one-off PPTX/PDF files
+  to this run alongside saved sources (also available during Area/BHAG synthesis).
+  These references are stored on the run, never on the project's sources or
+  auto-ingest configuration. Cascade runs keep this context on the parent only.
+  Folder contents, saved legacy files, and one-off files are deduplicated by drive/item ID, with ten files total.
+  Submit rechecks current app access; file preparation happens in the agent.
+  Quick edits, compaction and meeting-only runs do not include this context.
+- For a single file, use the one-off context picker rather than Settings. SharePoint
+  site pages are a separate content type and are not supported by this connector yet.
+- **Settings → Auto-ingest** uses the existing cadence, queue, history and
+  review settings. The confirmed schedule owner remains the run's actor, but
+  SharePoint access uses the static application rather than that owner's OAuth.
+- Each run checks current metadata. Unchanged versions reuse prepared artifacts;
+  changed versions are prepared anew. This is not a change-only Graph poller:
+  scheduled runs still execute the existing ingest/review workflow.
+- Deleted/inaccessible files fail with an administrator-facing explanation;
+  no sources, failed runs, or existing records are automatically repaired.
+- Recurring Webex meeting-only runs never include SharePoint documents.
+- Areas/BHAGs use the same restricted document pass before synthesizing their
+  own wiki with child projects; documents cannot read the child wikis directly.
+- Site pages, DOCX/XLSX, `.ppt`, embedded video/audio and animations are not
+  supported by this file-ingestion surface.
+
+1. Select stable drive/item IDs from the configured SharePoint MCP.
+2. TOME streams each selected file through the MCP's authenticated `/documents`
+   routes. Graph credentials and signed URLs stay inside the MCP.
+3. PowerPoints become a rendered PDF plus ordered slide text and speaker notes.
+   PDFs retain visual pages and extracted per-page text. Scanned pages remain
+   usable visual evidence, with an explicit no-text warning.
+4. The processor produces PDF batches (default eight pages, at most 20 MiB per
+   batch) and source/page mappings. It never puts a 1 GB deck into a prompt.
+5. The existing Claude Agent SDK `Read` tool reads the staged PDFs/text in a
+   separate scoped ingest pass. The agent receives source URL/slide citations;
+   it has no SharePoint credentials, Bash, general web, or other-project tools
+   in that pass. Existing wiki write/stable-page protections remain active.
+
+### Agent request
+
+Add this to an authenticated `/ingest` request alongside its normal snapshot,
+run/report IDs and options:
+
+```json
+{
+  "connector_data": {
+    "sharepoint": {
+      "documents": [{"drive_id": "example-drive", "item_id": "example-item"}]
+    }
+  }
+}
+```
+
+- Up to ten selected documents; duplicates are prepared once. Files are never
+  downloaded implicitly from unrelated ingest runs or frozen experiments.
+- Preparation finishes before any wiki writes. A failed conversion, changed
+  version, missing access, or resource limit produces an error, not silent
+  text-only ingestion or a partial document cache.
+- Repeated runs reuse unchanged versions in
+  `/project/.source-cache/<project-id>/<version-hash>/`. This is outside the wiki
+  directory so wiki rehydration cannot remove it. New versions create new
+  directories; there is no automatic eviction, repair, persisted-run retry,
+  migration, or backfill. Existing cached versions/runs are not rewritten.
+- Raw downloads and Office profiles are deleted after preparing; only bounded
+  model-readable artifacts, source metadata, and a manifest are retained.
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TOME_SHAREPOINT_API_URL` | unset | MCP HTTP origin/base path, **without** `/mcp` (for example `http://mcp-sharepoint:8000`) |
+| `TOME_SHAREPOINT_API_TOKEN` | unset | Bearer accepted by the MCP's `shared_key`/`oauth2` authentication; inject through existing secrets |
+| `TOME_DOCUMENT_RENDERER` | `graph_then_local` | `graph`, `local`, or Graph conversion with offline fallback for conversion/server/network failures; never bypasses HTTP 403/404 |
+| `TOME_DOCUMENT_MAX_BYTES` | `2147483648` | Original file ceiling (2 GiB) |
+| `TOME_DOCUMENT_MAX_PDF_BYTES` | `268435456` | Rendered/source PDF ceiling (256 MiB) |
+| `TOME_DOCUMENT_DOWNLOAD_TIMEOUT_SECONDS` | `600` | Whole preparation deadline, including downloads/processing |
+| `TOME_DOCUMENT_PROCESS_TIMEOUT_SECONDS` | `180` | Deadline for each renderer/processor subprocess |
+| `TOME_DOCUMENT_PROCESS_MEMORY_MIB` | `384` | Processor address-space ceiling; renderer heap/anonymous-allocation ceiling (shared-library mappings have a separate 2 GiB minimum address-space ceiling) |
+| `TOME_DOCUMENT_BATCH_PAGES` | `8` | Pages per SDK-readable PDF batch, 1–20 |
+| `TOME_DOCUMENT_SDK_MAX_BUFFER_MIB` | `64` | Per-message SDK JSON buffer for the document pass only, 32–64 MiB; accommodates encoded visual Read results without changing file/batch/model limits |
+| `TOME_DOCUMENT_MAX_PAGES` | `1000` | Slide/page ceiling, up to 2000 |
+
+Documents are streamed to disk and read in bounded PDF batches (at most 20 MiB
+each), not stored as binary MongoDB records. The SDK buffer is a separate limit
+on one serialized CLI message: base64 visual data can exceed its 1 MiB default
+even for a small batch. The document pass uses a capped 64 MiB buffer; normal
+source/chat passes keep the SDK default. This is not a total session-memory
+limit or an increase to model context. Excessive messages still fail with a
+content-safe buffer-limit error rather than exposing source evidence in logs.
+There is no automatic retry or rewriting of existing cached documents/runs.
+
+Local rendering is included in the TOME image. It runs a fixed command with no
+application credentials, high macro security, no external linked content, and
+no embedded audio/video in its rendering copy. Linux Landlock restricts file
+reads to runtime/font files and this run's staging directory; writes are limited
+to staging plus creation of a profile-hashed Unix IPC socket in `/tmp`. Trusted
+cleanup removes only that new profile's socket. Seccomp blocks non-Unix network
+sockets. Unsupported kernels/architectures fail closed; the current helper
+supports Landlock-enabled Linux x86-64/aarch64. Container memory limits still
+cap resident memory; one preparation runs at a time per TOME process.
+
+Limits also cover ZIP/XML expansion, extracted text, output artifacts, disk
+reserve, and download size. Hidden-slide text/notes are retained if the renderer
+omits their visual pages; mismatched page counts fail rather than attributing
+content to the wrong slide. Layout/font fidelity can differ in LibreOffice;
+animations, linked content, audio, and video are explicitly **not** ingested.
+Very large image-heavy decks can still exceed limits. No OCR service or
+audio/video transcription was added.
+
+The live probe included a 1.1 GB video-heavy presentation and a 50 MB deck.
+Embedded recordings need not make a deck expensive to render, but a 12 MB
+image-heavy sample needed a 2048 MiB processor allocation limit and a 3 GiB
+container limit. File size alone is not a safe memory estimate. Match processor
+limits to container headroom; the 384 MiB code default is intentionally
+conservative. These probes validate preparation and cache reuse, not an LLM's
+semantic understanding or a UI-to-wiki run.
+
 ## Run (local dev)
 
 ```bash

@@ -78,6 +78,7 @@ const COLLAPSED_ROOTS = new Set([
   "repos",
   "webex",
   "confluence",
+  "sharepoint",
   "glossary",
   "edges",
   "issues",
@@ -90,6 +91,7 @@ const ROOT_PROVIDER: Record<string, string> = {
   repos: "github",
   confluence: "atlassian",
   webex: "webex",
+  sharepoint: "sharepoint",
 };
 
 function NodeList({

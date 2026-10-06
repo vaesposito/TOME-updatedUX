@@ -17,6 +17,7 @@ import {
 
 import { resolveWebexRoomExecution } from "@/lib/tome/webex-room-execution";
 import { githubApiBaseUrl, githubFullName } from "@/lib/projects/github-repository";
+import { checkSharePointSources } from "@/lib/tome/sharepoint";
 
 export const dynamic = "force-dynamic";
 
@@ -194,6 +195,11 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       label: "MyAgent",
       ...myAgentResult,
     });
+  }
+
+  if (sources.sharepoint_documents?.length) {
+    results.push({ provider: "sharepoint", label: "SharePoint",
+      ...await checkSharePointSources(sources.sharepoint_documents) });
   }
 
   const can_ingest =

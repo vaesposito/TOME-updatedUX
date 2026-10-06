@@ -10,6 +10,7 @@ from unittest.mock import patch
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    CLIJSONDecodeError,
     ResultMessage,
     TextBlock,
     ToolResultBlock,
@@ -84,6 +85,59 @@ class ConfluenceCoverageTest(TestCase):
 
 
 class RestrictedEvidenceRunStreamTest(TestCase):
+    def test_restricted_failures_are_classified_without_leaking_content(self) -> None:
+        secret = "source-evidence-must-not-reach-logs"
+        cases = [
+            (
+                CLIJSONDecodeError(
+                    "JSON message exceeded maximum buffer size of 67108864 bytes",
+                    ValueError(secret),
+                ),
+                "Agent SDK message buffer limit exceeded",
+            ),
+            (CLIJSONDecodeError(secret, ValueError(secret)), "restricted evidence agent stream failed"),
+            (RuntimeError(secret), "restricted evidence agent stream failed"),
+        ]
+        for failure, expected in cases:
+            with self.subTest(expected=expected, exception=type(failure).__name__):
+                class FakeClient:
+                    def __init__(self, *, options, failure=failure):
+                        self.options = options
+                        self.failure = failure
+
+                    async def __aenter__(self):
+                        return self
+
+                    async def __aexit__(self, *_args):
+                        return False
+
+                    async def query(self, _prompt):
+                        pass
+
+                    async def receive_response(self):
+                        raise self.failure
+                        if False:
+                            yield None
+
+                async def collect():
+                    return [
+                        event async for event in consume_agent_query(
+                            secret, SimpleNamespace(model="claude-test"), [],
+                            redact_sensitive_content=True,
+                        )
+                    ]
+
+                with (
+                    patch("tome_agent.agent.run_stream.ClaudeSDKClient", FakeClient),
+                    self.assertLogs("tome_agent.agent.run_stream", level="WARNING") as logs,
+                ):
+                    events = asyncio.run(collect())
+                encoded = json.dumps([event.model_dump() for event in events])
+                self.assertNotIn(secret, encoded)
+                self.assertNotIn(secret, "\n".join(logs.output))
+                self.assertEqual(events[-1].type, "error")
+                self.assertIn(expected, events[-1].data["message"])
+
     def test_restricted_pass_suppresses_sdk_telemetry_and_run_log_content(self) -> None:
         secret = "myagent-evidence-must-not-reach-telemetry-or-logs"
 

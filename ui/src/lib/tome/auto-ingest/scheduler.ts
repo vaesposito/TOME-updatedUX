@@ -17,6 +17,7 @@ import { resolveProjectCredentials } from "../agent-proxy";
 import { auditTome } from "../audit";
 import { isIngestRunning, startIngestRun } from "../ingest-runner";
 import { resolveManagedWebexCredential } from "../managed-webex";
+import { checkSharePointSources } from "../sharepoint";
 import {
   AUTO_INGEST_CREDENTIAL_REFRESH_INTERVAL_MS,
   refreshAutoIngestCredentialHealth,
@@ -100,7 +101,16 @@ async function maybeFireForProject(
     });
     return;
   }
-  const hasAnyCredential = Object.keys(credentials).length > 0;
+  const sharePointDocuments = project.sources?.sharepoint_documents ?? [];
+  if (sharePointDocuments.length > 0) {
+    const check = await checkSharePointSources(sharePointDocuments);
+    if (check.inaccessible.length > 0) {
+      await recordLastRun(project._id, { at: now.toISOString(), status: "failed",
+        reason: `SharePoint unavailable: ${check.inaccessible.join(", ")}. Contact an administrator.` });
+      return;
+    }
+  }
+  const hasAnyCredential = Object.keys(credentials).length > 0 || sharePointDocuments.length > 0;
   if (!hasAnyCredential) {
     console.log(
       `[AutoIngest] ${project.slug}: credential owner (${owner.email}) has no connected credentials; skipping`,

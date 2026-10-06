@@ -27,6 +27,7 @@ from tome_agent.agent.connectors.github import GitHubExtra
 from tome_agent.agent.issue_context import format_issue_context
 from tome_agent.agent.loop import (
     build_agent_options,
+    project_base,
     project_root,
     sources_for_connector,
 )
@@ -36,12 +37,19 @@ from tome_agent.agent.run_stream import (
     emit_log,
     now_iso,
 )
+from tome_agent.agent.sharepoint_documents import (
+    PreparedDocument,
+    SharePointPreparationError,
+    SharePointPreparer,
+    document_sdk_max_buffer_size,
+)
 from tome_agent.orchestrator.contract import (
     ExperimentRunContext,
     IngestEventPayload,
     IssueContext,
     MyAgentEvidence,
     ProjectSnapshot,
+    SharePointSelection,
 )
 from tome_agent.reports import schema as report_schema
 
@@ -475,6 +483,93 @@ async def resolve_connector_extras(
     return extras
 
 
+async def stream_sharepoint_documents(
+    documents: list[PreparedDocument],
+    *,
+    snapshot: ProjectSnapshot,
+    report_id: UUID,
+    seed: str | None,
+    is_greenfield: bool,
+    seed_stable_pages: bool,
+    model_provenance: http_client.ModelResolution,
+    author: str,
+    existing_pages: dict[str, str],
+    template_note: str = "",
+    quick: bool = False,
+) -> AsyncIterator[IngestEventPayload]:
+    """Shared document pass for project ingest and Area/BHAG synthesis."""
+    log_buf: list[IngestEventPayload] = []
+    persisted_paths: set[str] = set()
+
+    async def on_write(page_path: str, byte_count: int) -> None:
+        persisted_paths.add(page_path)
+        log_buf.append(IngestEventPayload(type="page_written", data={"path": page_path, "bytes": byte_count, "ts": now_iso()}))
+
+    # Untrusted documents cannot call credentialed connectors or cross-project tools.
+    document_snapshot = snapshot.model_copy(
+        update={"repos": [], "webex_rooms": [], "confluence_spaces": [], "child_projects": [], "readable_projects": []}
+    )
+    system_prompt = _build_system_prompt(
+        document_snapshot, is_greenfield, {}, seed_stable_pages=seed_stable_pages,
+        template_note=template_note, quick=quick, issue_context=None, existing_pages=existing_pages,
+    )
+    system_prompt += "\n\n" + prompts.load("SHAREPOINT_INGEST")
+    system_prompt += "\n\nSELECTED SHAREPOINT DOCUMENTS\n" + "\n\n".join(document.prompt_block() for document in documents)
+    try:
+        max_buffer_size = document_sdk_max_buffer_size()
+    except SharePointPreparationError as exc:
+        yield IngestEventPayload(type="error", data={"message": str(exc), "ts": now_iso()})
+        return
+    options = build_agent_options(
+        snapshot=document_snapshot, system_prompt=system_prompt, model=model_provenance["model"],
+        max_turns=MAX_TURNS, persist_author=author, report_id=report_id, on_write=on_write,
+        extra_read_dirs=[document.directory for document in documents], restrict_untrusted_evidence=True,
+        max_buffer_size=max_buffer_size,
+        expected_template_pages=expected_template_pages(snapshot),
+    )
+    prompt = (
+        f'Ingest the selected SharePoint documents into "{snapshot.name}". '
+        "Create or update every required dedicated SharePoint document page, even if "
+        "its topic is unrelated to the project. A memory-only update is not document ingestion. "
+        "Read every visual batch and all associated text/notes. Preserve existing "
+        "stable-page protections. Cite document URLs and source slide/page numbers. "
+        "Only merge relevant evidence into the project's main pages. Report unsupported content explicitly."
+    )
+    if seed and seed.strip():
+        prompt += f"\n\nUser instruction: {seed.strip()}"
+    yield emit_log("▶ SharePoint document ingest started (scoped files and wiki tools only)")
+    async for event in consume_agent_query(prompt, options, log_buf, model_provenance=model_provenance, redact_sensitive_content=True):
+        if event.type == "done" and event.data.get("subtype") == "success":
+            missing = 0
+            protected = 0
+            for document in documents:
+                prior = existing_pages.get(document.wiki_path, "")
+                # Only a successful persist callback can qualify a new page;
+                # a local file left by a rejected write is not an ingested page.
+                current = prior
+                if document.wiki_path in persisted_paths:
+                    current = ""
+                    try:
+                        current = (project_root(snapshot.project_id) / document.wiki_path).read_text()
+                    except (OSError, UnicodeError):
+                        pass
+                if document.matches_wiki_page(current, allow_protected=document.wiki_path not in persisted_paths):
+                    if not document.matches_wiki_page(current):
+                        protected += 1
+                else:
+                    missing += 1
+            if missing:
+                yield IngestEventPayload(type="error", data={
+                    "message": f"SharePoint ingest did not save {missing} required document page(s). A memory-only update is not sufficient. No automatic retry was started.",
+                    "ts": now_iso(),
+                })
+                return
+            if protected:
+                yield emit_log(f"· SharePoint: preserved {protected} user-protected document page(s); source changes were not applied to those pages")
+            yield emit_log(f"· SharePoint: {len(documents)} dedicated document page(s) retained under SharePoint")
+        yield event
+
+
 async def stream_ingest(
     *,
     run_id: UUID,
@@ -496,6 +591,33 @@ async def stream_ingest(
     agent's HTTP handler writes to the SSE response."""
     log_buf: list[IngestEventPayload] = []
     _emit_log = emit_log
+
+    # Preparation is opt-in, before any page write. Existing source runs and
+    # frozen experiments never download documents implicitly.
+    prepared_documents: list[PreparedDocument] = []
+    selection = SharePointSelection.model_validate(connector_data.get("sharepoint") or {})
+    if selection.documents and experiment is None:
+        try:
+            preparer = SharePointPreparer.from_env(project_base())
+            seen: set[tuple[str, str]] = set()
+            for ref in selection.documents:
+                identity = (ref.drive_id, ref.item_id)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                yield _emit_log("· SharePoint: preparing selected document text, notes, and visual batches")
+                document = await preparer.prepare(snapshot.project_id, ref)
+                prepared_documents.append(document)
+                yield _emit_log(
+                    f"· SharePoint: {document.manifest['page_count']} visual pages, "
+                    f"{document.manifest['slides_with_notes']} slides with notes "
+                    f"({'cached version' if document.cache_hit else 'prepared current version'})"
+                )
+                for warning in document.manifest["warnings"]:
+                    yield _emit_log(f"· SharePoint warning: {warning}")
+        except SharePointPreparationError as exc:
+            yield IngestEventPayload(type="error", data={"message": str(exc), "ts": now_iso()})
+            return
 
     # Load the admin-editable page-template and model config for this run.
     # Sets task-local overrides the schema/model accessors prefer; falls back
@@ -598,6 +720,8 @@ async def stream_ingest(
     )
     research_enabled = myagent_questions_enabled and bool(myagent_sources) and experiment is None
     run_standard_pass = (not has_received_myagent_evidence and not research_enabled) or has_standard_sources
+    if prepared_documents and not has_standard_sources:
+        run_standard_pass = False
     system_prompt = _build_system_prompt(
         snapshot,
         is_greenfield,
@@ -700,6 +824,16 @@ async def stream_ingest(
             yield event
             if agent_event_failed(event):
                 return
+
+    if prepared_documents:
+        async for event in stream_sharepoint_documents(
+            prepared_documents, snapshot=snapshot, report_id=report_id, seed=seed,
+            is_greenfield=is_greenfield and not run_standard_pass,
+            seed_stable_pages=seed_stable_pages and not run_standard_pass,
+            model_provenance=model_provenance, author=ingest_author,
+            existing_pages=existing, template_note=template_note, quick=quick,
+        ):
+            yield event
 
     if has_received_myagent_evidence or research_enabled:
         # Do not carry source definitions, source extras, child project paths,

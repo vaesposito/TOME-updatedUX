@@ -219,7 +219,24 @@ export interface GitHubRepositorySource {
  * editable later). Forwarded to connected external apps so they can
  * ingest the repo/space/components.
  */
+export interface SharePointDocumentSource {
+  kind?: "file";
+  drive_id: string;
+  item_id: string;
+  name: string;
+  web_url?: string;
+  size?: number;
+}
+
+export interface SharePointFolderSource extends Omit<SharePointDocumentSource, "kind"> {
+  kind: "folder";
+}
+
+export type SharePointSource = SharePointDocumentSource | SharePointFolderSource;
+
 export interface ProjectSources {
+  /** Direct-only folders and previously saved files. Storage key retained for compatibility. */
+  sharepoint_documents?: SharePointSource[];
   /** @deprecated Compatibility mirror of `github_repos[].html_url`. */
   repos?: string[]; // GitHub repo URLs / owner/name
   /** GitHub repositories with stable identities and canonical metadata. */
@@ -395,6 +412,7 @@ export interface ProjectDocument {
 }
 
 export interface CreateProjectRequest {
+  sharepoint_documents?: SharePointSource[];
   name: string;
   /** Defaults to "project". Pass "bhag" for a strategic-goal entity or "area" for a mid-tier grouping. */
   type?: ProjectType;

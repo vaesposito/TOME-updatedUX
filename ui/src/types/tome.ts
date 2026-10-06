@@ -12,6 +12,7 @@
  */
 
 import type { RubricPolicy } from "@/types/tome-evaluation";
+import type { SharePointDocumentSource } from "@/types/projects";
 
 // ---------------------------------------------------------------------------
 // Collections (index/metadata only — NO `projects`; reuse CAIPE's)
@@ -364,6 +365,8 @@ export interface IngestDispatch {
   mode?: "full" | "quick";
   seedStablePages?: boolean;
   webexMeetings?: WebexMeetingIngestItem[];
+  /** One-off documents for this run only; never attached to project sources. */
+  sharepointDocuments?: SharePointDocumentSource[];
   /** Durable idempotency marker for one calendar-driven meeting occurrence. */
   meetingOccurrenceId?: string;
   /**

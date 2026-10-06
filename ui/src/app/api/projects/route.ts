@@ -41,6 +41,7 @@ import {
   normalizeWebexCredentialSettings,
 } from "@/lib/tome/managed-webex";
 import { prepareWebexRooms } from "@/lib/tome/webex-room-execution";
+import { prepareSharePointSources } from "@/lib/tome/sharepoint";
 import { sessionSub } from "@/lib/tome/agent-proxy";
 import { isMyAgentInteractiveBrowserAction } from "@/lib/tome/myagent-interactive";
 import { requestWebexMeetingOwnerCheck } from "@/lib/tome/auto-ingest/cursor";
@@ -483,6 +484,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     defaults: webexCredentialSettings,
   });
   const sources = {
+    sharepoint_documents: body.sharepoint_documents === undefined ? [] : await prepareSharePointSources(body.sharepoint_documents),
     repos: cleanUrls(body.github_repos),
     confluence_url: body.confluence_url?.trim() || undefined,
     confluence_page_scopes: normalizeConfluencePageScopes(

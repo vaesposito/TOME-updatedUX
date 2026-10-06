@@ -4,7 +4,7 @@
 
 /** Per-provider resource access result for one project. */
 export interface PreflightSourceResult {
-  provider: "github" | "confluence" | "webex" | "myagent";
+  provider: "github" | "confluence" | "webex" | "myagent" | "sharepoint";
   label: string;
   /** Items that passed the resource-level access check. */
   accessible: string[];

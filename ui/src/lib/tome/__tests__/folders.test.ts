@@ -183,4 +183,21 @@ describe("first-class Tome folders", () => {
       parentFolderId: "folder-planning",
     });
   });
+
+  it("creates one SharePoint source folder for new dedicated document pages", async () => {
+    const rows: TomeFolder[] = [];
+    const updateOne = jest.fn(async (_filter, update: { $setOnInsert?: TomeFolder }) => {
+      if (update.$setOnInsert) rows.push(update.$setOnInsert);
+      return { acknowledged: true };
+    });
+    (getTomeFoldersCollection as jest.Mock).mockResolvedValue({
+      createIndex: jest.fn().mockResolvedValue("index"),
+      find: jest.fn(() => ({ toArray: jest.fn(async () => [...rows]) })),
+      updateOne,
+    });
+    await ensureFoldersForPages("project-1", ["sharepoint/doc-first.md", "sharepoint/doc-second.md"], "test-user@example.com");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: "SharePoint", source_path: "sharepoint", parent_id: null });
+    expect(updateOne).toHaveBeenCalledTimes(1);
+  });
 });

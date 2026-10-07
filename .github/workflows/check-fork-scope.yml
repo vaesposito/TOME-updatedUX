@@ -1,7 +1,8 @@
 name: Check fork change scope
 
 on:
-  pull_request:
+  # Never execute the PR's proposed verifier/workflow with a write token.
+  pull_request_target:
     types: [opened, synchronize, reopened, edited]
 
 permissions:
@@ -18,95 +19,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout PR history
+      - name: Checkout trusted base history and verifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check changed paths
+      - name: Fetch PR objects without checking out PR files
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          # Scope authentication to this private-repository fetch; never
+          # persist credentials or send this header to public upstream.
+          AUTH_HEADER="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$AUTH_HEADER"
+          git -c "http.extraheader=AUTHORIZATION: basic $AUTH_HEADER" \
+            fetch --no-tags --no-recurse-submodules origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/fork-scope/pr-head"
+          if [[ "$(git rev-parse refs/remotes/fork-scope/pr-head)" != "$PR_HEAD_SHA" ]]; then
+            echo '::error::PR head changed during verification. Run the check for the latest commit.'
+            exit 1
+          fi
+
+      - name: Fetch official upstream main
+        shell: bash
+        run: |
+          git -c credential.helper= fetch --no-tags --no-recurse-submodules \
+            https://github.com/caipe-io/ai-platform-engineering.git \
+            +refs/heads/main:refs/remotes/upstream-scope/main
+
+      - name: Verify upstream imports and fork-only paths
         id: check-paths
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        shell: python
-        run: |
-          import html
-          import json
-          import os
-          import subprocess
-          from pathlib import Path, PurePosixPath
-
-          allowed_prefixes = (
-              "ui/",
-              "ai_platform_engineering/agents/tome/",
-              "docs/",
-          )
-          allowed_files = (
-              ".github/workflows/check-fork-scope.yml",
-          )
-
-          # Check the full PR diff. Disable rename detection so both the old
-          # and new paths are checked, including moves into an allowed folder.
-          changed = subprocess.check_output([
-              "git", "diff", "--name-only", "--no-renames", "-z",
-              f"{os.environ['PR_BASE_SHA']}...{os.environ['PR_HEAD_SHA']}", "--",
-          ])
-          paths = [os.fsdecode(path) for path in changed.split(b"\0") if path]
-          violations = sorted(
-              path for path in paths
-              if not path.startswith(allowed_prefixes) and path not in allowed_files
-          )
-
-          report = ["## Fork change scope", ""]
-          if violations:
-              message = (
-                  "File changes in the folders below detected. "
-                  "Please upstream these changes first and remove them from this PR."
-              )
-              folders = sorted({
-                  str(PurePosixPath(path).parent) + "/"
-                  if "/" in path else "(repository root)"
-                  for path in violations
-              })
-              report.extend([
-                  message,
-                  "",
-                  "Upstream: https://github.com/caipe-io/ai-platform-engineering",
-                  "",
-                  "### Affected folders",
-                  "",
-              ])
-              report.extend(f"- <code>{html.escape(json.dumps(folder))}</code>" for folder in folders)
-              report.extend(["", "### Changed files outside the allowed folders", ""])
-              report.extend(f"- <code>{html.escape(json.dumps(path))}</code>" for path in violations)
-              print(f"::error::{message}")
-              print("Affected folders:")
-              for folder in folders:
-                  print(f"  - {json.dumps(folder)}")
-              print("Changed files:")
-              for path in violations:
-                  print(f"  - {json.dumps(path)}")
-          else:
-              message = "All changed files are within the allowed folders."
-              report.append(message)
-              print(message)
-
-          report.extend(["", "### Allowed folders", ""])
-          report.extend(f"- `{prefix}`" for prefix in allowed_prefixes)
-          report.extend(["", "### Allowed files", ""])
-          report.extend(f"- `{path}`" for path in allowed_files)
-          report_text = "\n".join(report) + "\n"
-          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
-              summary.write(report_text)
-          if violations:
-              (Path(os.environ["RUNNER_TEMP"]) / "fork-scope-report.md").write_text(
-                  report_text, encoding="utf-8"
-              )
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as outputs:
-              outputs.write(f"violations_found={str(bool(violations)).lower()}\n")
-
-          raise SystemExit(1 if violations else 0)
+        run: python3 .github/scripts/check_fork_scope.py
 
       - name: Comment on PR with scope violations
         if: failure() && steps.check-paths.outputs.violations_found == 'true'

@@ -79,6 +79,10 @@ export async function prepareSharePointSources(value: unknown, previous: SharePo
     }
     if (ref.kind !== "folder" || !ref.selected_item_ids) throw new ApiError("Choose 1–10 existing files for this SharePoint folder. Files added later are discovered automatically.", 400, "INVALID_SHAREPOINT_SOURCE");
     const preview = await sharePointFolderPreview(ref, deadline);
+    // An empty initial batch watches an empty folder, not an implicit exclusion of existing files.
+    if (!ref.selected_item_ids.length && preview.document_count > 0) {
+      throw new ApiError("This SharePoint folder contains PDF/PPTX files. Refresh the folder and choose 1–10 existing files before saving. Empty folders can be attached without selecting files.", 400, "INVALID_SHAREPOINT_SOURCE");
+    }
     previews.set(sharePointSourceKey(ref), preview);
     const selectedIds = new Set(ref.selected_item_ids);
     // The server, not caller-supplied exclusions, captures files explicitly left unchecked.

@@ -28,14 +28,23 @@ it("persists only explicit folder file IDs without silently expanding selections
   expect((parsed[0] as typeof folder).selected_item_ids).not.toBe(folder.selected_item_ids);
   expect(() => parseSharePointSelection([folder])).toThrow("individual");
 });
-it.each([[], [".."], ["file-1", "file-1"], Array.from({ length: 11 }, (_, n) => `file-${n}`), "file-1"].map((value) => [value]))("rejects invalid folder file selections: %j", (selected_item_ids) => {
-  expect(() => parseSharePointSources([{ ...ref, kind: "folder", selected_item_ids }])).toThrow("1–10");
+it("preserves an empty initial selection and exclusions for an empty folder", () => {
+  const folder = { ...ref, kind: "folder", selected_item_ids: [], excluded_item_ids: [] };
+  const parsed = parseSharePointSources([folder])[0] as typeof folder;
+  expect(parsed).toEqual(folder);
+  expect(parsed.selected_item_ids).not.toBe(folder.selected_item_ids);
+  expect(parsed.excluded_item_ids).not.toBe(folder.excluded_item_ids);
+  expect(() => parseSharePointSelection([folder])).toThrow("individual");
+  expect(() => parseSharePointSources([{ ...ref, selected_item_ids: [] }])).toThrow("up to 10");
+});
+it.each([[".."], ["file-1", "file-1"], Array.from({ length: 11 }, (_, n) => `file-${n}`), "file-1"].map((value) => [value]))("rejects invalid folder file selections: %j", (selected_item_ids) => {
+  expect(() => parseSharePointSources([{ ...ref, kind: "folder", selected_item_ids }])).toThrow("up to 10");
 });
 it("separates 500-file metadata listings from ten-file ingestion selections", () => {
   const files = Array.from({ length: 500 }, (_, n) => ({ ...ref, item_id: `file-${n}` }));
   expect(parseSharePointFolderDocuments(files)).toHaveLength(500);
   expect(() => parseSharePointSelection(files)).toThrow("at most 10");
-  expect(() => parseSharePointSources([{ ...ref, selected_item_ids: ["file-1"] }])).toThrow("1–10");
+  expect(() => parseSharePointSources([{ ...ref, selected_item_ids: ["file-1"] }])).toThrow("up to 10");
 });
 
 it("deduplicates by drive and item, retaining distinct documents with the same name", () => {

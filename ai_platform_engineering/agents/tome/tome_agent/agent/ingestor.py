@@ -561,6 +561,9 @@ async def stream_sharepoint_documents(
         prompt += f"\n\nUser instruction: {seed.strip()}"
     yield emit_log("▶ SharePoint document ingest started (scoped files and wiki tools only)")
     async for event in consume_agent_query(prompt, options, log_buf, model_provenance=model_provenance, redact_sensitive_content=True):
+        if agent_event_failed(event):
+            yield event
+            return
         if event.type == "done" and event.data.get("subtype") == "success":
             missing = 0
             protected = 0
@@ -856,6 +859,8 @@ async def stream_ingest(
             existing_pages=existing, template_note=template_note, quick=quick,
         ):
             yield event
+            if agent_event_failed(event):
+                return
 
     if has_received_myagent_evidence or research_enabled:
         # Do not carry source definitions, source extras, child project paths,

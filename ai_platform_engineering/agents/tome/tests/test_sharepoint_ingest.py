@@ -1,7 +1,8 @@
 """Opt-in document ingestion never broadens source credentials or live state."""
 
+from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -14,6 +15,7 @@ from tome_agent.agent.sharepoint_documents import (
 )
 from tome_agent.orchestrator.contract import (
     ExperimentRunContext,
+    IngestEventPayload,
     IngestRequest,
     ProjectSnapshot,
     RepoSnapshot,
@@ -299,3 +301,38 @@ async def test_document_pass_applies_configured_buffer(monkeypatch, tmp_path) ->
     ]
     assert calls[0]["options"]["max_buffer_size"] == 48 * 1_048_576
     assert not any(event.type == "error" for event in events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [
+    IngestEventPayload(type="error", data={"message": "Document agent startup failed"}),
+    IngestEventPayload(type="done", data={"subtype": "error_max_turns", "is_error": True}),
+    IngestEventPayload(type="done", data={"subtype": "success", "is_error": True}),
+])
+async def test_document_agent_failure_stops_before_research_and_reconcile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: IngestEventPayload,
+) -> None:
+    calls = mocks(monkeypatch, tmp_path)
+    document = prepared(tmp_path)
+    monkeypatch.setattr(ingestor.SharePointPreparer, "from_env", lambda *_: type("Preparer", (), {
+        "prepare": AsyncMock(return_value=document),
+    })())
+    reconcile = Mock(return_value={})
+    monkeypatch.setattr(ingestor.report_schema, "reconcile_template_bindings", reconcile)
+
+    async def consume(*args: object, **kwargs: object) -> AsyncIterator[IngestEventPayload]:
+        calls.append(kwargs)
+        yield failure
+
+    monkeypatch.setattr(ingestor, "consume_agent_query", consume)
+    body = request()
+    events = [event async for event in ingestor.stream_ingest(
+        run_id=body.run_id, report_id=body.report_id, snapshot=body.snapshot,
+        connector_data=body.connector_data, seed=None, is_greenfield=True,
+        myagent_questions_enabled=True, myagent_sources=["outlook"],
+    )]
+    assert events[-1] == failure
+    assert len(calls) == 1
+    assert calls[0]["redact_sensitive_content"] is True
+    assert not any("dedicated document page(s) retained" in str(event.data) for event in events)
+    reconcile.assert_not_called()

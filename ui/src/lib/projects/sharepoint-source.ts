@@ -51,10 +51,10 @@ function parseSelection(value: unknown, allowFolders: boolean, limit = SHAREPOIN
     }
     if ("include_subfolders" in row || "include_descendants" in row) throw new Error("Recursive SharePoint sources are not supported.");
     if ("selected_item_ids" in row && (row.kind !== "folder" || !Array.isArray(row.selected_item_ids)
-      || row.selected_item_ids.length < 1 || row.selected_item_ids.length > SHAREPOINT_SELECTION_LIMIT
+      || row.selected_item_ids.length > SHAREPOINT_SELECTION_LIMIT
       || !row.selected_item_ids.every(validSharePointId)
       || new Set(row.selected_item_ids).size !== row.selected_item_ids.length)) {
-      throw new Error("Choose 1–10 unique direct files for this SharePoint folder.");
+      throw new Error("Choose up to 10 unique direct files for this SharePoint folder.");
     }
     if ("excluded_item_ids" in row && (row.kind !== "folder" || !Array.isArray(row.selected_item_ids)
       || !Array.isArray(row.excluded_item_ids) || row.excluded_item_ids.length > SHAREPOINT_FOLDER_LIST_LIMIT

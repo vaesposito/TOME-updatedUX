@@ -100,41 +100,6 @@ connector, web, feed, and TOME MCP tools. Page-write callbacks include both ids;
 the experiment artifact collection instead of the live page store. The evaluator receives a blind
 label and evidence hashes, never the candidate model identity.
 
-## Source-fetch provenance ledger
-
-Every GitHub/Confluence/Webex tool call the ingestion (and compaction/
-synthesis) agent makes is recorded to a per-run **fetch ledger** — the exact
-bytes returned to the agent, hashed, plus a canonical URI, timestamp, and
-(redacted) tool name/args — regardless of whether the agent goes on to cite,
-summarize, or ignore that content. This is independent of the LLM's own
-citation behavior: the existing `github`/`confluence`/`webex` evidence-bundle
-kinds are LLM-authored wiki pages, not raw fetches (see
-`docs/docs/evaluations/tome_external_eval_design.md` §2.2).
-
-- **Recording**: enforced once, centrally, in `connectors/base.py`'s
-  `record_fetch()` — every `mcp_github.py`/`mcp_confluence.py`/`mcp_webex.py`
-  tool function is decorated with it in place of its own `_ok()`/`_err()`
-  return path, so no connector can omit or bypass it. Recording is
-  best-effort and never fails or slows the agent loop; a chat turn (no active
-  run id) records nothing.
-- **Redaction**: tool-call arguments are redacted to a length-preserving
-  placeholder unless they're on that connector's identifier allowlist (repo
-  slugs, page ids, room ids, numbers) — a free-text argument like a GitHub
-  search query never reaches the ledger. Fetched *content* is retained in
-  full; redacting it would defeat the ledger's purpose.
-- **Storage & retrieval**: persisted via the same agent → backend callback
-  pattern as `append_log` (`POST /api/internal/projects/{id}/runs/{run_id}/
-  fetch-ledger`), stored in MongoDB (`tome_fetch_ledger_entries` +
-  `tome_fetch_ledger_run_summaries`, TTL-retained per
-  `TOME_FETCH_LEDGER_RETENTION_DAYS`), surfaced as a new `source_fetch`
-  evidence-bundle kind (opt-in via `captureEvidenceBundle({ runId })`), and
-  retrievable externally via `GET /api/tome/fetch-ledger/{run_id}`
-  (Tome-API-key authenticated) for systems outside Tome, such as the
-  companion evaluation design's Source Fidelity check.
-
-See `docs/docs/specs/2026-09-28-tome-source-fetch-ledger/` for the full spec,
-plan, and design rationale.
-
 ## SharePoint document preparation
 
 Manual and scheduled ingestion of selected folders' direct **PPTX and PDF** documents, using
@@ -147,6 +112,9 @@ required. Folders are explicitly attached, never a whole-site crawl.
   search folders, and choose which direct PDF/PPTX files to attach. The saved folder
   stores `selected_item_ids` for the initial batch and a server-validated
   `excluded_item_ids` list for existing files left unchecked. Later additions remain eligible.
+  Empty folders (no supported direct files) can be attached with an empty initial
+  selection. They ingest nothing until PDF/PPTX files are added directly to them;
+  subsequent manual and scheduled runs discover those files under the same limits.
   A folder never includes nested folders; attach a child folder separately if needed.
   Up to ten source references can be saved. **Choose files** reopens a saved folder
   for an explicit selection edit; changes apply only when **Save file selection**
@@ -303,6 +271,41 @@ container limit. File size alone is not a safe memory estimate. Match processor
 limits to container headroom; the 384 MiB code default is intentionally
 conservative. These probes validate preparation and cache reuse, not an LLM's
 semantic understanding or a UI-to-wiki run.
+
+## Source-fetch provenance ledger
+
+Every GitHub/Confluence/Webex tool call the ingestion (and compaction/
+synthesis) agent makes is recorded to a per-run **fetch ledger** — the exact
+bytes returned to the agent, hashed, plus a canonical URI, timestamp, and
+(redacted) tool name/args — regardless of whether the agent goes on to cite,
+summarize, or ignore that content. This is independent of the LLM's own
+citation behavior: the existing `github`/`confluence`/`webex` evidence-bundle
+kinds are LLM-authored wiki pages, not raw fetches (see
+`docs/docs/evaluations/tome_external_eval_design.md` §2.2).
+
+- **Recording**: enforced once, centrally, in `connectors/base.py`'s
+  `record_fetch()` — every `mcp_github.py`/`mcp_confluence.py`/`mcp_webex.py`
+  tool function is decorated with it in place of its own `_ok()`/`_err()`
+  return path, so no connector can omit or bypass it. Recording is
+  best-effort and never fails or slows the agent loop; a chat turn (no active
+  run id) records nothing.
+- **Redaction**: tool-call arguments are redacted to a length-preserving
+  placeholder unless they're on that connector's identifier allowlist (repo
+  slugs, page ids, room ids, numbers) — a free-text argument like a GitHub
+  search query never reaches the ledger. Fetched *content* is retained in
+  full; redacting it would defeat the ledger's purpose.
+- **Storage & retrieval**: persisted via the same agent → backend callback
+  pattern as `append_log` (`POST /api/internal/projects/{id}/runs/{run_id}/
+  fetch-ledger`), stored in MongoDB (`tome_fetch_ledger_entries` +
+  `tome_fetch_ledger_run_summaries`, TTL-retained per
+  `TOME_FETCH_LEDGER_RETENTION_DAYS`), surfaced as a new `source_fetch`
+  evidence-bundle kind (opt-in via `captureEvidenceBundle({ runId })`), and
+  retrievable externally via `GET /api/tome/fetch-ledger/{run_id}`
+  (Tome-API-key authenticated) for systems outside Tome, such as the
+  companion evaluation design's Source Fidelity check.
+
+See `docs/docs/specs/2026-09-28-tome-source-fetch-ledger/` for the full spec,
+plan, and design rationale.
 
 ## Run (local dev)
 

@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from claude_agent_sdk import (
     AssistantMessage,
-    ClaudeAgentOptions,
     CLIJSONDecodeError,
+    ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
     ToolResultBlock,
@@ -217,6 +217,20 @@ class RestrictedEvidenceRunStreamTest(TestCase):
 
 
 class FileBackedPromptTest(TestCase):
+    def test_preserves_document_buffer_and_restricted_tool_options(self) -> None:
+        options = ClaudeAgentOptions(
+            system_prompt="Example document evidence",
+            max_buffer_size=64 * 1_048_576,
+            allowed_tools=["Read", "Glob"],
+            disallowed_tools=["Bash"],
+            add_dirs=["/tmp/example-evidence"],
+        )
+        with _file_backed_system_prompt(options) as transported:
+            self.assertEqual(transported.max_buffer_size, options.max_buffer_size)
+            self.assertEqual(transported.allowed_tools, options.allowed_tools)
+            self.assertEqual(transported.disallowed_tools, options.disallowed_tools)
+            self.assertEqual(transported.add_dirs, options.add_dirs)
+
     def test_large_utf8_prompt_is_complete_private_and_removed(self) -> None:
         # Exceeds Linux's per-argument limit even though the character count
         # is smaller. The SDK must pass only the path to the child process.

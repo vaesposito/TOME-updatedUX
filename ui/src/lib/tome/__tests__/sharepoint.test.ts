@@ -93,6 +93,33 @@ it("saves the explicit folder selection after validating current membership and 
   expect(await prepareSharePointSources([selected])).toEqual([{ ...selected, excluded_item_ids: [] }]);
   expect(global.fetch).toHaveBeenCalledTimes(1);
 });
+it("attaches an empty folder, then discovers later direct files without changing the saved selection", async () => {
+  let documents: Array<typeof ref & { size: number }> = [];
+  global.fetch = jest.fn(async () => new Response(JSON.stringify(preview(documents))));
+  const input = { ...folder, selected_item_ids: [], excluded_item_ids: [] };
+  const saved = await prepareSharePointSources([input]);
+  expect(saved).toEqual([input]);
+  expect(await resolveSharePointDocuments(saved)).toEqual([]);
+  expect(await checkSharePointSources(saved)).toMatchObject({ inaccessible: [], detail: expect.stringContaining("0 PDF/PPTX") });
+  documents = [{ ...ref, size: 100 }, { ...ref, item_id: "later-file", size: 100 }];
+  expect(await resolveSharePointDocuments(saved)).toEqual(documents);
+  expect(saved).toEqual([input]);
+  expect(input.selected_item_ids).toEqual([]);
+  expect(input.excluded_item_ids).toEqual([]);
+});
+it("rejects an empty initial selection if direct documents exist at save time", async () => {
+  global.fetch = jest.fn(async () => new Response(JSON.stringify(preview([{ ...ref, size: 100 }]))));
+  // Also covers files arriving between the browser's empty preview and the source save.
+  await expect(prepareSharePointSources([{ ...folder, selected_item_ids: [], excluded_item_ids: [] }]))
+    .rejects.toThrow("Refresh the folder and choose 1–10 existing files");
+});
+it("retains an attached empty folder without refetching or rewriting it during unrelated source saves", async () => {
+  const saved = { ...folder, selected_item_ids: [], excluded_item_ids: [] };
+  expect(await prepareSharePointSources([saved], [saved, ref])).toEqual([saved]);
+  expect(await prepareSharePointSources([], [saved])).toEqual([]);
+  expect(global.fetch).not.toHaveBeenCalled();
+  expect(saved).toEqual({ ...folder, selected_item_ids: [], excluded_item_ids: [] });
+});
 it("freshly resolves new folder contents on every run without rewriting sources", async () => {
   let revision = 0;
   global.fetch = jest.fn(async () => new Response(JSON.stringify(preview([{ ...ref, item_id: `file-${++revision}`, size: 100 }]))));

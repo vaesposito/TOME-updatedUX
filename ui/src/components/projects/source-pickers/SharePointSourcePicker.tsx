@@ -151,7 +151,7 @@ export function SharePointSourcePicker({ selected, onChange, readOnly = false, p
     </section>
     {!readOnly && <section aria-label="Add a SharePoint folder" className="space-y-3 border-t border-border px-4 py-4">
       <h4 className="text-sm font-medium">Add a SharePoint folder</h4>
-      <p className="text-xs text-muted-foreground">Choose up to 10 existing direct PDF/PPTX files for the initial ingest. Future manual and auto-ingests discover files added later and changes to included files. Existing files you leave unchecked stay excluded. Nested folders must be added separately.</p>
+      <p className="text-xs text-muted-foreground">Choose up to 10 existing direct PDF/PPTX files for the initial ingest, or attach an empty folder for future files. Future manual and auto-ingests discover files added later and changes to included files. Existing files you leave unchecked stay excluded. Nested folders must be added separately.</p>
       <p className="text-xs text-muted-foreground">For a single PDF or PowerPoint file, use {projectSlug
         ? <Link className="text-primary hover:underline" href={`/projects/${encodeURIComponent(projectSlug)}/tome/ingest`}>Run ingest → Add context: SharePoint documents</Link>
         : "Run ingest → Add context: SharePoint documents after creating the project"} for one-off ingestion. SharePoint site pages are not supported yet.</p>
@@ -267,10 +267,10 @@ function SharePointFolderBrowser({ selected, onChange, projectSlug, editingSourc
             {tooLarge && <p role="alert" className="text-xs text-destructive">The selected files exceed the total size limit. Choose fewer or smaller files.</p>}
             {tooMany && <p role="alert" className="text-xs text-destructive">Your saved sources and this selection exceed 10 unique files. Unselect files before saving.</p>}
             {missing.length > 0 && <p role="alert" className="text-xs text-destructive">{missing.length} selected file(s) are unavailable. Remove them from the selection before saving; replacements are never selected automatically.</p>}
-            {preview.document_count === 0 && <p className="text-xs text-muted-foreground">No direct PDF/PPTX files here. Browse a subfolder to select its files.</p>}
+            {preview.document_count === 0 && <p className="text-xs text-muted-foreground">No direct PDF/PPTX files yet. You can add this folder now; future manual and auto-ingests will discover files added directly here. Subfolders remain excluded.</p>}
           </> : error ? <p role="alert" className="text-xs text-destructive">{error}</p> : <p role="status" className="text-xs text-muted-foreground">Checking document count and total size…</p>}
           {selectedLimit && !alreadyAdded && <p className="text-xs text-destructive">At most {SHAREPOINT_SELECTION_LIMIT} SharePoint sources can be attached.</p>}
-          <Button type="button" size="sm" disabled={!preview || !chosenIds.length || missing.length > 0 || tooLarge || tooMany || (!alreadyAdded && selectedLimit)}
+          <Button type="button" size="sm" disabled={!preview || (preview.document_count > 0 && !chosenIds.length) || missing.length > 0 || tooLarge || tooMany || (!alreadyAdded && selectedLimit)}
             onClick={() => {
               if (!preview) return;
               const excluded = new Set([...(savedFolder?.excluded_item_ids ?? []), ...preview.documents.map((file) => file.item_id)]);

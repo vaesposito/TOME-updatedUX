@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { IngestPanel } from "../IngestPanel";
 
+let mockMyAgentEnabled = false;
+jest.mock("@/hooks/use-myagent-enabled", () => ({ useMyAgentEnabled: () => mockMyAgentEnabled }));
 jest.mock("@/components/tome/BhagProjectsPanel", () => ({ ChildProjectsPanel: () => null }));
 // The domain/browser tests own ID selection; shared listbox behavior has its own suite.
 jest.mock("@/components/ui/searchable-picker", () => ({ SearchablePicker: (props: {
@@ -17,6 +19,7 @@ let submitFails = false;
 let savedDocuments = [saved];
 
 beforeEach(() => {
+  mockMyAgentEnabled = false;
   submitFails = false;
   savedDocuments = [saved];
   onRunStarted.mockReset();
@@ -54,7 +57,10 @@ function submittedBody(endpoint: string) {
   return JSON.parse(call[1].body);
 }
 
-it.each([false, true])("submits per-run context without saving project sources (synthesized=%s)", async (isSynthesized) => {
+it.each([
+  [false, false], [false, true], [true, false], [true, true],
+])("submits per-run context without saving project sources (synthesized=%s, MyAgent=%s)", async (isSynthesized, myAgentEnabled) => {
+  mockMyAgentEnabled = myAgentEnabled;
   panel(isSynthesized);
   expect((global.fetch as jest.Mock).mock.calls.some(([url]) => String(url).includes("sharepoint-options"))).toBe(false);
   const section = await chooseContext();

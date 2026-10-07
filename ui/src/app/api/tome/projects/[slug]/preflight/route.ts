@@ -16,8 +16,8 @@ import {
 } from "@/lib/projects/myagent-source";
 
 import { resolveWebexRoomExecution } from "@/lib/tome/webex-room-execution";
-import { githubApiBaseUrl, githubFullName } from "@/lib/projects/github-repository";
 import { checkSharePointSources } from "@/lib/tome/sharepoint";
+import { githubApiBaseUrl, githubFullName } from "@/lib/projects/github-repository";
 
 export const dynamic = "force-dynamic";
 

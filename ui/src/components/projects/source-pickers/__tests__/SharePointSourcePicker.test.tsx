@@ -19,6 +19,7 @@ const originalFetch = global.fetch;
 const change = jest.fn();
 const folder = { kind: "folder" as const, drive_id: "drive-1", item_id: "folder-1", name: "Example folder" };
 let withinLimits = true;
+let emptyFolder = false;
 function Picker() {
   const [selected, setSelected] = useState<SharePointSource[]>([]);
   return <SharePointSourcePicker selected={selected} projectSlug="example-project" onChange={(next) => { setSelected(next); change(next); }} />;
@@ -26,9 +27,10 @@ function Picker() {
 beforeEach(() => {
   change.mockReset();
   withinLimits = true;
+  emptyFolder = false;
   global.fetch = jest.fn(async (url) => {
     const query = new URL(String(url), "http://example.test").searchParams;
-    const documents = Array.from({ length: withinLimits ? 2 : 16 }, (_, n) => ({ drive_id: "drive-1", item_id: `file-${n}`, name: `Selected-${n}.pdf`, size: 512 }));
+    const documents = Array.from({ length: emptyFolder ? 0 : withinLimits ? 2 : 16 }, (_, n) => ({ drive_id: "drive-1", item_id: `file-${n}`, name: `Selected-${n}.pdf`, size: 512 }));
     const data = query.has("preview") ? { folder, documents, document_count: documents.length, total_size: documents.length * 512,
       child_folder_count: 3, unsupported_count: 1, within_limits: withinLimits, limits: { max_documents: 10, max_total_bytes: 2147483648 } }
       : { configured: true, items: query.has("drive_id")
@@ -38,6 +40,19 @@ beforeEach(() => {
   });
 });
 afterEach(() => { global.fetch = originalFetch; });
+
+it("attaches a folder with no supported direct files for future additions without selecting subfolders", async () => {
+  emptyFolder = true;
+  render(<Picker />);
+  fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Example folder" }));
+  expect(await screen.findByText(/0 direct PDF\/PPTX document/)).toBeInTheDocument();
+  expect(screen.getByText(/You can add this folder now/)).toHaveTextContent("Subfolders remain excluded");
+  expect(screen.getByRole("button", { name: "Add this folder" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Add this folder" }));
+  expect(change).toHaveBeenLastCalledWith([{ ...folder, selected_item_ids: [], excluded_item_ids: [] }]);
+  expect(screen.getByText(/0 initially selected file\(s\) \+ future additions/)).toBeInTheDocument();
+});
 
 it("saves the initial batch and excludes unchecked existing files while including future additions", async () => {
   render(<Picker />);

@@ -44,6 +44,18 @@ from tome_agent.tracing import suppress_sensitive_evidence_tracing
 log = logging.getLogger("tome_agent.agent.run_stream")
 
 
+def _restricted_stream_error_message(error: Exception) -> str:
+    """Classify known SDK failures without exposing source data or stderr."""
+    if isinstance(error, CLIJSONDecodeError) and re.fullmatch(
+        r"JSON message exceeded maximum buffer size of [0-9]+ bytes", error.line
+    ):
+        return (
+            "Agent SDK message buffer limit exceeded while reading source evidence; "
+            "ask an administrator to review document batching and SDK buffer limits."
+        )
+    return "restricted evidence agent stream failed"
+
+
 @contextmanager
 def _file_backed_system_prompt(
     options: ClaudeAgentOptions,
@@ -74,18 +86,6 @@ def agent_event_failed(event: IngestEventPayload) -> bool:
         event.type == "done"
         and (event.data.get("is_error") is True or event.data.get("subtype") != "success")
     )
-
-
-def _restricted_stream_error_message(error: Exception) -> str:
-    """Classify known SDK failures without exposing source data or stderr."""
-    if isinstance(error, CLIJSONDecodeError) and re.fullmatch(
-        r"JSON message exceeded maximum buffer size of [0-9]+ bytes", error.line
-    ):
-        return (
-            "Agent SDK message buffer limit exceeded while reading source evidence; "
-            "ask an administrator to review document batching and SDK buffer limits."
-        )
-    return "restricted evidence agent stream failed"
 
 
 def now_iso() -> str:

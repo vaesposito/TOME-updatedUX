@@ -232,7 +232,7 @@ export interface SharePointDocumentSource {
 
 export interface SharePointFolderSource extends Omit<SharePointDocumentSource, "kind"> {
   kind: "folder";
-  /** Files explicitly chosen from the folder's existing contents. */
+  /** Files explicitly chosen from existing contents; empty when attaching an empty folder. */
   selected_item_ids?: string[];
   /** Existing files explicitly left unchecked. New IDs remain eligible on later runs. */
   excluded_item_ids?: string[];

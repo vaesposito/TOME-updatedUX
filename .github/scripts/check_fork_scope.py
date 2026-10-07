@@ -18,6 +18,8 @@ ALLOWED_PREFIXES = ("ui/", "ai_platform_engineering/agents/tome/", "docs/")
 ALLOWED_FILES = (
   ".github/workflows/check-fork-scope.yml",
   ".github/scripts/check_fork_scope.py",
+  ".github/workflows/release-all-manual.yml",
+  "build/Dockerfile.caipe-ui",
 )
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 IMPORT_MARKER = re.compile(r"^\(cherry picked from commit ([0-9a-f]{40})\)$", re.MULTILINE)

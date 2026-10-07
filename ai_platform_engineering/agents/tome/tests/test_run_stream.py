@@ -1,5 +1,7 @@
 import asyncio
 import json
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest import TestCase
@@ -7,16 +9,19 @@ from unittest.mock import patch
 
 from claude_agent_sdk import (
     AssistantMessage,
+    ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
 )
+from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 from opentelemetry import context as context_api
 from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 
 from tome_agent.agent.run_stream import (
+    _file_backed_system_prompt,
     _tool_result_text,
     confluence_tree_coverage,
     consume_agent_query,
@@ -155,3 +160,129 @@ class RestrictedEvidenceRunStreamTest(TestCase):
         self.assertNotIn(secret, encoded)
         self.assertIn("[input suppressed]", encoded)
         self.assertIn("[assistant text suppressed]", encoded)
+
+
+class FileBackedPromptTest(TestCase):
+    def test_large_utf8_prompt_is_complete_private_and_removed(self) -> None:
+        # Exceeds Linux's per-argument limit even though the character count
+        # is smaller. The SDK must pass only the path to the child process.
+        prompt = "Meeting transcript: " + "é" * 90_000
+        options = ClaudeAgentOptions(system_prompt=prompt, model="example-model")
+        with _file_backed_system_prompt(options) as file_options:
+            self.assertEqual(options.system_prompt, prompt)
+            self.assertIsNot(options, file_options)
+            path = Path(file_options.system_prompt["path"])
+            self.assertEqual(path.read_bytes(), prompt.encode("utf-8"))
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            # Exercise the installed SDK's actual command builder, without
+            # invoking a model or making any network calls.
+            transport = SubprocessCLITransport(prompt="Ingest", options=file_options)
+            transport._cli_path = "/bin/true"
+            command = transport._build_command()
+            self.assertIn("--system-prompt-file", command)
+            self.assertNotIn("--system-prompt", command)
+            self.assertNotIn(prompt, command)
+            self.assertEqual(command[command.index("--system-prompt-file") + 1], str(path))
+            subprocess.run(["/bin/true", *command], check=True)
+        self.assertFalse(path.exists())
+
+    def test_cleanup_on_failure_and_concurrent_prompts_are_isolated(self) -> None:
+        first = ClaudeAgentOptions(system_prompt="first")
+        second = ClaudeAgentOptions(system_prompt="second")
+        with (
+            self.assertRaisesRegex(RuntimeError, "startup failed"),
+            _file_backed_system_prompt(first) as a,
+            _file_backed_system_prompt(second) as b,
+        ):
+            first_path = Path(a.system_prompt["path"])
+            second_path = Path(b.system_prompt["path"])
+            self.assertNotEqual(first_path, second_path)
+            self.assertEqual(first_path.read_text(), "first")
+            self.assertEqual(second_path.read_text(), "second")
+            raise RuntimeError("startup failed")
+        self.assertFalse(first_path.exists())
+        self.assertFalse(second_path.exists())
+
+    def test_existing_file_or_preset_options_are_unchanged(self) -> None:
+        for prompt in (None, {"type": "preset", "preset": "claude_code"}, {"type": "file", "path": "/tmp/example.txt"}):
+            options = ClaudeAgentOptions(system_prompt=prompt)
+            with _file_backed_system_prompt(options) as transported:
+                self.assertIs(transported, options)
+
+
+class TerminalResultTest(TestCase):
+    def collect(self, messages: list, *, startup_error: bool = False) -> list:
+        class FakeClient:
+            def __init__(self, *, options) -> None:
+                self.options = options
+
+            async def __aenter__(self):
+                if startup_error:
+                    raise OSError(7, "Argument list too long")
+                return self
+
+            async def __aexit__(self, *_args) -> bool:
+                return False
+
+            async def query(self, _prompt: str) -> None:
+                pass
+
+            async def receive_response(self):
+                for message in messages:
+                    yield message
+
+        async def collect():
+            return [event async for event in consume_agent_query(
+                "Ingest", ClaudeAgentOptions(system_prompt="test", model="example-model"), []
+            )]
+
+        with patch("tome_agent.agent.run_stream.ClaudeSDKClient", FakeClient):
+            return asyncio.run(collect())
+
+    def test_startup_failure_is_not_a_successful_result(self) -> None:
+        events = self.collect([], startup_error=True)
+        self.assertEqual([event.type for event in events], ["error"])
+        self.assertIn("Argument list too long", events[0].data["message"])
+
+    def test_eof_without_sdk_result_is_an_error(self) -> None:
+        events = self.collect([])
+        self.assertEqual([event.type for event in events], ["error"])
+        self.assertIn("without a completion result", events[0].data["message"])
+
+    def test_failed_results_preserve_accounting_but_are_not_successful(self) -> None:
+        for subtype, is_error in (("success", False), ("success", True), ("error_max_turns", False), ("error_during_execution", True)):
+            result = ResultMessage(
+                subtype=subtype, duration_ms=1, duration_api_ms=1,
+                is_error=is_error, num_turns=2, session_id="example-session", total_cost_usd=0.1,
+            )
+            events = self.collect([result])
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0].type, "done")
+            self.assertEqual(events[0].data["is_error"], is_error or subtype != "success")
+            self.assertEqual(events[0].data["cost_usd"], 0.1)
+
+    def test_cancellation_cleans_up_prompt_file(self) -> None:
+        paths: list[Path] = []
+
+        class WaitingClient:
+            def __init__(self, *, options) -> None:
+                paths.append(Path(options.system_prompt["path"]))
+
+            async def __aenter__(self):
+                raise asyncio.CancelledError()
+
+            async def __aexit__(self, *_args) -> bool:
+                return False
+
+        async def collect():
+            return [event async for event in consume_agent_query(
+                "Ingest", ClaudeAgentOptions(system_prompt="private transcript"), []
+            )]
+
+        with (
+            patch("tome_agent.agent.run_stream.ClaudeSDKClient", WaitingClient),
+            self.assertRaises(asyncio.CancelledError),
+        ):
+            asyncio.run(collect())
+        self.assertEqual(len(paths), 1)
+        self.assertFalse(paths[0].exists())

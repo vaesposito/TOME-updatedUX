@@ -901,6 +901,7 @@ async function driveIngest(
       throw new Error(`agent /ingest failed (${res.status}): ${detail.slice(0, 300)}`);
     }
 
+    let completedSuccessfully = false;
     for await (const ev of parseSse(res.body)) {
       // Usage snapshots update the run header in place (see IngestRunView),
       // not the log — a per-turn token line floods the tail.
@@ -911,9 +912,18 @@ async function driveIngest(
       } else if (ev.type === "done") {
         await setRunCompletionAccounting(runId, ev.data);
         await appendLog(runId, formatIngestEvent(ev));
+        if (ev.data.is_error === true || ev.data.subtype !== "success") {
+          throw new Error(`Agent failed (${String(ev.data.subtype ?? "unknown result")})`);
+        }
+        completedSuccessfully = true;
+      } else if (ev.type === "error") {
+        throw new Error(String(ev.data.message ?? "Agent ingest failed"));
       } else {
         await appendLog(runId, formatIngestEvent(ev));
       }
+    }
+    if (!completedSuccessfully) {
+      throw new Error("Agent stream ended without a successful completion result");
     }
 
     // Finalize: summary from overview.md's first content line. Read with

@@ -62,6 +62,8 @@ COPY ui .
 # Disable telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV CAIPE_UI_FAST_BUILD=${CAIPE_UI_FAST_BUILD}
+# The Webpack production build exceeds Node's default ~2 GiB heap on CI.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
 # Create version info file
 RUN BUILD_DATE_VALUE="${BUILD_DATE}"; \

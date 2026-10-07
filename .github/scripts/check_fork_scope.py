@@ -19,6 +19,8 @@ ALLOWED_FILES = (
   ".github/workflows/check-fork-scope.yml",
   ".github/scripts/check_fork_scope.py",
   ".github/workflows/release-all-manual.yml",
+  ".github/workflows/ci-mcp-servers.yml",
+  ".github/workflows/ci-rag.yml",
   "build/Dockerfile.caipe-ui",
 )
 SHA = re.compile(r"[0-9a-f]{40}\Z")

@@ -80,8 +80,8 @@ jobs:
       image_prefix: ${{ steps.set-matrix.outputs.image_prefix }}
     env:
       ALL_AGENTS: ${{ needs.load-config.outputs.all_agents }}
-      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || env.GITHUB_APP_ID || secrets.CI_RELEASE_APP_ID }}
-      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
+      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || secrets.CI_RELEASE_APP_ID }}
+      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
     steps:
       - name: Import GitHub App credentials from Vault
         uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
@@ -97,11 +97,11 @@ jobs:
 
       - name: 🔑 Generate GitHub App token
         id: app-token
-        if: ${{ env.CI_MCP_APP_ID != '' && env.CI_MCP_APP_PRIVATE_KEY != '' }}
+        if: ${{ (env.CI_MCP_APP_ID != '' || env.GITHUB_APP_ID != '') && (env.CI_MCP_APP_PRIVATE_KEY != '' || env.GITHUB_APP_PRIVATE_KEY != '') }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          client-id: ${{ env.CI_MCP_APP_ID }}
-          private-key: ${{ env.CI_MCP_APP_PRIVATE_KEY }}
+          client-id: ${{ env.CI_MCP_APP_ID || env.GITHUB_APP_ID }}
+          private-key: ${{ env.CI_MCP_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: read
@@ -579,8 +579,8 @@ jobs:
       needs.determine-agents.outputs.tag_version != '' &&
       !contains(needs.determine-agents.outputs.tag_version, '-')
     env:
-      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || env.GITHUB_APP_ID || secrets.CI_RELEASE_APP_ID }}
-      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
+      CI_MCP_APP_ID: ${{ secrets.CI_MCP_APP_ID || secrets.CI_RELEASE_APP_ID }}
+      CI_MCP_APP_PRIVATE_KEY: ${{ secrets.CI_MCP_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
     steps:
       - name: Import GitHub App credentials from Vault
         uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
@@ -596,11 +596,11 @@ jobs:
 
       - name: 🔑 Generate GitHub App token
         id: app-token
-        if: ${{ env.CI_MCP_APP_ID != '' && env.CI_MCP_APP_PRIVATE_KEY != '' }}
+        if: ${{ (env.CI_MCP_APP_ID != '' || env.GITHUB_APP_ID != '') && (env.CI_MCP_APP_PRIVATE_KEY != '' || env.GITHUB_APP_PRIVATE_KEY != '') }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          client-id: ${{ env.CI_MCP_APP_ID }}
-          private-key: ${{ env.CI_MCP_APP_PRIVATE_KEY }}
+          client-id: ${{ env.CI_MCP_APP_ID || env.GITHUB_APP_ID }}
+          private-key: ${{ env.CI_MCP_APP_PRIVATE_KEY || env.GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write

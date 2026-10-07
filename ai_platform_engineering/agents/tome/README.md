@@ -31,6 +31,19 @@ the passive `/metrics` scrape endpoint are unauthenticated.
 
 ## Configuration (env)
 
+### Ingest startup and completion
+
+- Full system prompts, including prefetched meeting transcripts, use the SDK's
+  system-prompt file support instead of a command-line argument. No transcript
+  truncation is applied. The private temporary file is removed after the session.
+- Startup errors, failed SDK results, and streams without a successful completion
+  mark the run **failed**, not succeeded or awaiting review. Failed ingest passes
+  stop before subsequent passes and template-binding reconciliation.
+- This affects new runs only; previously recorded outcomes are not rewritten or
+  automatically retried.
+
+### Environment variables
+
 | Var | Meaning |
 |---|---|
 | `TTT_PROJECT_ID` | CAIPE project id/slug (opaque; used to build callback URLs) |

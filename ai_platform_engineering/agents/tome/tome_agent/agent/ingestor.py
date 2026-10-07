@@ -30,7 +30,12 @@ from tome_agent.agent.loop import (
     project_root,
     sources_for_connector,
 )
-from tome_agent.agent.run_stream import consume_agent_query, emit_log, now_iso
+from tome_agent.agent.run_stream import (
+    agent_event_failed,
+    consume_agent_query,
+    emit_log,
+    now_iso,
+)
 from tome_agent.orchestrator.contract import (
     ExperimentRunContext,
     IngestEventPayload,
@@ -693,6 +698,8 @@ async def stream_ingest(
             prompt, options, log_buf, model_provenance=model_provenance
         ):
             yield event
+            if agent_event_failed(event):
+                return
 
     if has_received_myagent_evidence or research_enabled:
         # Do not carry source definitions, source extras, child project paths,
@@ -785,6 +792,8 @@ async def stream_ingest(
             redact_sensitive_content=True,
         ):
             yield event
+            if agent_event_failed(event):
+                return
 
     # Deterministic, code-owned template-binding reconcile (#488): runs
     # unconditionally on every run, the same pattern as write_verbatim_pages

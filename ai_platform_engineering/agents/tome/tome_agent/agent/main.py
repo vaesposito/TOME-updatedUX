@@ -70,6 +70,7 @@ from tome_agent.agent.presentation import (
     stream_presentation_requirements,
     suggest_presentation_requirements,
 )
+from tome_agent.agent.run_stream import agent_event_failed
 from tome_agent.agent.synthesize import stream_synthesis
 from tome_agent.config import settings
 from tome_agent.metrics import (
@@ -592,6 +593,8 @@ async def ingest_endpoint(body: IngestRequest):
         _state.last_activity_at = datetime.now(UTC)
         run_start = run_started()
         success = False
+        result_seen = False
+        failed = False
         try:
             # Hold the per-project lock for the whole run (serializing it
             # against other ingests and the periodic sync), and refresh the
@@ -621,6 +624,8 @@ async def ingest_endpoint(body: IngestRequest):
                         quick=body.mode == "quick" and not body.is_greenfield,
                         experiment=body.experiment,
                     ):
+                        result_seen = result_seen or event.type == "done"
+                        failed = failed or agent_event_failed(event)
                         yield _sse_format(event)
                 finally:
                     # `stream_ingest` can leave draft-only MyAgent output in
@@ -629,7 +634,7 @@ async def ingest_endpoint(body: IngestRequest):
                     # read unapproved delegated evidence from stale files.
                     if body.experiment is None:
                         await workspace.refresh_project(pid)
-            success = True
+            success = result_seen and not failed
         finally:
             http_client.set_active_experiment(None, None)
             http_client.set_active_run_id(None)

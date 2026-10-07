@@ -68,7 +68,8 @@ export function formatIngestEvent(ev: IngestEvent): string {
       const cost =
         typeof d.cost_usd === "number" ? `$${d.cost_usd.toFixed(4)}` : "?";
       const model = typeof d.model === "string" && d.model ? `, model=${d.model}` : "";
-      return `[${t}] ✓ agent finished (subtype=${String(d.subtype ?? "?")}, turns=${String(
+      const marker = d.is_error === true || d.subtype !== "success" ? "✗" : "✓";
+      return `[${t}] ${marker} agent finished (subtype=${String(d.subtype ?? "?")}, turns=${String(
         d.turns ?? "?",
       )}, tool_calls=${String(d.tool_calls ?? "?")}, cost=${cost}${model})`;
     }

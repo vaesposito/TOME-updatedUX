@@ -12,12 +12,16 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timezone
+from tempfile import NamedTemporaryFile
 
 from claude_agent_sdk import (
     TERMINAL_TASK_STATUSES,
     AssistantMessage,
+    ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
     SystemMessage,
@@ -36,6 +40,38 @@ from tome_agent.orchestrator.contract import IngestEventPayload
 from tome_agent.tracing import suppress_sensitive_evidence_tracing
 
 log = logging.getLogger("tome_agent.agent.run_stream")
+
+
+@contextmanager
+def _file_backed_system_prompt(
+    options: ClaudeAgentOptions,
+) -> Iterator[ClaudeAgentOptions]:
+    """Keep the complete prompt out of argv and remove its private file on exit.
+
+    Linux limits each process argument independently of the total argv size.
+    Transcripts can exceed that limit. The SDK supports a system-prompt file;
+    keep it alive for the entire session, outside the agent's wiki workspace.
+    """
+    prompt = getattr(options, "system_prompt", None)
+    if not isinstance(prompt, str):
+        yield options
+        return
+    with NamedTemporaryFile(
+        mode="w", encoding="utf-8", prefix="tome-system-prompt-", suffix=".txt"
+    ) as prompt_file:
+        prompt_file.write(prompt)
+        prompt_file.flush()
+        yield replace(
+            options, system_prompt={"type": "file", "path": prompt_file.name}
+        )
+
+
+def agent_event_failed(event: IngestEventPayload) -> bool:
+    """A closed stream is not proof of a successful agent result."""
+    return event.type == "error" or (
+        event.type == "done"
+        and (event.data.get("is_error") is True or event.data.get("subtype") != "success")
+    )
 
 
 def now_iso() -> str:
@@ -368,17 +404,15 @@ async def _consume_agent_query(
                         yield emit_log("· agent session opened")
                 elif isinstance(message, ResultMessage):
                     result_seen = True
-                    if (
-                        getattr(message, "is_error", False)
-                        and message.subtype != "success"
-                    ):
+                    is_error = message.is_error or message.subtype != "success"
+                    if is_error:
                         if redact_sensitive_content:
                             log.warning(
                                 "restricted evidence run returned an error; details suppressed"
                             )
                         else:
                             log.warning(
-                                "ResultMessage has is_error=True: subtype=%s errors=%s",
+                                "agent returned a failed result: subtype=%s errors=%s",
                                 message.subtype,
                                 getattr(message, "errors", None),
                             )
@@ -386,6 +420,7 @@ async def _consume_agent_query(
                         type="done",
                         data={
                             "subtype": message.subtype,
+                            "is_error": is_error,
                             "model": options.model,
                             "model_provenance": dict(model_provenance or {}),
                             "turns": getattr(message, "num_turns", None),
@@ -400,6 +435,11 @@ async def _consume_agent_query(
             # Drain any remaining events after the loop ends.
             while log_buf:
                 yield log_buf.pop(0)
+            if not result_seen:
+                yield IngestEventPayload(
+                    type="error",
+                    data={"message": "Agent stream ended without a completion result"},
+                )
 
     except Exception as e:
         if result_seen:
@@ -446,22 +486,23 @@ async def consume_agent_query(
     response stream themselves, not just prompt construction. The inner loop
     separately avoids emitting model/tool data into the persisted ingest log.
     """
-    if redact_sensitive_content:
-        with suppress_sensitive_evidence_tracing():
-            async for event in _consume_agent_query(
-                prompt,
-                options,
-                log_buf,
-                model_provenance=model_provenance,
-                redact_sensitive_content=True,
-            ):
-                yield event
-        return
+    with _file_backed_system_prompt(options) as file_options:
+        if redact_sensitive_content:
+            with suppress_sensitive_evidence_tracing():
+                async for event in _consume_agent_query(
+                    prompt,
+                    file_options,
+                    log_buf,
+                    model_provenance=model_provenance,
+                    redact_sensitive_content=True,
+                ):
+                    yield event
+            return
 
-    async for event in _consume_agent_query(
-        prompt,
-        options,
-        log_buf,
-        model_provenance=model_provenance,
-    ):
-        yield event
+        async for event in _consume_agent_query(
+            prompt,
+            file_options,
+            log_buf,
+            model_provenance=model_provenance,
+        ):
+            yield event

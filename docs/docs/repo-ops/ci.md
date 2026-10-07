@@ -36,38 +36,78 @@ All workflows live in `.github/workflows/`. The table below is the quick referen
 | `conventional_commits.yml` | PR | Enforces Conventional Commits on PR title |
 | `check-pinned-deps.yml` | PR / push | Verifies all action dependencies are pinned to a SHA |
 | `check-proprietary-content.yml` | PR | Scans for proprietary or sensitive content |
-| `check-fork-scope.yml` | Every PR and new commit | Rejects changes outside this fork's allowed folders |
+| `check-fork-scope.yml` | Every PR and new commit | Verifies upstream imports; restricts remaining fork changes to allowed folders |
 | `coverage-comment.yml` | PR | Posts test coverage delta as a PR comment |
 
 ### Fork change scope
 
 The **Fork change scope** check runs when a PR is opened, updated with new
 commits, reopened, or edited (including changing its target branch). It applies
-to all target branches, including draft PRs. Only these folders are allowed:
+to all target branches, including draft PRs. Fork-only changes are allowed in:
 
 - `ui/`
 - `ai_platform_engineering/agents/tome/`
 - `docs/`
 
-The check compares the PR head with its merge base against the target branch.
-It checks the full PR, including additions, modifications, deletions, and both
-paths of renames. Existing differences between this fork and upstream are not
-audited. Upstream sync PRs are subject to the same folder restrictions.
+Exact CI maintenance exceptions are the workflow itself and
+`.github/scripts/check_fork_scope.py`. Other `.github/` files and root files
+require verified upstream imports.
 
-Failures list the affected folders and files in the job log and summary:
+#### Importing upstream changes
 
-> File changes in the folders below detected. Please upstream these changes
-> first and remove them from this PR.
+- Fetch [official upstream](https://github.com/caipe-io/ai-platform-engineering)
+  and import its merged commits with `git cherry-pick -x <full-SHA>`.
+- Multiple upstream PRs/commits can be imported in one fork PR. Keep one
+  source marker per import commit; do not squash them together.
+- For an upstream merge commit, use `git cherry-pick -x -m 1 <full-SHA>`.
+  Only first-parent/mainline 1 is supported. Squash-merged upstream PRs are
+  ordinary single-parent commits; rebased PRs may require multiple commits.
+- PR titles and labels do not grant exemptions. A source marker identifies
+  a claim, not proof.
 
-Submit those changes to [upstream](https://github.com/caipe-io/ai-platform-engineering)
-and remove them from the fork PR. Root files and `.github/` are outside the
-allowlist, including this workflow itself. Its initial addition therefore fails
-the check and needs a maintainer to land it before enabling it as required.
+For every marked commit, CI verifies that the source SHA belongs to official
+upstream `main`. It independently applies that source change to the fork
+commit's parent in an isolated index and requires the entire resulting tree
+to match the import commit, including file modes and binary content.
+Existing private UI changes are preserved; CI does not compare whole files
+against upstream or trust patch IDs.
+
+CI then rebuilds the restricted-path baseline from the PR merge base using
+only verified upstream changes. Remaining fork changes must satisfy the
+allowlist. Editing a restricted file before or after importing an upstream
+change to it does not exempt the extra edits. Additions, deletions, and both
+paths of renames are checked. Existing fork differences and commits already
+in the PR target branch are not re-audited.
+
+Malformed/multiple source markers, unknown or unmerged SHAs, missing history,
+extra edits in import commits, and replay conflicts fail closed. Manually
+adapted imports do not qualify as clean imports, even when their files are
+inside the normal allowlist. Keep allowed fork adaptations in separate,
+unmarked commits. Restricted-path adaptations require upstreaming or an
+explicitly reviewed policy change; there is no label-based bypass.
+
+The job log and summary show verified source SHAs, import verification errors,
+and remaining restricted files. Failures also receive a PR comment.
+
+#### Trust boundary and rollout
+
+The workflow uses `pull_request_target` and checks out the PR's trusted base
+SHA. It fetches PR objects without checking out, importing, or executing any
+PR files. The public upstream URL and accepted branch are fixed by the trusted
+workflow. Credentials for fetching the private PR history are scoped to that
+fetch and never sent to upstream.
+
+Changes to this checker cannot weaken their own check: proposed policy changes
+are data, while verification uses the already-landed base version. The workflow
+and scripts must land in the default/target branches before the new policy is
+active. Initial rollout may require a maintainer to land the CI maintenance
+files under the old policy. Later policy updates take effect only after merge.
 
 To block merges, make **Fork change scope** a required status check in the
 repository's branch protection or ruleset. This workflow reports failures; it
-does not configure repository rules. Like other `pull_request` workflows, it
-waits for merge conflicts to be resolved before GitHub runs it.
+does not configure repository rules. Unlike `pull_request` workflows, this
+trusted-base check can run even when the PR has merge conflicts. It does not
+resolve those conflicts or change branches.
 
 ## Release
 

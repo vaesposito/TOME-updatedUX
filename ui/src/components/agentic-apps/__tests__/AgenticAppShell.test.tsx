@@ -153,6 +153,55 @@ describe("AgenticAppShell", () => {
     });
   });
 
+  describe("host theme sent to the app iframe", () => {
+    const postMessage = jest.fn();
+    const originalContentWindow = Object.getOwnPropertyDescriptor(
+      HTMLIFrameElement.prototype,
+      "contentWindow",
+    );
+
+    beforeEach(() => {
+      postMessage.mockClear();
+      Object.defineProperty(HTMLIFrameElement.prototype, "contentWindow", {
+        configurable: true,
+        get: () => ({ postMessage }),
+      });
+    });
+
+    afterEach(() => {
+      if (originalContentWindow) {
+        Object.defineProperty(HTMLIFrameElement.prototype, "contentWindow", originalContentWindow);
+      }
+    });
+
+    it.each([
+      ["light", "light"],
+      ["legacy-light", "light"],
+      ["dark", "dark"],
+      ["example-dark", "dark"],
+      ["system", "system"],
+      [undefined, "system"],
+    ])("resolves host theme %p to app theme %p", async (hostTheme, appTheme) => {
+      mockGetSettings.mockResolvedValue({
+        preferences: { agentic_app_preferences: {}, theme: hostTheme },
+      });
+
+      render(<AgenticAppShell appId="example-app" path={[]} />);
+      await screen.findByTitle("Example App");
+
+      await waitFor(() => {
+        expect(postMessage).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            type: "caipe.microfrontend.initialize.v1",
+            appId: "example-app",
+            context: expect.objectContaining({ theme: appTheme }),
+          }),
+          window.location.origin,
+        );
+      });
+    });
+  });
+
   it("does not resolve or render an assistant when the app disables it", async () => {
     mockGetAgenticApps.mockResolvedValue({
       items: [app({ assistantEnabled: false })],

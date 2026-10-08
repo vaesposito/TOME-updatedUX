@@ -131,6 +131,9 @@ describe("POST /api/projects/confluence/resolve", () => {
         ),
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify({ results: [{ space: { key: "PLATFORM" } }] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             results: [
@@ -141,6 +144,7 @@ describe("POST /api/projects/confluence/resolve", () => {
                   title: "Architecture",
                   space: { key: "PLATFORM" },
                   ancestors: [{ id: "100", title: "Overview" }],
+                  childTypes: { page: { value: false } },
                 },
               },
               {
@@ -150,6 +154,7 @@ describe("POST /api/projects/confluence/resolve", () => {
                   title: "Overview",
                   space: { key: "PLATFORM" },
                   ancestors: [],
+                  childTypes: { page: { value: true } },
                 },
               },
             ],
@@ -175,12 +180,14 @@ describe("POST /api/projects/confluence/resolve", () => {
           title: "Overview",
           parent_id: null,
           depth: 0,
+          has_children: true,
         }),
         expect.objectContaining({
           id: "200",
           title: "Architecture",
           parent_id: "100",
           depth: 1,
+          has_children: false,
         }),
       ],
     });
@@ -201,6 +208,9 @@ describe("POST /api/projects/confluence/resolve", () => {
         ),
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify({ results: [{ space: { key: "PLATFORM" } }] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             results: [
@@ -217,7 +227,7 @@ describe("POST /api/projects/confluence/resolve", () => {
               next:
                 "/rest/api/search?limit=100&cursor=opaque-token" +
                 "&cql=space%3D%22platform%22%20and%20type%3Dpage" +
-                "&expand=content.space%2Ccontent.ancestors",
+                "&expand=content.space%2Ccontent.ancestors%2Ccontent.childTypes.page",
             },
           }),
           { status: 200 },
@@ -260,9 +270,33 @@ describe("POST /api/projects/confluence/resolve", () => {
       expect.objectContaining({ id: "100", parent_id: null }),
       expect.objectContaining({ id: "200", parent_id: "100" }),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    const cursorUrl = String(fetchMock.mock.calls[2]?.[0]);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const cursorUrl = String(fetchMock.mock.calls[3]?.[0]);
     expect(cursorUrl).toContain("cursor=opaque-token");
     expect(cursorUrl).not.toContain("start=");
+  });
+
+  it("rejects a space URL for a space that doesn't exist", async () => {
+    jest
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            { id: "cloud-id", url: "https://example.atlassian.net" },
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ results: [] }), { status: 200 }),
+      );
+
+    const response = await POST(
+      request("https://example.atlassian.net/wiki/spaces/NOSUCHSPACE"),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toMatch(/not found|not accessible/i);
   });
 });

@@ -223,6 +223,122 @@ it("forwards multiple Confluence page roots to one space snapshot", () => {
   ]);
 });
 
+it("forwards multiple independent Confluence spaces, each with its own scope", () => {
+  const project = synthesizedProject("project");
+  project.sources = {
+    ...project.sources,
+    confluence_url: undefined,
+    confluence_spaces: [
+      {
+        slug: "platform",
+        name: "Platform",
+        space_key: "PLATFORM",
+        base_url: "https://example.atlassian.net",
+        page_scopes: [
+          {
+            page_id: "123",
+            page_title: "Overview",
+            space_key: "PLATFORM",
+            include_descendants: true,
+          },
+        ],
+      },
+      {
+        slug: "marketing",
+        name: "Marketing",
+        space_key: "MARKETING",
+        base_url: "https://example.atlassian.net",
+      },
+    ],
+  };
+
+  expect(buildSnapshotFromProject(project).confluence_spaces).toEqual([
+    expect.objectContaining({
+      slug: "platform",
+      space_key: "PLATFORM",
+      page_scopes: [
+        { page_id: "123", page_title: "Overview", include_descendants: true },
+      ],
+    }),
+    expect.objectContaining({
+      slug: "marketing",
+      space_key: "MARKETING",
+    }),
+  ]);
+});
+
+it("falls back to the legacy confluence_url when confluence_spaces is absent or empty", () => {
+  const legacyUrl = "https://example.atlassian.net/wiki/spaces/ENG";
+
+  for (const confluence_spaces of [undefined, []]) {
+    const project = synthesizedProject("project");
+    project.sources = {
+      ...project.sources,
+      confluence_url: legacyUrl,
+      confluence_spaces,
+    };
+
+    expect(buildSnapshotFromProject(project).confluence_spaces).toEqual([
+      expect.objectContaining({
+        space_key: "ENG",
+        base_url: "https://example.atlassian.net",
+      }),
+    ]);
+  }
+});
+
+it("prefers confluence_spaces over a legacy confluence_url", () => {
+  const project = synthesizedProject("project");
+  project.sources = {
+    ...project.sources,
+    confluence_url: "https://example.atlassian.net/wiki/spaces/LEGACY",
+    confluence_spaces: [
+      {
+        slug: "platform",
+        name: "Platform",
+        space_key: "PLATFORM",
+        base_url: "https://example.atlassian.net",
+      },
+    ],
+  };
+
+  expect(
+    buildSnapshotFromProject(project).confluence_spaces.map((s) => s.space_key),
+  ).toEqual(["PLATFORM"]);
+});
+
+it("reads the deprecated singular page_scope on a typed Confluence space", () => {
+  const project = synthesizedProject("project");
+  project.sources = {
+    ...project.sources,
+    confluence_url: undefined,
+    confluence_spaces: [
+      {
+        slug: "platform",
+        name: "Platform",
+        space_key: "PLATFORM",
+        base_url: "https://example.atlassian.net",
+        page_scope: {
+          page_id: "123",
+          page_title: "Overview",
+          space_key: "PLATFORM",
+          include_descendants: false,
+        },
+      },
+    ],
+  };
+
+  expect(buildSnapshotFromProject(project).confluence_spaces).toEqual([
+    expect.objectContaining({
+      page_scopes: [
+        { page_id: "123", page_title: "Overview", include_descendants: false },
+      ],
+      root_page_id: "123",
+      include_descendants: false,
+    }),
+  ]);
+});
+
 it("forwards stable GitHub identity and canonical branch metadata", () => {
   const project = synthesizedProject("project");
   project.sources = {

@@ -2,7 +2,7 @@
 
 import { SourceItemPicker } from "./SourceItemPicker";
 import { SOURCE_ADAPTERS } from "./adapters";
-import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
+import type { WebexCredentialMode } from "@/types/projects";
 
 /** The connectors a project can draw sources from (YAML `source:` values). */
 export type SourceKind = "github" | "confluence" | "webex" | "myagent";
@@ -11,15 +11,10 @@ export type BrowsableSourceKind = Exclude<SourceKind, "myagent">;
 export interface SourcePickerProps {
   /** Render controls inside a parent source card without a second branded card. */
   embedded?: boolean;
-  /** Selected values (github: repo URLs/refs; confluence: one space/page URL; webex: room IDs). */
+  /** Selected values (github: repo URLs/refs; confluence: encoded space blobs, up to the adapter's cap; webex: encoded room blobs). */
   selected: string[];
   excludedKeys?: string[];
   onChange: (next: string[]) => void;
-  confluencePageScopes?: ConfluencePageScope[];
-  onConfluencePageScopesChange?: (
-    scopes: ConfluencePageScope[],
-    sourceUrl?: string,
-  ) => void;
   webexCredentialMode?: WebexCredentialMode;
   webexCredentialProvider?: string;
   onRefresh?: () => void;
@@ -37,8 +32,6 @@ export function SourcePicker({
   selected,
   excludedKeys,
   onChange,
-  confluencePageScopes,
-  onConfluencePageScopesChange,
   webexCredentialMode,
   webexCredentialProvider,
   onRefresh,
@@ -58,8 +51,6 @@ export function SourcePicker({
       selected={selected}
       excludedKeys={excludedKeys}
       onChange={onChange}
-      confluencePageScopes={confluencePageScopes}
-      onConfluencePageScopesChange={onConfluencePageScopesChange}
       webexCredentialMode={webexCredentialMode}
       webexCredentialProvider={webexCredentialProvider}
       onRefresh={onRefresh}

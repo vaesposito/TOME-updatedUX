@@ -6,6 +6,7 @@ import {
   loadProjectOnboardingConfig,
   type ProjectOnboardingStepConfig,
 } from "@/lib/projects/onboarding-config";
+import { confluenceSpaceUrl } from "@/lib/projects/confluence-source";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 
 export interface ProvisionResult {
@@ -94,7 +95,9 @@ function buildProjectContext(project: ProjectDocument): Record<string, unknown> 
     integrations,
     components,
     repos: Array.from(repos),
-    confluence_url: sources.confluence_url ?? "",
+    confluence_url: sources.confluence_spaces?.[0]
+      ? confluenceSpaceUrl(sources.confluence_spaces[0])
+      : sources.confluence_url ?? "",
     component_urls: sources.component_urls ?? [],
   };
 }

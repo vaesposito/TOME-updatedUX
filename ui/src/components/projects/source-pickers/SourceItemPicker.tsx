@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, Copy, Plus, RefreshCw, Search } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Plus, RefreshCw, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { cn } from "@/lib/utils";
 import type { ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
+import {
+  decodeConfluenceSource,
+  encodeConfluenceSource,
+  parseConfluenceUrl,
+} from "@/lib/projects/confluence-source";
 import { ConfluenceManualAdd } from "./ConfluenceManualAdd";
 import { ConfluenceSpaceBrowser } from "./ConfluenceSpaceBrowser";
 import { useSourceOptions, type SourceOption } from "./useSourceOptions";
@@ -28,8 +33,9 @@ export interface SourceAdapter {
   subtitle: string;
   /** Header icon chip background — a brand-tinted wash or (GitHub) an inverted neutral. */
   chipClass: string;
-  /** Multi-select (repos/rooms) vs single-select (one Confluence space). */
   multi: boolean;
+  /** Unset = unlimited (github/webex today). */
+  maxSelected?: number;
   /** Singular / plural noun for counts and copy ("repo"/"repos"). */
   nounOne: string;
   nounMany: string;
@@ -79,6 +85,7 @@ interface Row {
   key: string;
   label: string;
   selected: boolean;
+  disabled?: boolean;
   onToggle: () => void;
 }
 
@@ -88,8 +95,6 @@ export function SourceItemPicker({
   selected,
   excludedKeys = [],
   onChange,
-  confluencePageScopes = [],
-  onConfluencePageScopesChange,
   webexCredentialMode,
   webexCredentialProvider,
   onRefresh,
@@ -99,11 +104,6 @@ export function SourceItemPicker({
   selected: string[];
   excludedKeys?: string[];
   onChange: (next: string[]) => void;
-  confluencePageScopes?: ConfluencePageScope[];
-  onConfluencePageScopesChange?: (
-    scopes: ConfluencePageScope[],
-    sourceUrl?: string,
-  ) => void;
   webexCredentialMode?: WebexCredentialMode;
   webexCredentialProvider?: string;
   onRefresh?: () => void;
@@ -128,9 +128,14 @@ export function SourceItemPicker({
   const [manual, setManual] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
   const [managedEmailCopied, setManagedEmailCopied] = useState(false);
-  // Once a Confluence space is picked, the search+list collapses into a
-  // compact "Connected to X · Change" row — "Change" re-expands it.
-  const [changingSpace, setChangingSpace] = useState(false);
+  // Confluence: search+list collapses behind "+ Add" once a space exists.
+  const [addingSpace, setAddingSpace] = useState(false);
+  // Confluence: only one space's scope panel expanded at a time, by key.
+  const [expandedSpaceKey, setExpandedSpaceKey] = useState<string | null>(null);
+  // Confluence: a space picked from the list but not committed until its
+  // scope choice is confirmed, same as the manual-URL preview-then-add flow.
+  const [stagingValue, setStagingValue] = useState<string | null>(null);
+  const [stagingError, setStagingError] = useState("");
 
   // A first load with no rows yet that runs past ~2.5s surfaces the adapter's
   // slow-load copy (Confluence in particular), so it reads as expected rather
@@ -154,41 +159,94 @@ export function SourceItemPicker({
   );
   const selectedKeySet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
 
+  const atCap = adapter.maxSelected != null && selected.length >= adapter.maxSelected;
+
   const removeByKey = (key: string) => {
     onChange(selected.filter((s) => adapter.selectedKeyOf(s) !== key));
-    if (adapter.provider === "atlassian") {
-      onConfluencePageScopesChange?.([], "");
-    }
   };
 
   const addValue = (value: string) => {
+    if (adapter.multi && atCap) return;
     onChange(adapter.multi ? [...selected, value] : [value]);
     if (adapter.provider === "atlassian") {
-      onConfluencePageScopesChange?.([], value);
-      setChangingSpace(false);
+      setAddingSpace(false);
+      // Open straight to the new space's scope panel; collapse the rest.
+      setExpandedSpaceKey(adapter.selectedKeyOf(value));
     }
   };
 
-  const addConfluenceValue = (
-    value: string,
-    scope?: ConfluencePageScope,
-  ) => {
-    onChange([value]);
-    onConfluencePageScopesChange?.(scope ? [scope] : [], value);
-    setChangingSpace(false);
+  const commitConfluenceSpace = (
+    url: string,
+    scopes: ConfluencePageScope[],
+  ): "ok" | "duplicate" | "cap" => {
+    const parsed = parseConfluenceUrl(url);
+    const spaceKey = parsed?.space_key ?? scopes[0]?.space_key ?? "";
+    const encoded = encodeConfluenceSource({
+      url,
+      base_url: parsed?.base_url ?? "",
+      space_key: spaceKey,
+      name: spaceKey || url,
+      page_scopes: scopes,
+    });
+    if (selectedKeySet.has(adapter.selectedKeyOf(encoded))) return "duplicate";
+    if (atCap) return "cap";
+    onChange([...selected, encoded]);
+    setAddingSpace(false);
+    // Auto-expand only an entire-space add, where narrowing to a page tree
+    // is a likely next step — a page scope is already fully resolved.
+    setExpandedSpaceKey(scopes.length ? null : adapter.selectedKeyOf(encoded));
+    return "ok";
   };
 
-  const selectConfluencePages = (
-    value: string,
+  const addConfluenceValue = (
+    url: string,
+    scope?: ConfluencePageScope,
+  ): "ok" | "duplicate" | "cap" =>
+    commitConfluenceSpace(url, scope ? [scope] : []);
+
+  const stageConfluenceValue = (value: string) => {
+    setAddingSpace(false);
+    setExpandedSpaceKey(null);
+    setStagingError("");
+    setStagingValue(value);
+  };
+
+  const addStagedSpace = (url: string, scopes: ConfluencePageScope[]) => {
+    const result = commitConfluenceSpace(url, scopes);
+    if (result !== "ok") {
+      setStagingError(
+        result === "duplicate"
+          ? "This space is already added."
+          : "This project already has the maximum number of Confluence spaces.",
+      );
+      return;
+    }
+    setStagingValue(null);
+  };
+
+  const updateConfluenceScopes = (
+    index: number,
+    url: string,
     scopes: ConfluencePageScope[],
   ) => {
-    onChange([value]);
-    onConfluencePageScopesChange?.(scopes, value);
+    const decoded = decodeConfluenceSource(selected[index]);
+    const next = [...selected];
+    next[index] = encodeConfluenceSource({
+      url,
+      base_url: decoded.base_url,
+      space_key: decoded.space_key,
+      name: decoded.name,
+      page_scopes: scopes,
+      slug: decoded.slug,
+    });
+    onChange(next);
   };
 
   // Selected pinned at top (stable, in stored order), then unselected options.
+  // Confluence spaces remove themselves via their own card button, not this list.
   const rows: Row[] = useMemo(() => {
     const optionByKey = new Map(options.map((o) => [optionKeyOf(o), o]));
+    const pinnedDisabled = adapter.provider === "atlassian";
     const pinned: Row[] = selected.map((value) => {
       const key = adapter.selectedKeyOf(value);
       const opt = optionByKey.get(key);
@@ -196,7 +254,8 @@ export function SourceItemPicker({
         key,
         label: opt ? opt.label : adapter.labelOf(value),
         selected: true,
-        onToggle: () => removeByKey(key),
+        disabled: pinnedDisabled,
+        onToggle: pinnedDisabled ? () => {} : () => removeByKey(key),
       };
     });
     const rest: Row[] = options
@@ -205,7 +264,10 @@ export function SourceItemPicker({
         key: optionKeyOf(o),
         label: o.label,
         selected: false,
-        onToggle: () => addValue(adapter.encodeOnAdd(o)),
+        onToggle: () =>
+          adapter.provider === "atlassian"
+            ? stageConfluenceValue(adapter.encodeOnAdd(o))
+            : addValue(adapter.encodeOnAdd(o)),
       }));
     return [...pinned, ...rest];
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,11 +297,13 @@ export function SourceItemPicker({
     : query.trim() && adapter.showMatchCount
       ? `${options.length} match${options.length === 1 ? "" : "es"}`
       : `${options.length} ${adapter.nounMany}`;
-  const selectedConfluenceSpaceLabel = options.find(
-    (option) =>
-      optionKeyOf(option) ===
-      (selected[0] ? adapter.selectedKeyOf(selected[0]) : ""),
-  )?.label;
+  const labelForValue = (value: string) =>
+    options.find((option) => optionKeyOf(option) === adapter.selectedKeyOf(value))
+      ?.label ?? adapter.labelOf(value);
+  const confluenceScopeSummary = (scopes: ConfluencePageScope[]) =>
+    scopes.length
+      ? `${scopes.length} page root${scopes.length === 1 ? "" : "s"} selected`
+      : "Entire space";
   const managedWebex =
     adapter.provider === "webex" && webexCredentialMode === "managed";
   const managedAccountEmail = managedCapability?.accountEmail;
@@ -265,6 +329,89 @@ export function SourceItemPicker({
       setManagedEmailCopied(false);
     }
   };
+
+  // Shared search+list markup, reused by both render paths below.
+  const searchListBox = (connected || loading) ? (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3">
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <input
+          value={query}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQuery(v);
+            search(v.trim());
+          }}
+          placeholder={adapter.searchPlaceholder}
+          disabled={!connected}
+          className="w-full bg-transparent py-2.5 text-sm outline-none disabled:cursor-default"
+        />
+        {connected && (
+          <span className="shrink-0 text-xs text-muted-foreground">{countText}</span>
+        )}
+      </div>
+      <div className="h-40 overflow-y-auto">
+        {rows.length === 0 && loading ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4">
+            <div className="w-full space-y-2" data-testid="skeleton">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2">
+                  <div className="h-4 w-4 shrink-0 animate-pulse rounded bg-muted-foreground/20" />
+                  <div
+                    className="h-3.5 animate-pulse rounded bg-muted-foreground/20"
+                    style={{ width: `${60 - i * 8}%` }}
+                  />
+                </div>
+              ))}
+            </div>
+            {showSlowHint && adapter.slowLoadHint && (
+              <p className="max-w-[85%] text-center text-xs text-muted-foreground">
+                {adapter.slowLoadHint}
+              </p>
+            )}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+            <span className="px-4 text-center">{emptyListCopy}</span>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border/40">
+            {rows.map((r) => (
+              <li key={r.key}>
+                <button
+                  type="button"
+                  onClick={r.onToggle}
+                  disabled={r.disabled}
+                  className={cn(
+                    "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition",
+                    r.disabled ? "cursor-default opacity-60" : "hover:bg-accent/50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center border",
+                      adapter.multi ? "rounded" : "rounded-full",
+                      r.selected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border",
+                    )}
+                  >
+                    {r.selected && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="truncate">{r.label}</span>
+                  {r.disabled && (
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                      Added
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   const connectionsLink = manageUrl && !managedWebex ? (
     <a
@@ -353,121 +500,160 @@ export function SourceItemPicker({
           </p>
         )}
 
-        {/* Once a Confluence space is chosen, collapse the picker into a
-            compact row so the scope section below reads as the next step of
-            the same flow, not an unrelated block. */}
-        {adapter.provider === "atlassian" && selected[0] && !changingSpace ? (
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-            <span className="min-w-0 truncate">
-              Connected to{" "}
-              <span className="font-medium text-foreground">
-                {selectedConfluenceSpaceLabel ?? adapter.labelOf(selected[0])}
-              </span>
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
-              onClick={() => setChangingSpace(true)}
-            >
-              Change
-            </Button>
-          </div>
-        ) : null}
+        {adapter.provider !== "atlassian" && searchListBox}
 
-        {/* Picker: search + list merged into one bounded control, so the two
-            don't compete as separate peer boxes. */}
-        {(connected || loading) &&
-          !(adapter.provider === "atlassian" && selected[0] && !changingSpace) && (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setQuery(v);
-                  search(v.trim());
-                }}
-                placeholder={adapter.searchPlaceholder}
-                disabled={!connected}
-                className="w-full bg-transparent py-2.5 text-sm outline-none disabled:cursor-default"
-              />
-              {connected && (
-                <span className="shrink-0 text-xs text-muted-foreground">{countText}</span>
-              )}
-            </div>
-            <div className="h-40 overflow-y-auto">
-              {rows.length === 0 && loading ? (
-                <div className="flex h-full flex-col items-center justify-center gap-3 px-4">
-                  <div className="w-full space-y-2" data-testid="skeleton">
-                    {[0, 1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-center gap-3 px-3 py-2">
-                        <div className="h-4 w-4 shrink-0 animate-pulse rounded bg-muted-foreground/20" />
-                        <div
-                          className="h-3.5 animate-pulse rounded bg-muted-foreground/20"
-                          style={{ width: `${60 - i * 8}%` }}
-                        />
-                      </div>
-                    ))}
+        {adapter.provider === "atlassian" ? (
+          <>
+            {/* One card per attached space; only the one being edited expands. */}
+            {selected.map((value, index) => {
+              const decoded = decodeConfluenceSource(value);
+              const label = labelForValue(value);
+              const key = adapter.selectedKeyOf(value) || String(index);
+              const isExpanded = expandedSpaceKey === key;
+              return (
+                <div
+                  key={key}
+                  className="overflow-hidden rounded-lg border border-border border-l-4 border-l-[#2684FF]/70"
+                >
+                  <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedSpaceKey(isExpanded ? null : key)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="min-w-0 truncate">
+                        Connected to{" "}
+                        <span className="font-medium text-foreground">{label}</span>
+                      </span>
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => onChange(selected.filter((_, i) => i !== index))}
+                    >
+                      Remove
+                    </Button>
                   </div>
-                  {showSlowHint && adapter.slowLoadHint && (
-                    <p className="max-w-[85%] text-center text-xs text-muted-foreground">
-                      {adapter.slowLoadHint}
-                    </p>
+                  {isExpanded ? (
+                    <div className="border-t border-border p-3">
+                      <ConfluenceSpaceBrowser
+                        sourceUrl={decoded.url}
+                        scopes={decoded.page_scopes}
+                        spaceLabel={label}
+                        groupName={key}
+                        embedded
+                        onSelect={(url, scopes) => updateConfluenceScopes(index, url, scopes)}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedSpaceKey(key)}
+                      className="block w-full border-t border-border px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent/30"
+                    >
+                      {confluenceScopeSummary(decoded.page_scopes)} · Edit
+                    </button>
                   )}
                 </div>
-              ) : rows.length === 0 ? (
-                <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-                  <span className="px-4 text-center">{emptyListCopy}</span>
+              );
+            })}
+
+            {stagingValue ? (
+              <div className="overflow-hidden rounded-lg border border-border border-l-4 border-l-[#2684FF]/70">
+                <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate">
+                    Add{" "}
+                    <span className="font-medium text-foreground">
+                      {labelForValue(stagingValue)}
+                    </span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    onClick={() => {
+                      setStagingValue(null);
+                      setStagingError("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
                 </div>
-              ) : (
-                <ul className="divide-y divide-border/40">
-                  {rows.map((r) => (
-                    <li key={r.key}>
-                      <button
-                        type="button"
-                        onClick={r.onToggle}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition hover:bg-accent/50"
-                      >
-                        <span
-                          className={cn(
-                            "flex h-4 w-4 shrink-0 items-center justify-center border",
-                            adapter.multi ? "rounded" : "rounded-full",
-                            r.selected
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border",
-                          )}
-                        >
-                          {r.selected && <Check className="h-3 w-3" />}
-                        </span>
-                        <span className="truncate">{r.label}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
+                {stagingError ? (
+                  <p role="alert" className="border-t border-border px-3 py-2 text-xs text-destructive">
+                    {stagingError}
+                  </p>
+                ) : null}
+                <div className="border-t border-border p-3">
+                  <ConfluenceSpaceBrowser
+                    sourceUrl={decodeConfluenceSource(stagingValue).url}
+                    scopes={[]}
+                    spaceLabel={labelForValue(stagingValue)}
+                    groupName="staging"
+                    embedded
+                    requireExplicitAdd
+                    onSelect={addStagedSpace}
+                  />
+                </div>
+              </div>
+            ) : null}
 
-        {adapter.provider === "atlassian" && selected[0] ? (
-          <ConfluenceSpaceBrowser
-            sourceUrl={selected[0]}
-            scopes={confluencePageScopes}
-            onSelect={selectConfluencePages}
-            spaceLabel={selectedConfluenceSpaceLabel ?? adapter.labelOf(selected[0])}
-          />
-        ) : null}
+            {selected.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {selected.length}
+                {adapter.maxSelected != null ? ` of ${adapter.maxSelected}` : ""}{" "}
+                space{selected.length === 1 ? "" : "s"} selected
+              </p>
+            ) : null}
 
-        {/* Manual add — the one intentionally-different (dashed) zone: the
-            explicit "alternate path" to search. */}
-        {adapter.manualAdd && adapter.provider === "atlassian" ? (
-          <ConfluenceManualAdd
-            value={manual}
-            onValueChange={setManual}
-            onSelect={addConfluenceValue}
-          />
+            {atCap ? (
+              <p className="text-xs text-muted-foreground">
+                Up to {adapter.maxSelected} Confluence spaces per project.
+              </p>
+            ) : selected.length > 0 && !addingSpace ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  setAddingSpace(true);
+                  setExpandedSpaceKey(null);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Confluence space
+              </Button>
+            ) : (
+              <>
+                {searchListBox}
+                {adapter.manualAdd ? (
+                  <ConfluenceManualAdd
+                    value={manual}
+                    onValueChange={setManual}
+                    onSelect={addConfluenceValue}
+                  />
+                ) : null}
+                {selected.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAddingSpace(false)}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
+              </>
+            )}
+          </>
         ) : adapter.manualAdd ? (
           <div className="rounded-lg border border-dashed border-border/60 p-3">
             <p className="mb-2 text-xs font-medium text-muted-foreground">{adapter.manualAdd.hint}</p>

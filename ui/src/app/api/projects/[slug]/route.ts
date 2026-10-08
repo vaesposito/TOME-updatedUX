@@ -13,6 +13,8 @@ import { projectCatalogBundleYaml } from "@/lib/projects/backstage-catalog";
 import {
   normalizeConfluencePageScope,
   normalizeConfluencePageScopes,
+  normalizeConfluenceSpaces,
+  parseConfluenceUrl,
 } from "@/lib/projects/confluence-source";
 import {
   myAgentSourcesForSubject,
@@ -76,9 +78,10 @@ async function resolveTeamByIdOrSlug(
 
 
 /** Emit `tome.source.attach`/`detach` events for what changed between the
- * project's sources before and after a PATCH. Repos + Confluence URL compared
- * by value; Webex rooms by `room_id`. MyAgent consent is deliberately handled
- * by its own subject-scoped endpoint and is never accepted here. */
+ * project's sources before and after a PATCH. Repos compared by value;
+ * Webex rooms by `room_id`; Confluence by effective space key (see
+ * `confluenceSpaceKeys`). MyAgent consent is deliberately handled by its own
+ * subject-scoped endpoint and is never accepted here. */
 function auditSourceChanges(
   slug: string,
   actor: TomeAuditActor,
@@ -91,12 +94,24 @@ function auditSourceChanges(
     ref: string,
   ) => auditTome({ action, actor, projectSlug: slug, metadata: { source_type: sourceType, ref } });
 
-  const diffList = (type: string, oldArr: string[], newArr: string[]) => {
-    const o = new Set(oldArr.filter(Boolean));
-    const n = new Set(newArr.filter(Boolean));
-    for (const ref of n) if (!o.has(ref)) emit("tome.source.attach", type, ref);
-    for (const ref of o) if (!n.has(ref)) emit("tome.source.detach", type, ref);
+  // key is base_url-qualified (space_keys can collide across sites); ref is the bare key logged to the audit trail.
+  const diffByKey = (
+    type: string,
+    oldEntries: { key: string; ref: string }[],
+    newEntries: { key: string; ref: string }[],
+  ) => {
+    const o = new Map(oldEntries.map((e) => [e.key, e.ref]));
+    const n = new Map(newEntries.map((e) => [e.key, e.ref]));
+    for (const [key, ref] of n) if (!o.has(key)) emit("tome.source.attach", type, ref);
+    for (const [key, ref] of o) if (!n.has(key)) emit("tome.source.detach", type, ref);
   };
+
+  const diffList = (type: string, oldArr: string[], newArr: string[]) =>
+    diffByKey(
+      type,
+      oldArr.filter(Boolean).map((ref) => ({ key: ref, ref })),
+      newArr.filter(Boolean).map((ref) => ({ key: ref, ref })),
+    );
 
   diffList("repo", before?.repos ?? [], after?.repos ?? []);
   diffList(
@@ -104,12 +119,28 @@ function auditSourceChanges(
     (before?.webex_rooms ?? []).map((r) => r.room_id).filter(Boolean),
     (after?.webex_rooms ?? []).map((r) => r.room_id).filter(Boolean),
   );
-  const oldConf = before?.confluence_url?.trim() || "";
-  const newConf = after?.confluence_url?.trim() || "";
-  if (oldConf !== newConf) {
-    if (newConf) emit("tome.source.attach", "confluence", newConf);
-    else if (oldConf) emit("tome.source.detach", "confluence", oldConf);
+  diffByKey(
+    "confluence",
+    confluenceSpaceEntries(before),
+    confluenceSpaceEntries(after),
+  );
+}
+
+/** A project's effective Confluence spaces as `{key, ref}` pairs, preferring the typed array over the legacy `confluence_url`. */
+function confluenceSpaceEntries(
+  sources: ProjectDocument["sources"] | undefined,
+): { key: string; ref: string }[] {
+  if (sources?.confluence_spaces?.length) {
+    return sources.confluence_spaces
+      .filter((s) => s.space_key)
+      .map((s) => ({ key: `${s.base_url ?? ""}::${s.space_key}`, ref: s.space_key }));
   }
+  const parsed = sources?.confluence_url
+    ? parseConfluenceUrl(sources.confluence_url)
+    : undefined;
+  return parsed?.space_key
+    ? [{ key: `${parsed.base_url ?? ""}::${parsed.space_key}`, ref: parsed.space_key }]
+    : [];
 }
 
 export const GET = withErrorHandler(
@@ -283,6 +314,7 @@ export const PATCH = withErrorHandler(
         confluence_url?: string;
         confluence_page_scopes?: unknown;
         confluence_page_scope?: unknown;
+        confluence_spaces?: unknown;
         webex_rooms?: Array<Partial<WebexRoomSource>>;
         webex_credential_mode?: WebexCredentialMode;
         webex_credential_provider?: string;
@@ -533,26 +565,37 @@ export const PATCH = withErrorHandler(
         // an older selection. The next ingest resolves and repopulates it.
         $unset["sources.github_repos"] = "";
       }
-      if (typeof body.sources.confluence_url === "string") {
-        $set["sources.confluence_url"] = body.sources.confluence_url.trim();
-      }
-      if ("confluence_page_scopes" in body.sources) {
-        const pageScopes = normalizeConfluencePageScopes(
-          body.sources.confluence_page_scopes,
+      if ("confluence_spaces" in body.sources) {
+        const confluenceSpaces = normalizeConfluenceSpaces(
+          body.sources.confluence_spaces,
         );
-        if (pageScopes.length) {
-          $set["sources.confluence_page_scopes"] = pageScopes;
-          $unset["sources.confluence_page_scope"] = "";
-        } else {
-          $unset["sources.confluence_page_scopes"] = "";
+        $set["sources.confluence_spaces"] = confluenceSpaces;
+        // Mutually exclusive with the else branch below — same path can't be in both $set and $unset.
+        $unset["sources.confluence_url"] = "";
+        $unset["sources.confluence_page_scopes"] = "";
+        $unset["sources.confluence_page_scope"] = "";
+      } else {
+        if (typeof body.sources.confluence_url === "string") {
+          $set["sources.confluence_url"] = body.sources.confluence_url.trim();
         }
-      }
-      if ("confluence_page_scope" in body.sources) {
-        const pageScope = normalizeConfluencePageScope(
-          body.sources.confluence_page_scope,
-        );
-        if (pageScope) $set["sources.confluence_page_scope"] = pageScope;
-        else $unset["sources.confluence_page_scope"] = "";
+        if ("confluence_page_scopes" in body.sources) {
+          const pageScopes = normalizeConfluencePageScopes(
+            body.sources.confluence_page_scopes,
+          );
+          if (pageScopes.length) {
+            $set["sources.confluence_page_scopes"] = pageScopes;
+            $unset["sources.confluence_page_scope"] = "";
+          } else {
+            $unset["sources.confluence_page_scopes"] = "";
+          }
+        }
+        if ("confluence_page_scope" in body.sources) {
+          const pageScope = normalizeConfluencePageScope(
+            body.sources.confluence_page_scope,
+          );
+          if (pageScope) $set["sources.confluence_page_scope"] = pageScope;
+          else $unset["sources.confluence_page_scope"] = "";
+        }
       }
       if (Array.isArray(body.sources.webex_rooms)) {
         $set["sources.webex_rooms"] = nextWebexRooms;

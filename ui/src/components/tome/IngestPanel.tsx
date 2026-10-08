@@ -31,6 +31,7 @@ import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import {
+  confluenceSpaceUrl,
   normalizeConfluencePageScope,
   normalizeConfluencePageScopes,
   parseConfluenceUrl,
@@ -47,7 +48,12 @@ import {
 import { preflightState, type PreflightSourceResult } from "@/lib/tome/preflight";
 import { describeRelativeTime, nextCronRun } from "@/lib/tome/auto-ingest/schedule-presets";
 import { cn } from "@/lib/utils";
-import type { AutoIngestConfig, ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
+import type {
+  AutoIngestConfig,
+  ConfluencePageScope,
+  ConfluenceSpaceSource,
+  WebexCredentialMode,
+} from "@/types/projects";
 import { WebexIngestSources } from "./WebexIngestSources";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -85,6 +91,7 @@ interface ProjectSources {
   confluence_url: string;
   confluence_page_scopes?: unknown;
   confluence_page_scope?: unknown;
+  confluence_spaces?: ConfluenceSpaceSource[];
   // Stored shape is { room_id, name, slug }; tolerate older { id, title } too.
   webex_rooms: Array<{
     room_id?: string;
@@ -153,6 +160,33 @@ function confluencePageHref(
   return `${parsed.base_url}/wiki/spaces/${encodeURIComponent(scope.space_key)}/pages/${encodeURIComponent(scope.page_id)}`;
 }
 
+function confluenceSpaceItems(space: ConfluenceSpaceSource): SourceItem[] {
+  const scopes = space.page_scopes?.length
+    ? space.page_scopes
+    : space.page_scope
+      ? [space.page_scope]
+      : [];
+  if (scopes.length > 0) {
+    return scopes.map((scope) => ({
+      label: `${space.name}: ${scope.page_title}`,
+      detail: `Space ${scope.space_key} · ${
+        scope.include_descendants ? "This page and all subpages" : "This page only"
+      }`,
+      href:
+        space.base_url &&
+        `${space.base_url}/wiki/spaces/${encodeURIComponent(scope.space_key)}/pages/${encodeURIComponent(scope.page_id)}`,
+    }));
+  }
+  const href = confluenceSpaceUrl(space) || undefined;
+  return [
+    {
+      label: `Entire ${space.name} space`,
+      detail: href ?? space.space_key,
+      href,
+    },
+  ];
+}
+
 function savedConfluenceScopes(s: Partial<ProjectSources>): ConfluencePageScope[] {
   const scopes = normalizeConfluencePageScopes(s.confluence_page_scopes);
   if (scopes.length > 0) return scopes;
@@ -171,7 +205,15 @@ export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
       connectorKey: "github",
     });
   }
-  if (typeof s.confluence_url === "string" && s.confluence_url.trim()) {
+  const confluenceSpaces = Array.isArray(s.confluence_spaces) ? s.confluence_spaces : [];
+  if (confluenceSpaces.length > 0) {
+    rows.push({
+      kind: "confluence",
+      label: "Confluence",
+      items: confluenceSpaces.flatMap((space) => confluenceSpaceItems(space)),
+      connectorKey: "atlassian",
+    });
+  } else if (typeof s.confluence_url === "string" && s.confluence_url.trim()) {
     const sourceUrl = s.confluence_url.trim();
     const scopes = savedConfluenceScopes(s);
     const parsed = parseConfluenceUrl(sourceUrl);

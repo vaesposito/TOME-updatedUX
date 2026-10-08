@@ -86,3 +86,77 @@ describe("sourcesFromProject", () => {
     });
   });
 });
+
+describe("sourcesFromProject with confluence_spaces", () => {
+  const site = "https://example.atlassian.net";
+
+  it("lists every attached space, scoped or whole, under one Confluence row", () => {
+    const rows = sourcesFromProject({
+      confluence_spaces: [
+        {
+          slug: "platform",
+          name: "Platform",
+          space_key: "PLATFORM",
+          base_url: site,
+          page_scopes: [
+            {
+              page_id: "123",
+              page_title: "Architecture",
+              space_key: "PLATFORM",
+              include_descendants: true,
+            },
+          ],
+        },
+        {
+          slug: "marketing",
+          name: "Marketing",
+          space_key: "MARKETING",
+          base_url: site,
+        },
+      ],
+    });
+
+    expect(rows).toEqual([
+      {
+        kind: "confluence",
+        label: "Confluence",
+        connectorKey: "atlassian",
+        items: [
+          {
+            label: "Platform: Architecture",
+            detail: "Space PLATFORM · This page and all subpages",
+            href: `${site}/wiki/spaces/PLATFORM/pages/123`,
+          },
+          {
+            label: "Entire Marketing space",
+            detail: `${site}/wiki/spaces/MARKETING`,
+            href: `${site}/wiki/spaces/MARKETING`,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("prefers confluence_spaces over a legacy confluence_url", () => {
+    const rows = sourcesFromProject({
+      confluence_url: `${site}/wiki/spaces/LEGACY`,
+      confluence_spaces: [
+        { slug: "platform", name: "Platform", space_key: "PLATFORM", base_url: site },
+      ],
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.items.map((item) => item.label)).toEqual([
+      "Entire Platform space",
+    ]);
+  });
+
+  it("falls back to the legacy confluence_url when confluence_spaces is empty", () => {
+    const rows = sourcesFromProject({
+      confluence_url: `${site}/wiki/spaces/ENG`,
+      confluence_spaces: [],
+    });
+
+    expect(rows[0]?.items[0]).toMatchObject({ label: "Entire ENG space" });
+  });
+});

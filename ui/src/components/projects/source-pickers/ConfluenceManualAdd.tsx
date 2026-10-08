@@ -11,9 +11,9 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
-  isConfluencePageUrl,
   parseConfluenceUrl,
   type ConfluenceSourcePreview,
+  type ConfluenceSpacePreview,
 } from "@/lib/projects/confluence-source";
 import { cn } from "@/lib/utils";
 import type { ConfluencePageScope } from "@/types/projects";
@@ -21,7 +21,7 @@ import type { ConfluencePageScope } from "@/types/projects";
 interface Props {
   value: string;
   onValueChange: (value: string) => void;
-  onSelect: (url: string, scope?: ConfluencePageScope) => void;
+  onSelect: (url: string, scope?: ConfluencePageScope) => "ok" | "duplicate" | "cap";
 }
 
 function responseError(body: unknown, status: number): string {
@@ -33,6 +33,12 @@ function responseError(body: unknown, status: number): string {
   return `Could not preview this page (${status})`;
 }
 
+function rejectionMessage(result: "duplicate" | "cap"): string {
+  return result === "duplicate"
+    ? "This space is already added."
+    : "This project already has the maximum number of Confluence spaces.";
+}
+
 export function ConfluenceManualAdd({
   value,
   onValueChange,
@@ -40,11 +46,11 @@ export function ConfluenceManualAdd({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState<ConfluenceSourcePreview | null>(null);
+  const [preview, setPreview] = useState<
+    ConfluenceSourcePreview | ConfluenceSpacePreview | null
+  >(null);
   const [includeDescendants, setIncludeDescendants] = useState(true);
   const [treeOpen, setTreeOpen] = useState(false);
-
-  const isPage = isConfluencePageUrl(value);
 
   const resetPreview = () => {
     setPreview(null);
@@ -55,14 +61,8 @@ export function ConfluenceManualAdd({
 
   const submit = async () => {
     const parsed = parseConfluenceUrl(value);
-    if (!parsed) {
+    if (!parsed || (!parsed.page_id && !parsed.space_key)) {
       setError("Paste a valid Confluence space or page URL");
-      return;
-    }
-    if (!parsed.page_id) {
-      onSelect(parsed.url);
-      onValueChange("");
-      resetPreview();
       return;
     }
 
@@ -75,7 +75,7 @@ export function ConfluenceManualAdd({
         body: JSON.stringify({ url: parsed.url }),
       });
       const body = (await response.json().catch(() => ({}))) as {
-        data?: ConfluenceSourcePreview;
+        data?: ConfluenceSourcePreview | ConfluenceSpacePreview;
       };
       if (!response.ok || !body.data) {
         throw new Error(responseError(body, response.status));
@@ -92,10 +92,17 @@ export function ConfluenceManualAdd({
 
   const confirm = () => {
     if (!preview) return;
-    onSelect(preview.source_url, {
-      ...preview.scope,
-      include_descendants: includeDescendants,
-    });
+    const result =
+      preview.kind === "page"
+        ? onSelect(preview.source_url, {
+            ...preview.scope,
+            include_descendants: includeDescendants,
+          })
+        : onSelect(preview.source_url);
+    if (result !== "ok") {
+      setError(rejectionMessage(result));
+      return;
+    }
     onValueChange("");
     resetPreview();
   };
@@ -128,7 +135,7 @@ export function ConfluenceManualAdd({
           disabled={!value.trim() || loading}
         >
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-          {isPage ? "Preview" : "Use"}
+          Preview
         </Button>
       </div>
 
@@ -144,57 +151,64 @@ export function ConfluenceManualAdd({
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                Page found
+                {preview.kind === "page" ? "Page found" : "Space found"}
               </p>
               <a
-                href={preview.pages[0]?.url}
+                href={preview.kind === "page" ? preview.pages[0]?.url : preview.source_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-0.5 inline-flex max-w-full items-center gap-1 text-sm font-semibold hover:underline"
               >
                 <span className="truncate">
-                  {preview.scope.space_key} / {preview.scope.page_title}
+                  {preview.kind === "page"
+                    ? `${preview.scope.space_key} / ${preview.scope.page_title}`
+                    : preview.space_key}
                 </span>
                 <ExternalLink className="h-3 w-3 shrink-0" />
               </a>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {preview.pages.length - 1} accessible subpage
-                {preview.pages.length - 1 === 1 ? "" : "s"}
+                {preview.kind === "page"
+                  ? `${preview.pages.length - 1} accessible subpage${preview.pages.length - 1 === 1 ? "" : "s"}`
+                  : `${preview.pages.length} accessible page${preview.pages.length === 1 ? "" : "s"}`}
                 {preview.truncated ? " (preview limited to 500)" : ""}
               </p>
             </div>
           </div>
 
-          <fieldset className="space-y-2 p-3">
-            <legend className="mb-2 text-xs font-semibold">Scope</legend>
-            <label className="flex cursor-pointer items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="confluence-scope"
-                checked={includeDescendants}
-                onChange={() => setIncludeDescendants(true)}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="font-medium">This page and all subpages</span>
-                <span className="block text-xs text-muted-foreground">
-                  New subpages added beneath it are included automatically.
+          {preview.kind === "page" && preview.pages.length > 1 ? (
+            <fieldset className="space-y-2 p-3">
+              <legend className="mb-2 text-xs font-semibold">Scope</legend>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="confluence-scope"
+                  checked={includeDescendants}
+                  onChange={() => setIncludeDescendants(true)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium">This page and all subpages</span>
+                  <span className="block text-xs text-muted-foreground">
+                    New subpages added beneath it are included automatically.
+                  </span>
                 </span>
-              </span>
-            </label>
-            <label className="flex cursor-pointer items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="confluence-scope"
-                checked={!includeDescendants}
-                onChange={() => setIncludeDescendants(false)}
-                className="mt-0.5"
-              />
-              <span className="font-medium">This page only</span>
-            </label>
-          </fieldset>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="confluence-scope"
+                  checked={!includeDescendants}
+                  onChange={() => setIncludeDescendants(false)}
+                  className="mt-0.5"
+                />
+                <span className="font-medium">This page only</span>
+              </label>
+            </fieldset>
+          ) : null}
 
-          {includeDescendants && preview.pages.length > 1 ? (
+          {(preview.kind === "page"
+            ? includeDescendants && preview.pages.length > 1
+            : preview.pages.length > 0) ? (
             <div className="border-t border-border">
               <button
                 type="button"

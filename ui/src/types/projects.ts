@@ -411,6 +411,7 @@ export interface CreateProjectRequest {
   confluence_url?: string;
   confluence_page_scopes?: ConfluencePageScope[];
   confluence_page_scope?: ConfluencePageScope;
+  confluence_spaces?: ConfluenceSpaceSource[];
   webex_rooms?: WebexRoomSource[];
   webex_credential_mode?: WebexCredentialMode;
   webex_credential_provider?: string;

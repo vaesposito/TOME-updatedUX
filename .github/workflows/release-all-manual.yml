@@ -179,13 +179,13 @@ jobs:
             trigger: tag
           - workflow: ci-mcp-servers.yml
             mode: mcp
-            trigger: dispatch
+            trigger: tag
           - workflow: ci-openfga-authz-bridge.yml
             mode: source
             trigger: tag
           - workflow: ci-rag.yml
             mode: force
-            trigger: dispatch
+            trigger: tag
           - workflow: ci-scheduler.yml
             mode: standard
             trigger: tag
@@ -298,42 +298,11 @@ jobs:
           fi
 
           echo "Child workflow: $run_url" >> "$GITHUB_STEP_SUMMARY"
-          # The Actions API can briefly return 5xx while a dispatched child is
-          # already completing. Re-check its terminal state before failing the
-          # coordinated release so a transient read error does not block Helm.
-          for attempt in {1..5}; do
-            if gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status; then
-              exit 0
-            fi
-
-            run_state=$(gh run view "$run_id" \
-              --repo "$GITHUB_REPOSITORY" \
-              --json status,conclusion \
-              --jq '[.status, (.conclusion // "")] | @tsv' 2>/dev/null || true)
-            if [[ -n "$run_state" ]]; then
-              IFS=$'\t' read -r child_status child_conclusion <<< "$run_state"
-              if [[ "$child_status" == "completed" ]]; then
-                if [[ "$child_conclusion" == "success" ]]; then
-                  echo "Child workflow completed successfully; ignoring transient watch error."
-                  exit 0
-                fi
-                echo "Child workflow completed with conclusion: $child_conclusion"
-                exit 1
-              fi
-            fi
-
-            if [[ "$attempt" -lt 5 ]]; then
-              echo "Unable to confirm child workflow state (attempt $attempt/5); retrying in 10 seconds."
-              sleep 10
-            fi
-          done
-
-          echo "Could not confirm child workflow $run_id after 5 attempts."
-          exit 1
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
   publish-helm:
     name: Publish local Helm charts
-    needs: [prepare-release, build-image]
+    needs: prepare-release
     runs-on: ubuntu-latest
     steps:
       - name: Harden runner

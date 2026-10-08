@@ -1301,13 +1301,13 @@ export function IngestPanel({
 
               {/* First ingest — stable-page seeding (greenfield only) */}
               {(isSynthesized || action === "full") && isGreenfield && (
-                <div className="bg-emerald-950/20 px-4 py-3">
+                <div className="bg-emerald-100 px-4 py-3 dark:bg-emerald-950/20">
                   <div className="flex items-start gap-3">
-                    <Sprout className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                    <Sprout className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
                     <div className="flex-1 space-y-2.5">
                       <div>
-                        <p className="text-sm font-medium text-emerald-300">First ingest</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">First ingest</p>
+                        <p className="mt-0.5 text-xs text-emerald-800 dark:text-muted-foreground">
                           No previous ingests for this project. The agent will build the wiki from
                           scratch.
                         </p>
@@ -1320,9 +1320,9 @@ export function IngestPanel({
                           disabled={!canEdit || starting}
                           className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
                         />
-                        <span className="text-sm">
+                        <span className="text-sm text-emerald-800 dark:text-foreground">
                           Let the agent draft the stable pages
-                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                          <span className="mt-0.5 block text-xs text-emerald-800 dark:text-muted-foreground">
                             By default Charter, Objectives, and Roadmap stay yours to write. Check this
                             to let the agent take a best-effort first pass at them from your sources,
                             clearly marked as a draft. Only safe if a human reviews and edits the

@@ -36,7 +36,7 @@ All workflows live in `.github/workflows/`. The table below is the quick referen
 | `conventional_commits.yml` | PR | Enforces Conventional Commits on PR title |
 | `check-pinned-deps.yml` | PR / push | Verifies all action dependencies are pinned to a SHA |
 | `check-proprietary-content.yml` | PR | Scans for proprietary or sensitive content |
-| `check-fork-scope.yml` | Every PR and new commit | Verifies upstream imports; restricts remaining fork changes to allowed folders |
+| `check-fork-scope.yml` | Every PR and new commit | Verifies upstream provenance/file scope; reports adaptations; restricts remaining fork changes |
 | `coverage-comment.yml` | PR | Posts test coverage delta as a PR comment |
 
 ### Fork change scope
@@ -51,7 +51,7 @@ to all target branches, including draft PRs. Fork-only changes are allowed in:
 
 Exact CI maintenance exceptions are the workflow itself and
 `.github/scripts/check_fork_scope.py`. Other `.github/` files and root files
-require verified upstream imports.
+require imports linked to merged upstream commits.
 
 #### Importing upstream changes
 
@@ -59,35 +59,55 @@ require verified upstream imports.
   and import its merged commits with `git cherry-pick -x <full-SHA>`.
 - Multiple upstream PRs/commits can be imported in one fork PR. Keep one
   source marker per import commit; do not squash them together.
+- Whole commits or file/folder subsets are supported. For a subset, use
+  `git cherry-pick -x --no-commit <full-SHA>`, keep only the intended upstream
+  files, and commit with the original message and its full-SHA `-x` marker.
+  Omitted upstream files need not apply cleanly. Selected files may be adapted
+  for the fork, including resolving conflicts or matching local chart versions.
+  CI lists those adaptations for human review rather than rejecting them.
 - For an upstream merge commit, use `git cherry-pick -x -m 1 <full-SHA>`.
   Only first-parent/mainline 1 is supported. Squash-merged upstream PRs are
   ordinary single-parent commits; rebased PRs may require multiple commits.
 - PR titles and labels do not grant exemptions. A source marker identifies
   a claim, not proof.
 
-For every marked commit, CI verifies that the source SHA belongs to official
-upstream `main`. It independently applies that source change to the fork
-commit's parent in an isolated index and requires the entire resulting tree
-to match the import commit, including file modes and binary content.
-Existing private UI changes are preserved; CI does not compare whole files
-against upstream or trust patch IDs.
+Allowed fork paths bypass import verification: `ui/`, TOME, `docs/`, and exact
+maintenance exceptions may be changed or omitted from an upstream import.
+Mixed commits may combine those fork changes with restricted upstream files;
+only their restricted files need upstream provenance. Allowed-only commits
+need no upstream source, even when they retain an import marker.
+
+For every marked commit that changes restricted files, CI verifies that the
+source SHA belongs to official upstream `main`. It infers the restricted file
+subset from the import commit's actual diff and checks that each of those files
+changed in that upstream source. It does not replay the upstream commit or
+reject conflict resolutions. It compares
+per-file changed content/modes, ignoring unchanged context and hunk positions,
+and reports differing deltas as **adapted imported files**. Binary deltas may
+also differ because of existing fork content. These notes do not fail CI.
+No title, label, or folder name is trusted as an exemption.
+
+This is a provenance/file-scope check, **not proof that adapted content is
+identical to upstream**. An import marker does not make adaptations safe:
+review their diffs before merging. Restricted paths absent from the marked
+source commit still fail. Allowed fork paths are never required to match
+upstream and do not invalidate the restricted imported portion.
 
 CI then rebuilds the restricted-path baseline from the PR merge base using
-only verified upstream changes. Remaining fork changes must satisfy the
-allowlist. Editing a restricted file before or after importing an upstream
-change to it does not exempt the extra edits. Additions, deletions, and both
+only the actual imported deltas, including adaptations. Remaining fork changes
+must satisfy the allowlist. Importing a restricted file does not exempt that
+whole file from checking unmarked changes. Additions, deletions, and both
 paths of renames are checked. Existing fork differences and commits already
 in the PR target branch are not re-audited.
 
 Malformed/multiple source markers, unknown or unmerged SHAs, missing history,
-extra edits in import commits, and replay conflicts fail closed. Manually
-adapted imports do not qualify as clean imports, even when their files are
-inside the normal allowlist. Keep allowed fork adaptations in separate,
-unmarked commits. Restricted-path adaptations require upstreaming or an
-explicitly reviewed policy change; there is no label-based bypass.
+paths absent from the source commit, and failures to isolate the imported
+deltas from unrelated fork edits fail closed. Adaptations to imported paths
+are permitted and explicitly reported. There is no label-based bypass.
 
-The job log and summary show verified source SHAs, import verification errors,
-and remaining restricted files. Failures also receive a PR comment.
+The job log and summary show verified source SHAs/file scopes, adapted files,
+import verification errors, and remaining restricted files. Failures also
+receive a PR comment.
 
 #### Trust boundary and rollout
 

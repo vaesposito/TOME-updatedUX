@@ -21,6 +21,16 @@ const startIngestRun = jest.fn();
 const auditTome = jest.fn();
 const tickWebexMeetingSeriesScheduler = jest.fn();
 const mockCheckSharePointSources = jest.fn();
+const resolveAreaChildren = jest.fn();
+const resolveBhagChildren = jest.fn();
+const listReadableTomeProjects = jest.fn();
+jest.mock("../bhag", () => ({
+  resolveAreaChildren: (...a: unknown[]) => resolveAreaChildren(...a),
+  resolveBhagChildren: (...a: unknown[]) => resolveBhagChildren(...a),
+}));
+jest.mock("../access", () => ({
+  listReadableTomeProjects: (...a: unknown[]) => listReadableTomeProjects(...a),
+}));
 jest.mock("../sharepoint", () => ({ checkSharePointSources: (...args: unknown[]) => mockCheckSharePointSources(...args) }));
 
 jest.mock("@/lib/mongodb", () => ({
@@ -281,5 +291,73 @@ describe("tickAutoIngestScheduler", () => {
     await tickAutoIngestScheduler(dueNow);
 
     expect(startIngestRun).not.toHaveBeenCalled();
+  });
+
+  describe("BHAG and Area roll-ups", () => {
+    const rollup = (type: "bhag" | "area") =>
+      project({
+        type,
+        name: "example-rollup",
+        autoIngest: { enabled: true, cron: "0 2 * * *", credentialOwner: owner },
+      });
+
+    it("fires a synthesis run for a BHAG instead of a source ingest", async () => {
+      findToArray.mockResolvedValue([rollup("bhag")]);
+      resolveBhagChildren.mockResolvedValue([{ slug: "child-a" }]);
+      listReadableTomeProjects.mockResolvedValue([{ slug: "child-a" }]);
+
+      await tickAutoIngestScheduler(dueNow);
+
+      expect(resolveBhagChildren).toHaveBeenCalledWith("example-rollup");
+      expect(startIngestRun).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "proj-1" }),
+        { triggeredBy: "auto", agentEndpoint: "/synthesize" },
+      );
+    });
+
+    it("fires an Area synthesis even when the owner has no provider credentials", async () => {
+      findToArray.mockResolvedValue([rollup("area")]);
+      resolveAreaChildren.mockResolvedValue([{ slug: "child-a" }]);
+      listReadableTomeProjects.mockResolvedValue([{ slug: "child-a" }]);
+      resolveProjectCredentials.mockResolvedValue({});
+
+      await tickAutoIngestScheduler(dueNow);
+
+      expect(resolveAreaChildren).toHaveBeenCalledWith("example-rollup");
+      expect(startIngestRun).toHaveBeenCalledWith(
+        expect.anything(),
+        { triggeredBy: "auto", agentEndpoint: "/synthesize" },
+      );
+    });
+
+    it("records failed and does not dispatch when the owner cannot read a child project", async () => {
+      findToArray.mockResolvedValue([rollup("bhag")]);
+      resolveBhagChildren.mockResolvedValue([{ slug: "child-a" }, { slug: "child-b" }]);
+      listReadableTomeProjects.mockResolvedValue([{ slug: "child-a" }]);
+
+      await tickAutoIngestScheduler(dueNow);
+
+      expect(startIngestRun).not.toHaveBeenCalled();
+      expect(updateOne).toHaveBeenCalledWith(
+        { _id: "proj-1" },
+        { $set: { "autoIngest.lastRun": expect.objectContaining({
+          status: "failed",
+          reason: expect.stringContaining("child-b"),
+        }) } },
+      );
+    });
+
+    it("records failed when child resolution throws", async () => {
+      findToArray.mockResolvedValue([rollup("area")]);
+      resolveAreaChildren.mockRejectedValue(new Error("lookup failed"));
+
+      await tickAutoIngestScheduler(dueNow);
+
+      expect(startIngestRun).not.toHaveBeenCalled();
+      expect(updateOne).toHaveBeenCalledWith(
+        { _id: "proj-1" },
+        { $set: { "autoIngest.lastRun": expect.objectContaining({ status: "failed", reason: "lookup failed" }) } },
+      );
+    });
   });
 });

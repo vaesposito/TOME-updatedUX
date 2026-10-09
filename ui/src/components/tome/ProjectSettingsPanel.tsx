@@ -1433,15 +1433,16 @@ export function ProjectSettingsPanel({
 
               <TabsContent value="auto-ingest" className="space-y-6 pt-6">
                 <div className="space-y-6">
-                    {projectKind === "project" && (
                       <Field label="Auto-ingest">
                       <fieldset disabled={!canEdit} className="space-y-4 disabled:opacity-60">
                         <p className="text-xs text-muted-foreground">
-                          Run ingest automatically on a schedule, on top of manual runs.
+                          {isSynthesized
+                            ? `Re-synthesize this ${projectKind} automatically on a schedule, from its tagged project wikis and attached sources. Child projects refresh on their own schedules.`
+                            : "Run ingest automatically on a schedule, on top of manual runs."}
                           {onOpenIngest && (
                             <>
                               {" "}
-                              Want to ingest now?{" "}
+                              {isSynthesized ? "Want to synthesize now?" : "Want to ingest now?"}{" "}
                               <button
                                 type="button"
                                 onClick={onOpenIngest}
@@ -1603,7 +1604,6 @@ export function ProjectSettingsPanel({
                         )}
                       </fieldset>
                       </Field>
-                    )}
                   <WebexMeetingSeriesSettings slug={slug} canEdit={canEdit} />
                 </div>
               </TabsContent>

@@ -24,7 +24,7 @@ from tome_agent.agent import http_client
 from tome_agent.orchestrator.contract import ChildProjectSnapshot, ProjectSnapshot
 
 MAX_CORPUS_BYTES = 64 * 1024 * 1024
-MAX_PAGE_BYTES = 2 * 1024 * 1024
+MAX_PAGE_BYTES = 8 * 1024 * 1024
 MAX_PAGES = 20_000
 MAX_CONTEXT_CHARACTERS = 128_000
 MAX_INDEX_CHARACTERS = 32_000
@@ -200,6 +200,10 @@ class PublishedPage:
         }
 
 
+class SnapshotPreparationError(ValueError):
+    """Safe preparation errors reported by the authenticated export endpoint."""
+
+
 class PublishedCorpus:
     """One caller/conversation/turn's private read-only retrieval capability."""
 
@@ -246,8 +250,16 @@ class PublishedCorpus:
                 if done_seen:
                     raise ValueError("Unexpected data after published snapshot")
                 if kind == "error":
-                    raise ValueError(
-                        str(frame.get("message", "Published snapshot failed"))
+                    safe_messages = {
+                        "TOME_CONTEXT_TOO_LARGE": "The published corpus exceeds the retrieval limits. Reduce oversized published content or adjust the configured retrieval capacity.",
+                        "TOME_SCOPE_CHANGED": "TOME access changed during preparation. Retry with current permissions.",
+                        "TOME_PAGE_PATH_INVALID": "A published page has an unsupported path. Correct its path before retrying.",
+                    }
+                    raise SnapshotPreparationError(
+                        safe_messages.get(
+                            frame.get("code"),
+                            "TOME context preparation failed; no partial snapshot was used.",
+                        )
                     )
                 if kind == "catalog":
                     if (

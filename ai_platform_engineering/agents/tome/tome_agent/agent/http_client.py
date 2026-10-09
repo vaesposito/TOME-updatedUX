@@ -500,7 +500,7 @@ async def stream_retrieval_snapshot(
         if "application/x-ndjson" not in response.headers.get("content-type", ""):
             raise ValueError("Invalid published snapshot response")
         async for line in response.aiter_lines():
-            if len(line.encode("utf-8")) > 14 * 1024 * 1024:
+            if len(line.encode("utf-8")) > 56 * 1024 * 1024:
                 raise ValueError("Published snapshot frame exceeds its limit")
             frame = json.loads(line)
             if not isinstance(frame, dict):

@@ -372,7 +372,7 @@ set its `TOME_AGENT_TOKEN` to the same value.
 - Source references contain citation, revision id/time, content hash and capture
   time. Page capture times span a reported window; the corpus is not an atomic
   database snapshot or live verification of upstream systems.
-- Limits: 64 MiB corpus, 2 MiB/page, 20,000 pages; 75 seconds to prepare, 270 seconds
+- Limits: 64 MiB corpus, 8 MiB/page, 20,000 pages; 75 seconds to prepare, 270 seconds
   per turn; 12 model calls, 32 function calls, 120,000 additional evidence
   characters; 48,000 characters/read. Search returns pagination and coverage;
   literal search caps at three matching lines/page, 1,000 matches, 8 MiB output

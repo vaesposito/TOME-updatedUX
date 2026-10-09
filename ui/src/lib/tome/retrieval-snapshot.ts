@@ -8,7 +8,7 @@ import { getPageStore, safePagePath, type PageStore, type PublishedPageSnapshot 
 import { buildTomeRetrievalScope } from "./retrieval-scope";
 
 const MAX_CORPUS_BYTES = 64 * 1024 * 1024;
-const MAX_PAGE_BYTES = 2 * 1024 * 1024;
+const MAX_PAGE_BYTES = 8 * 1024 * 1024;
 const MAX_PAGES = 20_000;
 
 async function* publishedPages(store: PageStore, projectId: string): AsyncIterable<PublishedPageSnapshot> {
@@ -54,8 +54,11 @@ export function publishedTomeSnapshotResponse(
           const bytes = Buffer.byteLength(page.markdown, "utf8");
           totalBytes += bytes;
           pageCount += 1;
-          if (bytes > MAX_PAGE_BYTES || totalBytes > MAX_CORPUS_BYTES || pageCount > MAX_PAGES) {
-            throw new ApiError("Published corpus exceeds the retrieval workspace limit", 413, "TOME_CONTEXT_TOO_LARGE");
+          if (bytes > MAX_PAGE_BYTES) {
+            throw new ApiError("A published page exceeds the 8 MiB retrieval limit", 413, "TOME_CONTEXT_TOO_LARGE");
+          }
+          if (totalBytes > MAX_CORPUS_BYTES || pageCount > MAX_PAGES) {
+            throw new ApiError("Published corpus exceeds the 64 MiB / 20,000 page retrieval limit", 413, "TOME_CONTEXT_TOO_LARGE");
           }
           const contentHash = createHash("sha256").update(page.markdown).digest("hex");
           hash.update(JSON.stringify([entry.project_id, path, contentHash, page.revision_id ?? ""]));

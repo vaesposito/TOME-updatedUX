@@ -76,7 +76,7 @@ flowchart TD
   on allowlisted files only; no shell or model-selected command is exposed.
 - Literal search caps at three matching lines/page, 1,000 matches, 8 MiB output
   and eight seconds. Truncated results cannot establish that evidence is absent.
-- Budgets: 64 MiB corpus, 2 MiB/page, 20,000 pages; 128,000 initial context
+- Budgets: 64 MiB corpus, 8 MiB/page, 20,000 pages; 128,000 initial context
   characters and 120,000 additional evidence characters; 12 model calls and
   32 function calls. Preparation is limited to 75 seconds and a turn to 270 seconds.
 - Streaming honors backpressure; Mongo exports heads in small cursor batches.

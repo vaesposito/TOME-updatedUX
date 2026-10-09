@@ -15,7 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from tome_agent import prompts
 from tome_agent.agent import http_client
-from tome_agent.agent.retrieval_context import PublishedCorpus, view_operation
+from tome_agent.agent.retrieval_context import (
+    PublishedCorpus,
+    SnapshotPreparationError,
+    view_operation,
+)
 from tome_agent.orchestrator.contract import (
     ChatEventPayload,
     ProjectSnapshot,
@@ -312,6 +316,10 @@ async def stream_retrieval(
                 headers=headers,
             ):
                 yield event
+    except SnapshotPreparationError as exc:
+        log.warning("Global TOME published snapshot rejected")
+        yield _event("tool_result", id=preparation_id, preview=str(exc), is_error=True)
+        yield _event("error", message=str(exc))
     except httpx.HTTPStatusError as exc:
         log.warning("Global TOME HTTP failure: status=%s", exc.response.status_code)
         message = (

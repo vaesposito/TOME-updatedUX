@@ -4,22 +4,25 @@ import { Bot, Maximize2, MessageCircle, Minimize2, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { ChatPanel } from "@/components/tome/ChatPanel";
+import { SearchablePicker } from "@/components/ui/searchable-picker";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 
 interface Props {
-  slug: string;
+  slug?: string;
+  projects?: readonly { slug: string; title?: string }[];
   projectTitle?: string;
   pagePath?: string;
   onPagesChanged: () => void;
-  onOpenPage: (path: string) => void;
+  onOpenPage: (path: string, projectSlug: string) => void;
   glossaryPreview?: GlossaryResolver;
 }
 
 /** Native TOME chat uses the project's existing session and authenticated BFF. */
 export function TomeAssistantBubble({
   slug,
+  projects,
   projectTitle,
   pagePath,
   onPagesChanged,
@@ -30,6 +33,10 @@ export function TomeAssistantBubble({
   const [started, setStarted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [prompt, setPrompt] = useState<string | null>(null);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const selectedProject = projects?.find((project) => project.slug === selectedSlug);
+  const activeSlug = slug ?? selectedProject?.slug;
+  const activeTitle = projectTitle ?? selectedProject?.title;
   const panelId = useId();
   const titleId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -68,7 +75,7 @@ export function TomeAssistantBubble({
             <Bot className="h-5 w-5 shrink-0 text-primary" aria-hidden />
             <div className="min-w-0 flex-1">
               <h2 id={titleId} className="text-sm font-semibold">Tome Assistant</h2>
-              <p className="truncate text-xs text-muted-foreground">{projectTitle ?? slug}</p>
+              <p className="truncate text-xs text-muted-foreground">{activeTitle ?? activeSlug ?? "Choose a project to start"}</p>
             </div>
             <Button
               variant="ghost"
@@ -83,6 +90,25 @@ export function TomeAssistantBubble({
               <X className="h-4 w-4" />
             </Button>
           </header>
+          {projects && (
+            <div className="shrink-0 border-b px-4 py-3">
+              <SearchablePicker
+                options={projects}
+                selected={selectedProject}
+                onSelect={(project) => {
+                  setSelectedSlug(project.slug);
+                  setPrompt(null);
+                }}
+                getOptionKey={(project) => project.slug}
+                getOptionLabel={(project) => project.title || project.slug}
+                placeholder="Choose a project"
+                searchPlaceholder="Search projects…"
+                emptyLabel="No accessible projects"
+                ariaLabel="Assistant project"
+                portalled={false}
+              />
+            </div>
+          )}
           {pagePath && (
             <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={pagePath}>{pagePath}</span>
@@ -96,15 +122,20 @@ export function TomeAssistantBubble({
             </div>
           )}
           <div className="min-h-0 flex-1">
-            <ChatPanel
-              slug={slug}
-              projectTitle={projectTitle}
+            {activeSlug ? <ChatPanel
+              key={activeSlug}
+              slug={activeSlug}
+              projectTitle={activeTitle}
               onPagesChanged={onPagesChanged}
-              onOpenPage={onOpenPage}
+              onOpenPage={(path) => onOpenPage(path, activeSlug)}
               glossaryPreview={glossaryPreview}
               initialPrompt={prompt}
               onInitialPromptConsumed={() => setPrompt(null)}
-            />
+            /> : (
+              <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                Choose a project to ask about its wiki, sources, and recent changes.
+              </div>
+            )}
           </div>
         </section>
       )}

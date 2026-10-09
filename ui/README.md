@@ -25,6 +25,7 @@ Open http://localhost:3000.
 
 ## Tome Assistant
 
+- **Ask Tome** on `/projects` lets you choose an accessible project before chatting.
 - **Ask Tome** opens a floating assistant in the bottom-right corner of a
   project's wiki, ingest, settings, and report views.
 - The panel uses the same project chat as the Agent view, including connected

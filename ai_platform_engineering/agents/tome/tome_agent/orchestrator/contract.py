@@ -136,9 +136,16 @@ class IssueContext(BaseModel):
 # ---------- agent inbound: /chat ----------
 
 
+class RetrievalMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=12_000)
+
+
 class ChatRequest(BaseModel):
     global_chat: bool = False
-    """Read-only catalog chat; pages are retrieved through scoped TOME tools."""
+    """Read-only retrieval through direct API calls, without MCP or SDK tools."""
+    retrieval_scope_hash: str | None = Field(default=None, max_length=64)
+    retrieval_history: list[RetrievalMessage] = Field(default_factory=list, max_length=8)
     myagent_research: bool = False
     myagent_run_id: UUID | None = None
     myagent_sources: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(default_factory=list, max_length=3)

@@ -8,9 +8,9 @@ import { authenticateRequest } from "@/lib/da-proxy";
 import { getCollection } from "@/lib/mongodb";
 import { requireAgentUsePermission } from "@/lib/rbac/openfga-agent-authz";
 import { parseSSEStream } from "@/lib/streaming/parse-sse";
-import { isTomeAdminSubject, listReadableTomeProjects } from "@/lib/tome/access";
 import { tomeAgentAuthorizationHeaders } from "@/lib/tome/agent-auth";
-import type { AgentChatRequest, ChildProjectSnapshot } from "@/lib/tome/agent-proxy";
+import type { AgentChatRequest } from "@/lib/tome/agent-proxy";
+import { buildTomeRetrievalScope } from "@/lib/tome/retrieval-scope";
 import { isTomeServerEnabled } from "@/lib/tome/guard";
 import { getAgentId } from "@/types/a2a";
 import type { Conversation } from "@/types/mongodb";
@@ -21,7 +21,7 @@ export const maxDuration = 300;
 
 interface NativeChatSession {
   _id: string;
-  sdk_session_id?: string;
+  retrieval_history?: Array<{ role: "user" | "assistant"; content: string }>;
   catalog_hash?: string;
   lease_id?: string | null;
   lease_until?: Date;
@@ -36,7 +36,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new ApiError("Interactive user identity required", 403, "TOME_USER_REQUIRED");
   }
   const input = await request.json() as { message?: unknown; conversation_id?: unknown };
-  if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 100_000 ||
+  if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 12_000 ||
       typeof input.conversation_id !== "string" || input.conversation_id.length > 128) {
     throw new ApiError("A message and conversation_id are required", 400, "BAD_REQUEST");
   }
@@ -51,7 +51,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new ApiError("This is not a native TOME conversation", 400, "TOME_CONVERSATION_REQUIRED");
   }
   // The registered agent identity grants use of the assistant; execution goes
-  // directly to TOME's SDK runtime, with no Dynamic Agents model invocation.
+  // directly to TOME's retrieval runtime, with no Dynamic Agents invocation.
   const agentDenied = await requireAgentUsePermission({
     subject: auth.subject, agentId, email: auth.email, isServiceAccount: false,
     trustedContext: { interaction: trustedInteractionFromRequest(request) },
@@ -60,19 +60,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const agentUrl = process.env.TOME_AGENT_URL;
   if (!agentUrl) throw new ApiError("TOME agent is not configured", 503, "AGENT_NOT_CONFIGURED");
 
-  const readable = await listReadableTomeProjects(auth.subject, {
-    isAdmin: await isTomeAdminSubject(auth.subject),
-  });
-  const catalog: ChildProjectSnapshot[] = readable.map<ChildProjectSnapshot>((project) => ({
-    project_id: String(project._id), slug: project.slug, name: project.title || project.name,
-    project_type: project.type === "bhag" || project.type === "area" ? project.type : "project",
-    bhags: project.labels?.initiatives ?? [], areas: project.labels?.areas ?? [],
-  })).sort((a, b) => a.project_id.localeCompare(b.project_id));
+  const { catalog, hash: catalogHash } = await buildTomeRetrievalScope(auth.subject);
   if (!catalog.length) throw new ApiError("No readable TOME entities", 403, "TOME_READ_REQUIRED");
-  // A changed access catalog starts a new SDK context, so revoked material
-  // cannot survive in a resumed model transcript. Shared-chat callers also
-  // get distinct SDK sessions keyed by their immutable user subject.
-  const catalogHash = createHash("sha256").update(JSON.stringify(catalog)).digest("hex");
+  // Access changes discard model history. Shared chats keep separate model
+  // context for each immutable user subject, regardless of visible history.
   const sessionId = createHash("sha256").update(JSON.stringify([input.conversation_id, auth.subject])).digest("hex");
   const sessions = await getCollection<NativeChatSession>("tome_global_chat_sessions");
   await sessions.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
@@ -86,9 +77,17 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }, { $set: { lease_id: leaseId, lease_until: new Date(Date.now() + 360_000), expires_at: new Date(Date.now() + 7 * 86400_000) } },
   { returnDocument: "before" });
   if (!state) throw new ApiError("TOME is already responding in this conversation", 409, "TOME_CHAT_BUSY");
+  if (state.catalog_hash !== catalogHash) {
+    await sessions.updateOne({ _id: sessionId, lease_id: leaseId }, {
+      $set: { retrieval_history: [], catalog_hash: catalogHash },
+      $unset: { sdk_session_id: "" },
+    });
+  }
   const body: AgentChatRequest = {
     global_chat: true, message: input.message, role: "viewer",
-    sdk_session_id: state.catalog_hash === catalogHash ? state.sdk_session_id ?? null : null,
+    sdk_session_id: null,
+    retrieval_scope_hash: catalogHash,
+    retrieval_history: state.catalog_hash === catalogHash ? state.retrieval_history ?? [] : [],
     actor_sub: auth.subject, actor_email: auth.email ?? null, credentials: {}, stable_pages: {},
     issue_context: { decisions: [], critical: [], decision_count: 0, critical_count: 0, decision_truncated: false, critical_truncated: false },
     snapshot: {
@@ -122,12 +121,22 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       try {
         for await (const frame of parseSSEStream(upstream)) {
           if (frame.event === "session") {
-            const data = JSON.parse(frame.data) as { session_id?: unknown };
-            if (typeof data.session_id === "string") {
+            const data = JSON.parse(frame.data) as { retrieval_history?: unknown };
+            if (Array.isArray(data.retrieval_history)) {
+              const history = data.retrieval_history;
+              if (history.length > 8 || history.some((message) => !message ||
+                  !["user", "assistant"].includes(message.role) || typeof message.content !== "string" ||
+                  message.content.length > 12_000)) throw new Error("Invalid retrieval session state");
+              if ((await buildTomeRetrievalScope(auth.subject)).hash !== catalogHash) {
+                throw new Error("TOME access changed during this turn");
+              }
               await sessions.updateOne({ _id: sessionId, lease_id: leaseId }, {
-                $set: { sdk_session_id: data.session_id, catalog_hash: catalogHash },
+                $set: { retrieval_history: history, catalog_hash: catalogHash },
+                $unset: { sdk_session_id: "" },
               });
             }
+            // Session state is private server data, never a browser payload.
+            continue;
           }
           output.enqueue(encoder.encode(`event: ${frame.event}\ndata: ${frame.data}\n\n`));
         }

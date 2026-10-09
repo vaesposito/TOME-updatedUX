@@ -32,7 +32,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
@@ -510,8 +510,9 @@ def _sse_message(event_type: str, data: dict) -> bytes:
 
 @app.post("/chat")
 async def chat_endpoint(body: ChatRequest):
-    if body.global_chat and (not body.actor_sub or body.myagent_research):
-        raise HTTPException(400, "global chat requires a user subject and cannot use MyAgent mode")
+    if body.global_chat and (not body.actor_sub or not body.retrieval_scope_hash or body.myagent_research
+                            or body.is_compact or len(body.message) > 12_000):
+        raise HTTPException(400, "global chat requires a scoped user session and a bounded message")
     if not _state.ready:
         raise HTTPException(503, "agent not ready")
 
@@ -535,7 +536,7 @@ async def chat_endpoint(body: ChatRequest):
             # the PageStore's live pages; the internal page endpoint excludes
             # pending drafts. Holding the lock also prevents a chat from
             # racing an ingest's workspace write/persist cycle.
-            async with workspace.project_lock(body.snapshot.project_id):
+            async with (nullcontext() if body.global_chat else workspace.project_lock(body.snapshot.project_id)):
                 if not body.global_chat:
                     await _require_fresh_workspace(body.snapshot.project_id)
                 with (suppress_sensitive_evidence_tracing() if body.myagent_research else trace_context(
@@ -551,14 +552,18 @@ async def chat_endpoint(body: ChatRequest):
                         stable_pages=body.stable_pages,
                         issue_context=body.issue_context,
                         actor_email=body.actor_email,
+                        actor_sub=body.actor_sub,
                         is_compact=body.is_compact,
                         global_chat=body.global_chat,
+                        retrieval_scope_hash=body.retrieval_scope_hash,
+                        retrieval_history=body.retrieval_history,
                         myagent_research=body.myagent_research,
                         myagent_run_id=str(body.myagent_run_id) if body.myagent_run_id else None,
                         myagent_sources=body.myagent_sources,
                     ):
+                        if event.type == "done":
+                            success = not event.data.get("is_error", False)
                         yield _sse_format(event)
-            success = True
         finally:
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
             _state.last_activity_at = datetime.now(UTC)

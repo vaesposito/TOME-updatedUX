@@ -466,6 +466,21 @@ def fetch_model_config(
     return by_role or None
 
 
+async def fetch_retrieval(
+    actor_sub: str, scope_hash: str, operation: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Call the bounded read API with the trusted caller identity, never model headers."""
+    headers = {**_auth_headers(), "X-Tome-Actor-Sub": actor_sub}
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.get(
+            f"{_backend_url()}/api/internal/retrieval",
+            headers=headers,
+            params={**arguments, "operation": operation, "scope_hash": scope_hash},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 def fetch_all_pages_sync(
     project_id: str | None = None, *, actor_sub: str | None = None
 ) -> dict[str, str]:

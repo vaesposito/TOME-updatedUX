@@ -171,6 +171,8 @@ export interface ProjectSnapshot {
 
 /** ChatRequest — mirrors contract.ChatRequest. */
 export interface AgentChatRequest {
+  retrieval_scope_hash?: string;
+  retrieval_history?: Array<{ role: "user" | "assistant"; content: string }>;
   global_chat?: boolean;
   myagent_research?: boolean;
   myagent_run_id?: string;

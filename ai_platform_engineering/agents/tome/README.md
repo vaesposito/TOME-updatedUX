@@ -348,14 +348,20 @@ set its `TOME_AGENT_TOKEN` to the same value.
 
 ### Global Ask Tome
 
-- One service runs project ingestion, synthesis, and chat as separate SDK runs.
-- `ChatRequest.global_chat` selects read-only catalog chat. The BFF supplies an
+- One service runs project operations as separate SDK runs and global retrieval
+  as direct Messages function calls, without MCP or a Claude Code subprocess.
+- `ChatRequest.global_chat` selects read-only retrieval. The BFF supplies an
   access-filtered BHAG/area/project catalog and the authenticated actor subject.
 - Wiki files remain in their project workspaces. Global chat has no filesystem
   tools: `list_projects`, `list_project_pages`, and `read_project_page` retrieve
-  authorized live material through TOME callbacks when needed.
+  current stored wiki material through access-checked HTTP callbacks when needed.
 - The callback rechecks actor read access. No provider credentials, global file
   copy, or background ingestion authority is exposed to global chat.
 - Global chat resolves the global chat model rather than a project's override.
-- GRID owns conversation history; SDK sessions are scoped to user/conversation
-  and reset when the authorized catalog changes.
+- GRID owns visible conversation history. Mongo holds up to eight bounded
+  user/assistant messages per user/conversation, TTL seven days. Raw retrieved
+  content stays in turn memory; changing the access catalog discards model history.
+- Three fixed functions are the complete model capability boundary. There is no
+  filesystem, shell, write, provider-credential, or model-selected network access.
+  This does not require a separate container per user; code execution would need
+  a separate operating-system sandbox if added later.

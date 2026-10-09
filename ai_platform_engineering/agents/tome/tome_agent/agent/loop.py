@@ -705,7 +705,6 @@ def build_agent_options(
     myagent_run_id: str | None = None,
     myagent_run_kind: str = "ingest",
     read_only: bool = False,
-    global_chat: bool = False,
     max_budget_usd: float | None = None,
     max_buffer_size: int | None = None,
     expected_template_pages: dict[str, Any] | None = None,
@@ -756,21 +755,12 @@ def build_agent_options(
             project_dir=pdir,
             author=persist_author,
             readable_projects=snapshot.readable_projects,
-            read_only_catalog=global_chat,
         )
     if offline:
         # Frozen experiments may read and edit only the materialized bundle.
         # No WebFetch, connector MCP, cross-project lookup, or live template
         # call can make the two candidates observe different evidence.
         allowed = list(WIKI_TOOLS)
-    elif global_chat:
-        # Global chat retrieves current, caller-authorized pages through the
-        # backend, never through the service's shared filesystem or connectors.
-        allowed = [
-            "mcp__tome__list_projects",
-            "mcp__tome__list_project_pages",
-            "mcp__tome__read_project_page",
-        ]
     elif agent_role == "viewer" or read_only:
         allowed = ["Read", "Glob", "Grep"]
         if not restrict_untrusted_evidence:
@@ -807,7 +797,7 @@ def build_agent_options(
         mcp_servers["myagent"] = build_myagent_mcp(project_id, myagent_run_id, run_kind=myagent_run_kind)
         allowed.append("mcp__myagent__ask_myagent")
 
-    for connector in () if (offline or restrict_untrusted_evidence or global_chat) else REGISTRY:
+    for connector in () if (offline or restrict_untrusted_evidence) else REGISTRY:
         token = _connector_token(connector.slug)
         sources = sources_for_connector(snapshot, connector)
         if isinstance(connector, ConfluenceConnector) and confluence_read_state is not None:
@@ -835,7 +825,6 @@ def build_agent_options(
     # other write tools above.
     if (
         not offline
-        and not global_chat
         and not restrict_untrusted_evidence
         and os.environ.get("MYCELIUM_URL", "").strip()
         and snapshot.slug
@@ -872,7 +861,7 @@ def build_agent_options(
         # For delegated external evidence, `tools` is the actual availability
         # fence: no WebFetch/Search, connector MCP, or ambient built-in can
         # become callable even if a source reply tries to prompt-inject it.
-        tools=[name for name in allowed if not name.startswith("mcp__")] if (restrict_untrusted_evidence or global_chat) else None,
+        tools=[name for name in allowed if not name.startswith("mcp__")] if restrict_untrusted_evidence else None,
         allowed_tools=allowed,
         permission_mode="acceptEdits",
         system_prompt=system_prompt,
@@ -881,15 +870,15 @@ def build_agent_options(
         # A restricted pass must not load persistent project/local settings or
         # skills. Together with the Markdown-only write hook, this prevents a
         # source-influenced run from poisoning a later normal invocation.
-        setting_sources=[] if (restrict_untrusted_evidence or global_chat) else ["project", "local"],
-        skills=[] if (restrict_untrusted_evidence or global_chat) else "all",
+        setting_sources=[] if restrict_untrusted_evidence else ["project", "local"],
+        skills=[] if restrict_untrusted_evidence else "all",
         session_store=None,  # don't persist sessions
         mcp_servers=mcp_servers,
-        strict_mcp_config=restrict_untrusted_evidence or global_chat,
+        strict_mcp_config=restrict_untrusted_evidence,
         env=claude_agent_env,
         # Current SDKs send CLI diagnostics through `stderr`; older versions
         # used `debug_stderr`. Keep both paths quiet for the sensitive pass.
-        stderr=_discard_restricted_agent_stderr if (restrict_untrusted_evidence or global_chat) else None,
+        stderr=_discard_restricted_agent_stderr if restrict_untrusted_evidence else None,
         debug_stderr=not restrict_untrusted_evidence,
         include_partial_messages=include_partial_messages,
         max_turns=max_turns,
@@ -901,14 +890,10 @@ def build_agent_options(
                     [
                         HookMatcher(
                             matcher="*",
-                            hooks=[make_deny_non_wiki_tools_hook(
-                                set(allowed),
-                                reason=("Global TOME chat permits only authorized catalog and page retrieval."
-                                        if global_chat else None),
-                            )],
+                            hooks=[make_deny_non_wiki_tools_hook(set(allowed))],
                         )
                     ]
-                    if restrict_untrusted_evidence or global_chat
+                    if restrict_untrusted_evidence
                     else []
                 ),
                 HookMatcher(
@@ -934,7 +919,7 @@ def build_agent_options(
                         make_constrain_reads_hook(
                             pdir,
                             extra_dirs=extra_read_dirs,
-                            allow_override=not (restrict_untrusted_evidence or global_chat),
+                            allow_override=not restrict_untrusted_evidence,
                             redact_sensitive_content=restrict_untrusted_evidence,
                         )
                     ],

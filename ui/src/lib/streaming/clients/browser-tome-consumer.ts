@@ -44,8 +44,9 @@ export class TomeStreamAdapter implements StreamAdapter {
           callbacks.onToolStart?.(String(data.id ?? ""), String(data.tool ?? "tool"), data.input as Record<string, unknown>, []);
         } else if (type === "tool_result") {
           type = "tool_end";
-          normalized = { tool_call_id: data.id, result: data.preview, namespace: [] };
-          callbacks.onToolEnd?.(String(data.id ?? ""), undefined, undefined, [], undefined, String(data.preview ?? ""));
+          const error = data.is_error === true ? String(data.preview ?? "TOME read failed") : undefined;
+          normalized = { tool_call_id: data.id, result: data.preview, error, namespace: [] };
+          callbacks.onToolEnd?.(String(data.id ?? ""), undefined, error, [], undefined, String(data.preview ?? ""));
         } else if (type === "error") {
           completed = true;
           normalized = { error: String(data.message ?? "TOME execution failed") };

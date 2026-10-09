@@ -25,7 +25,7 @@ Open http://localhost:3000.
 
 ## Tome Assistant
 
-- **Ask Tome** calls the native `tome-agent` SDK runtime on `/projects` and inside
+- **Ask Tome** calls the native `tome-agent` retrieval runtime on `/projects` and inside
   projects. No project selection is required; the current page is optional context.
 - `/api/tome/chat` authenticates the user and checks conversation write access and
   assistant use permission. The registered assistant ID is an authorization and
@@ -36,8 +36,11 @@ Open http://localhost:3000.
   all files into the prompt or merge project folders.
 - Global chat is read-only, with no filesystem, connector, or wiki-write tools.
   Access is checked again on page retrieval. Use project-native chat for edits.
-- SDK sessions are isolated by conversation and user subject; a changed access
-  catalog resets model context. Active turns are serialized per session.
+- Global retrieval uses direct Messages function calls and access-checked HTTP
+  reads, without MCP, Claude Code, or a filesystem workspace.
+- Model history is isolated by conversation and user subject; a changed access
+  catalog resets it. Active turns are serialized per session. Only eight bounded
+  user/assistant messages persist, with a seven-day TTL; raw retrieved pages do not.
 - GRID stores the conversation, messages, and timeline. **Open conversation in
   regular chat** opens the same thread; **Expand assistant** enlarges the popup.
 - The installed app's assistant ID is used when configured; otherwise

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AgenticAppAssistantOverlay } from "@/components/agentic-apps/AgenticAppAssistantOverlay";
 import { Button } from "@/components/ui/button";
-import { apiClient } from "@/lib/api-client";
+import { useTomeAssistantSettings } from "@/hooks/use-tome-assistant-settings";
 import { validateAssistantContextMessage } from "@/lib/agentic-apps/assistant-context";
 import { resolveUsableChatAgent } from "@/lib/chat-agent-selection";
 
@@ -16,7 +16,13 @@ interface Props {
 }
 
 /** TOME uses GRID conversations; project and page are optional viewing context. */
-export function TomeAssistantBubble({ slug, projectTitle, pagePath }: Props) {
+export function TomeAssistantBubble(props: Props) {
+  const settings = useTomeAssistantSettings();
+  if (!settings.tome_assistant_popup_enabled) return null;
+  return <EnabledTomeAssistantBubble key={settings.agent_id} {...props} requestedAgentId={settings.agent_id} />;
+}
+
+function EnabledTomeAssistantBubble({ slug, projectTitle, pagePath, requestedAgentId }: Props & { requestedAgentId: string | null }) {
   const [open, setOpen] = useState(false);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +59,7 @@ export function TomeAssistantBubble({ slug, projectTitle, pagePath }: Props) {
     setError(null);
     async function resolveAgent() {
       try {
-        const apps = await apiClient.getAgenticApps(controller.signal);
-        const requestedAgentId = apps.items.find((app) => app.appId === "tome")?.assistantAgentId || "agent-tome-agent";
+        if (!requestedAgentId) throw new Error("TOME assistant is not configured.");
         const agent = await resolveUsableChatAgent({ requestedAgentId, requireAvailableAgent: true, signal: controller.signal });
         if (!cancelled) {
           setAgentId(agent.id);
@@ -74,7 +79,7 @@ export function TomeAssistantBubble({ slug, projectTitle, pagePath }: Props) {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [open, agentId, attempt]);
+  }, [open, agentId, attempt, requestedAgentId]);
 
   if (agentId) {
     return (

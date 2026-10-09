@@ -45,16 +45,44 @@ Open http://localhost:3000.
   user/assistant messages persist, with a seven-day TTL; raw retrieved pages do not.
 - GRID stores the conversation, messages, and timeline. **Open conversation in
   regular chat** opens the same thread; **Expand assistant** enlarges the popup.
-- The installed app's assistant ID is used when configured; otherwise
-  `agent-tome-agent` must be enabled and available to the caller.
+- `TOME_CHAT_AGENT_ID` binds a registered agent to native global retrieval. When
+  unset, the deployment-owned TOME app's `manifest.assistant.agentId` supplies the
+  binding. That exact agent must be enabled and available to the caller; there is
+  no fallback identity or inference from the agent name.
 - The native agent uses TOME's global chat model configuration, then its environment
   defaults. Its service token stays server-side; caller identity accompanies reads.
-- Existing dynamic and project-native conversations are not migrated. A new Ask
-  Tome conversation uses the native runtime and keeps its history in GRID.
+- New and existing browser conversations with that registered agent use native
+  global retrieval. Routing is derived server-side on creation and read, so an
+  existing chat picks up the binding on reload. Visible history is retained;
+  prior Dynamic Agents model checkpoints are not imported into native history.
 - Opening Ask Tome resolves its configured agent with current access checks,
   without waiting for user defaults or integration settings. Startup requests
   stop after 15 seconds and offer Retry. Direct chat links preserve the native
   runtime metadata, so they do not initialize Dynamic Agents files or interrupts.
+
+### Runtime popup toggle
+
+- **TOME Settings → Assistant** (`/projects/admin?tab=assistant`) lets TOME admins
+  switch **Ask Tome popup** on or off for both Projects and wiki pages.
+- MongoDB `platform_config`, `_id: platform_settings`, stores the boolean
+  `tome_assistant_popup_enabled`. Missing or invalid values default to **false**.
+- `/api/tome/assistant-settings` exposes only this flag and the registered agent ID
+  to authenticated chat users. PATCH requires TOME admin access and a boolean.
+  The existing `/api/admin/platform-config` API also reads and updates the flag
+  under its existing system configuration permissions. Both write paths emit
+  `tome.assistant.settings.update` audit events.
+- Visible pages refresh every 30 seconds, on focus, and after saving in the same
+  window. Disabling unmounts the popup; a failed settings refresh hides it.
+  The toggle changes no agent grants and does not disable regular GRID chat.
+- For rollout, keep `TOME_ENABLED=true`, configure `TOME_AGENT_URL` and its service
+  token, and set `TOME_CHAT_AGENT_ID` to the registered agent's actual ID. This
+  binding works without enabling External Apps. Alternatively, use the existing
+  deployment-owned app catalog (`AGENTIC_APPS_INSTALL_ENABLED` /
+  `AGENTIC_APPS_CONFIG_PATH`) with an installed, enabled TOME app and its
+  `manifest.assistant.agentId`. App hub visibility and `manifest.assistant.enabled`
+  do not select the chat runtime.
+  Deploy the updated UI and native agent images; keep the popup flag off until
+  an administrator enables it. No restart or rebuild is needed to change the flag.
 
 
 ## Tome ingest review

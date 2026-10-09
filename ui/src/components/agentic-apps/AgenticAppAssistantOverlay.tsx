@@ -113,9 +113,8 @@ export function AgenticAppAssistantOverlay({
       conversation_surface: AGENTIC_APP_CONVERSATION_KIND,
       agentic_app_id: appId,
       agentic_app_agent_id: assistantAgentId,
-      ...(assistantRuntime ? { assistant_runtime: assistantRuntime } : {}),
     }),
-    [appId, assistantAgentId, assistantRuntime],
+    [appId, assistantAgentId],
   );
   const clientContext = useMemo(() => buildAssistantClientContext(activeContext), [activeContext]);
   const suggestedPrompts = activeContext?.suggestedPrompts?.length

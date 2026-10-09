@@ -21,6 +21,7 @@ import {
 import { requireAgentUsePermission } from '@/lib/rbac/openfga-agent-authz';
 import { trustedInteractionFromRequest } from '@/lib/authz/trusted-interaction';
 import { writeOpenFgaTuples } from '@/lib/rbac/openfga';
+import { getTomeNativeChatAgentId, withTomeChatRouting } from '@/lib/tome/chat-routing';
 import { buildParticipants } from '@/types/a2a';
 import type { ClientType, Conversation, CreateConversationRequest } from '@/types/mongodb';
 import { VALID_CLIENT_TYPES } from '@/types/mongodb';
@@ -276,10 +277,11 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     directShareConversationIds,
   );
   const visibleItemsWithViewerFlags = annotateConversationsWithViewerSharing(session, user.email, visibleItems);
+  const nativeTomeAgentId = getTomeNativeChatAgentId();
   const visibleItemsWithAccessLevel = await Promise.all(
     visibleItemsWithViewerFlags.map(async (conversation) => {
       const access_level = await resolveListConversationAccessLevel(conversation, user.email, session);
-      return { ...conversation, access_level };
+      return { ...withTomeChatRouting(conversation, nativeTomeAgentId), access_level };
     }),
   );
 
@@ -395,7 +397,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
           console.warn('[conversations/route] idempotency-hit SA writer grant failed (best-effort):', err);
         }
       }
-      return successResponse({ conversation: existing, created: false }, 200);
+      return successResponse({ conversation: withTomeChatRouting(existing, getTomeNativeChatAgentId()), created: false }, 200);
     }
   }
 
@@ -410,7 +412,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     clientMetadata.ui_version = packageJson.version;
   }
 
-  const newConversation: Conversation = {
+  const newConversation: Conversation = withTomeChatRouting({
     _id: uuidv4(), // Server owns ID generation
     title: body.title,
     client_type: effectiveClientType,
@@ -439,7 +441,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     tags: body.tags || [],
     is_archived: false,
     is_pinned: false,
-  };
+  }, getTomeNativeChatAgentId());
 
   await conversations.insertOne(newConversation);
 

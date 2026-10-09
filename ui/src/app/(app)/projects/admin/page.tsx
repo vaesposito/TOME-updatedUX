@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { PageTemplateEditor } from "@/components/tome/PageTemplateEditor";
 import { ModelConfigTab } from "@/components/tome/admin/ModelConfigTab";
+import { AssistantSettingsTab } from "@/components/tome/admin/AssistantSettingsTab";
 import { TomeAdminsTab } from "@/components/tome/admin/TomeAdminsTab";
 import { TomeAnalyticsTab } from "@/components/tome/admin/TomeAnalyticsTab";
 import { TomeAuthorizationHealthTab } from "@/components/tome/admin/TomeAuthorizationHealthTab";
@@ -18,6 +19,7 @@ import { useSubtabParam } from "@/hooks/use-subtab-param";
 const TOME_ADMIN_TABS = [
   "page-templates",
   "models",
+  "assistant",
   "experiments",
   "issue-labels",
   "analytics",
@@ -29,6 +31,7 @@ type TomeAdminTab = (typeof TOME_ADMIN_TABS)[number];
 const TOME_ADMIN_TAB_LABELS: Record<TomeAdminTab, string> = {
   "page-templates": "Page Templates",
   models: "Models",
+  assistant: "Assistant",
   experiments: "Model Evaluations",
   "issue-labels": "Issue Labels",
   analytics: "Analytics",
@@ -98,6 +101,7 @@ function TomeAdminPageContent() {
         <TabsList className="h-auto flex-wrap gap-1">
           <TabsTrigger value="page-templates">Page Templates</TabsTrigger>
           <TabsTrigger value="models">Models</TabsTrigger>
+          <TabsTrigger value="assistant">Assistant</TabsTrigger>
           <TabsTrigger value="experiments">Model Evaluations</TabsTrigger>
           <TabsTrigger value="issue-labels">Issue Labels</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -115,6 +119,10 @@ function TomeAdminPageContent() {
 
         <TabsContent value="models" className="mt-0 space-y-4">
           <ModelConfigTab />
+        </TabsContent>
+
+        <TabsContent value="assistant" className="mt-0 space-y-4">
+          <AssistantSettingsTab />
         </TabsContent>
 
         <TabsContent value="experiments" className="mt-0 space-y-4">

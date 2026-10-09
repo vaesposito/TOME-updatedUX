@@ -12,6 +12,7 @@ import { tomeAgentAuthorizationHeaders } from "@/lib/tome/agent-auth";
 import type { AgentChatRequest } from "@/lib/tome/agent-proxy";
 import { buildTomeRetrievalScope } from "@/lib/tome/retrieval-scope";
 import { isTomeServerEnabled } from "@/lib/tome/guard";
+import { getTomeNativeChatAgentId } from "@/lib/tome/chat-routing";
 import { getAgentId } from "@/types/a2a";
 import type { Conversation } from "@/types/mongodb";
 import { requireConversationWriteAccess } from "../../v1/chat/_conversation-authz";
@@ -45,9 +46,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const conversations = await getCollection<Conversation>("conversations");
   const conversation = await conversations.findOne({ _id: input.conversation_id });
   const agentId = conversation && getAgentId(conversation);
-  if (!conversation || !agentId || conversation.metadata?.assistant_runtime !== "tome-native" ||
-      conversation.metadata?.agentic_app_id !== "tome" ||
-      conversation.metadata?.agentic_app_agent_id !== agentId) {
+  const nativeAgentId = getTomeNativeChatAgentId();
+  if (!nativeAgentId) throw new ApiError("TOME chat agent is not configured", 503, "AGENT_NOT_CONFIGURED");
+  if (!conversation || !agentId || agentId !== nativeAgentId ||
+      conversation.client_type !== "webui" || conversation.created_by_service_account) {
     throw new ApiError("This is not a native TOME conversation", 400, "TOME_CONVERSATION_REQUIRED");
   }
   // The registered agent identity grants use of the assistant; execution goes

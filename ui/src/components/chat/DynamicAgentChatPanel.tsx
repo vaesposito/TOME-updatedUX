@@ -215,14 +215,14 @@ export function ChatPanel({
     try {
       const agentId = await resolveUsableChatAgentId();
       const newParticipants = buildParticipants(agentId);
-      await apiClient.updateConversation(conversationId, {
+      const updated = await apiClient.updateConversation(conversationId, {
         participants: newParticipants,
       });
       // Patch the Zustand store in-place so ChatContainer sees the new participants
       // immediately — it skips the API fetch when the conversation is already cached.
       useChatStore.setState((state) => ({
         conversations: state.conversations.map((c) =>
-          c.id === conversationId ? { ...c, participants: newParticipants } : c,
+          c.id === conversationId ? { ...c, participants: newParticipants, metadata: updated.metadata } : c,
         ),
       }));
       router.refresh();
@@ -254,10 +254,10 @@ export function ChatPanel({
     if (!conversationId || !chosenAgentId) return;
     try {
       const newParticipants = buildParticipants(chosenAgentId);
-      await apiClient.updateConversation(conversationId, { participants: newParticipants });
+      const updated = await apiClient.updateConversation(conversationId, { participants: newParticipants });
       useChatStore.setState((state) => ({
         conversations: state.conversations.map((c) =>
-          c.id === conversationId ? { ...c, participants: newParticipants } : c,
+          c.id === conversationId ? { ...c, participants: newParticipants, metadata: updated.metadata } : c,
         ),
       }));
       router.refresh();

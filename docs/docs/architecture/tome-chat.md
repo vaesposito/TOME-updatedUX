@@ -16,6 +16,16 @@ Ask Tome with direct Messages reasoning. No agent instance per project is needed
 
 ## Global context and retrieval
 
+- `TOME_CHAT_AGENT_ID` (or the deployment-owned TOME app's
+  `manifest.assistant.agentId`) binds a registered agent to native global
+  retrieval. The server derives routing for new and existing browser GRID
+  conversations from that identity, independently of popup visibility.
+- TOME Settings → Assistant controls `platform_config.tome_assistant_popup_enabled`.
+  It defaults off, affects Projects and wiki popups, and refreshes on visible
+  clients every 30 seconds. Regular chat with the bound agent stays available.
+- Conversation write and registered-agent use checks apply to both entry points;
+  runtime metadata cannot substitute for the configured identity.
+
 ```mermaid
 flowchart TD
     Popup[Ask Tome popup] --> Chat[GRID conversation]

@@ -23,6 +23,21 @@ npm run dev
 
 Open http://localhost:3000.
 
+## Tome Assistant
+
+- **Ask Tome** opens a floating assistant in the bottom-right corner of a
+  project's wiki, ingest, settings, and report views.
+- The panel uses the same project chat as the Agent view, including connected
+  credentials, server history, streaming, Stop, Clear, and compact controls.
+- On wiki pages, **Ask about this page** fills the composer with a source-aware
+  question. The user sends it explicitly.
+- Minimize the panel to keep browsing, expand it for more room, or press Escape
+  to close it and return focus to the launcher. Minimizing preserves the draft
+  and continues an active response.
+- Page links open in the project view; agent page writes refresh its wiki.
+- The Agent view keeps its existing full-size chat and does not show a second
+  floating chat. The assistant is mounted inside the wiki's fullscreen surface.
+
 ## Tome ingest review
 
 The review screen lists every file an ingest created or modified. Files held

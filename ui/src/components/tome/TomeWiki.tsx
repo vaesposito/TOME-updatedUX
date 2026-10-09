@@ -62,6 +62,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ChatPanel } from "@/components/tome/ChatPanel";
+import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
 import { FeedPanel } from "@/components/tome/FeedPanel";
 import { GistsPanel } from "@/components/tome/GistsPanel";
 import { GistView } from "@/components/tome/GistView";
@@ -2478,6 +2479,17 @@ export function TomeWiki({ slug }: { slug: string }) {
             )}
           </main>
         </div>
+        {data && !error && view.kind !== "agent" && (
+          <TomeAssistantBubble
+            key={slug}
+            slug={slug}
+            projectTitle={projectTitle ?? undefined}
+            pagePath={trackedPagePath}
+            onPagesChanged={load}
+            onOpenPage={(path) => navigate({ kind: "page", path })}
+            glossaryPreview={glossaryPreview}
+          />
+        )}
       </div>
 
       <Dialog

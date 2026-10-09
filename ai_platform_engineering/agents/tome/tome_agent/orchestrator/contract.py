@@ -143,7 +143,7 @@ class RetrievalMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     global_chat: bool = False
-    """Read-only retrieval through direct API calls, without MCP or SDK tools."""
+    """Read-only reasoning over a caller-scoped published view, without MCP or SDK tools."""
     retrieval_scope_hash: str | None = Field(default=None, max_length=64)
     retrieval_history: list[RetrievalMessage] = Field(default_factory=list, max_length=8)
     myagent_research: bool = False

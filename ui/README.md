@@ -30,14 +30,16 @@ Open http://localhost:3000.
 - `/api/tome/chat` authenticates the user and checks conversation write access and
   assistant use permission. The registered assistant ID is an authorization and
   display identity; Dynamic Agents does not execute these native conversations.
-- Each turn provides the caller's readable BHAG/area/project catalog and hierarchy.
-  Page bodies stay in their existing projects. The agent lists pages and retrieves
-  relevant wiki/source pages on demand through TOME tools; it does not concatenate
-  all files into the prompt or merge project folders.
-- Global chat is read-only, with no filesystem, connector, or wiki-write tools.
-  Access is checked again on page retrieval. Use project-native chat for edits.
-- Global retrieval uses direct Messages function calls and access-checked HTTP
-  reads, without MCP, Claude Code, or a filesystem workspace.
+- Each turn streams the caller's published BHAG/area/project pages into a private
+  read-only view. Navigation preserves relationships without merging project
+  folders. Small corpora enter context in full; larger corpora preload broad
+  foundations and relevant documents, then expose scoped glob/search/section reads.
+- Global retrieval uses direct Messages functions without MCP or Claude Code.
+  The model cannot execute arbitrary commands, choose network endpoints or write
+  wiki files. Current permissions are rechecked around reads/search and replies.
+- Staged files are deleted at turn completion, failure or ordinary cancellation.
+  Citation metadata includes revision time/hash and capture time. Coverage and
+  pagination identify partial results; published evidence is not a live source check.
 - Model history is isolated by conversation and user subject; a changed access
   catalog resets it. Active turns are serialized per session. Only eight bounded
   user/assistant messages persist, with a seven-day TTL; raw retrieved pages do not.

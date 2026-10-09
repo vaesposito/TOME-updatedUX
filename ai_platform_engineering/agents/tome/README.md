@@ -348,20 +348,40 @@ set its `TOME_AGENT_TOKEN` to the same value.
 
 ### Global Ask Tome
 
-- One service runs project operations as separate SDK runs and global retrieval
-  as direct Messages function calls, without MCP or a Claude Code subprocess.
-- `ChatRequest.global_chat` selects read-only retrieval. The BFF supplies an
+- The same service runs project operations as SDK runs and global retrieval as
+  direct Messages function calls. Global turns use neither MCP nor Claude Code.
+- `ChatRequest.global_chat` selects read-only retrieval. The BFF provides an
   access-filtered BHAG/area/project catalog and the authenticated actor subject.
-- Wiki files remain in their project workspaces. Global chat has no filesystem
-  tools: `list_projects`, `list_project_pages`, and `read_project_page` retrieve
-  current stored wiki material through access-checked HTTP callbacks when needed.
-- The callback rechecks actor read access. No provider credentials, global file
-  copy, or background ingestion authority is exposed to global chat.
-- Global chat resolves the global chat model rather than a project's override.
-- GRID owns visible conversation history. Mongo holds up to eight bounded
-  user/assistant messages per user/conversation, TTL seven days. Raw retrieved
-  content stays in turn memory; changing the access catalog discards model history.
-- Three fixed functions are the complete model capability boundary. There is no
-  filesystem, shell, write, provider-credential, or model-selected network access.
-  This does not require a separate container per user; code execution would need
-  a separate operating-system sandbox if added later.
+- Each turn streams published page heads from the canonical PageStore into a
+  private temporary view. Drafts, rejected revisions and tombstones are excluded.
+  The ingestion mirror and its credentials are never opened by this runtime.
+- Files live at `entities/<hashed-entity-id>/pages/<published-path>`. Navigation
+  indexes express relationships without duplicating a project's wiki. Root mode
+  is 0700; staged files are 0400. The view is removed on success, error or ordinary
+  cancellation. A forced process termination can leave files in container `/tmp`.
+- Initial context includes navigation/overview excerpts and complete documents:
+  the entire corpus when it fits, otherwise broad charters, question-relevant
+  pages and core progress/decision/memory pages within a 128,000-character budget.
+- Native functions are `list_projects`, `list_project_pages`, `glob_pages`,
+  `search_pages` and `read_project_page`. Search supports ranked keyword excerpts
+  or literal ripgrep; it is not semantic/vector search. Globs use relative POSIX
+  `*`, `?` and whole-segment `**`. Reads support offsets and line ranges.
+- Permission checks run before/after search and reads, before/after model calls,
+  and at snapshot completion. A changed catalog aborts the turn; the next turn
+  discards private model history. No partial snapshot is used for reasoning.
+- Source references contain citation, revision id/time, content hash and capture
+  time. Page capture times span a reported window; the corpus is not an atomic
+  database snapshot or live verification of upstream systems.
+- Limits: 64 MiB corpus, 2 MiB/page, 20,000 pages; 75 seconds to prepare, 270 seconds
+  per turn; 12 model calls, 32 function calls, 120,000 additional evidence
+  characters; 48,000 characters/read. Search returns pagination and coverage;
+  literal search caps at three matching lines/page, 1,000 matches, 8 MiB output
+  and eight seconds. Oversized/incomplete snapshots fail closed.
+- GRID owns visible history. Mongo stores eight bounded user/assistant messages
+  per user/conversation, TTL seven days. Raw pages and function results are not
+  persisted in model history. The global model setting applies.
+- The five functions are the model capability boundary. There is no arbitrary
+  filesystem, shell, write, credential or model-selected network capability.
+  Private views are not separate OS sandboxes; adding code execution would
+  require stronger isolation. Project ingestion/chat still use their existing SDK
+  and connector MCPs.

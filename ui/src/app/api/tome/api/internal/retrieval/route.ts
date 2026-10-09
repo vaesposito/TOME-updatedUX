@@ -7,6 +7,7 @@ import { isTomeServerEnabled } from "@/lib/tome/guard";
 import { requireAgentToken, resolveProject } from "@/lib/tome/internal-api";
 import { getPageStore } from "@/lib/tome/page-store";
 import { buildTomeRetrievalScope } from "@/lib/tome/retrieval-scope";
+import { publishedTomeSnapshotResponse } from "@/lib/tome/retrieval-snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
   const operation = query.get("operation");
   if (operation === "scope") return Response.json({ scope_hash: scope.hash });
+  if (operation === "snapshot") return publishedTomeSnapshotResponse(subject, scope, request.signal);
   const slug = query.get("project_slug") ?? "";
   const entry = scope.catalog.find((project) => project.slug === slug);
   if (!entry) throw new ApiError("Project is unavailable", 404, "PROJECT_NOT_FOUND");

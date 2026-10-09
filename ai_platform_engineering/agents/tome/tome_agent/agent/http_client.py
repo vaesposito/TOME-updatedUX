@@ -18,6 +18,7 @@ log.
 from __future__ import annotations
 
 import contextvars
+import json
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -479,6 +480,32 @@ async def fetch_retrieval(
         )
         response.raise_for_status()
         return response.json()
+
+
+async def stream_retrieval_snapshot(
+    actor_sub: str, scope_hash: str
+) -> AsyncIterator[dict[str, Any]]:
+    """Stream the authenticated caller's published heads without model-selected URLs."""
+    headers = {**_auth_headers(), "X-Tome-Actor-Sub": actor_sub}
+    async with (
+        httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client,
+        client.stream(
+            "GET",
+            f"{_backend_url()}/api/internal/retrieval",
+            headers=headers,
+            params={"operation": "snapshot", "scope_hash": scope_hash},
+        ) as response,
+    ):
+        response.raise_for_status()
+        if "application/x-ndjson" not in response.headers.get("content-type", ""):
+            raise ValueError("Invalid published snapshot response")
+        async for line in response.aiter_lines():
+            if len(line.encode("utf-8")) > 14 * 1024 * 1024:
+                raise ValueError("Published snapshot frame exceeds its limit")
+            frame = json.loads(line)
+            if not isinstance(frame, dict):
+                raise TypeError("Invalid published snapshot frame")
+            yield frame
 
 
 def fetch_all_pages_sync(

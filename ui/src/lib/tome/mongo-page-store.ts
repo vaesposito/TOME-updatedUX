@@ -19,6 +19,7 @@ import {
   safePagePath,
   type ConditionalPageWriteResult,
   type PageStore,
+  type PublishedPageSnapshot,
   type WritePageOpts,
 } from "./page-store";
 import { FM_TEMPLATE_PATH, FM_TEMPLATE_SCOPE, FM_TEMPLATE_VERSION, parseFrontmatter } from "./schema";
@@ -191,6 +192,34 @@ export class MongoPageStore implements PageStore {
       if (!r.deleted) out[r.path] = r.markdown ?? "";
     }
     return out;
+  }
+
+  async *publishedPages(projectId: string): AsyncIterable<PublishedPageSnapshot> {
+    const col = await getTomePageRevisionsCollection();
+    // Select the head before filtering tombstones, so deleted pages cannot reappear.
+    // Stream heads in small batches instead of retaining historical bodies.
+    const cursor = col.aggregate<{
+      path: string; markdown?: string; revision_id?: ObjectId; updated_at: Date;
+    }>([
+      { $match: { project_id: projectId, status: { $nin: ["draft", "rejected"] } } },
+      { $sort: { path: 1, created_at: -1, _id: -1 } },
+      { $group: { _id: "$path", head: { $first: "$$ROOT" } } },
+      { $match: { "head.deleted": { $ne: true } } },
+      { $project: { _id: 0, path: "$_id", markdown: "$head.markdown", revision_id: "$head._id", updated_at: "$head.created_at" } },
+      { $sort: { path: 1 } },
+    ], { batchSize: 10, maxTimeMS: 20_000 });
+    try {
+      for await (const page of cursor) {
+        yield {
+          path: page.path,
+          markdown: page.markdown ?? "",
+          revision_id: page.revision_id ? String(page.revision_id) : undefined,
+          updated_at: page.updated_at.toISOString(),
+        };
+      }
+    } finally {
+      await cursor.close();
+    }
   }
 
   async deletePage(

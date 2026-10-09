@@ -28,7 +28,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from functools import partial
+from collections.abc import Awaitable, Callable
+from functools import partial, wraps
 from html.parser import HTMLParser
 from typing import Any, ClassVar
 from urllib.parse import parse_qsl, quote, urlsplit
@@ -36,6 +37,7 @@ from urllib.parse import parse_qsl, quote, urlsplit
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from tome_agent.agent.confluence_reads import ConfluenceReadState
 from tome_agent.agent.connectors.base import record_fetch
 
 # None of today's tools take a free-text argument (CQL is built internally
@@ -53,6 +55,9 @@ def _confluence_canonical_uri(tool_name: str, args: dict[str, Any]) -> str:
     if args.get("space_key"):
         return f"confluence://spaces/{args['space_key']}"
     return "confluence://spaces"
+
+
+_ConfluenceTool = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 _record_fetch = partial(
@@ -246,6 +251,17 @@ def _err(message: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": message}], "is_error": True}
 
 
+def _read_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        action = (
+            "; verify the API route, granted scopes and connected user permissions"
+            if status in {401, 403} else ""
+        )
+        return f"Confluence read failed (HTTP {status}){action}; source content was not read"
+    return f"Confluence read failed ({type(exc).__name__}); source content was not read"
+
+
 def _page_content_revision(page: dict[str, Any]) -> str:
     """Identify the complete body and source metadata before slicing it."""
     serialized = json.dumps(
@@ -321,6 +337,7 @@ def build_confluence_mcp(
     allowed_space_keys: list[str] | None = None,
     page_scoped_space_keys: list[str] | None = None,
     selected_root_page_ids: list[str] | None = None,
+    read_state: ConfluenceReadState | None = None,
 ):
     """Create the MCP server for Confluence API calls (v1 / CQL).
 
@@ -352,15 +369,62 @@ def build_confluence_mcp(
             h["Authorization"] = f"Bearer {token}"
         return h
 
+    def track_content_read(func: _ConfluenceTool) -> _ConfluenceTool:
+        @wraps(func)
+        async def tracked(args: dict[str, Any]) -> dict[str, Any]:
+            page_id = str(args.get("page_id") or "")
+            try:
+                result = await func(args)
+            except (httpx.RequestError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                result = _err(_read_error(exc))
+            if read_state is not None:
+                read_state.record(page_id, result)
+            return result
+        return tracked
+
+    def track_discovery(tool_name: str) -> Callable[[_ConfluenceTool], _ConfluenceTool]:
+        def decorate(func: _ConfluenceTool) -> _ConfluenceTool:
+            @wraps(func)
+            async def tracked(args: dict[str, Any]) -> dict[str, Any]:
+                try:
+                    result = await func(args)
+                except (httpx.RequestError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                    result = _err(_read_error(exc))
+                if read_state is not None:
+                    key = tool_name + ":" + json.dumps(args, sort_keys=True)
+                    if result.get("is_error"):
+                        read_state.errors[key] = "Confluence discovery failed"
+                    else:
+                        payload = json.loads(result["content"][0]["text"])
+                        if isinstance(payload, dict) and payload.get("tree_truncated"):
+                            read_state.errors[key] = "Confluence tree enumeration was truncated"
+                        else:
+                            read_state.errors.pop(key, None)
+                return result
+            return tracked
+        return decorate
+
     async def _get(path: str, params: dict[str, Any] | None = None) -> Any:
         async with httpx.AsyncClient(timeout=20.0, headers=_headers()) as client:
             for attempt in range(3):
-                resp = await client.get(f"{base_url}{path}", params=params)
-                if resp.status_code != 429 or attempt == 2:
+                try:
+                    resp = await client.get(f"{base_url}{path}", params=params)
+                except (httpx.NetworkError, httpx.RemoteProtocolError, httpx.TimeoutException):
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(attempt + 1)
+                    continue
+                if resp.status_code not in {429, 502, 503, 504} or attempt == 2:
                     resp.raise_for_status()
-                    return resp.json()
-                wait = int(resp.headers.get("Retry-After", "5"))
-                await asyncio.sleep(min(wait, 60))
+                    data = resp.json()
+                    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                        raise ValueError("Confluence response is missing search results")
+                    return data
+                try:
+                    wait = min(10.0, max(0.0, float(resp.headers.get("Retry-After", attempt + 1))))
+                except ValueError:
+                    wait = float(attempt + 1)
+                await asyncio.sleep(wait)
 
     def _cql_quote(value: str) -> str:
         return value.replace("\\", "\\\\").replace('"', '\\"')
@@ -373,13 +437,14 @@ def build_confluence_mcp(
         {},
     )
     @_record_fetch(tool_name="confluence_list_spaces")
+    @track_discovery("confluence_list_spaces")
     async def list_spaces(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")
         try:
             data = await _get("/search", {"cql": "type=space", "limit": 100})
-        except httpx.HTTPStatusError as e:
-            return _err(f"HTTP {e.response.status_code}: {e.response.text[:200]}")
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+            return _err(_read_error(e))
         out = []
         for r in data.get("results") or []:
             sp = r.get("space") or {}
@@ -407,6 +472,7 @@ def build_confluence_mcp(
         {"space_key": str, "limit": int},
     )
     @_record_fetch(tool_name="confluence_get_pages")
+    @track_discovery("confluence_get_pages")
     async def get_pages(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")
@@ -430,8 +496,8 @@ def build_confluence_mcp(
         )
         try:
             data = await _get("/search", {"cql": cql, "limit": limit})
-        except httpx.HTTPStatusError as e:
-            return _err(f"HTTP {e.response.status_code}: {e.response.text[:200]}")
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+            return _err(_read_error(e))
         out = []
         for r in data.get("results") or []:
             content = r.get("content") or {}
@@ -456,6 +522,7 @@ def build_confluence_mcp(
         {"page_id": str},
     )
     @_record_fetch(tool_name="confluence_get_page_tree")
+    @track_discovery("confluence_get_page_tree")
     async def get_page_tree(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")
@@ -481,11 +548,8 @@ def build_confluence_mcp(
                     "limit": 1,
                 },
             )
-        except httpx.HTTPStatusError as e:
-            return _err(
-                f"HTTP {e.response.status_code} fetching page tree root: "
-                f"{e.response.text[:200]}"
-            )
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+            return _err(_read_error(e))
         root_results = root_data.get("results") or []
         if not root_results:
             return _err(f"page {page_id} not found or not accessible")
@@ -545,11 +609,8 @@ def build_confluence_mcp(
                         next_link=next_link,
                     ),
                 )
-            except httpx.HTTPStatusError as e:
-                return _err(
-                    f"HTTP {e.response.status_code} fetching descendants: "
-                    f"{e.response.text[:200]}"
-                )
+            except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+                return _err(_read_error(e))
             batch = data.get("results") or []
             for result in batch:
                 content = result.get("content") or {}
@@ -669,10 +730,8 @@ def build_confluence_mcp(
                     "limit": 1,
                 },
             )
-        except httpx.HTTPStatusError as e:
-            return _err(
-                f"HTTP {e.response.status_code} fetching page: {e.response.text[:200]}"
-            )
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+            return _err(_read_error(e))
 
         results = data.get("results") or []
         if not results:
@@ -729,6 +788,7 @@ def build_confluence_mcp(
         {"page_id": str},
     )
     @_record_fetch(tool_name="confluence_get_page_content")
+    @track_content_read
     async def get_page_content(args: dict[str, Any]) -> dict[str, Any]:
         page = await fetch_page_content((args.get("page_id") or "").strip())
         if page.get("is_error"):
@@ -747,6 +807,7 @@ def build_confluence_mcp(
         {"page_id": str, "offset": int, "content_revision": str, "limit": int},
     )
     @_record_fetch(tool_name="confluence_get_page_content_chunk")
+    @track_content_read
     async def get_page_content_chunk(args: dict[str, Any]) -> dict[str, Any]:
         offset = args.get("offset")
         limit = args.get("limit")

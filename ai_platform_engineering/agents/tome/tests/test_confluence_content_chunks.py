@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from tome_agent.agent.connectors.base import SourceItem
-from tome_agent.agent.connectors import base
-from tome_agent.agent.connectors.confluence import ConfluenceConnector
 from tome_agent.agent import mcp_confluence
+from tome_agent.agent.connectors import base
+from tome_agent.agent.connectors.base import SourceItem
+from tome_agent.agent.connectors.confluence import ConfluenceConnector
 
 
 def page_result(
@@ -37,6 +37,7 @@ def tools_for(
     response: dict[str, Any],
     *,
     page_scoped: bool = False,
+    read_state: mcp_confluence.ConfluenceReadState | None = None,
 ) -> tuple[dict[str, Any], list[httpx.Request]]:
     requests: list[httpx.Request] = []
 
@@ -55,6 +56,7 @@ def tools_for(
         mcp_confluence, "create_sdk_mcp_server", lambda **kwargs: kwargs
     )
     server = mcp_confluence.build_confluence_mcp(
+        read_state=read_state,
         token="example-token",
         cloud_id="example-cloud",
         site_url="https://example.test",
@@ -316,3 +318,36 @@ def test_continuation_tool_and_instructions_are_available_to_ingest_and_chat() -
         assert "confluence_get_page_content_chunk" in guidance
         assert "content_revision" in guidance
         assert "next_offset" in guidance
+
+
+@pytest.mark.asyncio
+async def test_native_read_coverage_requires_every_chunk_and_all_selected_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = mcp_confluence.ConfluenceReadState(required_pages={"123", "456"})
+    tools, _ = tools_for(monkeypatch, page_result("x" * 9000), read_state=state)
+    first = payload(await tools["confluence_get_page_content"].handler({"page_id": "123"}))
+    assert state.incomplete_pages() == ["123", "456"]
+    payload(await tools["confluence_get_page_content_chunk"].handler({
+        "page_id": "123", "offset": first["next_offset"], "content_revision": first["content_revision"], "limit": 6000,
+    }))
+    assert state.incomplete_pages() == ["456"]
+
+
+def test_terminal_chunk_without_first_chunk_does_not_count_as_complete() -> None:
+    state = mcp_confluence.ConfluenceReadState()
+    state.record("123", mcp_confluence._page_content_result({"id": "123", "body": "x" * 9000}, offset=6000))
+    assert state.incomplete_pages() == ["123"]
+
+
+def test_gaps_and_failed_reads_require_restart() -> None:
+    state = mcp_confluence.ConfluenceReadState()
+    page = {"id": "123", "body": "x" * 9000}
+    state.record("123", mcp_confluence._page_content_result(page, limit=3000))
+    state.record("123", mcp_confluence._page_content_result(page, offset=6000))
+    assert state.incomplete_pages() == ["123"]
+    state.record("123", mcp_confluence._page_content_result(page, offset=3000, limit=3000))
+    assert state.incomplete_pages() == []
+    state.record("123", mcp_confluence._err("request failed"))
+    assert state.incomplete_pages() == ["123"]
+    state.record("123", mcp_confluence._page_content_result(page))
+    state.record("123", mcp_confluence._page_content_result(page, offset=6000))
+    assert state.incomplete_pages() == []

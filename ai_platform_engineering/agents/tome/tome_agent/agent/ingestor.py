@@ -22,6 +22,7 @@ from uuid import UUID
 
 from tome_agent import prompts
 from tome_agent.agent import http_client
+from tome_agent.agent.confluence_reads import ConfluenceReadState
 from tome_agent.agent.connectors import REGISTRY
 from tome_agent.agent.connectors.github import GitHubExtra
 from tome_agent.agent.issue_context import format_issue_context
@@ -626,8 +627,17 @@ async def stream_ingest(
             "TBD/unknown/not found. The immutable evidence manifest is:\n"
             f"{manifest or '- no non-page evidence items'}"
         )
+    if experiment is None and snapshot.confluence_spaces:
+        system_prompt += (
+            "\n\nConfluence completion requirement: read the complete storage body of every "
+            "selected root page, even if its modification time is unchanged. Follow all "
+            "revision-aware body chunks before interpreting tables. Failed or unfinished "
+            "reads make the ingest incomplete; report the missing evidence explicitly."
+        )
     expected_pages = expected_template_pages(snapshot)
+    confluence_read_state = ConfluenceReadState()
     options = build_agent_options(
+        confluence_read_state=confluence_read_state,
         snapshot=snapshot,
         system_prompt=system_prompt,
         model=model_provenance["model"],
@@ -697,6 +707,16 @@ async def stream_ingest(
         async for event in consume_agent_query(
             prompt, options, log_buf, model_provenance=model_provenance
         ):
+            if event.type == "done" and not agent_event_failed(event):
+                incomplete = confluence_read_state.incomplete_pages()
+                if incomplete:
+                    yield IngestEventPayload(type="error", data={
+                        "message": "Confluence ingestion is incomplete; required page bodies were not fully read",
+                        "code": "incomplete_source_read",
+                        "incomplete_sources": incomplete,
+                        "is_error": True,
+                    })
+                    return
             yield event
             if agent_event_failed(event):
                 return

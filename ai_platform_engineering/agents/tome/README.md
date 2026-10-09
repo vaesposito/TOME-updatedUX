@@ -118,8 +118,15 @@ label and evidence hashes, never the candidate model identity.
   read. No shell or out-of-workspace result-file access is needed.
 - Each chunk is recorded through the existing fetch ledger. Chunking bounds an
   individual response; reading a large page still consumes multiple tool calls
-  and model context. Completion depends on the run budget and agent following
-  continuations; there is no automatic source-completeness success gate here.
+  and model context. Ingestion checks coverage before accepting a successful
+  agent result: every selected root and every attempted body read must cover
+  the complete revision from offset zero without gaps. Missing credentials,
+  discovery errors, truncated trees and unfinished reads emit an error and
+  stop later synthesis/reconciliation. Retry a failed read from its first chunk.
+- This completion check reports partial ingestion; it does not roll back page
+  writes already made during the run. Tree/list excerpts do not establish full
+  body coverage. Chat retains the bounded tools and disclosure instructions;
+  the terminal success gate applies to ingestion.
 
 ## Source-fetch provenance ledger
 

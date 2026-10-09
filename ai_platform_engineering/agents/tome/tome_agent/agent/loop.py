@@ -25,8 +25,10 @@ import httpx
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from tome_agent.agent import http_client
+from tome_agent.agent.confluence_reads import ConfluenceReadState
 from tome_agent.agent.connectors import REGISTRY
 from tome_agent.agent.connectors.base import SourceItem
+from tome_agent.agent.connectors.confluence import ConfluenceConnector
 from tome_agent.agent.mcp_myagent import build_myagent_mcp
 from tome_agent.agent.mcp_mycelium import build_mycelium_mcp
 from tome_agent.agent.mcp_tome import build_tome_mcp
@@ -705,6 +707,7 @@ def build_agent_options(
     read_only: bool = False,
     max_budget_usd: float | None = None,
     expected_template_pages: dict[str, Any] | None = None,
+    confluence_read_state: ConfluenceReadState | None = None,
 ) -> ClaudeAgentOptions:
     """Compose ClaudeAgentOptions for chat and ingest in the agent
     container. MCP servers are scoped to the snapshot's sources.
@@ -795,10 +798,22 @@ def build_agent_options(
 
     for connector in () if (offline or restrict_untrusted_evidence) else REGISTRY:
         token = _connector_token(connector.slug)
+        sources = sources_for_connector(snapshot, connector)
+        if isinstance(connector, ConfluenceConnector) and confluence_read_state is not None:
+            for source in sources:
+                scopes = source.extra.get("page_scopes", [])
+                roots = [str(scope["page_id"]) for scope in scopes if scope.get("page_id")]
+                if not scopes and source.extra.get("root_page_id"):
+                    roots.append(str(source.extra["root_page_id"]))
+                confluence_read_state.required_pages.update(roots)
+            if sources and not connector.is_enabled(token):
+                confluence_read_state.errors["connection"] = "Confluence credentials are unavailable"
         if not connector.is_enabled(token):
             continue
-        sources = sources_for_connector(snapshot, connector)
-        mcp_servers[connector.slug] = connector.build_mcp(token=token, sources=sources)
+        if isinstance(connector, ConfluenceConnector):
+            mcp_servers[connector.slug] = connector.build_mcp(token=token, sources=sources, read_state=confluence_read_state)
+        else:
+            mcp_servers[connector.slug] = connector.build_mcp(token=token, sources=sources)
         allowed.extend(connector.mcp_tools)
 
     # Feed: the project's own Mycelium room, keyed by slug. Reading is

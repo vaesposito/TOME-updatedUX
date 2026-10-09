@@ -201,7 +201,7 @@ class SynthesisSourcePromptTest(TestCase):
         self.assertIn("NEVER call `confluence_get_pages`", prompt)
         self.assertIn("do not scan unrelated pages", prompt)
 
-    @patch("tome_agent.agent.connectors.confluence.build_confluence_mcp")
+    @patch("tome_agent.agent.connectors.confluence.mcp_confluence.build_confluence_mcp")
     def test_confluence_page_scopes_lock_mcp_to_saved_roots(self, build_mcp) -> None:
         source = SourceItem(
             slug="example-space",

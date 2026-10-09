@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from tome_agent.agent import http_client
+from tome_agent.agent import http_client, mcp_confluence
+from tome_agent.agent.confluence_reads import ConfluenceReadState
 from tome_agent.agent.connectors.base import Connector, SourceItem, format_pages
-from tome_agent.agent.mcp_confluence import build_confluence_mcp
 from tome_agent.reports.schema import (
     CONFLUENCE_PAGE_FRONTMATTER,
     PageSpec,
@@ -42,7 +42,7 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
         # accessible site at request time).
         return bool(token and _atlassian_cloud_id())
 
-    def build_mcp(self, *, token: str, sources: list[SourceItem]) -> object:
+    def build_mcp(self, *, token: str, sources: list[SourceItem], read_state: ConfluenceReadState | None = None) -> object:
         site_url = next(
             (s.extra.get("base_url", "") for s in sources if s.extra.get("base_url")),
             "",
@@ -67,13 +67,14 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
                 for scope in scopes
                 if scope.get("page_id")
             )
-        return build_confluence_mcp(
+        return mcp_confluence.build_confluence_mcp(
             token=token,
             cloud_id=_atlassian_cloud_id(),
             site_url=site_url,
             allowed_space_keys=allowed_space_keys,
             page_scoped_space_keys=page_scoped_space_keys,
             selected_root_page_ids=selected_root_page_ids,
+            read_state=read_state,
         )
 
     @property

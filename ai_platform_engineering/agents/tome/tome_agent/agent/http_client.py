@@ -466,7 +466,9 @@ def fetch_model_config(
     return by_role or None
 
 
-def fetch_all_pages_sync(project_id: str | None = None) -> dict[str, str]:
+def fetch_all_pages_sync(
+    project_id: str | None = None, *, actor_sub: str | None = None
+) -> dict[str, str]:
     """All current pages as `{path: markdown}` from the backend. Used to
     materialize a project's on-disk working copy (startup load, periodic sync,
     and at the start of an ingest) so the agent's filesystem tools
@@ -474,7 +476,11 @@ def fetch_all_pages_sync(project_id: str | None = None) -> dict[str, str]:
     pid = project_id or _project_id()
     url = f"{_backend_url()}/api/internal/projects/{pid}/pages"
     with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
-        resp = client.get(url, headers=_auth_headers())
+        headers = _auth_headers()
+        subject = actor_sub or _active_actor_sub.get()
+        if subject:
+            headers["X-Tome-Actor-Sub"] = subject
+        resp = client.get(url, headers=headers)
         resp.raise_for_status()
         return resp.json()
 

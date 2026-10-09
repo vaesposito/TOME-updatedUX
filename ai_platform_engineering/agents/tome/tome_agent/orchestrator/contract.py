@@ -67,6 +67,9 @@ class ChildProjectSnapshot(BaseModel):
     project_id: str  # CAIPE project id; also the on-disk workspace dir name
     slug: str = ""
     name: str = ""
+    project_type: Literal["project", "bhag", "area"] = "project"
+    bhags: list[str] = Field(default_factory=list)
+    areas: list[str] = Field(default_factory=list)
 
 
 class ProjectSnapshot(BaseModel):
@@ -134,6 +137,8 @@ class IssueContext(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    global_chat: bool = False
+    """Read-only catalog chat; pages are retrieved through scoped TOME tools."""
     myagent_research: bool = False
     myagent_run_id: UUID | None = None
     myagent_sources: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(default_factory=list, max_length=3)

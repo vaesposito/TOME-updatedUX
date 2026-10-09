@@ -24,12 +24,12 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const entityId = request.nextUrl.searchParams.get("entity_id")?.trim();
   const rawType = request.nextUrl.searchParams.get("entity_type")?.trim() ?? "project";
   if (!entityId) throw new ApiError("entity_id is required", 400, "INVALID_REQUEST");
-  if (!["project", "area", "bhag"].includes(rawType)) {
-    throw new ApiError("entity_type must be project, area, or bhag", 400, "INVALID_REQUEST");
+  if (!["project", "area", "bhag", "global"].includes(rawType)) {
+    throw new ApiError("entity_type must be project, area, bhag, or global", 400, "INVALID_REQUEST");
   }
   const models = await resolveAllModelConfigs({
     entityId,
-    entityType: rawType as ProjectType,
+    entityType: rawType as ProjectType | "global",
   });
   return Response.json({ models });
 });

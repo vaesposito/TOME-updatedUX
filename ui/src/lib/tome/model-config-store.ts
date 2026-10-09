@@ -113,11 +113,13 @@ export async function getScopeModelConfigs(scope: ModelScope): Promise<ModelConf
 /** Resolve exact -> type -> global. Environment fallback is agent-side. */
 export async function resolveModelConfig(
   role: AgentRole,
-  input: { entityId: string; entityType: ProjectType },
+  input: { entityId: string; entityType: ProjectType | "global" },
 ): Promise<ResolvedModelConfig | null> {
   const candidates: Array<{ scope: ModelScope; source: ResolvedModelConfig["source"] }> = [
-    { scope: { kind: "exact", id: input.entityId }, source: "exact" },
-    { scope: { kind: "type", id: input.entityType }, source: "type" },
+    ...(input.entityType === "global" ? [] : [
+      { scope: { kind: "exact" as const, id: input.entityId }, source: "exact" as const },
+      { scope: { kind: "type" as const, id: input.entityType }, source: "type" as const },
+    ]),
     { scope: { kind: "global" }, source: "global" },
   ];
   for (const candidate of candidates) {
@@ -139,7 +141,7 @@ export async function resolveModelConfig(
 
 export async function resolveAllModelConfigs(input: {
   entityId: string;
-  entityType: ProjectType;
+  entityType: ProjectType | "global";
 }): Promise<ResolvedModelConfig[]> {
   const resolved = await Promise.all(AGENT_ROLES.map((role) => resolveModelConfig(role, input)));
   return resolved.filter((config): config is ResolvedModelConfig => config !== null);

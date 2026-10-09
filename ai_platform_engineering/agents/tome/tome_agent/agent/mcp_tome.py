@@ -70,6 +70,7 @@ def build_tome_mcp(
     project_dir: Path,
     author: str,
     readable_projects: list[Any] | None = None,
+    read_only_catalog: bool = False,
 ):
     """Create the wiki-maintenance MCP server for one project run.
 
@@ -77,12 +78,18 @@ def build_tome_mcp(
     inside it and reads its frontmatter to enforce the protected-class guard.
     `author` tags the tombstone revision.
     """
+    actor_sub = http_client.get_active_actor_sub()
+    if read_only_catalog and not actor_sub:
+        raise ValueError("global catalog reads require an actor subject")
     pdir = Path(project_dir).resolve()
     allowed_projects = {
         str(getattr(project, "slug", "") or ""): {
             "project_id": str(getattr(project, "project_id", "") or ""),
             "slug": str(getattr(project, "slug", "") or ""),
             "name": str(getattr(project, "name", "") or ""),
+            "type": getattr(project, "project_type", "project"),
+            "bhags": getattr(project, "bhags", []),
+            "areas": getattr(project, "areas", []),
         }
         for project in (readable_projects or [])
         if getattr(project, "slug", "")
@@ -179,6 +186,9 @@ def build_tome_mcp(
                 {
                     "project_slug": project["slug"],
                     "title": project["name"] or project["slug"],
+                    "type": project["type"],
+                    "bhags": project["bhags"],
+                    "areas": project["areas"],
                 }
                 for project in allowed_projects.values()
             ]
@@ -204,7 +214,7 @@ def build_tome_mcp(
         if not target_id:
             return _err(f"no project with slug `{slug}`.")
         try:
-            pages = await asyncio.to_thread(http_client.fetch_all_pages_sync, target_id)
+            pages = await asyncio.to_thread(http_client.fetch_all_pages_sync, target_id, actor_sub=actor_sub)
         except Exception as e:
             log.warning("list_project_pages failed for %s", slug, exc_info=True)
             return _err(f"could not list pages for `{slug}`: {type(e).__name__}: {e}")
@@ -232,7 +242,7 @@ def build_tome_mcp(
         if not target_id:
             return _err(f"no project with slug `{slug}`.")
         try:
-            pages = await asyncio.to_thread(http_client.fetch_all_pages_sync, target_id)
+            pages = await asyncio.to_thread(http_client.fetch_all_pages_sync, target_id, actor_sub=actor_sub)
         except Exception as e:
             log.warning("read_project_page failed for %s/%s", slug, path, exc_info=True)
             return _err(f"could not read `{slug}/{path}`: {type(e).__name__}: {e}")
@@ -281,7 +291,7 @@ def build_tome_mcp(
     return create_sdk_mcp_server(
         name="tome",
         version="0.1.0",
-        tools=[
+        tools=[list_projects, list_project_pages, read_project_page] if read_only_catalog else [
             get_page_templates,
             delete_page,
             list_projects,

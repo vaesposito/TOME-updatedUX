@@ -510,6 +510,8 @@ def _sse_message(event_type: str, data: dict) -> bytes:
 
 @app.post("/chat")
 async def chat_endpoint(body: ChatRequest):
+    if body.global_chat and (not body.actor_sub or body.myagent_research):
+        raise HTTPException(400, "global chat requires a user subject and cannot use MyAgent mode")
     if not _state.ready:
         raise HTTPException(503, "agent not ready")
 
@@ -534,7 +536,8 @@ async def chat_endpoint(body: ChatRequest):
             # pending drafts. Holding the lock also prevents a chat from
             # racing an ingest's workspace write/persist cycle.
             async with workspace.project_lock(body.snapshot.project_id):
-                await _require_fresh_workspace(body.snapshot.project_id)
+                if not body.global_chat:
+                    await _require_fresh_workspace(body.snapshot.project_id)
                 with (suppress_sensitive_evidence_tracing() if body.myagent_research else trace_context(
                     snapshot=body.snapshot,
                     actor_email=body.actor_email,
@@ -549,6 +552,7 @@ async def chat_endpoint(body: ChatRequest):
                         issue_context=body.issue_context,
                         actor_email=body.actor_email,
                         is_compact=body.is_compact,
+                        global_chat=body.global_chat,
                         myagent_research=body.myagent_research,
                         myagent_run_id=str(body.myagent_run_id) if body.myagent_run_id else None,
                         myagent_sources=body.myagent_sources,

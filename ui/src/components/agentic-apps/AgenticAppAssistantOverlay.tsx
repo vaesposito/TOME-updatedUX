@@ -52,6 +52,7 @@ export interface AgenticAppAssistantOverlayProps {
   activeContext: AgenticAppAssistantContextRecord | null;
   onClearContext: () => void;
   assistantAgentId: string;
+  assistantRuntime?: "tome-native";
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -64,6 +65,7 @@ export function AgenticAppAssistantOverlay({
   activeContext,
   onClearContext,
   assistantAgentId,
+  assistantRuntime,
   open,
   onOpenChange,
 }: AgenticAppAssistantOverlayProps) {
@@ -111,8 +113,9 @@ export function AgenticAppAssistantOverlay({
       conversation_surface: AGENTIC_APP_CONVERSATION_KIND,
       agentic_app_id: appId,
       agentic_app_agent_id: assistantAgentId,
+      ...(assistantRuntime ? { assistant_runtime: assistantRuntime } : {}),
     }),
-    [appId, assistantAgentId],
+    [appId, assistantAgentId, assistantRuntime],
   );
   const clientContext = useMemo(() => buildAssistantClientContext(activeContext), [activeContext]);
   const suggestedPrompts = activeContext?.suggestedPrompts?.length
@@ -151,6 +154,7 @@ export function AgenticAppAssistantOverlay({
       useChatStore.getState().conversations,
       appId,
       assistantAgentId,
+      assistantRuntime,
     );
     if (!existing) return createAppConversation();
 
@@ -160,6 +164,7 @@ export function AgenticAppAssistantOverlay({
   }, [
     appId,
     assistantAgentId,
+    assistantRuntime,
     createAppConversation,
     loadConversationsFromServer,
     loadMessagesFromServer,
@@ -516,6 +521,7 @@ function findLatestAppConversation(
   conversations: Conversation[],
   appId: string,
   agentId: string,
+  runtime?: "tome-native",
 ): Conversation | null {
   return conversations.reduce<Conversation | null>((latest, conversation) => {
     const metadata = conversation.metadata;
@@ -523,6 +529,7 @@ function findLatestAppConversation(
       metadata?.conversation_surface !== AGENTIC_APP_CONVERSATION_KIND
       || metadata.agentic_app_id !== appId
       || metadata.agentic_app_agent_id !== agentId
+      || metadata.assistant_runtime !== runtime
     ) {
       return latest;
     }

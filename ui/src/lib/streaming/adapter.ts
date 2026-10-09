@@ -14,6 +14,7 @@
 
 import type { StreamCallbacks,StreamParams } from "./callbacks";
 import { AGUIStreamAdapter } from "./clients/browser-agui-consumer";
+import { TomeStreamAdapter } from "./clients/browser-tome-consumer";
 import { CustomStreamAdapter } from "./clients/browser-custom-consumer";
 
 // ═══════════════════════════════════════════════════════════════
@@ -39,6 +40,7 @@ export interface StreamAdapter {
 // ═══════════════════════════════════════════════════════════════
 
 export interface StreamAdapterConfig {
+  runtime?: "tome-native";
   /** Wire protocol: "custom" for legacy SSE, "agui" for AG-UI */
   protocol: "custom" | "agui";
   /** JWT access token for Bearer authentication */
@@ -57,6 +59,7 @@ export interface StreamAdapterConfig {
  *   /api/v1/chat/stream/cancel
  */
 export function createStreamAdapter(config: StreamAdapterConfig): StreamAdapter {
+  if (config.runtime === "tome-native") return new TomeStreamAdapter();
   switch (config.protocol) {
     case "agui":
       return new AGUIStreamAdapter(config.accessToken);

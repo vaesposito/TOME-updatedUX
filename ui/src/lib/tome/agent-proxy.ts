@@ -143,10 +143,13 @@ interface WebexRoomSnapshot {
 }
 
 /** ChildProjectSnapshot — mirrors contract.ChildProjectSnapshot. */
-interface ChildProjectSnapshot {
+export interface ChildProjectSnapshot {
   project_id: string;
   slug: string;
   name: string;
+  project_type?: "project" | "bhag" | "area";
+  bhags?: string[];
+  areas?: string[];
 }
 
 /** ProjectSnapshot — mirrors contract.ProjectSnapshot. */
@@ -168,6 +171,7 @@ export interface ProjectSnapshot {
 
 /** ChatRequest — mirrors contract.ChatRequest. */
 export interface AgentChatRequest {
+  global_chat?: boolean;
   myagent_research?: boolean;
   myagent_run_id?: string;
   myagent_sources?: string[];

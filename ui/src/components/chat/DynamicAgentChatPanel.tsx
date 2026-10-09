@@ -274,6 +274,7 @@ export function ChatPanel({
   const accessToken = ssoEnabled ? session?.accessToken : undefined;
 
   const conversation = getActiveConversation();
+  const isNativeTome = conversation?.metadata?.assistant_runtime === "tome-native";
 
   // Ref to track which conversations we've checked for HITL interrupt state
   const interruptCheckedRef = useRef<Set<string>>(new Set());
@@ -441,7 +442,7 @@ export function ChatPanel({
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
     // Skip if no conversationId (new conversation) or agentId
-    if (!conversationId || !agentId) return;
+    if (!conversationId || !agentId || isNativeTome) return;
     
     // Wait for messages to be loaded (race condition on page refresh:
     // this effect can fire before ChatContainer finishes loading messages
@@ -542,7 +543,7 @@ export function ChatPanel({
     };
 
     checkInterruptState();
-  }, [conversationId, agentId, isLoadingMessages, isThisConversationStreaming, hasAssistantMessageForInterruptCheck]);
+  }, [conversationId, agentId, isLoadingMessages, isThisConversationStreaming, hasAssistantMessageForInterruptCheck, isNativeTome]);
 
   // ═══════════════════════════════════════════════════════════════
   // FILES & TASKS FETCH (for timeline display in latest message)
@@ -550,7 +551,7 @@ export function ChatPanel({
 
   // Fetch files from API
   useEffect(() => {
-    if (!conversationId || !agentId) {
+    if (!conversationId || !agentId || isNativeTome) {
       setTimelineFiles([]);
       filesFetchedForRef.current = null;
       return;
@@ -585,7 +586,7 @@ export function ChatPanel({
     };
 
     fetchFiles();
-  }, [conversationId, agentId, filesFetchKey]);
+  }, [conversationId, agentId, filesFetchKey, isNativeTome]);
 
   // Handle file download
   const handleTimelineFileDownload = useCallback(
@@ -1078,6 +1079,7 @@ export function ChatPanel({
     // Create protocol-agnostic adapter
     const adapter = createStreamAdapter({
       protocol: agentProtocol as "custom" | "agui",
+      runtime: getActiveConversation()?.metadata?.assistant_runtime === "tome-native" ? "tome-native" : undefined,
       accessToken,
     });
 

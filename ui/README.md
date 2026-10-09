@@ -25,17 +25,28 @@ Open http://localhost:3000.
 
 ## Tome Assistant
 
-- **Ask Tome** opens the dynamic TOME agent on `/projects` and inside projects.
-  No project selection is required; the current project/page is optional context.
-- The assistant uses GRID's conversation and message storage. Its history appears
-  in regular Chat; **Open conversation in regular chat** opens the same thread.
-- **Expand assistant** enlarges the popup; the resize handle adjusts its size.
-- The installed TOME app's assistant agent ID is used when configured; otherwise
-  `agent-tome-agent` must be enabled and available to the current user.
-- The existing dynamic-agent runtime forwards the caller JWT through AgentGateway
-  to TOME MCP. Provider credentials remain server-side; the popup never reads tokens.
-- Project-native Agent chat remains separate; existing native chat history is not
-  migrated into GRID conversations.
+- **Ask Tome** calls the native `tome-agent` SDK runtime on `/projects` and inside
+  projects. No project selection is required; the current page is optional context.
+- `/api/tome/chat` authenticates the user and checks conversation write access and
+  assistant use permission. The registered assistant ID is an authorization and
+  display identity; Dynamic Agents does not execute these native conversations.
+- Each turn provides the caller's readable BHAG/area/project catalog and hierarchy.
+  Page bodies stay in their existing projects. The agent lists pages and retrieves
+  relevant wiki/source pages on demand through TOME tools; it does not concatenate
+  all files into the prompt or merge project folders.
+- Global chat is read-only, with no filesystem, connector, or wiki-write tools.
+  Access is checked again on page retrieval. Use project-native chat for edits.
+- SDK sessions are isolated by conversation and user subject; a changed access
+  catalog resets model context. Active turns are serialized per session.
+- GRID stores the conversation, messages, and timeline. **Open conversation in
+  regular chat** opens the same thread; **Expand assistant** enlarges the popup.
+- The installed app's assistant ID is used when configured; otherwise
+  `agent-tome-agent` must be enabled and available to the caller.
+- The native agent uses TOME's global chat model configuration, then its environment
+  defaults. Its service token stays server-side; caller identity accompanies reads.
+- Existing dynamic and project-native conversations are not migrated. A new Ask
+  Tome conversation uses the native runtime and keeps its history in GRID.
+
 
 ## Tome ingest review
 

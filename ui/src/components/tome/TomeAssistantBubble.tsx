@@ -73,6 +73,7 @@ export function TomeAssistantBubble({ slug, projectTitle, pagePath }: Props) {
         assistantLabel="Ask Tome"
         assistantAgentName="Tome Assistant"
         assistantAgentId={agentId}
+        assistantRuntime="tome-native"
         activeContext={context?.contextId === clearedContextId ? null : context}
         onClearContext={() => setClearedContextId(context?.contextId ?? null)}
         open={open}

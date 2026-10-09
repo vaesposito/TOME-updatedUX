@@ -108,7 +108,7 @@ def _create_datasource_info(
     description=description,
     source_type="confluence",
     metadata=metadata,
-    last_updated=None,
+    last_updated=int(time.time()),
     default_chunk_size=1000,
     default_chunk_overlap=200,
     reload_interval=DEFAULT_RELOAD_INTERVAL,
@@ -187,20 +187,6 @@ async def track_fetch_failures(job_manager: JobManager, job_id: str, failed_page
   """
   for failed_page_id, error_msg in failed_pages:
     await job_manager.increment_failure(job_id=job_id, message=error_msg)
-
-
-async def advance_datasource_freshness(
-  client: Client, job_manager: JobManager, datasource_info: DataSourceInfo,
-  job_id: str, selection_truncated: bool,
-) -> bool:
-  """A datasource is current only after every selected page and chunk succeeded."""
-  job = await job_manager.get_job(job_id)
-  if job is None or job.status != JobStatus.COMPLETED or job.failed_counter or selection_truncated:
-    logger.warning("Preserving datasource freshness after incomplete ingestion: %s", job_id)
-    return False
-  datasource_info.last_updated = int(time.time())
-  await client.upsert_datasource(datasource_info)
-  return True
 
 
 async def process_page_ingestion(
@@ -300,7 +286,9 @@ async def process_page_ingestion(
       # Ingest the pages
       await loader.ingest_pages(pages, job_id)
 
-    await advance_datasource_freshness(client, job_manager, datasource_info, job_id, loader.last_load_truncated)
+    # Update datasource last_updated timestamp
+    datasource_info.last_updated = int(time.time())
+    await client.upsert_datasource(datasource_info)
 
     logger.info(f"Completed page ingestion for {ingest_request.url}")
 
@@ -484,7 +472,9 @@ async def reload_datasource(
         # Ingest pages
         await loader.ingest_pages(pages, job_id)
 
-      await advance_datasource_freshness(client, job_manager, datasource_info, job_id, loader.last_load_truncated)
+      # Update datasource last_updated timestamp after successful reload
+      datasource_info.last_updated = int(time.time())
+      await client.upsert_datasource(datasource_info)
 
     except Exception as e:
       logger.error(f"Error reloading {datasource_info.datasource_id}: {e}")
@@ -605,7 +595,9 @@ async def periodic_reload(client: Client):
             # Ingest pages
             await loader.ingest_pages(pages, job_id)
 
-          await advance_datasource_freshness(client, job_manager, datasource_info, job_id, loader.last_load_truncated)
+          # Update datasource last_updated
+          datasource_info.last_updated = int(time.time())
+          await client.upsert_datasource(datasource_info)
 
           logger.info(f"Completed auto-sync for space {space_key}")
 

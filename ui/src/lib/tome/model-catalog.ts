@@ -9,7 +9,7 @@
  * both the admin UI component and server routes.
  */
 
-export const MODEL_PROFILE_VERSION = 1;
+export const MODEL_PROFILE_VERSION = 2;
 
 // Capacity values follow the published provider limits. Capability ranks are a
 // TOME policy used only to select a strictly stronger judge; bump the profile
@@ -66,6 +66,14 @@ export const MODEL_PROFILES: readonly TomeModelProfile[] = [
     profile_version: MODEL_PROFILE_VERSION,
   },
   {
+    id: "bedrock/global.anthropic.claude-sonnet-5-5",
+    capability_rank: 230,
+    context_window_tokens: 1_000_000,
+    max_output_tokens: 128_000,
+    supports_structured_output: false,
+    profile_version: MODEL_PROFILE_VERSION,
+  },
+  {
     id: "bedrock/global.anthropic.claude-opus-4-8",
     capability_rank: 310,
     context_window_tokens: 1_000_000,
@@ -81,12 +89,22 @@ export const MODEL_PROFILES: readonly TomeModelProfile[] = [
     supports_structured_output: true,
     profile_version: MODEL_PROFILE_VERSION,
   },
+  {
+    id: "bedrock/global.anthropic.claude-opus-5-5",
+    capability_rank: 330,
+    context_window_tokens: 1_000_000,
+    max_output_tokens: 128_000,
+    supports_structured_output: false,
+    profile_version: MODEL_PROFILE_VERSION,
+  },
 ];
 
 export const MODEL_CATALOG: string[] = [
   "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
   "bedrock/global.anthropic.claude-sonnet-5",
+  "bedrock/global.anthropic.claude-sonnet-5-5",
   "bedrock/global.anthropic.claude-opus-5",
+  "bedrock/global.anthropic.claude-opus-5-5",
 ];
 
 const PROFILE_BY_ID = new Map(MODEL_PROFILES.map((profile) => [profile.id, profile]));

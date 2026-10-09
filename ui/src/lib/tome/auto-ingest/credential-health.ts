@@ -2,6 +2,7 @@ import { webexRoomAccount } from "@/lib/projects/webex-room-account";
 import type { ProviderConnectionMetadata } from "@/lib/credentials/oauth-service";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
 import { getCollection } from "@/lib/mongodb";
+import { sharePointConfigured } from "../sharepoint";
 import { personalWebexSpaceConnection, webexSpaceProvider } from "../webex-space-provider";
 import {
   dataStewardLabel,
@@ -394,7 +395,14 @@ export async function getAutoIngestCredentialHealth(
       connections = await pending;
     }
     const providers = requiredAutoIngestProviders(project, connections);
-    if (providers.length === 0) {
+    const hasSharePoint = (project.sources?.sharepoint_documents?.length ?? 0) > 0;
+    if (hasSharePoint) {
+      rows.push({ ...projectBase, credentialOwner: ownerView, provider: "sharepoint",
+        status: sharePointConfigured() ? "healthy" : "missing",
+        detail: sharePointConfigured() ? "App-only service configured; document access is checked at each scheduled run. No user OAuth connection is needed."
+          : "SharePoint service is not configured. Contact an administrator." });
+    }
+    if (providers.length === 0 && !hasSharePoint) {
       rows.push({
         ...projectBase,
         credentialOwner: ownerView,

@@ -26,17 +26,25 @@ from tome_agent.agent.ingestor import (
     expected_template_pages,
     format_full_template,
     resolve_connector_extras,
+    stream_sharepoint_documents,
 )
 from tome_agent.agent.loop import (
     build_agent_options,
+    project_base,
     project_root,
     sources_for_connector,
 )
 from tome_agent.agent.run_stream import consume_agent_query, emit_log, now_iso
+from tome_agent.agent.sharepoint_documents import (
+    PreparedDocument,
+    SharePointPreparationError,
+    SharePointPreparer,
+)
 from tome_agent.orchestrator.contract import (
     ExperimentRunContext,
     IngestEventPayload,
     ProjectSnapshot,
+    SharePointSelection,
 )
 from tome_agent.reports import schema as report_schema
 
@@ -227,6 +235,26 @@ async def stream_synthesis(
     """Run a BHAG synthesis as a Claude Agent SDK loop. Yields IngestEvents the
     agent's HTTP handler writes to the SSE response."""
     log_buf: list[IngestEventPayload] = []
+    documents: list[PreparedDocument] = []
+    selection = SharePointSelection.model_validate(connector_data.get("sharepoint") or {})
+    if selection.documents and experiment is None:
+        try:
+            preparer = SharePointPreparer.from_env(project_base())
+            seen: set[tuple[str, str]] = set()
+            for ref in selection.documents:
+                identity = (ref.drive_id, ref.item_id)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                yield emit_log("· SharePoint: preparing selected document for synthesis")
+                document = await preparer.prepare(snapshot.project_id, ref)
+                documents.append(document)
+                yield emit_log(f"· SharePoint: {document.manifest['page_count']} visual pages prepared")
+                for warning in document.manifest["warnings"]:
+                    yield emit_log(f"· SharePoint warning: {warning}")
+        except SharePointPreparationError as exc:
+            yield IngestEventPayload(type="error", data={"message": str(exc), "ts": now_iso()})
+            return
     if experiment is not None:
         templates, template_versions = experiment.template_overrides, {}
     else:
@@ -268,6 +296,19 @@ async def stream_synthesis(
         SYNTHESIS_MODEL_DEFAULT,
         ("TTT_INGEST_MODEL",),
     )
+    if documents:
+        existing = await asyncio.to_thread(http_client.fetch_all_pages_sync, snapshot.project_id) if not is_greenfield else {}
+        async for event in stream_sharepoint_documents(
+            documents, snapshot=snapshot, report_id=report_id, seed=seed,
+            is_greenfield=is_greenfield, seed_stable_pages=seed_stable_pages,
+            model_provenance=model_provenance, author="ttt-synthesis", existing_pages=existing,
+        ):
+            yield event
+            if event.type == "error":
+                return
+        # The document pass creates facts in this entity's wiki; synthesis now
+        # enriches them with child wikis without granting documents child access.
+        is_greenfield = False
     system_prompt = _build_synthesis_system_prompt(
         snapshot,
         is_greenfield,

@@ -34,6 +34,7 @@ import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { OnboardingWebexMeetingSeriesPicker } from "@/components/projects/OnboardingWebexMeetingSeriesPicker";
 import { SourcePicker } from "@/components/projects/source-pickers";
 import { MyAgentSourcePicker } from "@/components/projects/source-pickers/MyAgentSourcePicker";
+import { SharePointSourcePicker } from "@/components/projects/source-pickers/SharePointSourcePicker";
 import { WebexCredentialModePicker } from "@/components/projects/source-pickers/WebexCredentialModePicker";
 import { getConfig } from "@/lib/config";
 import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
@@ -59,7 +60,11 @@ import {
   describeSchedule,
   scheduleToCron,
 } from "@/lib/tome/auto-ingest/schedule-presets";
-import type { ProjectDocument, WebexCredentialMode } from "@/types/projects";
+import type {
+  ProjectDocument,
+  WebexCredentialMode,
+  SharePointSource,
+} from "@/types/projects";
 
 const BLAST_RADIUS_OPTIONS = [
   { value: "small", label: "Small and reversible (2-way)", hint: "The team runs on its own" },
@@ -74,13 +79,14 @@ const OPTIONALITY_OPTIONS = [
   "Free Service with Adoption",
 ] as const;
 
-type SourceKind = "github" | "confluence" | "webex" | "myagent";
+type SourceKind = "github" | "confluence" | "webex" | "myagent" | "sharepoint";
 
 /** Source kind → credentials provider id for the shared `ProviderLogo`. */
 const SOURCE_PROVIDER: Record<Exclude<SourceKind, "myagent">, string> = {
   github: "github",
   confluence: "atlassian",
   webex: "webex",
+  sharepoint: "sharepoint",
 };
 
 interface OnboardingStepConfig {
@@ -271,6 +277,7 @@ export function ProjectOnboardingWizard({
   const [confluenceSpaces, setConfluenceSpaces] = useState<string[]>([]);
   // Encoded {room_id, name} blobs from the picker (see lib/projects/webex-room).
   const [webexRooms, setWebexRooms] = useState<string[]>([]);
+  const [sharePointDocuments, setSharePointDocuments] = useState<SharePointSource[]>([]);
   const [webexCredentialMode, setWebexCredentialMode] =
     useState<WebexCredentialMode>("personal");
   const [webexCredentialProvider, setWebexCredentialProvider] = useState("webex");
@@ -418,6 +425,7 @@ export function ProjectOnboardingWizard({
     setOptionality([]);
     setConfluenceSpaces([]);
     setWebexRooms([]);
+    setSharePointDocuments([]);
     setWebexCredentialMode("personal");
     setWebexCredentialProvider("webex");
     setMyAgentConnectors([]);
@@ -467,6 +475,7 @@ export function ProjectOnboardingWizard({
       myagent_connectors.length > 0 &&
       myAgentEnabled;
     const common = {
+      sharepoint_documents: enabledSourceKinds.has("sharepoint") ? sharePointDocuments : [],
       name: projectName.trim(),
       description: description.trim() || undefined,
       team_id: teamId,
@@ -1083,7 +1092,9 @@ export function ProjectOnboardingWizard({
                                 />
                               </div>
                             ) : null}
-                            {step.source === "myagent" ? (
+                            {step.source === "sharepoint" ? (
+                              <SharePointSourcePicker selected={sharePointDocuments} onChange={setSharePointDocuments} />
+                            ) : step.source === "myagent" ? (
                               <MyAgentSourcePicker
                                 selected={myAgentConnectors}
                                 onChange={(next) => {
@@ -1325,6 +1336,11 @@ export function ProjectOnboardingWizard({
                                   {onboardingWebexMeetingSeriesKeys.length === 1 ? "" : "s"} selected
                                 </span>
                               </span>
+                            </Row>
+                          ) : null}
+                          {enabledSourceKinds.has("sharepoint") ? (
+                            <Row label={<SourceLabel provider="sharepoint" name="SharePoint" />}>
+                              {sharePointDocuments.length ? sharePointDocuments.map((document) => document.name).join(", ") : muted}
                             </Row>
                           ) : null}
                           {entityType === "project" && showGithub ? (

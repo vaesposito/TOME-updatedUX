@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
@@ -23,6 +24,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    CLIJSONDecodeError,
     ResultMessage,
     SystemMessage,
     TaskNotificationMessage,
@@ -40,6 +42,18 @@ from tome_agent.orchestrator.contract import IngestEventPayload
 from tome_agent.tracing import suppress_sensitive_evidence_tracing
 
 log = logging.getLogger("tome_agent.agent.run_stream")
+
+
+def _restricted_stream_error_message(error: Exception) -> str:
+    """Classify known SDK failures without exposing source data or stderr."""
+    if isinstance(error, CLIJSONDecodeError) and re.fullmatch(
+        r"JSON message exceeded maximum buffer size of [0-9]+ bytes", error.line
+    ):
+        return (
+            "Agent SDK message buffer limit exceeded while reading source evidence; "
+            "ask an administrator to review document batching and SDK buffer limits."
+        )
+    return "restricted evidence agent stream failed"
 
 
 @contextmanager
@@ -453,21 +467,18 @@ async def _consume_agent_query(
                     exc_info=True,
                 )
         else:
+            message = (
+                _restricted_stream_error_message(e)
+                if redact_sensitive_content
+                else f"{type(e).__name__}: {e}"
+            )
             if redact_sensitive_content:
-                log.warning(
-                    "restricted evidence agent stream failed; details suppressed"
-                )
+                log.warning("%s; details suppressed", message)
             else:
                 log.exception("agent stream failed")
             yield IngestEventPayload(
                 type="error",
-                data={
-                    "message": (
-                        "restricted evidence agent stream failed"
-                        if redact_sensitive_content
-                        else f"{type(e).__name__}: {e}"
-                    )
-                },
+                data={"message": message},
             )
 
 

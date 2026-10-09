@@ -377,6 +377,7 @@ export function hasConfiguredTomeSource(sources: ProjectDocument["sources"] | un
   if (!sources) return false;
   return Boolean(
     sources.repos?.length ||
+      sources.sharepoint_documents?.length ||
       sources.confluence_url?.trim() ||
       sources.confluence_spaces?.length ||
       sources.webex_rooms?.length ||

@@ -5,8 +5,8 @@ import { SOURCE_ADAPTERS } from "./adapters";
 import type { WebexCredentialMode } from "@/types/projects";
 
 /** The connectors a project can draw sources from (YAML `source:` values). */
-export type SourceKind = "github" | "confluence" | "webex" | "myagent";
-export type BrowsableSourceKind = Exclude<SourceKind, "myagent">;
+export type SourceKind = "github" | "confluence" | "webex" | "myagent" | "sharepoint";
+export type BrowsableSourceKind = Exclude<SourceKind, "myagent" | "sharepoint">;
 
 export interface SourcePickerProps {
   /** Render controls inside a parent source card without a second branded card. */

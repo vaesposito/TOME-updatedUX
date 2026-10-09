@@ -77,6 +77,52 @@ beforeEach(() => {
     roomTokens: { "room-id": "bound-owner-token" } });
 });
 
+it.each(["manual", "auto"] as const)("sends saved SharePoint IDs through the shared %s ingest contract without app credentials", (triggeredBy) => {
+  const project = synthesizedProject("project");
+  project.sources = { sharepoint_documents: [{ drive_id: "drive-1", item_id: "item-1", name: "Example.pptx" }] };
+  const request = buildIngestRequest(project, { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false, triggeredBy });
+  expect(request.connector_data).toEqual({ sharepoint: { documents: [{ drive_id: "drive-1", item_id: "item-1" }] } });
+  expect(request.credentials).toEqual({});
+});
+
+it("excludes SharePoint from isolated recurring-meeting ingests", () => {
+  const project = synthesizedProject("project");
+  project.sources = { sharepoint_documents: [{ drive_id: "drive-1", item_id: "item-1", name: "Example.pptx" }] };
+  expect(buildIngestRequest(project, { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false,
+    sourceScope: "webex_meetings", sharepointDocuments: [{ drive_id: "drive-1", item_id: "one-off", name: "Context.pdf" }] }).connector_data).toEqual({});
+});
+
+it("requires folder resolution and forwards only document IDs, never the folder as a file", () => {
+  const project = synthesizedProject("project");
+  project.sources = { sharepoint_documents: [{ kind: "folder", drive_id: "drive-1", item_id: "folder-1", name: "Example folder" }] };
+  const options = { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false };
+  expect(() => buildIngestRequest(project, options)).toThrow("must be resolved");
+  expect(buildIngestRequest(project, { ...options, resolvedSharepointDocuments: [{ drive_id: "drive-1", item_id: "file-1", name: "Example.pdf" }] })
+    .connector_data.sharepoint).toEqual({ documents: [{ drive_id: "drive-1", item_id: "file-1" }] });
+  expect(buildIngestRequest(project, { ...options, sourceScope: "webex_meetings" }).connector_data).toEqual({});
+});
+
+it.each(["project", "area", "bhag"] as const)("includes one-off documents in %s runs without attaching them to the project", (type) => {
+  const project = synthesizedProject(type);
+  const saved = { drive_id: "drive-1", item_id: "saved", name: "Saved.pptx" };
+  const context = { drive_id: "drive-1", item_id: "context", name: "Context.pdf" };
+  project.sources!.sharepoint_documents = [saved];
+  const request = buildIngestRequest(project, { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false,
+    sharepointDocuments: [saved, context], connectorData: { webex: { meetings: [{ id: "meeting-1" }] } } });
+  expect(request.connector_data).toEqual({ sharepoint: { documents: [
+    { drive_id: "drive-1", item_id: "saved" }, { drive_id: "drive-1", item_id: "context" },
+  ] }, webex: { meetings: [{ id: "meeting-1" }] } });
+  expect(project.sources!.sharepoint_documents).toEqual([saved]);
+  expect(buildIngestRequest(project, { runId: "next-run", reportId: "next-report", seed: null, isGreenfield: false,
+    triggeredBy: "auto" }).connector_data).toEqual({ sharepoint: { documents: [{ drive_id: "drive-1", item_id: "saved" }] } });
+});
+
+it("can ingest one-off documents without any saved SharePoint source", () => {
+  const request = buildIngestRequest(synthesizedProject("project"), { runId: "run-1", reportId: "report-1", seed: null,
+    isGreenfield: false, sharepointDocuments: [{ drive_id: "drive-1", item_id: "context", name: "Context.pdf" }] });
+  expect(request.connector_data.sharepoint).toEqual({ documents: [{ drive_id: "drive-1", item_id: "context" }] });
+});
+
 it("forwards scoped room tokens without replacing the caller's meeting token", async () => {
   const project = synthesizedProject("project");
   await expect(resolveProjectCredentials(project, "caller", { purpose: "ingest" })).resolves.toEqual({

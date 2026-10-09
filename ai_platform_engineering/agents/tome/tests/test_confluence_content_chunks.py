@@ -7,10 +7,13 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from tome_agent.agent import mcp_confluence
 from tome_agent.agent.connectors import base
 from tome_agent.agent.connectors.base import SourceItem
 from tome_agent.agent.connectors.confluence import ConfluenceConnector
+
+# Initialize the connectors package before its MCP module to avoid a circular import.
+# isort: split
+from tome_agent.agent import mcp_confluence
 
 
 def page_result(

@@ -46,6 +46,7 @@ import {
   normalizeMyAgentConnectors,
 } from "@/lib/projects/myagent-source";
 import { preflightState, type PreflightSourceResult } from "@/lib/tome/preflight";
+import { sharePointSourceKey } from "@/lib/projects/sharepoint-source";
 import { describeRelativeTime, nextCronRun } from "@/lib/tome/auto-ingest/schedule-presets";
 import { cn } from "@/lib/utils";
 import type {
@@ -53,8 +54,11 @@ import type {
   ConfluencePageScope,
   ConfluenceSpaceSource,
   WebexCredentialMode,
+  SharePointDocumentSource,
+  SharePointSource,
 } from "@/types/projects";
 import { WebexIngestSources } from "./WebexIngestSources";
+import { SharePointIngestContext } from "./SharePointIngestContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +90,7 @@ interface WebexMeeting {
 }
 
 interface ProjectSources {
+  sharepoint_documents?: SharePointSource[];
   webex_credential_mode?: WebexCredentialMode;
   repos: string[];
   confluence_url: string;
@@ -106,6 +111,7 @@ interface ProjectSources {
 }
 
 interface SourceItem {
+  sourceKey?: string;
   label: string;
   room_id?: string;
   webexMode?: WebexCredentialMode;
@@ -114,7 +120,7 @@ interface SourceItem {
 }
 
 interface SourceRow {
-  kind: "github" | "confluence" | "webex" | "myagent";
+  kind: "github" | "confluence" | "webex" | "myagent" | "sharepoint";
   label: string;
   items: SourceItem[];
   connectorKey: string;
@@ -196,6 +202,13 @@ function savedConfluenceScopes(s: Partial<ProjectSources>): ConfluencePageScope[
 
 export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
   const rows: SourceRow[] = [];
+  if (s.sharepoint_documents?.length) {
+    rows.push({ kind: "sharepoint", label: "SharePoint", connectorKey: "sharepoint",
+      items: s.sharepoint_documents.map((document) => ({ sourceKey: sharePointSourceKey(document), label: document.name, href: document.web_url,
+        detail: document.kind === "folder"
+          ? `${document.selected_item_ids ? `Folder · ${document.selected_item_ids.length} initially selected file(s)${document.excluded_item_ids ? " + future additions" : " · previously saved fixed selection"}` : "Previously attached folder · All direct PDF/PPTX files"} · Runs as: configured SharePoint application`
+          : "Runs as: configured SharePoint application" })) });
+  }
   const repos = Array.isArray(s.repos) ? s.repos.filter(Boolean) : [];
   if (repos.length > 0) {
     rows.push({
@@ -504,6 +517,10 @@ export function IngestPanel({
   const [selectedMeetings, setSelectedMeetings] = useState<Set<string>>(new Set());
   const [meetingFilter, setMeetingFilter] = useState("");
   const [meetingLookbackDays, setMeetingLookbackDays] = useState(3);
+  const [savedSharePointDocuments, setSavedSharePointDocuments] = useState<SharePointSource[]>([]);
+  const [sharepointDocuments, setSharePointDocuments] = useState<SharePointDocumentSource[]>([]);
+
+  useEffect(() => { setSharePointDocuments([]); setSavedSharePointDocuments([]); }, [slug]);
 
   // ── Load runs ──────────────────────────────────────────────────────────────
 
@@ -542,6 +559,7 @@ export function IngestPanel({
         setProjectName(proj.slug ?? "");
         setAutoIngest(proj.autoIngest);
         const s = proj.sources ?? {};
+        setSavedSharePointDocuments(s.sharepoint_documents ?? []);
         const allowed = myAgentEnabled && s.myagent_enabled
           ? normalizeMyAgentConnectors(s.myagent_connectors)
           : [];
@@ -681,12 +699,14 @@ export function IngestPanel({
           seedStablePages: isGreenfield ? seedPages : undefined,
           refreshChildren: refreshChildren || undefined,
           webexMeetings: selectedList.length > 0 ? selectedList : undefined,
+          sharepointDocuments: sharepointDocuments.length > 0 ? sharepointDocuments : undefined,
         }
       : {
           seed: seed.trim() || undefined,
           mode,
           myAgentSources: myAgentEnabled && !preflightLoading ? myAgentSelection : [],
           webexMeetings: selectedList.length > 0 ? selectedList : undefined,
+          sharepointDocuments: action === "full" && sharepointDocuments.length > 0 ? sharepointDocuments : undefined,
           sourceScope: action === "meeting" ? "webex_meetings" : undefined,
           seedStablePages: isGreenfield ? seedPages : undefined,
         };
@@ -709,6 +729,7 @@ export function IngestPanel({
       const json = await res.json();
       setSeed("");
       setSelectedMeetings(new Set());
+      if (isSynthesized || action === "full") setSharePointDocuments([]);
       await loadRuns();
       onRunStarted(json.data.runId);
     } catch (e) {
@@ -716,7 +737,7 @@ export function IngestPanel({
     } finally {
       setStarting(false);
     }
-  }, [slug, seed, action, meetings, selectedMeetings, myAgentEnabled, myAgentSelection, preflightLoading, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
+  }, [slug, seed, action, meetings, selectedMeetings, sharepointDocuments, myAgentEnabled, myAgentSelection, preflightLoading, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
 
   // Compaction — an in-place editing pass (tighten prose, fix stale tome:// links).
   // Its own run through the shared lifecycle; shows in the same log + history.
@@ -1055,7 +1076,7 @@ export function IngestPanel({
                               ) : <ul className="mt-1 space-y-1">
                                 {row.items.map((item) => (
                                   <li
-                                    key={`${item.label}:${item.detail ?? ""}`}
+                                    key={item.sourceKey ?? `${item.label}:${item.detail ?? ""}`}
                                     className="flex min-w-0 items-start gap-1.5 text-xs"
                                   >
                                     <span
@@ -1265,6 +1286,10 @@ export function IngestPanel({
                   )}
                 </div>
               )}
+
+              {(isSynthesized || action === "full") && <SharePointIngestContext key={slug} slug={slug}
+                selected={sharepointDocuments} saved={savedSharePointDocuments} onChange={setSharePointDocuments}
+                disabled={!canEdit || starting || preflightLoading} />}
 
               {/* Seed instruction — always shown; copy adapts to the selected action.
                   Hidden for compact, which doesn't take one. */}

@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from "crypto";
+import { resolveSharePointDocuments } from "./sharepoint";
 
 import { ObjectId } from "mongodb";
 
@@ -461,6 +462,18 @@ async function prepareRun(
     );
   }
 
+  // Resolve direct folder contents for manual and scheduled runs, never for meeting-only or quick edits.
+  const hasFolders = scopedProject.sources?.sharepoint_documents?.some((source) => source.kind === "folder");
+  const resolvedSharepointDocuments = hasFolders
+    ? (!meetingOnly && endpoint !== "/compact" && (isGreenfield || dispatch.mode !== "quick")
+      ? await resolveSharePointDocuments(scopedProject.sources?.sharepoint_documents ?? [], dispatch.sharepointDocuments, {
+        existingPages: await (await getPageStore()).listPages(projectId),
+      })
+      : [])
+    : undefined;
+  if (hasFolders && resolvedSharepointDocuments) {
+    await appendLog(runId, infoLine(`SharePoint: resolved ${resolvedSharepointDocuments.length} new/changed direct document(s); unchanged versions and subfolders excluded`));
+  }
   const req = buildIngestRequest(scopedProject, {
     runId,
     reportId,
@@ -468,6 +481,8 @@ async function prepareRun(
     isGreenfield,
     mode: dispatch.mode,
     connectorData,
+    sharepointDocuments: dispatch.sharepointDocuments,
+    resolvedSharepointDocuments,
     myAgentQuestionsEnabled,
     myAgentSources: myAgentConnectors,
     credentials,
@@ -512,6 +527,7 @@ export async function startIngestRun(
     seed?: string | null;
     mode?: "full" | "quick";
     webexMeetings?: WebexMeetingIngestItem[];
+    sharepointDocuments?: IngestDispatch["sharepointDocuments"];
     sourceScope?: IngestDispatch["sourceScope"];
     seedStablePages?: boolean;
     agentEndpoint?: string;
@@ -544,6 +560,7 @@ export async function startIngestRun(
       mode: opts.mode,
       seedStablePages: opts.seedStablePages,
       webexMeetings: opts.webexMeetings,
+      ...(opts.sharepointDocuments === undefined ? {} : { sharepointDocuments: opts.sharepointDocuments }),
       sourceScope: opts.sourceScope,
       skipReview: opts.skipReview,
       triggeredBy: opts.triggeredBy,
@@ -600,6 +617,7 @@ export async function enqueueBhagCascade(
     seed?: string | null;
     seedStablePages?: boolean;
     webexMeetings?: WebexMeetingIngestItem[];
+    sharepointDocuments?: IngestDispatch["sharepointDocuments"];
   },
 ): Promise<{ cascadeId: string; parentRunId: string; childCount: number }> {
   const sub = sessionSub(ctx.session);
@@ -655,6 +673,7 @@ export async function enqueueBhagCascade(
       seed: opts.seed ?? null,
       seedStablePages: opts.seedStablePages,
       webexMeetings: opts.webexMeetings,
+      ...(opts.sharepointDocuments === undefined ? {} : { sharepointDocuments: opts.sharepointDocuments }),
     },
     cascadeId,
     cascadeRole: "parent",

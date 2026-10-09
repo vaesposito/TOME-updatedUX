@@ -273,7 +273,9 @@ export function ChatPanel({
   const ssoEnabled = getConfig('ssoEnabled');
   const accessToken = ssoEnabled ? session?.accessToken : undefined;
 
-  const conversation = getActiveConversation();
+  const conversation = useChatStore((state) => state.conversations.find(
+    (item) => item.id === (conversationId ?? state.activeConversationId),
+  ));
   const isNativeTome = conversation?.metadata?.assistant_runtime === "tome-native";
 
   // Ref to track which conversations we've checked for HITL interrupt state
@@ -442,7 +444,7 @@ export function ChatPanel({
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
     // Skip if no conversationId (new conversation) or agentId
-    if (!conversationId || !agentId || isNativeTome) return;
+    if (!conversation || !conversationId || !agentId || isNativeTome) return;
     
     // Wait for messages to be loaded (race condition on page refresh:
     // this effect can fire before ChatContainer finishes loading messages
@@ -543,7 +545,7 @@ export function ChatPanel({
     };
 
     checkInterruptState();
-  }, [conversationId, agentId, isLoadingMessages, isThisConversationStreaming, hasAssistantMessageForInterruptCheck, isNativeTome]);
+  }, [conversation, conversationId, agentId, isLoadingMessages, isThisConversationStreaming, hasAssistantMessageForInterruptCheck, isNativeTome]);
 
   // ═══════════════════════════════════════════════════════════════
   // FILES & TASKS FETCH (for timeline display in latest message)
@@ -551,7 +553,7 @@ export function ChatPanel({
 
   // Fetch files from API
   useEffect(() => {
-    if (!conversationId || !agentId || isNativeTome) {
+    if (!conversation || !conversationId || !agentId || isNativeTome) {
       setTimelineFiles([]);
       filesFetchedForRef.current = null;
       return;
@@ -586,7 +588,7 @@ export function ChatPanel({
     };
 
     fetchFiles();
-  }, [conversationId, agentId, filesFetchKey, isNativeTome]);
+  }, [conversation, conversationId, agentId, filesFetchKey, isNativeTome]);
 
   // Handle file download
   const handleTimelineFileDownload = useCallback(

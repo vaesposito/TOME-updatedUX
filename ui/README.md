@@ -49,6 +49,10 @@ Open http://localhost:3000.
   defaults. Its service token stays server-side; caller identity accompanies reads.
 - Existing dynamic and project-native conversations are not migrated. A new Ask
   Tome conversation uses the native runtime and keeps its history in GRID.
+- Opening Ask Tome resolves its configured agent with current access checks,
+  without waiting for user defaults or integration settings. Startup requests
+  stop after 15 seconds and offer Retry. Direct chat links preserve the native
+  runtime metadata, so they do not initialize Dynamic Agents files or interrupts.
 
 
 ## Tome ingest review

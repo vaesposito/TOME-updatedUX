@@ -15,8 +15,8 @@ export interface ResolvedChatAgent {
   source: "configured" | "user-default" | "platform-default" | "first-available";
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
+async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { cache: "no-store", signal });
   if (!response.ok) {
     throw new Error(`Failed to load ${url}: ${response.status}`);
   }
@@ -33,6 +33,7 @@ export interface ChatDefaultAgentIds {
 }
 
 export interface ResolveUsableChatAgentOptions {
+  signal?: AbortSignal;
   /**
    * Select this exact agent from the CAS/OpenFGA-filtered available list.
    * A configured agent never falls back to a different agent.
@@ -48,13 +49,13 @@ export interface ResolveUsableChatAgentOptions {
 }
 
 /** Load personal and platform Web defaults in one preferences request. */
-export async function fetchChatDefaultAgentIds(): Promise<ChatDefaultAgentIds> {
+export async function fetchChatDefaultAgentIds(signal?: AbortSignal): Promise<ChatDefaultAgentIds> {
   const payload = await fetchJson<
     ApiEnvelope<{
       web_default_agent_id?: unknown;
       platform_default_agent_id?: unknown;
     }>
-  >("/api/user/preferences");
+  >("/api/user/preferences", signal);
   const data = payload.success ? payload.data : null;
   return {
     userDefaultAgentId: normalizedAgentId(data?.web_default_agent_id),
@@ -62,9 +63,10 @@ export async function fetchChatDefaultAgentIds(): Promise<ChatDefaultAgentIds> {
   };
 }
 
-async function fetchAvailableAgents(): Promise<DynamicAgentConfig[]> {
+async function fetchAvailableAgents(signal?: AbortSignal): Promise<DynamicAgentConfig[]> {
   const payload = await fetchJson<ApiEnvelope<DynamicAgentConfig[]>>(
     "/api/dynamic-agents/available",
+    signal,
   );
   if (!payload.success || !Array.isArray(payload.data)) {
     throw new Error(payload.error || "Failed to load available agents");
@@ -75,13 +77,16 @@ async function fetchAvailableAgents(): Promise<DynamicAgentConfig[]> {
 export async function resolveUsableChatAgent(
   options: ResolveUsableChatAgentOptions = {},
 ): Promise<ResolvedChatAgent> {
+  const requestedAgentId = normalizedAgentId(options.requestedAgentId);
   const [defaultsResult, agentsResult] = await Promise.allSettled([
-    fetchChatDefaultAgentIds(),
-    fetchAvailableAgents(),
+    // An exact app assistant does not use personal or platform defaults.
+    // Preferences can include unrelated integration requests.
+    requestedAgentId ? Promise.resolve(null) : fetchChatDefaultAgentIds(options.signal),
+    fetchAvailableAgents(options.signal),
   ]);
 
   const defaults =
-    defaultsResult.status === "fulfilled"
+    defaultsResult.status === "fulfilled" && defaultsResult.value
       ? defaultsResult.value
       : { userDefaultAgentId: null, platformDefaultAgentId: null };
   const userDefaultAgentId = defaults.userDefaultAgentId;
@@ -89,8 +94,8 @@ export async function resolveUsableChatAgent(
   const availableAgents =
     agentsResult.status === "fulfilled" ? agentsResult.value : [];
 
-  const requestedAgentId = normalizedAgentId(options.requestedAgentId);
   if (requestedAgentId) {
+    if (agentsResult.status === "rejected") throw agentsResult.reason;
     const configuredAgent = availableAgents.find((agent) => agent._id === requestedAgentId);
     if (configuredAgent) {
       return {

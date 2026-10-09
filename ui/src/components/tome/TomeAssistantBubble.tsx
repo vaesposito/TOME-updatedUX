@@ -48,21 +48,32 @@ export function TomeAssistantBubble({ slug, projectTitle, pagePath }: Props) {
   useEffect(() => {
     if (!open || agentId) return;
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    setError(null);
     async function resolveAgent() {
       try {
-        const apps = await apiClient.getAgenticApps();
+        const apps = await apiClient.getAgenticApps(controller.signal);
         const requestedAgentId = apps.items.find((app) => app.appId === "tome")?.assistantAgentId || "agent-tome-agent";
-        const agent = await resolveUsableChatAgent({ requestedAgentId, requireAvailableAgent: true });
+        const agent = await resolveUsableChatAgent({ requestedAgentId, requireAvailableAgent: true, signal: controller.signal });
         if (!cancelled) {
           setAgentId(agent.id);
           setError(null);
         }
       } catch (reason: unknown) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "TOME assistant is unavailable.");
+        if (!cancelled) setError(controller.signal.aborted
+          ? "TOME assistant connection timed out. Please retry."
+          : reason instanceof Error ? reason.message : "TOME assistant is unavailable.");
+      } finally {
+        window.clearTimeout(timeout);
       }
     }
     void resolveAgent();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [open, agentId, attempt]);
 
   if (agentId) {

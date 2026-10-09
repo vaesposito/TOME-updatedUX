@@ -7,7 +7,8 @@ generating datasource and document IDs, and enhancing metadata with Confluence-s
 import re
 import time
 import hashlib
-import traceback
+import json
+from urllib.parse import parse_qs, urlparse, urljoin
 from typing import Dict, List, Any, Tuple, Optional
 import aiohttp
 from aiohttp_retry import RetryClient, ExponentialRetry
@@ -102,6 +103,7 @@ class ConfluenceLoader:
       max_timeout=60.0,
       factor=2.0,
       statuses={429, 502, 503, 504},
+      retry_all_server_errors=False,
     )
 
     base_session = aiohttp.ClientSession(
@@ -146,112 +148,115 @@ class ConfluenceLoader:
 
     return False
 
+  def _api_url(self, path: str) -> str:
+    """Accept a Cloud site root or its /wiki context without duplicating it."""
+    return f"{self.confluence_url.rstrip('/').removesuffix('/wiki')}/wiki/rest/api/{path}"
+
+  async def _search_pages(
+    self, cql: str, limit: int, cursor: Optional[str] = None, with_body: bool = True,
+  ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    params: Dict[str, Any] = {"cql": cql, "limit": limit}
+    if with_body:
+      params["expand"] = "content.body.storage,content.version,content.space,content.history,content.history.lastUpdated"
+    if cursor:
+      params["cursor"] = cursor
+    async with self.session.get(self._api_url("search"), params=params) as resp:
+      if resp.status != 200:
+        raise ValueError(f"Confluence search failed (HTTP {resp.status}); verify connector grants and page visibility for 401/403")
+      data = await resp.json()
+    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+      raise ValueError("Confluence search response is missing results")
+    pages = []
+    for item in data["results"]:
+      page = item.get("content") if isinstance(item, dict) else None
+      if not isinstance(page, dict) or not page.get("id"):
+        raise ValueError("Confluence search response is missing a content ID")
+      if with_body:
+        body = page.get("body")
+        storage = body.get("storage") if isinstance(body, dict) else None
+        if not isinstance(storage, dict) or not isinstance(storage.get("value"), str):
+          raise ValueError(f"Confluence page {page['id']} is missing its expanded storage body")
+      page["_source_fetched_at"] = int(time.time())
+      pages.append(page)
+    next_link = data.get("_links", {}).get("next")
+    next_cursor = parse_qs(urlparse(next_link).query).get("cursor", [None])[0] if next_link else None
+    if next_link and not next_cursor:
+      raise ValueError("Confluence continuation has no cursor; enumeration is incomplete")
+    return pages, next_cursor
+
   async def fetch_child_pages(
-    self,
-    parent_page_id: str,
-    max_results: Optional[int] = None,
+    self, parent_page_id: str, max_results: Optional[int] = None,
   ) -> Tuple[List[str], List[Tuple[str, str]], bool]:
-    """Fetch direct child page IDs for a parent page.
-
-    Uses Confluence REST API v1: GET /rest/api/content/{id}/child/page
-
-    Args:
-        parent_page_id: ID of the parent page
-
-    Returns:
-        Tuple of (child_page_ids, failed_fetches, truncated)
-        - child_page_ids: List of direct child page IDs
-        - failed_fetches: List of (identifier, error_msg) tuples where identifier is the page_id or error type
-        - truncated: True when ``max_results`` bounded a larger result set
-    """
-    child_ids = []
-    failed_fetches = []
-    start = 0
-
-    while True:
-      try:
-        if max_results is not None:
-          # Fetch one item beyond the requested bound so callers can
-          # distinguish "exactly N" from "more than N" without enumerating an
-          # arbitrarily large Confluence tree.
-          remaining = max_results + 1 - len(child_ids)
-          if remaining <= 0:
-            return child_ids[:max_results], failed_fetches, True
-          request_limit = min(CONFLUENCE_API_PAGE_LIMIT, remaining)
-        else:
-          request_limit = CONFLUENCE_API_PAGE_LIMIT
-        url = f"{self.confluence_url}/rest/api/content/{parent_page_id}/child/page"
-        params = {
-          "start": start,
-          "limit": request_limit,
-          "expand": "id,title",
-        }
-
-        async with self.session.get(url, params=params) as resp:
-          if resp.status == 200:
-            data = await resp.json()
-            batch = data.get("results", [])
-
-            if not batch:
-              break
-
-            # Extract IDs
-            for child in batch:
-              child_id = child.get("id")
-              if child_id:
-                child_ids.append(child_id)
-              else:
-                self.logger.warning(f"Child page missing ID in response: {child}")
-
-            if max_results is not None and len(child_ids) > max_results:
-              return child_ids[:max_results], failed_fetches, True
-
-            start += len(batch)
-
-            if len(batch) < request_limit:
-              break
-          else:
-            text = await resp.text()
-            error_msg = f"Failed to fetch children of {parent_page_id}: {resp.status} - {text}"
-            self.logger.warning(error_msg)
-            failed_fetches.append((parent_page_id, error_msg))
-            break
-      except Exception as e:
-        error_msg = f"Error fetching children of {parent_page_id}: {e}"
-        self.logger.error(error_msg)
-        failed_fetches.append((parent_page_id, error_msg))
-        break
-
-    return child_ids, failed_fetches, False
+    """Enumerate direct children via CQL parent, preserving the selected scope."""
+    child_ids: List[str] = []
+    cursor = None
+    seen_cursors = set()
+    try:
+      if not str(parent_page_id).isascii() or not str(parent_page_id).isdecimal():
+        raise ValueError("Parent page ID must contain ASCII digits")
+      while True:
+        remaining = CONFLUENCE_API_PAGE_LIMIT if max_results is None else min(CONFLUENCE_API_PAGE_LIMIT, max_results + 1 - len(child_ids))
+        batch, next_cursor = await self._search_pages(f"type=page AND parent={parent_page_id} ORDER BY created ASC", remaining, cursor, with_body=False)
+        ids = [str(page["id"]) for page in batch]
+        if len(set(ids)) != len(ids) or set(ids).intersection(child_ids):
+          raise ValueError("Confluence child enumeration repeated a page")
+        child_ids.extend(ids)
+        if max_results is not None and len(child_ids) > max_results:
+          return child_ids[:max_results], [], True
+        if not next_cursor:
+          return child_ids, [], False
+        if next_cursor in seen_cursors:
+          raise ValueError("Confluence child enumeration repeated a cursor")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    except (aiohttp.ClientError, ValueError, TypeError) as exc:
+      self.logger.error("Child enumeration failed for %s: %s", parent_page_id, exc)
+      return child_ids, [(parent_page_id, str(exc))], False
 
   def extract_text_from_html(self, html_content: str) -> str:
-    """Extract text from Confluence HTML storage format.
-
-    Args:
-        html_content: HTML content from Confluence
-
-    Returns:
-        Plain text content
-    """
+    """Keep table column associations, link targets and external macro provenance."""
     soup = BeautifulSoup(html_content, "html.parser")
-    text = soup.get_text(separator="\n", strip=True)
-    return text
+    for node in soup.find_all(["script", "style"]):
+      node.decompose()
+    for link in soup.find_all("a", href=True):
+      label = link.get_text(" ", strip=True)
+      href = str(link["href"])
+      link.replace_with(f"{label} ({href})" if label else href)
+    for macro in soup.find_all("ac:structured-macro"):
+      if macro.get("ac:name") == "jira":
+        params = [f"{node.get('ac:name', 'value')}={node.get_text(' ', strip=True)}" for node in macro.find_all("ac:parameter")]
+        macro.replace_with("External issue macro: " + "; ".join(params) + " (live issue status was not fetched)")
+    for table in reversed(soup.find_all("table")):
+      rows = table.find_all("tr")
+      headers: List[str] = []
+      lines = []
+      for row in rows:
+        cells = row.find_all(["td", "th"], recursive=False)
+        values = [cell.get_text(" ", strip=True) for cell in cells]
+        if not values:
+          continue
+        if not headers and all(cell.name == "th" for cell in cells):
+          headers = values
+          lines.append(" | ".join(values))
+        elif headers and len(headers) == len(values) and all(cell.get("colspan", "1") == "1" and cell.get("rowspan", "1") == "1" for cell in cells):
+          lines.append(" | ".join(f"{header}: {value}" for header, value in zip(headers, values)))
+        else:
+          lines.append(" | ".join(values))
+      table.replace_with("\n" + "\n".join(lines) + "\n")
+    return soup.get_text(separator="\n", strip=True)
 
   async def fetch_page_content(self, page_id: str) -> Tuple[Optional[Dict], Optional[Tuple[str, str]]]:
-    """Fetch single page. Returns (page, None) on success or (None, (page_id, error)) on failure."""
+    """Fetch the complete storage body through a classic-scope CQL expansion."""
     try:
-      url = f"{self.confluence_url}/rest/api/content/{page_id}"
-      params = {"expand": "body.storage,version,space,history"}
-      async with self.session.get(url, params=params) as resp:
-        if resp.status == 200:
-          return await resp.json(), None
-        text = await resp.text()
-        return None, (
-          page_id,
-          f"Failed to fetch page {page_id}: {resp.status} - {text}",
-        )
-    except Exception as e:
-      return None, (page_id, f"Error fetching page {page_id}: {e}")
+      if not str(page_id).isascii() or not str(page_id).isdecimal():
+        raise ValueError("Page ID must contain ASCII digits")
+      pages, _ = await self._search_pages(f"type=page AND id={page_id}", 1)
+      if len(pages) != 1 or str(pages[0]["id"]) != str(page_id):
+        raise ValueError("Page not found or not visible to the connected user")
+      return pages[0], None
+    except (aiohttp.ClientError, ValueError, TypeError) as exc:
+      self.logger.error("Page fetch failed for %s: %s", page_id, exc)
+      return None, (page_id, str(exc))
 
   async def load_pages(
     self,
@@ -286,7 +291,7 @@ class ConfluenceLoader:
           break
         page_id = config.get("page_id")
         if not page_id:
-          self.logger.warning(f"Page config missing page_id: {config}")
+          failed_pages.append((space_key, "Selected page configuration is missing page_id"))
           continue
 
         # Fetch parent page
@@ -314,53 +319,36 @@ class ConfluenceLoader:
             if child_failure:
               failed_pages.append(child_failure)
     else:
-      # Enumerate entire space
-      start = 0
+      # Search continuation cursors, not short-batch size, determine completeness.
+      cursor = None
+      seen_cursors = set()
+      seen_ids = set()
       while True:
         try:
-          url = f"{self.confluence_url}/rest/api/content"
-          params = {
-            "spaceKey": space_key,
-            "type": "page",
-            "start": start,
-            "limit": page_limit,
-            "expand": "body.storage,version,space,history",
-          }
-          async with self.session.get(url, params=params) as resp:
-            if resp.status == 200:
-              data = await resp.json()
-              batch = data.get("results", [])
-              if not batch:
-                break
-              if max_pages is not None and len(pages) + len(batch) > max_pages:
-                remaining = max(0, max_pages - len(pages))
-                pages.extend(batch[:remaining])
-                self.last_load_truncated = True
-                break
-              pages.extend(batch)
-              start += len(batch)
-              if max_pages is not None and len(pages) >= max_pages:
-                # The next request would only be needed to distinguish exact
-                # equality from truncation. Preview page-config calls use the
-                # child endpoint above; keep whole-space enumeration bounded.
-                self.last_load_truncated = len(batch) >= page_limit
-                break
-              if len(batch) < page_limit:
-                break
-            else:
-              text = await resp.text()
-              self.logger.error(f"Error fetching pages from {space_key}: {resp.status} - {text}")
-              failed_pages.append(
-                (
-                  space_key,
-                  f"Error fetching pages from {space_key}: {resp.status} - {text}",
-                )
-              )
-              break
-        except Exception as e:
-          self.logger.error(f"Error enumerating {space_key}: {e}")
-          self.logger.error(traceback.format_exc())
-          failed_pages.append((space_key, f"Error enumerating {space_key}: {e}"))
+          batch, next_cursor = await self._search_pages(
+            "type=page AND space=" + json.dumps(space_key) + " ORDER BY created ASC", page_limit, cursor,
+          )
+          ids = [str(page["id"]) for page in batch]
+          if len(set(ids)) != len(ids) or seen_ids.intersection(ids):
+            raise ValueError("Confluence enumeration repeated a page")
+          seen_ids.update(ids)
+          if max_pages is not None and len(pages) + len(batch) > max_pages:
+            pages.extend(batch[:max(0, max_pages - len(pages))])
+            self.last_load_truncated = True
+            break
+          pages.extend(batch)
+          if max_pages is not None and len(pages) >= max_pages:
+            self.last_load_truncated = bool(next_cursor)
+            break
+          if not next_cursor:
+            break
+          if next_cursor in seen_cursors:
+            raise ValueError("Confluence enumeration repeated a cursor")
+          seen_cursors.add(next_cursor)
+          cursor = next_cursor
+        except (aiohttp.ClientError, ValueError, TypeError) as exc:
+          self.logger.error("Space enumeration failed for %s: %s", space_key, exc)
+          failed_pages.append((space_key, str(exc)))
           break
 
     # Apply title filtering
@@ -388,12 +376,12 @@ class ConfluenceLoader:
 
     for page in pages:
       page_id = page.get("id")
-      if not page_id:
-        self.logger.warning(f"Page missing ID, skipping: {page}")
-        continue
-
       try:
-        html_content = page.get("body", {}).get("storage", {}).get("value", "")
+        if not page_id:
+          raise ValueError("Page response is missing its content ID")
+        html_content = page.get("body", {}).get("storage", {}).get("value")
+        if not isinstance(html_content, str):
+          raise ValueError("Page response is missing the expanded storage body")
 
         # Extract text
         text = self.extract_text_from_html(html_content)
@@ -410,9 +398,11 @@ class ConfluenceLoader:
         page_title = page.get("title", "")
         space_key = page.get("space", {}).get("key", "")
         space_name = page.get("space", {}).get("name", "")
-        page_url = self.confluence_url + page.get("_links", {}).get("webui", "")
+        webui = page.get("_links", {}).get("webui", "")
+        site_root = self.confluence_url.rstrip("/").removesuffix("/wiki")
+        page_url = urljoin(site_root + "/", webui) if webui.startswith("/wiki/") else urljoin(site_root + "/wiki/", webui.lstrip("/"))
         created_date = page.get("history", {}).get("createdDate", "")
-        last_modified = page.get("history", {}).get("lastUpdated", {}).get("when", "")
+        last_modified = page.get("history", {}).get("lastUpdated", {}).get("when") or page.get("version", {}).get("when", "")
         version = page.get("version", {}).get("number", 1)
         author = page.get("history", {}).get("createdBy", {}).get("displayName", "")
 
@@ -435,6 +425,9 @@ class ConfluenceLoader:
             "chunk_index": i,
             "total_chunks": len(chunks),
             "source": "confluence",
+            "source_body_sha256": hashlib.sha256(html_content.encode()).hexdigest(),
+            "source_fetch_complete": True,
+            "source_fetched_at": page.get("_source_fetched_at", int(time.time())),
           }
 
           # Create DocumentMetadata with all required fields

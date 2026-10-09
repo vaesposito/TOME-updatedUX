@@ -255,3 +255,35 @@ python ingestor.py
 - `ingestor.py` - Main ingestor logic, Redis listener, periodic reload
 - `loader.py` - ConfluenceLoader class for fetching and processing pages
 - Helper functions for session creation, datasource ID generation, etc.
+
+
+## Read completeness and freshness
+
+- Cloud page bodies and space/direct-child enumeration use supported CQL
+  search with storage expansion. Child selection uses `parent` and preserves
+  direct-child semantics; it does not expand the source to all descendants.
+- Pagination follows provider cursors, including when a batch is smaller than
+  the requested limit. Repeated IDs/cursors and malformed continuations fail
+  explicitly. Preview bounds remain marked as truncated.
+- A missing body or content ID counts as a failure. A returned empty storage
+  string is a valid empty page. Failed page reads remain in job accounting.
+- Table extraction keeps column labels alongside row values, and keeps link
+  targets. Embedded issue macros retain their parameters and explicitly state
+  that live issue status was not fetched. Storage text is not live issue data.
+- Each document records source version/time, storage-body SHA-256, fetch time,
+  complete-fetch status and chunk index/count. Chunk size/overlap remain
+  configured per datasource.
+- New datasources start with `last_updated=None`. Direct ingestion, reload and
+  automatic sync advance it only for a COMPLETED job with zero failures and
+  an untruncated selection. Partial, failed or terminated jobs preserve the
+  previous timestamp. Successful page chunks can still be stored during a
+  partial job; datasource freshness is not advanced and writes are not rolled
+  back. An empty selection currently produces a failed job.
+
+After deployment, re-ingest a large example tracker, verify every selected page
+and compare the final row, links, source revision and column values with the
+live source. Existing documents need a successful refresh to gain these fields.
+This change does not enable schedules or change their cadence or credentials.
+
+API behavior follows [Atlassian CQL search](https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-search/)
+and [the parent CQL field](https://developer.atlassian.com/cloud/confluence/cql-fields/#parent).

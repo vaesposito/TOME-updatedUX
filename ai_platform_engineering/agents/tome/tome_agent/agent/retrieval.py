@@ -67,8 +67,18 @@ class ReadArguments(ToolArguments):
     path: str = Field(min_length=1, max_length=1024)
     offset: int = Field(default=0, ge=0, le=10_000_000)
     limit: int = Field(default=24_000, ge=1, le=48_000)
-    start_line: int | None = Field(default=None, ge=1, le=10_000_000)
-    end_line: int | None = Field(default=None, ge=1, le=10_000_000)
+    start_line: int | None = Field(
+        default=None,
+        ge=1,
+        le=10_000_000,
+        description="First line, 1-based. Do not combine a line range with a nonzero character offset.",
+    )
+    end_line: int | None = Field(
+        default=None,
+        ge=1,
+        le=10_000_000,
+        description="Last line, inclusive. If supplied alone, read from line 1.",
+    )
 
 
 _TOOL_ARGUMENTS: dict[str, type[ToolArguments]] = {

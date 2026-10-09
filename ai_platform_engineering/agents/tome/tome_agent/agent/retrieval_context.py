@@ -406,6 +406,10 @@ class PublishedCorpus:
                 {
                     **entity.model_dump(),
                     "page_count": len(pages),
+                    "core_pages": [
+                        page.path for page in pages if page.path in CORE_PATHS
+                    ],
+                    "overview_path": overview.path if overview else None,
                     "overview_excerpt": body[:700],
                     "overview_citation": overview.reference()["citation"]
                     if overview
@@ -526,6 +530,8 @@ class PublishedCorpus:
         if not page:
             raise ValueError("Page is unavailable")
         text = self.text(page)
+        if end_line is not None and start_line is None:
+            start_line = 1
         if start_line is not None:
             if offset or end_line is not None and end_line < start_line:
                 raise ValueError(
@@ -539,8 +545,6 @@ class PublishedCorpus:
                 else len(text)
             )
         else:
-            if end_line is not None:
-                raise ValueError("end_line requires start_line")
             end = len(text)
         content = text[offset : min(end, offset + limit)]
         return {

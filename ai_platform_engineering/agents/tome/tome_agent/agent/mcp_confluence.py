@@ -19,12 +19,14 @@ Tools returned by `build_confluence_mcp(token, cloud_id)`:
   confluence_list_spaces()
   confluence_get_pages(space_key, limit?)   — newest-edited first
   confluence_get_page_tree(page_id)         — compact root + all descendants
-  confluence_get_page_content(page_id)
+  confluence_get_page_content(page_id)      — bounded first body chunk
+  confluence_get_page_content_chunk(page_id, offset, content_revision, limit)
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from functools import partial
 from html.parser import HTMLParser
@@ -40,7 +42,9 @@ from tome_agent.agent.connectors.base import record_fetch
 # from these fields, never passed through) — but the allowlist stays
 # explicit so a future free-text argument is redacted by default rather
 # than needing someone to remember to add it here.
-_CONFLUENCE_ALLOWED_ARGS = frozenset({"space_key", "page_id", "limit"})
+_CONFLUENCE_ALLOWED_ARGS = frozenset(
+    {"space_key", "page_id", "limit", "offset", "content_revision"}
+)
 
 
 def _confluence_canonical_uri(tool_name: str, args: dict[str, Any]) -> str:
@@ -61,6 +65,10 @@ _record_fetch = partial(
 _TREE_PAGE_LIMIT = 500
 _TREE_CONTENT_BUDGET_CHARS = 32_000
 _TREE_MAX_BODY_CHARS_PER_PAGE = 4_000
+# Bound the encoded result, including metadata and JSON escaping. Character
+# counts alone underestimate multilingual text and escape-heavy storage XHTML.
+_PAGE_CONTENT_MAX_RESULT_BYTES = 8_000
+_PAGE_CONTENT_MAX_CHUNK_CHARS = 6_000
 _TREE_RESULT_FIELDS = (
     "id",
     "title",
@@ -236,6 +244,74 @@ def _tree_result(
 
 def _err(message: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": message}], "is_error": True}
+
+
+def _page_content_revision(page: dict[str, Any]) -> str:
+    """Identify the complete body and source metadata before slicing it."""
+    serialized = json.dumps(
+        page, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _page_content_result(
+    page: dict[str, Any],
+    *,
+    offset: int = 0,
+    limit: int = _PAGE_CONTENT_MAX_CHUNK_CHARS,
+) -> dict[str, Any]:
+    """Return a lossless storage slice that fits the inline tool budget.
+
+    Offsets count Python string characters, not bytes or storage-format lines.
+    Clients concatenate bodies in order and use the returned revision for
+    every continuation, so long lines and split XHTML tags lose no content.
+    """
+    body = page["body"]
+    total_chars = len(body)
+    if offset > total_chars:
+        return _err("offset exceeds the page body's total_chars")
+    revision = _page_content_revision(page)
+
+    def result_for(length: int) -> dict[str, Any]:
+        end = offset + length
+        return _ok(
+            {
+                **page,
+                "body": body[offset:end],
+                "body_format": "storage",
+                "offset": offset,
+                "total_chars": total_chars,
+                "content_revision": revision,
+                "truncated": end < total_chars,
+                "next_offset": end if end < total_chars else None,
+                "hint": (
+                    "Read confluence_get_page_content_chunk with the same page_id, "
+                    "content_revision, next_offset as offset, and limit=6000 until "
+                    "next_offset is null. Concatenate body chunks in offset order."
+                ),
+            },
+            compact=True,
+        )
+
+    low, high = 0, min(limit, total_chars - offset)
+    while low < high:
+        middle = (low + high + 1) // 2
+        candidate = result_for(middle)
+        if (
+            len(candidate["content"][0]["text"].encode("utf-8"))
+            <= _PAGE_CONTENT_MAX_RESULT_BYTES
+        ):
+            low = middle
+        else:
+            high = middle - 1
+    result = result_for(low)
+    if len(
+        result["content"][0]["text"].encode("utf-8")
+    ) > _PAGE_CONTENT_MAX_RESULT_BYTES or (low == 0 and offset < total_chars):
+        return _err(
+            "page metadata exceeds the safe response budget; body could not be read"
+        )
+    return result
 
 
 def build_confluence_mcp(
@@ -572,20 +648,16 @@ def build_confluence_mcp(
             site_url=_site_url,
         )
 
-    @tool(
-        "confluence_get_page_content",
-        "Get the full content of a Confluence page. `page_id` is required. "
-        "Returns the title, body (storage format), version number, and "
-        "last-modified time.",
-        {"page_id": str},
-    )
-    @_record_fetch(tool_name="confluence_get_page_content")
-    async def get_page_content(args: dict) -> dict[str, Any]:
+    async def fetch_page_content(page_id: str) -> dict[str, Any]:
         if not token or not cloud_id:
             return _err("confluence is not configured (missing token or cloud_id)")
-        page_id = (args.get("page_id") or "").strip()
-        if not page_id:
-            return _err("page_id is required")
+        if (
+            not page_id
+            or not page_id.isascii()
+            or not page_id.isdigit()
+            or len(page_id) > 64
+        ):
+            return _err("page_id is required and must be numeric (at most 64 digits)")
         # GET /rest/api/content/{id} is gone (410); fetch the body by searching
         # for the id and expanding the content body — works under classic scopes.
         try:
@@ -619,7 +691,12 @@ def build_confluence_mcp(
                 f"page {page_id!r} belongs to space {page_space!r}, not attached to "
                 f"this project; out of scope."
             )
-        body = (content.get("body") or {}).get("storage", {}).get("value", "")
+        storage = (content.get("body") or {}).get("storage") or {}
+        body = storage.get("value")
+        if not isinstance(body, str):
+            return _err(
+                "page storage body is missing or invalid; content could not be read"
+            )
         version = content.get("version") or {}
         resolved_id = content.get("id") or page_id
         if (
@@ -639,10 +716,71 @@ def build_confluence_mcp(
         }
         if resolved_id and _site_url:
             out["url"] = _page_url(_site_url, page_space, resolved_id)
-        return _ok(out)
+        return out
+
+    @tool(
+        "confluence_get_page_content",
+        "Read the first bounded body chunk of a Confluence page. `page_id` "
+        "is required. Returns storage XHTML, title, source version/time, "
+        "total_chars, content_revision, and next_offset. The encoded response "
+        "is at most 8000 UTF-8 bytes. If next_offset is not null, continue with "
+        "confluence_get_page_content_chunk until it is null; the first chunk "
+        "alone is not the complete page.",
+        {"page_id": str},
+    )
+    @_record_fetch(tool_name="confluence_get_page_content")
+    async def get_page_content(args: dict[str, Any]) -> dict[str, Any]:
+        page = await fetch_page_content((args.get("page_id") or "").strip())
+        if page.get("is_error"):
+            return page
+        return _page_content_result(page)
+
+    @tool(
+        "confluence_get_page_content_chunk",
+        "Read the next bounded storage XHTML chunk. Use the same page_id and "
+        "content_revision returned by confluence_get_page_content, offset="
+        "next_offset, and limit from 1 to 6000 characters. Responses are also "
+        "capped at 8000 encoded UTF-8 bytes. Repeat until next_offset is null "
+        "and concatenate body chunks in offset order before interpreting "
+        "tables. If the page revision changed, restart with "
+        "confluence_get_page_content; never combine different revisions.",
+        {"page_id": str, "offset": int, "content_revision": str, "limit": int},
+    )
+    @_record_fetch(tool_name="confluence_get_page_content_chunk")
+    async def get_page_content_chunk(args: dict[str, Any]) -> dict[str, Any]:
+        offset = args.get("offset")
+        limit = args.get("limit")
+        if type(offset) is not int or offset < 0:
+            return _err("offset must be an integer, zero or greater")
+        if type(limit) is not int or not 1 <= limit <= _PAGE_CONTENT_MAX_CHUNK_CHARS:
+            return _err("limit must be an integer between 1 and 6000 characters")
+        revision = args.get("content_revision")
+        if (
+            not isinstance(revision, str)
+            or len(revision) != 64
+            or any(char not in "0123456789abcdef" for char in revision)
+        ):
+            return _err(
+                "content_revision must be the value returned by confluence_get_page_content"
+            )
+        page = await fetch_page_content((args.get("page_id") or "").strip())
+        if page.get("is_error"):
+            return page
+        if revision != _page_content_revision(page):
+            return _err(
+                "page revision changed; restart with confluence_get_page_content "
+                "and do not combine body chunks from different revisions"
+            )
+        return _page_content_result(page, offset=offset, limit=limit)
 
     return create_sdk_mcp_server(
         name="confluence",
-        version="0.7.0",
-        tools=[list_spaces, get_pages, get_page_tree, get_page_content],
+        version="0.8.0",
+        tools=[
+            list_spaces,
+            get_pages,
+            get_page_tree,
+            get_page_content,
+            get_page_content_chunk,
+        ],
     )

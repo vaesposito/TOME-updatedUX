@@ -46,6 +46,10 @@ import {
 import { cn } from "@/lib/utils";
 import { toWebexRoomSource } from "@/lib/projects/webex-room";
 import {
+  decodeConfluenceSource,
+  toConfluenceSpaceSource,
+} from "@/lib/projects/confluence-source";
+import {
   myAgentConnectorLabel,
   normalizeMyAgentConnectors,
   type MyAgentConnector,
@@ -57,7 +61,6 @@ import {
   scheduleToCron,
 } from "@/lib/tome/auto-ingest/schedule-presets";
 import type {
-  ConfluencePageScope,
   ProjectDocument,
   WebexCredentialMode,
   SharePointSource,
@@ -270,10 +273,8 @@ export function ProjectOnboardingWizard({
   const [stewardTeamId, setStewardTeamId] = useState("");
   const [blastRadius, setBlastRadius] = useState<"small" | "large" | "">("");
   const [optionality, setOptionality] = useState<string[]>([]);
-  const [confluenceUrl, setConfluenceUrl] = useState("");
-  const [confluencePageScopes, setConfluencePageScopes] = useState<
-    ConfluencePageScope[]
-  >([]);
+  // Encoded Confluence space blobs from the picker (see lib/projects/confluence-source).
+  const [confluenceSpaces, setConfluenceSpaces] = useState<string[]>([]);
   // Encoded {room_id, name} blobs from the picker (see lib/projects/webex-room).
   const [webexRooms, setWebexRooms] = useState<string[]>([]);
   const [sharePointDocuments, setSharePointDocuments] = useState<SharePointSource[]>([]);
@@ -422,8 +423,7 @@ export function ProjectOnboardingWizard({
     setStewardTeamId("");
     setBlastRadius("");
     setOptionality([]);
-    setConfluenceUrl("");
-    setConfluencePageScopes([]);
+    setConfluenceSpaces([]);
     setWebexRooms([]);
     setSharePointDocuments([]);
     setWebexCredentialMode("personal");
@@ -461,11 +461,8 @@ export function ProjectOnboardingWizard({
     const github_repos = enabledSourceKinds.has("github")
       ? githubReposRaw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
       : [];
-    const confluence_url = enabledSourceKinds.has("confluence")
-      ? confluenceUrl.trim() || undefined
-      : undefined;
-    const confluence_page_scopes = enabledSourceKinds.has("confluence")
-      ? confluencePageScopes
+    const confluence_spaces = enabledSourceKinds.has("confluence")
+      ? confluenceSpaces.map(toConfluenceSpaceSource)
       : [];
     const webex_rooms = enabledSourceKinds.has("webex")
       ? webexRooms.map(toWebexRoomSource)
@@ -489,8 +486,7 @@ export function ProjectOnboardingWizard({
             ? { type: "user", email: stewardEmail.trim() }
             : undefined,
       github_repos,
-      confluence_url,
-      confluence_page_scopes,
+      confluence_spaces,
       webex_rooms,
       webex_credential_mode: webexCredentialMode,
       webex_credential_provider: webexCredentialProvider,
@@ -1118,9 +1114,7 @@ export function ProjectOnboardingWizard({
                                       .map((s) => s.trim())
                                       .filter(Boolean)
                                   : step.source === "confluence"
-                                    ? confluenceUrl.trim()
-                                      ? [confluenceUrl.trim()]
-                                      : []
+                                    ? confluenceSpaces
                                     : step.source === "webex"
                                       ? webexRooms
                                       : []
@@ -1129,7 +1123,7 @@ export function ProjectOnboardingWizard({
                                 if (step.source === "github")
                                   setGithubReposRaw(next.join(", "));
                                 else if (step.source === "confluence")
-                                  setConfluenceUrl(next[0] ?? "");
+                                  setConfluenceSpaces(next);
                                 else if (step.source === "webex")
                                   setWebexRooms(next);
                               }}
@@ -1141,20 +1135,6 @@ export function ProjectOnboardingWizard({
                               webexCredentialProvider={
                                 step.source === "webex"
                                   ? webexCredentialProvider
-                                  : undefined
-                              }
-                              confluencePageScopes={
-                                step.source === "confluence"
-                                  ? confluencePageScopes
-                                  : undefined
-                              }
-                              onConfluencePageScopesChange={
-                                step.source === "confluence"
-                                  ? (scopes, sourceUrl) => {
-                                      setConfluencePageScopes(scopes);
-                                      if (sourceUrl !== undefined)
-                                        setConfluenceUrl(sourceUrl);
-                                    }
                                   : undefined
                               }
                             />
@@ -1388,27 +1368,42 @@ export function ProjectOnboardingWizard({
                           ) : null}
                           {showConfluence ? (
                             <Row label={<SourceLabel provider="atlassian" name="Confluence" />}>
-                              {confluenceUrl.trim() ? (
-                                <span className="space-y-1.5">
+                              {confluenceSpaces.length ? (
+                                <span className="space-y-2">
                                   <span className="block text-xs text-muted-foreground">
-                                    {confluencePageScopes.length
-                                      ? `${confluencePageScopes.length} page root${confluencePageScopes.length === 1 ? "" : "s"}`
-                                      : "1 space"}
+                                    {confluenceSpaces.length} space
+                                    {confluenceSpaces.length === 1 ? "" : "s"}
                                   </span>
-                                  {confluencePageScopes.map((scope) => (
-                                    <span
-                                      key={scope.page_id}
-                                      className="block text-xs font-medium"
-                                    >
-                                      {scope.page_title}
-                                      {scope.include_descendants
-                                        ? " and all subpages"
-                                        : ""}
-                                    </span>
-                                  ))}
-                                  <span className="block break-all text-xs">
-                                    {confluenceUrl.trim()}
-                                  </span>
+                                  {confluenceSpaces.map((value) => {
+                                    const decoded = decodeConfluenceSource(value);
+                                    return (
+                                      <span key={value} className="block space-y-1">
+                                        <span className="block text-xs font-medium">
+                                          {decoded.name}
+                                        </span>
+                                        {decoded.page_scopes.length ? (
+                                          decoded.page_scopes.map((scope) => (
+                                            <span
+                                              key={scope.page_id}
+                                              className="block pl-2 text-xs"
+                                            >
+                                              {scope.page_title}
+                                              {scope.include_descendants
+                                                ? " and all subpages"
+                                                : ""}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="block pl-2 text-xs text-muted-foreground">
+                                            Entire space
+                                          </span>
+                                        )}
+                                        <span className="block break-all pl-2 text-xs text-muted-foreground">
+                                          {decoded.url}
+                                        </span>
+                                      </span>
+                                    );
+                                  })}
                                 </span>
                               ) : (
                                 muted

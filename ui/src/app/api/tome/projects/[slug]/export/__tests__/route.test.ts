@@ -90,7 +90,7 @@ describe("GET Tome wiki export", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="example-project-roadmap.md"',
+      'attachment; filename="roadmap.md"',
     );
     const body = await response.text();
     expect(body).toBe("# Roadmap\n\nRoadmap content.\n");
@@ -98,6 +98,24 @@ describe("GET Tome wiki export", () => {
     expect(body).not.toContain("roadmap.md");
     expect(body).not.toContain("dynamic");
     expect(body).not.toContain("Overview content.");
+  });
+
+  it("names a nested page's download after its title, not its folder or file name", async () => {
+    mockListPages.mockResolvedValue({
+      "guides/setup.md": `---\ntitle: Getting Started\nkind: stable\n---\nSetup content.`,
+    });
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/tome/projects/example-project/export?format=markdown&path=guides/setup.md",
+      ),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="getting-started.md"',
+    );
   });
 
   it("returns a real PDF with a PDF filename", async () => {
@@ -111,7 +129,7 @@ describe("GET Tome wiki export", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("application/pdf");
     expect(response.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="example-project-overview.pdf"',
+      'attachment; filename="overview.pdf"',
     );
     const bytes = Buffer.from(await response.arrayBuffer());
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");

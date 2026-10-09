@@ -1162,9 +1162,17 @@ def _format_tool_error(tool_name: str, exc: Exception) -> str:
     and surface the actual root cause.
     """
     error_text = _extract_error_message(exc) or type(exc).__name__
+    if "query cannot be parsed" in error_text.casefold():
+        guidance = (
+            "Rewrite the search as a short plain-keyword query, removing Boolean "
+            "operators, field filters, and punctuation, then retry once. If it "
+            "still fails, use another available source or explain the limitation."
+        )
+    else:
+        guidance = "You can retry with different arguments or try a different approach."
     return (
         f"ERROR: Tool '{tool_name}' failed: {error_text}\n"
-        f"You can retry with different arguments or try a different approach."
+        f"{guidance}"
     )
 
 

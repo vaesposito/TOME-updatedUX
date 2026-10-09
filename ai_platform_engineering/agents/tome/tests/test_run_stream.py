@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from claude_agent_sdk import (
     AssistantMessage,
-    CLIJSONDecodeError,
     ClaudeAgentOptions,
+    CLIJSONDecodeError,
     ResultMessage,
     TextBlock,
     ToolResultBlock,

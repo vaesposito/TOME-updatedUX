@@ -14,6 +14,13 @@ import {
   decodeGitHubPickerValue,
   encodeGitHubPickerValue,
 } from "@/lib/projects/github-repository";
+import {
+  confluenceSourceToPickerValue,
+  decodeConfluenceSource,
+  encodeConfluenceSource,
+  parseConfluenceUrl,
+  toConfluenceSpaceSource,
+} from "@/lib/projects/confluence-source";
 import { SourcePicker, type SourceKind } from "./index";
 import { MyAgentSourcePicker } from "./MyAgentSourcePicker";
 import { SharePointSourcePicker } from "./SharePointSourcePicker";
@@ -54,8 +61,27 @@ function valueFor(kind: SourceKind, sources: ProjectSources): string[] {
     }
     return sources.repos ?? [];
   }
-  if (kind === "confluence")
-    return sources.confluence_url ? [sources.confluence_url] : [];
+  if (kind === "confluence") {
+    if (sources.confluence_spaces?.length) {
+      return sources.confluence_spaces.map(confluenceSourceToPickerValue);
+    }
+    if (!sources.confluence_url) return [];
+    const parsed = parseConfluenceUrl(sources.confluence_url);
+    const pageScopes = sources.confluence_page_scopes?.length
+      ? sources.confluence_page_scopes
+      : sources.confluence_page_scope
+        ? [sources.confluence_page_scope]
+        : [];
+    return [
+      encodeConfluenceSource({
+        url: sources.confluence_url,
+        base_url: parsed?.base_url ?? "",
+        space_key: parsed?.space_key ?? "",
+        name: parsed?.space_key ?? sources.confluence_url,
+        page_scopes: pageScopes,
+      }),
+    ];
+  }
   if (kind === "webex")
     return (sources.webex_rooms ?? []).map(webexRoomToPickerValue);
   if (kind === "myagent") return sources.myagent_connectors ?? [];
@@ -76,7 +102,13 @@ function applyTo(
     };
   }
   if (kind === "confluence")
-    return { ...sources, confluence_url: next[0] ?? "" };
+    return {
+      ...sources,
+      confluence_spaces: next.map(toConfluenceSpaceSource),
+      confluence_url: undefined,
+      confluence_page_scopes: undefined,
+      confluence_page_scope: undefined,
+    };
   if (kind === "webex")
     return { ...sources, webex_rooms: next.map(toWebexRoomSource) };
   if (kind === "myagent") {
@@ -202,27 +234,6 @@ export function SourcesEditor({
                   ? value.webex_credential_provider || "webex"
                   : undefined
               }
-              confluencePageScopes={
-                kind === "confluence"
-                  ? value.confluence_page_scopes?.length
-                    ? value.confluence_page_scopes
-                    : value.confluence_page_scope
-                      ? [value.confluence_page_scope]
-                      : []
-                  : undefined
-              }
-              onConfluencePageScopesChange={
-                kind === "confluence"
-                  ? (scopes, sourceUrl) =>
-                      onChange({
-                        ...value,
-                        confluence_url:
-                          sourceUrl ?? value.confluence_url ?? "",
-                        confluence_page_scopes: scopes,
-                        confluence_page_scope: undefined,
-                      })
-                  : undefined
-              }
             />
           </div>
         );
@@ -268,25 +279,29 @@ function ReadOnlyKind({ kind, value }: { kind: SourceKind; value: string[] }) {
       </ul>
     );
   }
-  // confluence: single URL or plain value(s)
+  // confluence: one or more encoded space entries
   return (
     <ul className="space-y-1 text-sm">
-      {value.map((v) => (
-        <li key={v}>
-          {/^https?:\/\//.test(v) ? (
-            <a
-              href={v}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all text-foreground hover:underline"
-            >
-              {v}
-            </a>
-          ) : (
-            <span className="break-all text-foreground">{v}</span>
-          )}
-        </li>
-      ))}
+      {value.map((v) => {
+        const { url, name, space_key } = decodeConfluenceSource(v);
+        const label = space_key && name !== space_key ? `${name} (${space_key})` : name;
+        return (
+          <li key={v}>
+            {/^https?:\/\//.test(url) ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="break-all text-foreground hover:underline"
+              >
+                {label}
+              </a>
+            ) : (
+              <span className="break-all text-foreground">{label}</span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -28,6 +28,12 @@ interface Props {
   /** Display name of the connected space, shown above the scope choice so
    * this section visibly continues from the picker above it. */
   spaceLabel?: string;
+  /** Unique per mounted instance — HTML radio `name`s are global. Defaults to `sourceUrl`. */
+  groupName?: string;
+  /** Omits the outer border/background, for callers that already wrap this in their own card. */
+  embedded?: boolean;
+  /** Not added yet — every choice is a local draft until "Add source" is clicked. */
+  requireExplicitAdd?: boolean;
 }
 
 function responseError(body: unknown, status: number): string {
@@ -39,7 +45,16 @@ function responseError(body: unknown, status: number): string {
   return `Could not load pages (${status})`;
 }
 
-export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel }: Props) {
+export function ConfluenceSpaceBrowser({
+  sourceUrl,
+  scopes,
+  onSelect,
+  spaceLabel,
+  groupName = sourceUrl,
+  embedded = false,
+  requireExplicitAdd = false,
+}: Props) {
+  const scopeRadioName = `confluence-source-scope:${groupName}`;
   const parsed = useMemo(() => parseConfluenceUrl(sourceUrl), [sourceUrl]);
   const selectedSpaceUrl = useMemo(() => {
     if (!parsed) return "";
@@ -50,6 +65,14 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
 
   const [mode, setMode] = useState<"space" | "page">(
     scopes.length ? "page" : "space",
+  );
+  // Remembers the last non-empty page selection so switching back from
+  // "Entire space" can restore it instead of starting over.
+  const [savedScopes, setSavedScopes] = useState<ConfluencePageScope[]>(scopes);
+  const [browsing, setBrowsing] = useState(scopes.length === 0);
+  // Local draft — nothing is sent via onSelect until explicitly saved.
+  const [pendingScopes, setPendingScopes] = useState<ConfluencePageScope[]>(
+    scopes,
   );
   const [preview, setPreview] = useState<ConfluenceSpacePreview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,6 +92,12 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
   }, [scopes.length]);
 
   useEffect(() => {
+    if (pendingScopes.length) setSavedScopes(pendingScopes);
+  }, [pendingScopes]);
+
+  useEffect(() => {
+    // Keyed on space identity, not `scopes` (decoded fresh every render).
+    setPendingScopes(scopes);
     setPreview(null);
     setError("");
     setExpanded(new Set());
@@ -76,6 +105,7 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
     setLoadingSubtreeIds(new Set());
     setSubtreeError("");
     setQuery("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSpaceUrl]);
 
   const loadTree = useCallback(async () => {
@@ -127,8 +157,8 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
   }, [preview]);
 
   const selectedIds = useMemo(
-    () => new Set(scopes.map((selection) => selection.page_id)),
-    [scopes],
+    () => new Set(pendingScopes.map((selection) => selection.page_id)),
+    [pendingScopes],
   );
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -192,36 +222,35 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
 
   const selectPage = (page: ConfluenceTreePage) => {
     if (selectedIds.has(page.id)) {
-      onSelect(
-        selectedSpaceUrl,
-        scopes.filter((selection) => selection.page_id !== page.id),
+      setPendingScopes(
+        pendingScopes.filter((selection) => selection.page_id !== page.id),
       );
       return;
     }
-    const coveringSelection = scopes.find(
+    const coveringSelection = pendingScopes.find(
       (selection) =>
         selection.include_descendants &&
         isDescendantOf(page.id, selection.page_id),
     );
     if (coveringSelection) return;
 
-    const next = scopes.filter(
+    const next = pendingScopes.filter(
       (selection) => !isDescendantOf(selection.page_id, page.id),
     );
     next.push({
       page_id: page.id,
       page_title: page.title,
-      space_key: preview?.space_key ?? scopes[0]?.space_key ?? "",
+      space_key: preview?.space_key ?? pendingScopes[0]?.space_key ?? "",
       include_descendants: true,
     });
-    onSelect(selectedSpaceUrl, next);
+    setPendingScopes(next);
   };
 
   const setIncludeDescendants = (
     pageId: string,
     includeDescendants: boolean,
   ) => {
-    let next = scopes.map((selection) =>
+    let next = pendingScopes.map((selection) =>
       selection.page_id === pageId
         ? { ...selection, include_descendants: includeDescendants }
         : selection,
@@ -233,8 +262,21 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
           !isDescendantOf(selection.page_id, pageId),
       );
     }
-    onSelect(selectedSpaceUrl, next);
+    setPendingScopes(next);
   };
+
+  function scopesEqual(
+    a: ConfluencePageScope[],
+    b: ConfluencePageScope[],
+  ): boolean {
+    if (a.length !== b.length) return false;
+    const key = (s: ConfluencePageScope) => `${s.page_id}:${s.include_descendants}`;
+    const sortedA = [...a].map(key).sort();
+    const sortedB = [...b].map(key).sort();
+    return sortedA.every((value, index) => value === sortedB[index]);
+  }
+
+  const isDirty = !scopesEqual(pendingScopes, scopes);
 
   const loadSubtree = async (page: ConfluenceTreePage) => {
     if (loadedSubtreeIds.has(page.id)) {
@@ -332,7 +374,7 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
       ? children.length > 0
       : expanded.has(page.id);
     const isSelected = selectedIds.has(page.id);
-    const coveringSelection = scopes.find(
+    const coveringSelection = pendingScopes.find(
       (selection) =>
         selection.include_descendants &&
         isDescendantOf(page.id, selection.page_id),
@@ -340,7 +382,12 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
     const isCovered = Boolean(coveringSelection);
     const isMatch = matchingPageIds.has(page.id);
     const isLoadingSubtree = loadingSubtreeIds.has(page.id);
-    const canExpand = children.length > 0 || !loadedSubtreeIds.has(page.id);
+    // Trust Confluence's child flag when present; otherwise fall back to
+    // assuming a truncated, unloaded page may have children.
+    const canExpand =
+      children.length > 0 ||
+      ((page.has_children ?? Boolean(preview?.truncated)) &&
+        !loadedSubtreeIds.has(page.id));
     return (
       <li
         key={page.id}
@@ -373,7 +420,7 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
               )}
             </button>
           ) : (
-            <span className="h-5 w-5" />
+            <span className="h-[22px] w-[22px] shrink-0" />
           )}
           <button
             type="button"
@@ -430,7 +477,7 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
   };
 
   const roots = childrenByParent.get("") ?? [];
-  const selectedPages = scopes
+  const selectedPages = pendingScopes
     .map((selection) => ({
       selection,
       page: preview?.pages.find((page) => page.id === selection.page_id),
@@ -445,7 +492,13 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
     );
 
   return (
-    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background">
+    <div
+      className={
+        embedded
+          ? ""
+          : "mt-2 overflow-hidden rounded-lg border border-border bg-background"
+      }
+    >
       <div role="radiogroup" aria-label="What should be included?" className="space-y-2 p-3">
         <p className="mb-2 text-xs font-semibold">
           {spaceLabel ? (
@@ -460,11 +513,11 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
         <label className="flex cursor-pointer items-start gap-2 text-sm">
           <input
             type="radio"
-            name="confluence-source-scope"
+            name={scopeRadioName}
             checked={mode === "space"}
             onChange={() => {
               setMode("space");
-              onSelect(selectedSpaceUrl, []);
+              if (!requireExplicitAdd) onSelect(selectedSpaceUrl, []);
             }}
             className="mt-0.5"
           />
@@ -478,9 +531,18 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
         <label className="flex cursor-pointer items-start gap-2 text-sm">
           <input
             type="radio"
-            name="confluence-source-scope"
+            name={scopeRadioName}
             checked={mode === "page"}
-            onChange={() => setMode("page")}
+            onChange={() => {
+              setMode("page");
+              if (requireExplicitAdd) {
+                if (!pendingScopes.length && savedScopes.length) {
+                  setPendingScopes(savedScopes);
+                }
+              } else if (!scopes.length && savedScopes.length) {
+                onSelect(selectedSpaceUrl, savedScopes);
+              }
+            }}
             className="mt-0.5"
           />
           <span>
@@ -514,71 +576,90 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
             </div>
           ) : preview ? (
             <>
-              <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-                <p className="text-xs font-medium">
-                  Pages in {preview.space_key}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {normalizedQuery
-                    ? `${matchingPageIds.size} match${matchingPageIds.size === 1 ? "" : "es"}`
-                    : `${preview.pages.length} loaded`}
-                  {!normalizedQuery && preview.truncated
-                    ? " · expand a page for its complete subtree"
-                    : ""}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3">
-                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search pages by title…"
-                  aria-label="Search pages in this Confluence space"
-                  className="w-full bg-transparent py-2 text-xs outline-none"
-                />
-                {query ? (
-                  <button
-                    type="button"
-                    onClick={() => setQuery("")}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Clear page search"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </div>
-              {roots.length ? (
-                <>
-                  {subtreeError ? (
-                    <p
-                      role="alert"
-                      className="border-b border-border/60 px-3 py-2 text-xs text-destructive"
-                    >
-                      {subtreeError}
+              {selectedPages.length ? (
+                <button
+                  type="button"
+                  onClick={() => setBrowsing((current) => !current)}
+                  aria-expanded={browsing}
+                  className="flex w-full items-center gap-2 px-3 py-3 text-left text-sm font-medium hover:bg-muted/40"
+                >
+                  {browsing ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  {browsing ? "Hide page browser" : "Browse to add another page root"}
+                </button>
+              ) : null}
+              {browsing ? (
+                <div className="border-t border-border">
+                  <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                    <p className="text-xs font-medium">
+                      Pages in {preview.space_key}
                     </p>
-                  ) : null}
-                  {normalizedQuery && matchingPageIds.size === 0 ? (
-                    <p className="px-3 py-2 text-center text-xs text-muted-foreground">
-                      No page titles match this search.
+                    <p className="text-xs text-muted-foreground">
+                      {normalizedQuery
+                        ? `${matchingPageIds.size} match${matchingPageIds.size === 1 ? "" : "es"}`
+                        : `${preview.pages.length} loaded`}
+                      {!normalizedQuery && preview.truncated
+                        ? " · expand a page for its complete subtree"
+                        : ""}
                     </p>
-                  ) : null}
-                  {/* Tree stays mounted (rows fade via renderPage) even with
-                      zero matches, so the search doesn't collapse the section. */}
-                  <ul
-                    role="tree"
-                    aria-multiselectable="true"
-                    className="max-h-64 overflow-y-auto px-2 py-2"
-                  >
-                    {roots.map((page) => renderPage(page, 0))}
-                  </ul>
-                </>
-              ) : (
-                <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                  {normalizedQuery
-                    ? "No page titles match this search."
-                    : "No accessible pages found in this space."}
-                </p>
-              )}
+                  </div>
+                  <div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3">
+                    <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search pages by title…"
+                      aria-label="Search pages in this Confluence space"
+                      className="w-full bg-transparent py-2 text-xs outline-none"
+                    />
+                    {query ? (
+                      <button
+                        type="button"
+                        onClick={() => setQuery("")}
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="Clear page search"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                  {roots.length ? (
+                    <>
+                      {subtreeError ? (
+                        <p
+                          role="alert"
+                          className="border-b border-border/60 px-3 py-2 text-xs text-destructive"
+                        >
+                          {subtreeError}
+                        </p>
+                      ) : null}
+                      {normalizedQuery && matchingPageIds.size === 0 ? (
+                        <p className="px-3 py-2 text-center text-xs text-muted-foreground">
+                          No page titles match this search.
+                        </p>
+                      ) : null}
+                      {/* Tree stays mounted (rows fade via renderPage) even with
+                          zero matches, so the search doesn't collapse the section. */}
+                      <ul
+                        role="tree"
+                        aria-multiselectable="true"
+                        className="max-h-64 overflow-y-auto px-2 py-2"
+                      >
+                        {roots.map((page) => renderPage(page, 0))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                      {normalizedQuery
+                        ? "No page titles match this search."
+                        : "No accessible pages found in this space."}
+                    </p>
+                  )}
+                </div>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -628,7 +709,35 @@ export function ConfluenceSpaceBrowser({ sourceUrl, scopes, onSelect, spaceLabel
               </div>
             ))}
           </div>
+          {!requireExplicitAdd ? (
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <p className="text-xs text-muted-foreground">
+                {isDirty ? "Not added yet." : "Added."}
+              </p>
+              <Button
+                size="sm"
+                onClick={() => onSelect(selectedSpaceUrl, pendingScopes)}
+                disabled={!isDirty}
+              >
+                Save page selection
+              </Button>
+            </div>
+          ) : null}
         </fieldset>
+      ) : null}
+
+      {requireExplicitAdd ? (
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-3 py-2">
+          <Button
+            size="sm"
+            onClick={() =>
+              onSelect(selectedSpaceUrl, mode === "page" ? pendingScopes : [])
+            }
+            disabled={mode === "page" && pendingScopes.length === 0}
+          >
+            Add source
+          </Button>
+        </div>
       ) : null}
     </div>
   );

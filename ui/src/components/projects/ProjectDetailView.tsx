@@ -89,6 +89,7 @@ export function ProjectDetailView({ slug }: { slug: string }) {
       confluence_url: project.sources?.confluence_url ?? "",
       confluence_page_scopes: project.sources?.confluence_page_scopes,
       confluence_page_scope: project.sources?.confluence_page_scope,
+      confluence_spaces: project.sources?.confluence_spaces,
       webex_rooms: project.sources?.webex_rooms ?? [],
       webex_credential_mode:
         project.sources?.webex_credential_mode === "managed" ? "managed" : "personal",
@@ -126,6 +127,7 @@ export function ProjectDetailView({ slug }: { slug: string }) {
               editSources.confluence_page_scopes ?? [],
             confluence_page_scope:
               editSources.confluence_page_scope ?? null,
+            confluence_spaces: editSources.confluence_spaces,
             webex_rooms: editSources.webex_rooms ?? [],
             webex_credential_mode:
               editSources.webex_credential_mode ?? "personal",

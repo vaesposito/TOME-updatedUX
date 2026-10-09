@@ -23,21 +23,51 @@ describe("ConfluenceManualAdd", () => {
     jest.clearAllMocks();
   });
 
-  it("uses a space URL without calling the page preview API", async () => {
+  it("previews a space URL and adds the whole space", async () => {
+    const user = userEvent.setup();
+    const onSelect = jest.fn();
+    const spaceUrl = "https://example.atlassian.net/wiki/spaces/PLATFORM";
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          kind: "space",
+          source_url: spaceUrl,
+          space_key: "PLATFORM",
+          pages: [
+            { id: "1", title: "Home", parent_id: null, depth: 0, url: `${spaceUrl}/pages/1` },
+            { id: "2", title: "Roadmap", parent_id: "1", depth: 1, url: `${spaceUrl}/pages/2` },
+          ],
+          truncated: false,
+        },
+      }),
+    });
+
+    render(<Harness onSelect={onSelect} />);
+    await user.type(screen.getByLabelText("Confluence space or page URL"), spaceUrl);
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    expect(await screen.findByText("Space found")).toBeInTheDocument();
+    expect(screen.getByText("2 accessible pages")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add source" }));
+
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith(spaceUrl));
+  });
+
+  it("rejects a URL with no recognizable space or page", async () => {
     const user = userEvent.setup();
     const onSelect = jest.fn();
     render(<Harness onSelect={onSelect} />);
 
     const input = screen.getByLabelText("Confluence space or page URL");
-    await user.type(
-      input,
-      "https://example.atlassian.net/wiki/spaces/PLATFORM",
-    );
-    await user.click(screen.getByRole("button", { name: "Use" }));
+    await user.type(input, "https://example.atlassian.net/wiki/some-other-path");
+    await user.click(screen.getByRole("button", { name: "Preview" }));
 
-    expect(onSelect).toHaveBeenCalledWith(
-      "https://example.atlassian.net/wiki/spaces/PLATFORM",
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Paste a valid Confluence space or page URL",
     );
+    expect(onSelect).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -49,6 +79,7 @@ describe("ConfluenceManualAdd", () => {
       status: 200,
       json: async () => ({
         data: {
+          kind: "page",
           source_url: pageUrl,
           scope: {
             page_id: "123",

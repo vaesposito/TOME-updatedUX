@@ -18,8 +18,10 @@ import {
 } from "@/lib/projects/backstage-catalog";
 import { buildEmptyOnboardingState } from "@/lib/projects/onboarding-config";
 import {
+  confluenceSpaceUrl,
   normalizeConfluencePageScope,
   normalizeConfluencePageScopes,
+  normalizeConfluenceSpaces,
 } from "@/lib/projects/confluence-source";
 import {
   myAgentConsentSubjectFromSession,
@@ -493,6 +495,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     confluence_page_scope: normalizeConfluencePageScope(
       body.confluence_page_scope,
     ),
+    confluence_spaces: normalizeConfluenceSpaces(body.confluence_spaces),
     component_urls: cleanUrls(body.component_urls),
     webex_rooms: webexRooms,
     webex_credential_mode: webexCredentialSettings.mode,
@@ -512,7 +515,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   };
   const sourceIntegrations: Record<string, string> = {};
   if (sources.repos[0]) sourceIntegrations.github_url = sources.repos[0];
-  if (sources.confluence_url) sourceIntegrations.confluence_url = sources.confluence_url;
+  const firstConfluenceUrl = sources.confluence_spaces[0]
+    ? confluenceSpaceUrl(sources.confluence_spaces[0])
+    : sources.confluence_url;
+  if (firstConfluenceUrl) sourceIntegrations.confluence_url = firstConfluenceUrl;
 
   const catalog = buildProjectCatalog({
     name: body.name.trim(),

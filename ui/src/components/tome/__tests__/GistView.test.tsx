@@ -1,6 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import type { RenderOptions } from "@testing-library/react";
 
+import { ToastProvider } from "@/components/ui/toast";
 import { GistView } from "../GistView";
+
+const render = (ui: React.ReactElement, options?: RenderOptions) =>
+  rtlRender(ui, { wrapper: ToastProvider, ...options });
 
 const mockCrepeEditor = jest.fn();
 const mockMarkdownRenderer = jest.fn();

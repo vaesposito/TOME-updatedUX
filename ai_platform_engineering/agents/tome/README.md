@@ -272,6 +272,27 @@ limits to container headroom; the 384 MiB code default is intentionally
 conservative. These probes validate preparation and cache reuse, not an LLM's
 semantic understanding or a UI-to-wiki run.
 
+## Confluence body chunking
+
+- `confluence_get_page_content(page_id)` returns the first storage XHTML chunk
+  with source version/time, `content_revision`, `total_chars`, and `next_offset`.
+- Each body response is capped at **8,000 serialized UTF-8 bytes**, including
+  metadata and JSON escaping. A chunk contains at most 6,000 characters; Unicode
+  or escape-heavy content can produce smaller chunks.
+- Continue with `confluence_get_page_content_chunk(page_id, offset,
+  content_revision, limit)`, using the previous `next_offset` and a limit of
+  1–6,000, until `next_offset` is null. Concatenating bodies reconstructs the
+  original storage content, including long lines, links, and table cells.
+- Continuations recheck source authorization and the body/metadata revision.
+  If the source changes, restart the read; different revisions cannot be mixed.
+- Tree results remain excerpts. Ingest and chat instructions require complete
+  reads for mutable tracker claims and disclosure when a page is only partially
+  read. No shell or out-of-workspace result-file access is needed.
+- Each chunk is recorded through the existing fetch ledger. Chunking bounds an
+  individual response; reading a large page still consumes multiple tool calls
+  and model context. Completion depends on the run budget and agent following
+  continuations; there is no automatic source-completeness success gate here.
+
 ## Source-fetch provenance ledger
 
 Every GitHub/Confluence/Webex tool call the ingestion (and compaction/

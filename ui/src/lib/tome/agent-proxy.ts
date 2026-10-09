@@ -15,6 +15,7 @@ import {
 } from "@/lib/projects/github-repository";
 import { webexRoomSlug } from "@/lib/projects/webex-room";
 import { mergeSharePointSelections } from "@/lib/projects/sharepoint-source";
+import { slugifyConfluenceSpaceKey } from "@/lib/projects/confluence-source";
 import { resolveWebexRoomExecution } from "./webex-room-execution";
 
 import { resolveAreaChildren, resolveBhagChildren } from "./bhag";
@@ -321,13 +322,7 @@ function toConfluenceSpaceSnapshot(
 
 /** Slugify a Confluence space key for use as a wiki folder name. */
 function spaceSlug(key: string): string {
-  return (
-    key
-      .normalize("NFKD")
-      .replace(/[^\w]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .toLowerCase() || key
-  );
+  return slugifyConfluenceSpaceKey(key) || key;
 }
 
 /**

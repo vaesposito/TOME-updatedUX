@@ -66,6 +66,9 @@ export function ProjectAssets({
           typeof s.confluence_page_scope === "object"
             ? s.confluence_page_scope
             : undefined,
+        confluence_spaces: Array.isArray(s.confluence_spaces)
+          ? s.confluence_spaces
+          : undefined,
         webex_rooms: Array.isArray(s.webex_rooms) ? s.webex_rooms : [],
         webex_credential_mode:
           s.webex_credential_mode === "managed" ? "managed" : "personal",
@@ -114,6 +117,7 @@ export function ProjectAssets({
             confluence_url: (draft.confluence_url ?? "").trim(),
             confluence_page_scopes: draft.confluence_page_scopes ?? [],
             confluence_page_scope: draft.confluence_page_scope ?? null,
+            confluence_spaces: draft.confluence_spaces,
             webex_rooms: draft.webex_rooms ?? [],
             webex_credential_mode:
               draft.webex_credential_mode ?? "personal",

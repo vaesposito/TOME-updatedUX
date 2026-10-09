@@ -57,3 +57,30 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     citation: `/projects/${encodeURIComponent(slug)}/tome/wiki/${path.split("/").map(encodeURIComponent).join("/")}`,
   });
 });
+
+/** A body avoids URL limits when selecting a large authorized entity catalog. */
+export const POST = withErrorHandler(async (request: NextRequest) => {
+  requireAgentToken(request);
+  if (!isTomeServerEnabled()) throw new ApiError("Not found", 404, "NOT_FOUND");
+  const subject = request.headers.get("x-tome-actor-sub")?.trim();
+  if (!subject) throw new ApiError("Caller identity is required", 403, "TOME_USER_REQUIRED");
+  const scope = await buildTomeRetrievalScope(subject);
+  if (request.nextUrl.searchParams.get("operation") !== "snapshot" || request.nextUrl.searchParams.get("scope_hash") !== scope.hash) {
+    throw new ApiError("TOME access changed or the snapshot operation is invalid", 409, "TOME_SCOPE_CHANGED");
+  }
+  const input: unknown = await request.json();
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new ApiError("An entity selection object is required", 400, "INVALID_RETRIEVAL_SCOPE");
+  }
+  const body = input as { project_ids?: unknown };
+  if (!Array.isArray(body.project_ids) || !body.project_ids.length || body.project_ids.length > 20_000 ||
+      body.project_ids.some((id: unknown) => typeof id !== "string" || !id || id.length > 256)) {
+    throw new ApiError("A bounded entity selection is required", 400, "INVALID_RETRIEVAL_SCOPE");
+  }
+  const selected = new Set<string>(body.project_ids);
+  const catalog = scope.catalog.filter((entry) => selected.has(entry.project_id));
+  if (catalog.length !== selected.size || selected.size !== body.project_ids.length) {
+    throw new ApiError("Requested TOME scope is unavailable", 403, "TOME_READ_REQUIRED");
+  }
+  return publishedTomeSnapshotResponse(subject, { catalog, hash: scope.hash }, request.signal);
+});

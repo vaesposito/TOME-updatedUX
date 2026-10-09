@@ -483,17 +483,18 @@ async def fetch_retrieval(
 
 
 async def stream_retrieval_snapshot(
-    actor_sub: str, scope_hash: str
+    actor_sub: str, scope_hash: str, project_ids: list[str] | None = None
 ) -> AsyncIterator[dict[str, Any]]:
     """Stream the authenticated caller's published heads without model-selected URLs."""
     headers = {**_auth_headers(), "X-Tome-Actor-Sub": actor_sub}
     async with (
         httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client,
         client.stream(
-            "GET",
+            "POST" if project_ids is not None else "GET",
             f"{_backend_url()}/api/internal/retrieval",
             headers=headers,
             params={"operation": "snapshot", "scope_hash": scope_hash},
+            **({"json": {"project_ids": project_ids}} if project_ids is not None else {}),
         ) as response,
     ):
         response.raise_for_status()

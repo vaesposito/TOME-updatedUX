@@ -245,7 +245,7 @@ class PublishedCorpus:
         digest = hashlib.sha256()
         async with asyncio.timeout(75):
             async for frame in http_client.stream_retrieval_snapshot(
-                actor_sub, scope_hash
+                actor_sub, scope_hash, list(self.by_id)
             ):
                 kind = frame.get("type")
                 if done_seen:

@@ -31,7 +31,10 @@ flowchart TD
     Popup[Ask Tome popup] --> Chat[GRID conversation]
     Regular[Regular GRID Chat] --> Chat
     Chat --> BFF[TOME chat API and caller authorization]
-    BFF --> Catalog[Authorized BHAG / area / project catalog]
+    Delegate[GRID delegation / external client] --> MCP[TOME MCP and caller authorization]
+    BFF --> Service[Shared global chat service]
+    MCP --> Service
+    Service --> Catalog[Authorized BHAG / area / project catalog]
     Catalog --> Export[Stream current published PageStore heads]
     Export --> View[Private Markdown view + navigation indexes]
     View --> Context[Preload broad foundations and relevant documents]
@@ -41,7 +44,29 @@ flowchart TD
     Access --> View
     Reason --> Citations[Answer with citations and coverage]
     Citations --> Chat
+    Citations --> MCP
 ```
+
+### MCP delegation and precise reads
+
+- `tome_agent_search(query, scope?, session_id?)` is the primary global delegation
+  tool. `tome_ask_global(question, scope?, session_id?)` aliases the same service.
+  Raw list/get tools and project-scoped `tome_ask` remain available.
+- Both boundaries check the registered agent's use permission and derive the
+  subject from authenticated credentials. MCP accepts existing user-owned TOME
+  keys and linked OIDC credentials; service accounts cannot supply another user's
+  identity. Native calls use a separate service credential.
+- Optional BHAG/area/project scope narrows the authorized published export,
+  including readable descendants. Internal snapshot POST verifies every selected
+  entity against the current full scope. Search and model calls retain the same
+  current-access checks as global browser chat.
+- MCP sessions belong to one caller, are separate from GRID conversations, and
+  reset on scope/access changes. A turn must complete successfully before model
+  history is retained or MCP returns a completed result.
+- Structured results include cited answers, consulted sources/entities, revision
+  and capture dates, coverage, retrieval gaps and warnings. Upstream verification
+  time stays null for published-wiki evidence. An output schema and JSON text
+  support structured and older MCP clients. Response bounds include both copies.
 
 ### Files and context
 
@@ -115,3 +140,6 @@ flowchart TD
   Resetting private model context does not erase already-shared visible messages.
 - Ingestion still writes under each project's lock and keeps its existing source
   connector MCPs. Global retrieval never borrows those credentials or SDK sessions.
+- MCP callers receive the composed result, rather than the internal tool timeline.
+  Their outer GRID agent owns the visible conversation; MCP retains only private
+  caller/session model history under the same eight-message/seven-day bounds.

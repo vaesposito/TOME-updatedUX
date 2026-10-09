@@ -84,6 +84,67 @@ Open http://localhost:3000.
   Deploy the updated UI and native agent images; keep the popup flag off until
   an administrator enables it. No restart or rebuild is needed to change the flag.
 
+### Global agent over MCP
+
+- Keep both interfaces: raw list/get tools for precise reads, and
+  `tome_agent_search(query, scope?, session_id?)` for global search, retrieval and
+  cited synthesis. `tome_ask_global(question, scope?, session_id?)` is an alias;
+  existing `tome_ask(project_slug, question)` keeps its project-scoped behavior.
+- Both global tools live on the existing `/api/tome/mcp` server. They invoke
+  `lib/tome/global-chat-service.ts`, shared with the browser chat endpoint.
+  The native agent still uses its internal Glob/search/read functions, without
+  calling an MCP server inside the retrieval loop.
+- Without scope, the view includes all caller-readable entities. Optional
+  `{ "type": "bhag" | "area" | "project", "slug": "example" }` limits the
+  actual published export. BHAG/area scopes include their readable descendants;
+  a project scope includes only that project. Scope never grants extra access.
+- The MCP boundary derives the user subject from a verified user JWT, linked
+  secondary OIDC identity, browser session or user-owned TOME API key. It checks
+  registered-agent use permission before starting retrieval. A service-account
+  token cannot impersonate a human; GRID delegation must preserve the user token.
+  Caller tokens and source credentials are not forwarded to native reasoning.
+- Results include `answer`, `completion_status`, `session_id`, `citations`,
+  `sources_consulted`, `entities_consulted`, `missing_evidence`, `warnings` and
+  `context_coverage`. MCP advertises an output schema and returns matching
+  `structuredContent` plus serialized JSON text for older clients.
+- Source metadata records published revision ID/time, content hash and capture
+  time. `upstream_verified_at` is null: no live upstream verification is claimed.
+  Consulted sources include preloaded pages, navigation overview excerpts and
+  search/read results; citations are the recognized links in the answer.
+  Evidence gaps report retrieval failures or absent recognized citations, not
+  an independent factual-completeness score. Source arrays cap at 500 entries;
+  the response limit counts both structured and text representations.
+- Reuse the opaque returned `session_id` for follow-ups. MCP sessions are isolated
+  from GRID chat sessions, owned by the caller, retain at most eight bounded
+  messages, expire after seven days, and serialize turns. Current access or scope
+  changes discard retained context. Failed/incomplete turns do not save history
+  or return a completed answer; partial text is not treated as success.
+- For a GRID delegating agent, select `tome_agent_search` in its existing MCP tool
+  configuration. Add raw tools when precise reads are needed. The tool registry
+  lists the agent search first; this does not rewrite deployment-owned agent
+  configurations or grant access. Allow a client timeout over 300 seconds for
+  the existing bounded native turn. Benchmark freshness and timeout limits remain.
+- Deploy matching UI and native agent images. Selected exports use the internal
+  authenticated POST snapshot API; existing full-snapshot GET remains supported.
+  Global MCP tools are independent of the popup visibility toggle.
+
+Example MCP call:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "tome_agent_search",
+    "arguments": {
+      "query": "Summarize the launch plan and its current progress, with citations",
+      "scope": { "type": "bhag", "slug": "example" }
+    }
+  }
+}
+```
+
 
 ## Tome ingest review
 

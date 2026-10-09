@@ -5,11 +5,12 @@
 //
 // Auth: TOME-scoped dual auth - a session cookie, an OAuth/PKCE-issued Keycloak
 // access token, a user-minted Tome-scoped API key sent as `x-caipe-token`, or a
-// secondary OIDC JWT validated against configured JWKS. Every tool re-enters
+// secondary OIDC JWT validated against configured JWKS. Raw tools re-enter
 // the existing authenticated
-// `/api/...` routes with the caller's credentials forwarded, so per-user RBAC
-// is identical to the web UI - this route adds no new data path, only an MCP
-// shell over the routes that already exist.
+// `/api/...` routes with the caller's credentials forwarded. Global agent
+// delegation enters the shared native service with a boundary-authenticated
+// subject and current agent-use / published-page permissions. User access
+// tokens never become the native agent's upstream service credential.
 //
 // Hand-rolled rather than pulling in @modelcontextprotocol/sdk: the wire
 // protocol is plain JSON-RPC and we only implement initialize / tools/list /
@@ -28,10 +29,17 @@ import { SECONDARY_OIDC_PROOF_HEADER } from "@/lib/auth/secondary-oidc";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
 import { isTomeServerEnabled } from "@/lib/tome/guard";
 import { TOME_MCP_FORWARDED_HEADER } from "@/lib/tome/myagent-interactive";
+import {
+  tomeAgentSearch,
+  TOME_AGENT_SEARCH_OUTPUT_SCHEMA,
+  TOME_AGENT_SEARCH_SCOPE_SCHEMA,
+} from "@/lib/tome/mcp-agent-search";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
-const PROTOCOL_VERSION = "2024-11-05";
+const PROTOCOL_VERSION = "2025-11-25";
 const SERVER_INFO = { name: "tome", version: "0.1.0" };
 const DEFAULT_MAX_TOOL_RESULT_BYTES = 1_000_000;
 const INLINE_IMAGE_DATA_URI =
@@ -92,22 +100,32 @@ function toolText(text: string, isError = false) {
   };
 }
 
+interface ToolResult {
+  content: Array<{ type: string; text: string }>;
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+}
+
+function toolStructured<T extends { answer: string }>(data: T): ToolResult {
+  const structuredContent = { ...data, answer: omitInlineImages(data.answer) };
+  return { ...toolText(JSON.stringify(structuredContent)), structuredContent };
+}
+
 function boundToolResult(
   toolName: string,
-  result: ReturnType<typeof toolText>,
-): ReturnType<typeof toolText> {
-  const bytes = result.content.reduce(
-    (total, block) => total + byteCount(block.text),
-    0,
-  );
+  result: ToolResult,
+): ToolResult {
+  // Include both representations; structured results must not evade the cap.
+  const bytes = byteCount(JSON.stringify(result));
   const limit = maxToolResultBytes();
   if (bytes <= limit) return result;
 
   return toolText(
     `${toolName} produced ${bytes} bytes after inline images were omitted, ` +
       `which exceeds the ${limit}-byte MCP response limit. Narrow the request: ` +
-      `use tome_list_pages followed by tome_get_page for the specific pages ` +
-      `you need.`,
+      (toolName === "tome_agent_search" || toolName === "tome_ask_global"
+        ? `ask a narrower question or supply an accessible BHAG, area or project scope.`
+        : `use tome_list_pages followed by tome_get_page for the specific pages you need.`),
     true,
   );
 }
@@ -284,11 +302,13 @@ interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  annotations?: Record<string, boolean>;
   handler: (
     request: NextRequest,
     fwd: Forward,
     args: Record<string, any>,
-  ) => Promise<ReturnType<typeof toolText>>;
+  ) => Promise<ToolResult>;
 }
 
 interface SynthesisProject {
@@ -386,6 +406,39 @@ function autoIngestView(project: any): Record<string, unknown> {
 }
 
 const TOOLS: ToolDef[] = [
+  {
+    name: "tome_agent_search",
+    description:
+      "Primary TOME delegation tool: ask the native global agent to search, retrieve and synthesize published Markdown across every BHAG, area and project the caller can access. Use this first for cross-project questions. Returns a cited answer, source revision/capture dates, evidence gaps, coverage and an opaque follow-up session_id. Optional scope {type, slug} restricts the actual corpus to that accessible entity and readable descendants. Reuse session_id for follow-ups; it belongs to the caller and context resets when access or scope changes. Published evidence is not a live upstream fact check. Existing list/get tools remain available for precise reads. query is required.",
+    inputSchema: schema({
+      query: { type: "string", minLength: 1, maxLength: 12_000 },
+      scope: TOME_AGENT_SEARCH_SCOPE_SCHEMA,
+      session_id: { type: "string", format: "uuid" },
+    }, ["query"]),
+    outputSchema: TOME_AGENT_SEARCH_OUTPUT_SCHEMA,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    handler: async (request, _fwd, args) => {
+      const result = await tomeAgentSearch(request, args, publicOrigin(request));
+      return toolStructured(result);
+    },
+  },
+  {
+    name: "tome_ask_global",
+    description:
+      "Alias of tome_agent_search for global TOME questions. Prefer tome_agent_search for delegation; this accepts question instead of query. Same authorized retrieval, optional scope and caller-owned session_id. Returns the same cited structured result. Existing tome_ask remains project-scoped.",
+    inputSchema: schema({
+      question: { type: "string", minLength: 1, maxLength: 12_000 },
+      scope: TOME_AGENT_SEARCH_SCOPE_SCHEMA,
+      session_id: { type: "string", format: "uuid" },
+    }, ["question"]),
+    outputSchema: TOME_AGENT_SEARCH_OUTPUT_SCHEMA,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    handler: async (request, _fwd, args) => {
+      const { question, ...rest } = args;
+      const result = await tomeAgentSearch(request, { ...rest, query: question }, publicOrigin(request));
+      return toolStructured(result);
+    },
+  },
   {
     name: "tome_server_info",
     description:
@@ -1610,6 +1663,8 @@ async function dispatch(
           name: t.name,
           description: t.description,
           inputSchema: t.inputSchema,
+          ...(t.outputSchema ? { outputSchema: t.outputSchema } : {}),
+          ...(t.annotations ? { annotations: t.annotations } : {}),
         })),
       });
     case "tools/call": {

@@ -6,8 +6,10 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections.abc import AsyncIterator
 from typing import Any, Literal
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
@@ -109,6 +111,17 @@ def _event(kind: str, **data: Any) -> ChatEventPayload:
     return ChatEventPayload(type=kind, data=data)
 
 
+def _linked_paths(answer: str) -> set[str]:
+    paths: set[str] = set()
+    for link in re.findall(r"\]\(([^)\s]+)", answer):
+        try:
+            paths.add(urlsplit(link).path)
+        except ValueError:
+            # A malformed model-authored URL is not a published citation.
+            continue
+    return paths
+
+
 async def _read(
     name: str,
     arguments: dict[str, Any],
@@ -152,6 +165,26 @@ async def _reason(
     headers: dict[str, str],
 ) -> AsyncIterator[ChatEventPayload]:
     context, coverage = await view_operation(corpus.model_context, user_message)
+    consulted = {
+        (entry["project_slug"], entry["path"])
+        for entry in coverage["preloaded_pages"]
+    }
+    for entry in corpus.navigation.get("entities", []):
+        key = (entry.get("slug"), entry.get("overview_path"))
+        if entry.get("overview_excerpt") and key in corpus.pages:
+            consulted.add(key)
+    missing_evidence: list[str] = []
+
+    def collect_references(value: Any) -> None:
+        if isinstance(value, dict):
+            key = (value.get("project_slug"), value.get("path"))
+            if all(isinstance(part, str) for part in key) and key in corpus.pages:
+                consulted.add(key)
+            for nested in value.values():
+                collect_references(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                collect_references(nested)
     messages: list[dict[str, Any]] = [message.model_dump() for message in history]
     messages.append({"role": "user", "content": user_message})
     system = (
@@ -202,12 +235,46 @@ async def _reason(
                     {"role": "assistant", "content": "\n\n".join(answer)[-12_000:]},
                 ]
                 yield _event("session", retrieval_history=transcript[-8:])
+                linked_paths = _linked_paths("\n\n".join(answer))
+                sources = []
+                for key in sorted(consulted):
+                    page = corpus.pages[key]
+                    reference = page.reference()
+                    sources.append({
+                        "project_slug": page.entity.slug,
+                        "path": page.path,
+                        "title": page.title,
+                        "citation": reference["citation"],
+                        "revision_id": page.revision_id,
+                        "source_revision_at": page.updated_at,
+                        "captured_at": page.captured_at,
+                        "content_hash": page.content_hash,
+                        "upstream_verified_at": None,
+                        "cited_in_answer": reference["citation"] in linked_paths,
+                    })
+                citations = [source for source in sources if source["cited_in_answer"]]
+                warnings = ["Published wiki evidence is not live upstream verification."]
+                if not citations:
+                    missing_evidence.append("No recognized published-page citation in the answer.")
+                if coverage["navigation_truncated"]:
+                    warnings.append("The navigation index omitted some authorized entities.")
+                if not coverage["full_corpus_in_context"]:
+                    warnings.append("Initial context was selective; remaining pages required search or reads.")
+                if any(source["source_revision_at"] is None for source in sources):
+                    warnings.append("Some published sources have no revision timestamp.")
+                if len(sources) > 500 or len(citations) > 500:
+                    warnings.append("Structured source metadata was capped at 500 entries.")
                 yield _event(
                     "done",
                     model=model,
                     runtime="tome-retrieval",
                     success=True,
                     context_coverage=coverage,
+                    citations=citations[:500],
+                    sources_consulted=sources[:500],
+                    entities_consulted=sorted({key[0] for key in consulted}),
+                    missing_evidence=missing_evidence,
+                    warnings=warnings,
                 )
                 return
             results: list[dict[str, Any]] = []
@@ -240,9 +307,12 @@ async def _reason(
                             "Result exceeds the remaining evidence budget; request fewer matches or a smaller section"
                         )
                     evidence_characters += len(result_text)
+                    if name in {"search_pages", "read_project_page"}:
+                        collect_references(result)
                 except ValueError as exc:
                     failed = True
                     result_text = json.dumps({"error": str(exc)})
+                    missing_evidence.append(f"{name}: {exc}")
                 yield _event(
                     "tool_result",
                     id=call_id,

@@ -385,3 +385,13 @@ set its `TOME_AGENT_TOKEN` to the same value.
   Private views are not separate OS sandboxes; adding code execution would
   require stronger isolation. Project ingestion/chat still use their existing SDK
   and connector MCPs.
+- The UI's MCP boundary exposes `tome_agent_search` and its `tome_ask_global`
+  alias through the shared global service. This is an external interface to native
+  reasoning; it does not introduce MCP calls inside the retrieval loop.
+- Snapshot preparation POSTs the requested entity IDs to the internal published
+  export. The UI verifies that selection against the caller's current authorized
+  catalog and keeps the full authorization hash for revocation checks.
+- Successful `done` events carry recognized page citations, consulted source
+  metadata, entity slugs, retrieval gaps and coverage warnings. Revision dates are
+  published-wiki dates; `upstream_verified_at` is null. Metadata arrays cap at 500
+  sources/citations. These fields do not independently score factual completeness.

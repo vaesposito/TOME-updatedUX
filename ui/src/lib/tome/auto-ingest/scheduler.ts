@@ -10,11 +10,17 @@
 // pane can surface it, instead of only a server log line.
 
 import { getCollection } from "@/lib/mongodb";
-import type { AutoIngestConfig, ProjectDocument } from "@/types/projects";
+import {
+  isSynthesizedType,
+  type AutoIngestConfig,
+  type ProjectDocument,
+} from "@/types/projects";
 
 import { cronMatches } from "../../rbac/cron";
+import { listReadableTomeProjects } from "../access";
 import { resolveProjectCredentials } from "../agent-proxy";
 import { auditTome } from "../audit";
+import { resolveAreaChildren, resolveBhagChildren } from "../bhag";
 import { isIngestRunning, startIngestRun } from "../ingest-runner";
 import { resolveManagedWebexCredential } from "../managed-webex";
 import { checkSharePointSources } from "../sharepoint";
@@ -49,7 +55,27 @@ async function recordLastRun(
 }
 
 /**
- * Evaluate and (if due) fire one project's auto-ingest schedule. Never
+ * Slugs of a BHAG/Area's child projects the credential owner cannot read.
+ * Mirrors the manual synthesize route so a scheduled roll-up never reads
+ * child wikis its owner could not open.
+ */
+async function unreadableChildSlugs(
+  project: ProjectDocument & { _id: string },
+  subject: string,
+): Promise<string[]> {
+  const children =
+    project.type === "area"
+      ? await resolveAreaChildren(project.name)
+      : await resolveBhagChildren(project.name);
+  if (children.length === 0) return [];
+  const readable = await listReadableTomeProjects(subject, { isAdmin: false });
+  const readableSlugs = new Set(readable.map((candidate) => candidate.slug));
+  return children.filter((child) => !readableSlugs.has(child.slug)).map((child) => child.slug);
+}
+
+/**
+ * Evaluate and (if due) fire one project's auto-ingest schedule. A BHAG or
+ * Area fires a synthesis of its child wikis instead of a source ingest. Never
  * throws — every failure mode is caught, logged, and recorded on
  * `autoIngest.lastRun` so it's visible in the UI rather than only a log line.
  */
@@ -86,6 +112,25 @@ async function maybeFireForProject(
     return;
   }
 
+  const synthesized = isSynthesizedType(project.type);
+  if (synthesized) {
+    try {
+      const blocked = await unreadableChildSlugs(project, owner.subject);
+      if (blocked.length > 0) {
+        await recordLastRun(project._id, {
+          at: now.toISOString(),
+          status: "failed",
+          reason: `${owner.name || owner.email} cannot read: ${blocked.join(", ")}. Pick an owner with access to every child project.`,
+        });
+        return;
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      await recordLastRun(project._id, { at: now.toISOString(), status: "failed", reason });
+      return;
+    }
+  }
+
   let credentials: Awaited<ReturnType<typeof resolveProjectCredentials>>;
   try {
     credentials = await resolveProjectCredentials(project, owner.subject, {
@@ -110,8 +155,10 @@ async function maybeFireForProject(
       return;
     }
   }
+  // A roll-up with no direct sources reads only child wikis, so it needs no
+  // connected provider credentials.
   const hasAnyCredential = Object.keys(credentials).length > 0 || sharePointDocuments.length > 0;
-  if (!hasAnyCredential) {
+  if (!hasAnyCredential && !synthesized) {
     console.log(
       `[AutoIngest] ${project.slug}: credential owner (${owner.email}) has no connected credentials; skipping`,
     );
@@ -135,7 +182,9 @@ async function maybeFireForProject(
         canManageSteward: false,
         isDataSteward: true,
       },
-      { triggeredBy: "auto" },
+      synthesized
+        ? { triggeredBy: "auto", agentEndpoint: "/synthesize" }
+        : { triggeredBy: "auto" },
     );
     console.log(`[AutoIngest] ${project.slug}: fired run ${runId} (${utcMinuteKey(now)} UTC)`);
     await recordLastRun(project._id, { at: now.toISOString(), status: "success", runId });

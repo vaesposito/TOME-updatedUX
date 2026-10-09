@@ -2485,9 +2485,6 @@ export function TomeWiki({ slug }: { slug: string }) {
             slug={slug}
             projectTitle={projectTitle ?? undefined}
             pagePath={trackedPagePath}
-            onPagesChanged={load}
-            onOpenPage={(path) => navigate({ kind: "page", path })}
-            glossaryPreview={glossaryPreview}
           />
         )}
       </div>

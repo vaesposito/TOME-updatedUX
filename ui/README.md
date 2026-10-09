@@ -25,19 +25,17 @@ Open http://localhost:3000.
 
 ## Tome Assistant
 
-- **Ask Tome** on `/projects` lets you choose an accessible project before chatting.
-- **Ask Tome** opens a floating assistant in the bottom-right corner of a
-  project's wiki, ingest, settings, and report views.
-- The panel uses the same project chat as the Agent view, including connected
-  credentials, server history, streaming, Stop, Clear, and compact controls.
-- On wiki pages, **Ask about this page** fills the composer with a source-aware
-  question. The user sends it explicitly.
-- Minimize the panel to keep browsing, expand it for more room, or press Escape
-  to close it and return focus to the launcher. Minimizing preserves the draft
-  and continues an active response.
-- Page links open in the project view; agent page writes refresh its wiki.
-- The Agent view keeps its existing full-size chat and does not show a second
-  floating chat. The assistant is mounted inside the wiki's fullscreen surface.
+- **Ask Tome** opens the dynamic TOME agent on `/projects` and inside projects.
+  No project selection is required; the current project/page is optional context.
+- The assistant uses GRID's conversation and message storage. Its history appears
+  in regular Chat; **Open conversation in regular chat** opens the same thread.
+- **Expand assistant** enlarges the popup; the resize handle adjusts its size.
+- The installed TOME app's assistant agent ID is used when configured; otherwise
+  `agent-tome-agent` must be enabled and available to the current user.
+- The existing dynamic-agent runtime forwards the caller JWT through AgentGateway
+  to TOME MCP. Provider credentials remain server-side; the popup never reads tokens.
+- Project-native Agent chat remains separate; existing native chat history is not
+  migrated into GRID conversations.
 
 ## Tome ingest review
 

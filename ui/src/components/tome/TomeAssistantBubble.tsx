@@ -1,160 +1,100 @@
 "use client";
 
-import { Bot, Maximize2, MessageCircle, Minimize2, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { MessageCircle, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import { ChatPanel } from "@/components/tome/ChatPanel";
-import { SearchablePicker } from "@/components/ui/searchable-picker";
+import { AgenticAppAssistantOverlay } from "@/components/agentic-apps/AgenticAppAssistantOverlay";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import type { GlossaryResolver } from "@/lib/tome/tome-links";
+import { apiClient } from "@/lib/api-client";
+import { validateAssistantContextMessage } from "@/lib/agentic-apps/assistant-context";
+import { resolveUsableChatAgent } from "@/lib/chat-agent-selection";
 
 interface Props {
   slug?: string;
-  projects?: readonly { slug: string; title?: string }[];
   projectTitle?: string;
   pagePath?: string;
-  onPagesChanged: () => void;
-  onOpenPage: (path: string, projectSlug: string) => void;
-  glossaryPreview?: GlossaryResolver;
 }
 
-/** Native TOME chat uses the project's existing session and authenticated BFF. */
-export function TomeAssistantBubble({
-  slug,
-  projects,
-  projectTitle,
-  pagePath,
-  onPagesChanged,
-  onOpenPage,
-  glossaryPreview,
-}: Props) {
+/** TOME uses GRID conversations; project and page are optional viewing context. */
+export function TomeAssistantBubble({ slug, projectTitle, pagePath }: Props) {
   const [open, setOpen] = useState(false);
-  const [started, setStarted] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [prompt, setPrompt] = useState<string | null>(null);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-  const selectedProject = projects?.find((project) => project.slug === selectedSlug);
-  const activeSlug = slug ?? selectedProject?.slug;
-  const activeTitle = projectTitle ?? selectedProject?.title;
-  const panelId = useId();
-  const titleId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [clearedContextId, setClearedContextId] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const context = useMemo(() => {
+    const route = slug
+      ? `/projects/${encodeURIComponent(slug)}/tome${pagePath ? `/wiki/${pagePath.split("/").map(encodeURIComponent).join("/")}` : ""}`
+      : "/projects";
+    const result = validateAssistantContextMessage({
+      appId: "tome",
+      message: {
+        type: "caipe.agenticApp.context.v1",
+        version: "1.0",
+        appId: "tome",
+        context: {
+          route,
+          title: projectTitle || "TOME projects",
+          ...(slug ? { resourceRefs: [{ project_slug: slug, ...(pagePath ? { page_path: pagePath } : {}) }] } : {}),
+          suggestedPrompts: slug
+            ? ["Summarize this project's progress", "What changed recently in this project?"]
+            : ["What projects can I access?", "Summarize recent project progress"],
+        },
+      },
+    });
+    return result.ok ? result.record : null;
+  }, [slug, projectTitle, pagePath]);
 
   useEffect(() => {
-    if (open) closeRef.current?.focus();
-  }, [open]);
+    if (!open || agentId) return;
+    let cancelled = false;
+    async function resolveAgent() {
+      try {
+        const apps = await apiClient.getAgenticApps();
+        const requestedAgentId = apps.items.find((app) => app.appId === "tome")?.assistantAgentId || "agent-tome-agent";
+        const agent = await resolveUsableChatAgent({ requestedAgentId, requireAvailableAgent: true });
+        if (!cancelled) {
+          setAgentId(agent.id);
+          setError(null);
+        }
+      } catch (reason: unknown) {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "TOME assistant is unavailable.");
+      }
+    }
+    void resolveAgent();
+    return () => { cancelled = true; };
+  }, [open, agentId, attempt]);
 
-  const close = () => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  };
+  if (agentId) {
+    return (
+      <AgenticAppAssistantOverlay
+        appId="tome"
+        appName="TOME"
+        assistantLabel="Ask Tome"
+        assistantAgentName="Tome Assistant"
+        assistantAgentId={agentId}
+        activeContext={context?.contextId === clearedContextId ? null : context}
+        onClearContext={() => setClearedContextId(context?.contextId ?? null)}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    );
+  }
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3 sm:bottom-6 sm:right-6">
-      {started && (
-        <section
-          id={panelId}
-          role="dialog"
-          aria-labelledby={titleId}
-          hidden={!open}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && !event.defaultPrevented) {
-              event.stopPropagation();
-              close();
-            }
-          }}
-          className={cn(
-            "pointer-events-auto flex max-h-[calc(100dvh-7rem)] max-w-full flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl",
-            expanded ? "h-[820px] w-[900px]" : "h-[680px] w-[520px]",
-            !open && "hidden",
-          )}
-        >
-          <header className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
-            <Bot className="h-5 w-5 shrink-0 text-primary" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <h2 id={titleId} className="text-sm font-semibold">Tome Assistant</h2>
-              <p className="truncate text-xs text-muted-foreground">{activeTitle ?? activeSlug ?? "Choose a project to start"}</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={expanded ? "Reduce assistant size" : "Expand assistant"}
-              aria-pressed={expanded}
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-            <Button ref={closeRef} variant="ghost" size="icon" aria-label="Close Tome Assistant" onClick={close}>
-              <X className="h-4 w-4" />
-            </Button>
-          </header>
-          {projects && (
-            <div className="shrink-0 border-b px-4 py-3">
-              <SearchablePicker
-                options={projects}
-                selected={selectedProject}
-                onSelect={(project) => {
-                  setSelectedSlug(project.slug);
-                  setPrompt(null);
-                }}
-                getOptionKey={(project) => project.slug}
-                getOptionLabel={(project) => project.title || project.slug}
-                placeholder="Choose a project"
-                searchPlaceholder="Search projects…"
-                emptyLabel="No accessible projects"
-                ariaLabel="Assistant project"
-                portalled={false}
-              />
-            </div>
-          )}
-          {pagePath && (
-            <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={pagePath}>{pagePath}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPrompt(`Read the project wiki page ${JSON.stringify(pagePath)} and summarize its key points. Cite the page and distinguish recorded facts from gaps.`)}
-              >
-                Ask about this page
-              </Button>
-            </div>
-          )}
-          <div className="min-h-0 flex-1">
-            {activeSlug ? <ChatPanel
-              key={activeSlug}
-              slug={activeSlug}
-              projectTitle={activeTitle}
-              onPagesChanged={onPagesChanged}
-              onOpenPage={(path) => onOpenPage(path, activeSlug)}
-              glossaryPreview={glossaryPreview}
-              initialPrompt={prompt}
-              onInitialPromptConsumed={() => setPrompt(null)}
-            /> : (
-              <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-                Choose a project to ask about its wiki, sources, and recent changes.
-              </div>
-            )}
+    <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3">
+      {open && (
+        <section role="dialog" aria-label="Tome Assistant" className="pointer-events-auto w-96 max-w-full rounded-2xl border bg-background p-4 shadow-2xl">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Tome Assistant</h2>
+            <Button variant="ghost" size="icon" aria-label="Close Tome Assistant" onClick={() => setOpen(false)}><X className="h-4 w-4" /></Button>
           </div>
+          <p role={error ? "alert" : "status"} className="text-sm text-muted-foreground">{error ?? "Connecting to TOME assistant…"}</p>
+          {error && <Button className="mt-3" onClick={() => { setError(null); setAttempt((value) => value + 1); }}>Retry</Button>}
         </section>
       )}
-      <Button
-        ref={triggerRef}
-        aria-label={open ? "Minimize Tome Assistant" : "Open Tome Assistant"}
-        aria-expanded={open}
-        aria-controls={started ? panelId : undefined}
-        className="pointer-events-auto gap-2 rounded-full px-4 py-3 shadow-lg"
-        onClick={() => {
-          if (open) close();
-          else {
-            setStarted(true);
-            setOpen(true);
-          }
-        }}
-      >
-        <MessageCircle className="h-4 w-4" aria-hidden />
-        Ask Tome
+      <Button className="pointer-events-auto gap-2 rounded-full" aria-label="Open Tome Assistant" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <MessageCircle className="h-4 w-4" />Ask Tome
       </Button>
     </div>
   );

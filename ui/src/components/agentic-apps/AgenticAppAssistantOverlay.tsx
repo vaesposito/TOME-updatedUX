@@ -6,6 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   LoaderCircle,
+  Maximize2,
+  Minimize2,
+  ExternalLink,
   MessageCircle,
   Plus,
   Sparkles,
@@ -13,6 +16,8 @@ import {
   Type,
   X,
 } from "lucide-react";
+
+import { useRouter } from "next/navigation";
 
 import { ChatPanel } from "@/components/chat/DynamicAgentChatPanel";
 import { buildAssistantClientContext } from "@/lib/agentic-apps/assistant-context";
@@ -73,6 +78,8 @@ export function AgenticAppAssistantOverlay({
     () => ({ name: chatPanelAgentName }) as DynamicAgentConfig,
     [chatPanelAgentName],
   );
+  const router = useRouter();
+  const [expanded, setExpanded] = useState(false);
   const [panelSize, setPanelSize] = useState(DEFAULT_PANEL_SIZE);
   const [glassMode, setGlassMode] = useState(readStoredGlassMode);
   const [fontScale, setFontScale] = useState<AssistantFontScale>(readStoredFontScale);
@@ -315,8 +322,8 @@ export function AgenticAppAssistantOverlay({
               : "shadow-black/10 dark:border-cyan-300/20 dark:bg-slate-950/95 dark:shadow-cyan-950/40",
           )}
           style={{
-            width: `min(${panelSize.width}px, calc(100vw - 2rem))`,
-            height: `min(${panelSize.height}px, calc(100vh - 7rem))`,
+            width: expanded ? "calc(100vw - 3rem)" : `min(${panelSize.width}px, calc(100vw - 2rem))`,
+            height: expanded ? "calc(100dvh - 7rem)" : `min(${panelSize.height}px, calc(100vh - 7rem))`,
           }}
         >
           <button
@@ -347,6 +354,29 @@ export function AgenticAppAssistantOverlay({
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label={expanded ? "Reduce assistant size" : "Expand assistant"}
+                aria-pressed={expanded}
+                onClick={() => setExpanded((value) => !value)}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
+              >
+                {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+              <button
+                type="button"
+                aria-label="Open conversation in regular chat"
+                disabled={!assistantConversation}
+                onClick={() => {
+                  if (!assistantConversation) return;
+                  previousActiveConversationRef.current = assistantConversation.id;
+                  setActiveConversation(assistantConversation.id);
+                  router.push(`/chat/${encodeURIComponent(assistantConversation.id)}`);
+                }}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 aria-label="Start new assistant chat"

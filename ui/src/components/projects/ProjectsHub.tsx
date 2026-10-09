@@ -1346,11 +1346,7 @@ export function ProjectsHub() {
       </section>
 
       {!error && (
-        <TomeAssistantBubble
-          projects={projects}
-          onPagesChanged={() => void load({ silent: true })}
-          onOpenPage={(path, slug) => router.push(`/projects/${encodeURIComponent(slug)}/tome/wiki/${path.split("/").map(encodeURIComponent).join("/")}`)}
-        />
+        <TomeAssistantBubble />
       )}
       <OnboardingModal open={onboardingOpen} onOpenChange={handleOnboardingChange} />
     </div>

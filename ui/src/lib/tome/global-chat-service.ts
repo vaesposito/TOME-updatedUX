@@ -1,11 +1,12 @@
 /** Shared native orchestration for browser chat and MCP delegation. */
-import { createHash, randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 
 import { ApiError } from "@/lib/api-middleware";
 import { getCollection } from "@/lib/mongodb";
 import { parseSSEStream, type RawSSEEvent } from "@/lib/streaming/parse-sse";
 import { tomeAgentAuthorizationHeaders } from "./agent-auth";
 import type { AgentChatRequest } from "./agent-proxy";
+import { readTomeAssistantSettings } from "./assistant-settings-store";
 import { buildTomeRetrievalScope, narrowTomeRetrievalCatalog, type TomeRetrievalRestriction } from "./retrieval-scope";
 
 interface RetrievalMessage {
@@ -21,6 +22,10 @@ interface NativeChatSession {
   lease_id?: string;
   lease_until?: Date;
   expires_at: Date;
+  live_grant_hash?: string;
+  live_scope_hash?: string;
+  live_project_ids?: string[];
+  live_mode?: string;
 }
 
 export interface TomeGlobalTurnInput {
@@ -30,6 +35,7 @@ export interface TomeGlobalTurnInput {
   message: string;
   session: { kind: "grid"; id: string } | { kind: "mcp"; id?: string };
   scope?: TomeRetrievalRestriction;
+  verifySources?: boolean;
   signal: AbortSignal;
 }
 
@@ -55,6 +61,12 @@ export async function startTomeGlobalTurn(input: TomeGlobalTurnInput): Promise<{
   }
   const agentUrl = process.env.TOME_AGENT_URL;
   if (!agentUrl) throw new ApiError("TOME agent is not configured", 503, "AGENT_NOT_CONFIGURED");
+  const settings = await readTomeAssistantSettings();
+  if (input.verifySources === true && settings.tome_live_verification_mode === "off") {
+    throw new ApiError("Live verification is disabled in TOME Assistant settings", 409, "TOME_LIVE_VERIFICATION_DISABLED");
+  }
+  const liveVerification = input.verifySources === false || settings.tome_live_verification_mode === "off" ? "off"
+    : input.verifySources === true ? "required" : settings.tome_live_verification_mode === "automatic" ? "automatic" : "off";
   const authorized = await buildTomeRetrievalScope(input.subject);
   const catalog = narrowTomeRetrievalCatalog(authorized.catalog, input.scope);
   if (!catalog.length) throw new ApiError("No readable TOME entities", 403, "TOME_READ_REQUIRED");
@@ -75,11 +87,13 @@ export async function startTomeGlobalTurn(input: TomeGlobalTurnInput): Promise<{
     }, { upsert: true });
   }
   const leaseId = randomUUID();
+  const liveGrant = liveVerification === "off" ? null : randomBytes(32).toString("hex");
   const state = await sessions.findOneAndUpdate({
     _id: key,
     ...(input.session.kind === "mcp" ? { owner_subject: input.subject, expires_at: { $gt: new Date() } } : {}),
     $or: [{ lease_until: { $lte: new Date() } }, { lease_until: { $exists: false } }],
-  }, { $set: { lease_id: leaseId, lease_until: new Date(Date.now() + 360_000), expires_at: new Date(Date.now() + 7 * 86400_000) } },
+  }, { $set: { lease_id: leaseId, owner_subject: input.subject, lease_until: new Date(Date.now() + 360_000), expires_at: new Date(Date.now() + 7 * 86400_000) },
+    $unset: { live_grant_hash: "", live_scope_hash: "", live_project_ids: "", live_mode: "" } },
   { returnDocument: "before" });
   if (!state) throw new ApiError("TOME is already responding in this session", 409, "TOME_CHAT_BUSY");
 
@@ -91,18 +105,28 @@ export async function startTomeGlobalTurn(input: TomeGlobalTurnInput): Promise<{
   const release = async () => {
     clearTimeout(timeout);
     input.signal.removeEventListener("abort", abort);
-    await sessions.updateOne({ _id: key, lease_id: leaseId }, { $unset: { lease_id: "", lease_until: "" } });
+    await sessions.updateOne({ _id: key, lease_id: leaseId }, { $unset: { lease_id: "", lease_until: "",
+      live_grant_hash: "", live_scope_hash: "", live_project_ids: "", live_mode: "" } });
   };
   let upstream: Response;
   try {
+    if (liveGrant) {
+      await sessions.createIndex({ live_grant_hash: 1 }, { sparse: true });
+      await sessions.updateOne({ _id: key, lease_id: leaseId }, { $set: {
+        live_grant_hash: createHash("sha256").update(liveGrant).digest("hex"), live_scope_hash: authorized.hash,
+        live_project_ids: catalog.map((entry) => entry.project_id), live_mode: liveVerification,
+      } });
+    }
     const reuseHistory = state.catalog_hash === scopeHash && state.expires_at > new Date();
     if (!reuseHistory) await sessions.updateOne({ _id: key, lease_id: leaseId }, {
       $set: { retrieval_history: [], catalog_hash: scopeHash }, $unset: { sdk_session_id: "" },
     });
     const body: AgentChatRequest = {
-      global_chat: true, message: input.message, role: "viewer", sdk_session_id: null,
+      global_chat: true, live_verification: liveVerification, message: input.message, role: "viewer", sdk_session_id: null,
+      live_verification_grant: liveGrant,
       retrieval_scope_hash: authorized.hash,
-      retrieval_history: reuseHistory ? parseHistory(state.retrieval_history ?? []) : [],
+      retrieval_history: reuseHistory ? parseHistory(state.retrieval_history ?? [])
+        .filter((message) => liveVerification === "off" || message.role === "user") : [],
       actor_sub: input.subject, actor_email: input.email ?? null, credentials: {}, stable_pages: {},
       issue_context: { decisions: [], critical: [], decision_count: 0, critical_count: 0, decision_truncated: false, critical_truncated: false },
       snapshot: {
@@ -131,12 +155,20 @@ export async function startTomeGlobalTurn(input: TomeGlobalTurnInput): Promise<{
         if (Buffer.byteLength(frame.data, "utf8") > 1_000_000) throw new Error("TOME event exceeds its limit");
         const data = JSON.parse(frame.data) as Record<string, unknown>;
         if (frame.event === "session") {
-          history = parseHistory(data.retrieval_history);
+          history = parseHistory(data.retrieval_history)
+            .filter((message) => liveVerification === "off" || message.role === "user");
           continue; // Retained model context is never a client payload.
         }
         if (frame.event === "error") reportedError = true;
         if (frame.event === "done") {
           if (data.success !== true || !history || reportedError) throw new Error("TOME did not complete successfully");
+          const verification = data.live_verification as Record<string, unknown> | undefined;
+          if (liveVerification !== "off" && (!verification || verification.mode !== liveVerification ||
+              !["completed", "incomplete", "not_requested"].includes(String(verification.status)) ||
+              liveVerification === "required" && verification.status === "not_requested")) {
+            throw new ApiError("The native agent did not report the requested verification policy. Deploy matching UI and TOME agent versions.",
+              502, "TOME_LIVE_RUNTIME_REQUIRED");
+          }
           if ((await buildTomeRetrievalScope(input.subject)).hash !== authorized.hash) {
             throw new ApiError("TOME access changed during this turn", 409, "TOME_SCOPE_CHANGED");
           }

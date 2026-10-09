@@ -66,8 +66,9 @@ Open http://localhost:3000.
   switch **Ask Tome popup** on or off for both Projects and wiki pages.
 - MongoDB `platform_config`, `_id: platform_settings`, stores the boolean
   `tome_assistant_popup_enabled`. Missing or invalid values default to **false**.
-- `/api/tome/assistant-settings` exposes only this flag and the registered agent ID
-  to authenticated chat users. PATCH requires TOME admin access and a boolean.
+- `/api/tome/assistant-settings` exposes the popup flag, live-verification mode
+  and registered agent ID to authenticated chat users. PATCH requires TOME admin
+  access and at least one valid setting; omitted fields are preserved.
   The existing `/api/admin/platform-config` API also reads and updates the flag
   under its existing system configuration permissions. Both write paths emit
   `tome.assistant.settings.update` audit events.
@@ -84,11 +85,31 @@ Open http://localhost:3000.
   Deploy the updated UI and native agent images; keep the popup flag off until
   an administrator enables it. No restart or rebuild is needed to change the flag.
 
+### Optional live Confluence verification
+
+- The same Assistant tab controls `platform_config.tome_live_verification_mode`:
+  `off` (default), `on_demand`, or `automatic`, independently of the popup flag.
+- Native chat's **Live sources** control requests **Verify with Confluence** or
+  **Wiki only** per question. Automatic checks time-sensitive questions and
+  answers that describe evidence as stale; it uses no fixed ingestion-age cutoff.
+- Browser chat and both global MCP tools accept optional `verify_sources`.
+  `true` requests comparison, `false` skips it, omission follows the policy.
+  Explicit verification while Off returns 409.
+- The BFF keeps connected Atlassian tokens server-side and resolves exact
+  configured sites. Current TOME access and configured space/root scopes apply;
+  an opaque per-turn grant prevents access outside the selected global scope.
+- Complete current page bodies feed a separate native claim-comparison pass.
+  Results include supported/conflicting/unverified claims, current citations,
+  revision/read times and incomplete-evidence warnings. Search alone is discovery.
+- Neither source ingestion nor published wiki freshness changes. Provider failures
+  and comparison failures remain unverified. The UI and native agent both require
+  the updated images before enabling this mode.
+
 ### Global agent over MCP
 
 - Keep both interfaces: raw list/get tools for precise reads, and
-  `tome_agent_search(query, scope?, session_id?)` for global search, retrieval and
-  cited synthesis. `tome_ask_global(question, scope?, session_id?)` is an alias;
+  `tome_agent_search(query, scope?, session_id?, verify_sources?)` for global search,
+  retrieval and cited synthesis. `tome_ask_global(question, scope?, session_id?, verify_sources?)` is an alias;
   existing `tome_ask(project_slug, question)` keeps its project-scoped behavior.
 - Both global tools live on the existing `/api/tome/mcp` server. They invoke
   `lib/tome/global-chat-service.ts`, shared with the browser chat endpoint.

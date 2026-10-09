@@ -393,7 +393,7 @@ set its `TOME_AGENT_TOKEN` to the same value.
 - GRID owns visible history. Mongo stores eight bounded user/assistant messages
   per user/conversation, TTL seven days. Raw pages and function results are not
   persisted in model history. The global model setting applies.
-- The five functions are the model capability boundary. There is no arbitrary
+- These functions and the optional scoped live reads are the model capability boundary. There is no arbitrary
   filesystem, shell, write, credential or model-selected network capability.
   Private views are not separate OS sandboxes; adding code execution would
   require stronger isolation. Project ingestion/chat still use their existing SDK
@@ -408,3 +408,43 @@ set its `TOME_AGENT_TOKEN` to the same value.
   metadata, entity slugs, retrieval gaps and coverage warnings. Revision dates are
   published-wiki dates; `upstream_verified_at` is null. Metadata arrays cap at 500
   sources/citations. These fields do not independently score factual completeness.
+
+#### Optional live Confluence comparison
+
+- **TOME Settings → Assistant → Live Confluence verification** stores
+  `platform_config.tome_live_verification_mode`: `off` (default), `on_demand`,
+  or `automatic`. It is independent of popup visibility.
+- On demand: select **Verify with Confluence** in native chat's **Live sources**
+  control. Automatic: check questions containing time-sensitive terms (such as
+  yesterday, current, status or progress), or answers describing evidence as
+  stale. This is a heuristic, not a fixed two-day ingestion threshold.
+  **Wiki only** overrides Automatic for a question.
+- Browser `/api/tome/chat` and MCP `tome_agent_search` / `tome_ask_global` accept
+  optional `verify_sources`: `true` requests comparison, `false` skips it,
+  omission uses the runtime policy. Requesting `true` while Off returns 409.
+- Native `search_confluence` and `read_confluence_page` call the BFF directly.
+  No MCP or Dynamic Agents runtime is used internally. The BFF resolves the
+  caller's connected Atlassian credentials for each project's configured site;
+  tokens remain in the BFF. Space and selected-root restrictions apply to
+  search results and page reads, along with current TOME access checks.
+- A hashed, caller-bound turn grant narrows live access to the selected catalog,
+  expires with the turn lease, and is cleared on release. Grant and source scope
+  are rechecked after each provider read. Provider failures remain unverified.
+- A complete storage body and revision metadata are required. Chunks must cover
+  one consistent revision; Unicode offsets count code points. The final native
+  model pass compares substantive claims with complete bodies, labels them
+  supported/conflicting/unverified, and revises the answer with current citations.
+  This is model-assisted comparison, not a formal accuracy guarantee.
+- `done.live_verification` and MCP results report comparison status, claim checks,
+  source URLs/revisions/read times, and warnings. Published wiki metadata keeps
+  `upstream_verified_at: null`; the wiki and ingestion freshness are unchanged.
+- Bounds: 20 live calls, 120,000 live body characters, three concurrent requests,
+  up to six pages in the forced completion phase, and 65 seconds for that phase.
+  HTTP responses cap at 8 MiB. Timeouts, missing evidence or failed comparison
+  produce an explicit incomplete result rather than a verification claim.
+  Comparison adds one model request after primary reasoning. Time-sensitive
+  completion also searches for newly published pages, within the same live budget.
+- Live-enabled turns retain only the last eight user questions in private model
+  history. Source bodies and generated live answers are reauthorized and reread
+  each turn. GRID's visible conversation history remains under its usual access
+  controls. Follow-ups cannot rely on retained live answer text.

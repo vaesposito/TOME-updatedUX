@@ -32,7 +32,7 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
     throw new ApiError("Invalid JSON body", 400, "BAD_REQUEST");
   }
   const enabled = (body as Record<string, unknown>).tome_assistant_popup_enabled;
-  const settings = await saveTomeAssistantSettings(enabled, user.email);
+  const settings = await saveTomeAssistantSettings(enabled, user.email, (body as Record<string, unknown>).tome_live_verification_mode);
   auditTome({
     action: "tome.assistant.settings.update",
     actor: tomeActorFromAuth({ user, session }),

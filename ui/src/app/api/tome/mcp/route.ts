@@ -409,14 +409,15 @@ const TOOLS: ToolDef[] = [
   {
     name: "tome_agent_search",
     description:
-      "Primary TOME delegation tool: ask the native global agent to search, retrieve and synthesize published Markdown across every BHAG, area and project the caller can access. Use this first for cross-project questions. Returns a cited answer, source revision/capture dates, evidence gaps, coverage and an opaque follow-up session_id. Optional scope {type, slug} restricts the actual corpus to that accessible entity and readable descendants. Reuse session_id for follow-ups; it belongs to the caller and context resets when access or scope changes. Published evidence is not a live upstream fact check. Existing list/get tools remain available for precise reads. query is required.",
+      "Primary TOME delegation tool: ask the native global agent to search, retrieve and synthesize published Markdown across every BHAG, area and project the caller can access. Use this first for cross-project questions. Returns a cited answer, source revision/capture dates, evidence gaps, coverage and an opaque follow-up session_id. Optional scope {type, slug} restricts the actual corpus to that accessible entity and readable descendants. Reuse session_id for follow-ups; it belongs to the caller and context resets when access or scope changes. Published evidence is not a live upstream fact check. Optional verify_sources requests native live Confluence reads and a claim comparison when Assistant settings permit; failures remain unverified. Existing list/get tools remain available for precise reads. query is required.",
     inputSchema: schema({
       query: { type: "string", minLength: 1, maxLength: 12_000 },
+      verify_sources: { type: "boolean", description: "Request live Confluence checks when Assistant settings permit; false forces wiki-only retrieval." },
       scope: TOME_AGENT_SEARCH_SCOPE_SCHEMA,
       session_id: { type: "string", format: "uuid" },
     }, ["query"]),
     outputSchema: TOME_AGENT_SEARCH_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: async (request, _fwd, args) => {
       const result = await tomeAgentSearch(request, args, publicOrigin(request));
       return toolStructured(result);
@@ -425,14 +426,15 @@ const TOOLS: ToolDef[] = [
   {
     name: "tome_ask_global",
     description:
-      "Alias of tome_agent_search for global TOME questions. Prefer tome_agent_search for delegation; this accepts question instead of query. Same authorized retrieval, optional scope and caller-owned session_id. Returns the same cited structured result. Existing tome_ask remains project-scoped.",
+      "Alias of tome_agent_search for global TOME questions. Prefer tome_agent_search for delegation; this accepts question instead of query. Same authorized retrieval, optional scope, verify_sources and caller-owned session_id. Returns the same cited structured result. Existing tome_ask remains project-scoped.",
     inputSchema: schema({
       question: { type: "string", minLength: 1, maxLength: 12_000 },
+      verify_sources: { type: "boolean", description: "Request live Confluence checks when Assistant settings permit; false forces wiki-only retrieval." },
       scope: TOME_AGENT_SEARCH_SCOPE_SCHEMA,
       session_id: { type: "string", format: "uuid" },
     }, ["question"]),
     outputSchema: TOME_AGENT_SEARCH_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: async (request, _fwd, args) => {
       const { question, ...rest } = args;
       const result = await tomeAgentSearch(request, { ...rest, query: question }, publicOrigin(request));

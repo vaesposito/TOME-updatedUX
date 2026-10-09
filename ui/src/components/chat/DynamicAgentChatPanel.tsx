@@ -4,6 +4,8 @@ import { AgentAvatar } from "@/components/dynamic-agents/AgentAvatar";
 import type { TaskItem } from "@/components/shared/timeline";
 import { MarkdownRenderer } from "@/components/shared/timeline";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { useTomeAssistantSettings } from "@/hooks/use-tome-assistant-settings";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/components/ui/toast";
 import { useAgentTimeline } from "@/hooks/useDynamicAgentTimeline";
@@ -54,6 +56,7 @@ type ReadOnlyReason = 'admin_audit' | 'shared_readonly' | 'agent_deleted' | 'age
 interface QueuedMessage {
   text: string;
   files: InputFile[];
+  verificationChoice?: "default" | "verify" | "wiki";
 }
 
 interface ChatPanelProps {
@@ -277,6 +280,12 @@ export function ChatPanel({
     (item) => item.id === (conversationId ?? state.activeConversationId),
   ));
   const isNativeTome = conversation?.metadata?.assistant_runtime === "tome-native";
+  const tomeSettings = useTomeAssistantSettings(isNativeTome);
+  const [verificationChoice, setVerificationChoice] = useState<"default" | "verify" | "wiki">("default");
+  useEffect(() => { setVerificationChoice("default"); }, [conversationId]);
+  useEffect(() => {
+    if (tomeSettings.tome_live_verification_mode === "off") setVerificationChoice("default");
+  }, [tomeSettings.tome_live_verification_mode]);
 
   // Ref to track which conversations we've checked for HITL interrupt state
   const interruptCheckedRef = useRef<Set<string>>(new Set());
@@ -1011,7 +1020,7 @@ export function ChatPanel({
   }, [updateMessage, setConversationStreaming, agentName]);
 
   // Core submit function that accepts a message directly
-  const submitMessage = useCallback(async (messageToSend: string, filesToSend: InputFile[] = []) => {
+  const submitMessage = useCallback(async (messageToSend: string, filesToSend: InputFile[] = [], choice = verificationChoice) => {
     // A turn is valid if it has text OR at least one attachment.
     if ((!messageToSend.trim() && filesToSend.length === 0) || isThisConversationStreaming) return;
 
@@ -1111,6 +1120,8 @@ export function ChatPanel({
           conversationId: convId,
           agentId,
           clientContext,
+          ...(getActiveConversation()?.metadata?.assistant_runtime === "tome-native" && choice !== "default"
+            ? { forwardedProps: { verify_sources: choice === "verify" } } : {}),
           ...(filesToSend.length > 0 && { files: filesToSend }),
         },
         callbacks,
@@ -1146,7 +1157,7 @@ export function ChatPanel({
       });
       setConversationStreaming(convId, null);
     }
-  }, [isThisConversationStreaming, activeConversationId, accessToken, agentId, agentProtocol, getActiveConversation, createConversation, clearStreamEvents, addMessage, appendToMessage, updateMessage, setConversationStreaming, buildStreamCallbacks, finalizeStreamLoop, session?.user, showAuthErrorToast, suppliedClientContext, toast]);
+  }, [isThisConversationStreaming, activeConversationId, accessToken, agentId, agentProtocol, getActiveConversation, createConversation, clearStreamEvents, addMessage, appendToMessage, updateMessage, setConversationStreaming, buildStreamCallbacks, finalizeStreamLoop, session?.user, showAuthErrorToast, suppliedClientContext, toast, verificationChoice]);
 
   // The Home page hero composer creates a conversation and navigates here
   // before a message can be sent (this panel only mounts once a conversation
@@ -1170,7 +1181,7 @@ export function ChatPanel({
       setQueuedMessages(remaining);
       // Small delay to ensure previous message is fully processed
       setTimeout(() => {
-        submitMessage(firstMessage.text, firstMessage.files);
+        submitMessage(firstMessage.text, firstMessage.files, firstMessage.verificationChoice ?? "default");
       }, 300);
     }
   }, [isThisConversationStreaming, queuedMessages, submitMessage]);
@@ -1386,7 +1397,7 @@ export function ChatPanel({
 
       // Add to queue if under limit
       if (queuedMessages.length < 3) {
-        setQueuedMessages(prev => [...prev, { text: message, files: encodedFiles }]);
+        setQueuedMessages(prev => [...prev, { text: message, files: encodedFiles, verificationChoice }]);
         setInput("");
         setAttachments([]);
       } else {
@@ -1417,7 +1428,7 @@ export function ChatPanel({
     setAttachments([]);
 
     await submitMessage(message, encodedFiles);
-  }, [input, attachments, submitMessage, isThisConversationStreaming, queuedMessages, pendingUserInput, slashCommands, executeSlashCommand, handleStop]);
+  }, [input, attachments, submitMessage, isThisConversationStreaming, queuedMessages, pendingUserInput, slashCommands, executeSlashCommand, handleStop, verificationChoice]);
 
   // Auto-submit pending message from use case selection
   useEffect(() => {
@@ -2193,6 +2204,17 @@ export function ChatPanel({
 
               {/* Staged attachment previews (above the input row). */}
               <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
+              {isNativeTome && <div className="flex items-center gap-2 px-3 text-xs text-muted-foreground">
+                <label htmlFor={`tome-live-choice-${conversationId ?? "new"}`}>Live sources</label>
+                <Select id={`tome-live-choice-${conversationId ?? "new"}`} className="h-8 w-auto text-xs"
+                  value={verificationChoice} disabled={tomeSettings.tome_live_verification_mode === "off" || isThisConversationStreaming}
+                  onChange={(event) => setVerificationChoice(event.target.value as typeof verificationChoice)}>
+                  <option value="default">{tomeSettings.tome_live_verification_mode === "off" ? "Disabled in settings"
+                    : tomeSettings.tome_live_verification_mode === "automatic" ? "Automatic" : "Wiki only by default"}</option>
+                  <option value="verify">Verify with Confluence</option>
+                  <option value="wiki">Wiki only</option>
+                </Select>
+              </div>}
 
               <div className="flex items-center gap-3">
                 <TextareaAutosize

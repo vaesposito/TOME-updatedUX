@@ -15,10 +15,11 @@ interface RuntimeSettings extends TomeAssistantSettings {
 const DEFAULT_SETTINGS: RuntimeSettings = { ...DEFAULT_TOME_ASSISTANT_SETTINGS, agent_id: null };
 
 /** Refresh the server flag without persisting a user preference or requiring a rebuild. */
-export function useTomeAssistantSettings(): RuntimeSettings {
+export function useTomeAssistantSettings(enabled = true): RuntimeSettings {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     let controller: AbortController | null = null;
     async function refresh() {
@@ -32,6 +33,8 @@ export function useTomeAssistantSettings(): RuntimeSettings {
         const body = await response.json();
         if (active && controller === request) setSettings({
           tome_assistant_popup_enabled: body.data?.tome_assistant_popup_enabled === true,
+          tome_live_verification_mode: body.data?.tome_live_verification_mode === "on_demand" || body.data?.tome_live_verification_mode === "automatic"
+            ? body.data.tome_live_verification_mode : "off",
           agent_id: typeof body.data?.agent_id === "string" ? body.data.agent_id : null,
         });
       } catch (error) {
@@ -58,7 +61,7 @@ export function useTomeAssistantSettings(): RuntimeSettings {
       window.removeEventListener(TOME_ASSISTANT_SETTINGS_EVENT, refreshVisible);
       document.removeEventListener("visibilitychange", refreshVisible);
     };
-  }, []);
+  }, [enabled]);
 
   return settings;
 }

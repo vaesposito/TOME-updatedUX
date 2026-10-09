@@ -468,11 +468,13 @@ def fetch_model_config(
 
 
 async def fetch_retrieval(
-    actor_sub: str, scope_hash: str, operation: str, arguments: dict[str, Any]
+    actor_sub: str, scope_hash: str, operation: str, arguments: dict[str, Any], *, live_grant: str | None = None,
 ) -> dict[str, Any]:
     """Call the bounded read API with the trusted caller identity, never model headers."""
     headers = {**_auth_headers(), "X-Tome-Actor-Sub": actor_sub}
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+    if live_grant:
+        headers["X-Tome-Live-Grant"] = live_grant
+    async with httpx.AsyncClient(timeout=65.0 if operation.startswith("confluence_") else DEFAULT_TIMEOUT) as client:
         response = await client.get(
             f"{_backend_url()}/api/internal/retrieval",
             headers=headers,

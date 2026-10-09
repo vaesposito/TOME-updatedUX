@@ -555,6 +555,8 @@ async def chat_endpoint(body: ChatRequest):
                         actor_sub=body.actor_sub,
                         is_compact=body.is_compact,
                         global_chat=body.global_chat,
+                        live_verification=body.live_verification,
+                        live_verification_grant=body.live_verification_grant,
                         retrieval_scope_hash=body.retrieval_scope_hash,
                         retrieval_history=body.retrieval_history,
                         myagent_research=body.myagent_research,

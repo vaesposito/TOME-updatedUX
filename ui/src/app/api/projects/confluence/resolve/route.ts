@@ -13,27 +13,9 @@ import {
   type ConfluenceTreePage,
 } from "@/lib/projects/confluence-source";
 
-const PAGE_LIMIT = 100;
+import { fetchConfluenceSpace, collectConfluencePages, confluenceSearch, cqlQuote, type SearchContent } from "@/lib/projects/confluence-api";
+
 const MAX_PAGES = 500;
-
-interface SearchContent {
-  id?: string;
-  title?: string;
-  space?: { key?: string };
-  ancestors?: Array<{ id?: string; title?: string }>;
-  childTypes?: { page?: { value?: boolean } };
-}
-
-interface SearchResult {
-  title?: string;
-  content?: SearchContent;
-  space?: { key?: string };
-}
-
-interface SearchResponse {
-  results?: SearchResult[];
-  _links?: { next?: string };
-}
 
 function hasChildren(content: SearchContent): boolean | undefined {
   const value = content.childTypes?.page?.value;
@@ -46,111 +28,6 @@ function pageUrl(siteUrl: string, spaceKey: string, pageId: string): string {
 
 function spaceUrl(siteUrl: string, spaceKey: string): string {
   return `${siteUrl.replace(/\/$/, "")}/wiki/spaces/${encodeURIComponent(spaceKey)}`;
-}
-
-function cqlQuote(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-async function confluenceSearch(
-  gateway: string,
-  token: string,
-  cql: string,
-  limit: number,
-  nextLink?: string,
-): Promise<SearchResponse> {
-  const params = nextLink
-    ? new URL(nextLink, "https://confluence-pagination.invalid").searchParams
-    : new URLSearchParams();
-  if (!params.has("cql")) params.set("cql", cql);
-  if (!params.has("expand")) {
-    params.set(
-      "expand",
-      "content.space,content.ancestors,content.childTypes.page",
-    );
-  }
-  if (!params.has("limit")) params.set("limit", String(limit));
-  const response = await fetch(`${gateway}/wiki/rest/api/search?${params}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
-  if (response.status === 401 || response.status === 403) {
-    throw new ApiError(
-      "Your Atlassian connection cannot read this page",
-      403,
-      "CONFLUENCE_PAGE_FORBIDDEN",
-    );
-  }
-  if (!response.ok) {
-    throw new ApiError(
-      `Confluence page lookup failed (${response.status})`,
-      502,
-      "CONFLUENCE_LOOKUP_FAILED",
-    );
-  }
-  return (await response.json().catch(() => ({}))) as SearchResponse;
-}
-
-// v1 `/rest/api/space/{key}` is retired and v2 `/wiki/api/v2/spaces?keys=`
-// 403s on a viewable-but-not-joined space, so check existence via CQL
-// search against `type=space`, same as the space directory does.
-async function fetchConfluenceSpace(
-  gateway: string,
-  token: string,
-  spaceKey: string,
-): Promise<{ key: string } | null> {
-  const search = await confluenceSearch(
-    gateway,
-    token,
-    `type=space and space.key="${cqlQuote(spaceKey)}"`,
-    1,
-  );
-  const key = search.results?.[0]?.space?.key;
-  return key ? { key } : null;
-}
-
-async function collectConfluencePages(
-  gateway: string,
-  token: string,
-  cql: string,
-  maxPages: number,
-): Promise<{ results: SearchResult[]; truncated: boolean }> {
-  const results: SearchResult[] = [];
-  const seenPageIds = new Set<string>();
-  const seenNextLinks = new Set<string>();
-  let nextLink: string | undefined;
-
-  while (results.length < maxPages) {
-    const data = await confluenceSearch(
-      gateway,
-      token,
-      cql,
-      Math.min(PAGE_LIMIT, maxPages - results.length),
-      nextLink,
-    );
-    for (const result of data.results ?? []) {
-      const pageId = result.content?.id;
-      if (!pageId || seenPageIds.has(pageId)) continue;
-      seenPageIds.add(pageId);
-      results.push(result);
-      if (results.length >= maxPages) break;
-    }
-
-    const returnedNext = data._links?.next;
-    if (!returnedNext) {
-      return { results, truncated: false };
-    }
-    if (seenNextLinks.has(returnedNext)) {
-      return { results, truncated: true };
-    }
-    seenNextLinks.add(returnedNext);
-    nextLink = returnedNext;
-  }
-
-  return { results, truncated: Boolean(nextLink) };
 }
 
 function orderForest(pages: ConfluenceTreePage[]): ConfluenceTreePage[] {

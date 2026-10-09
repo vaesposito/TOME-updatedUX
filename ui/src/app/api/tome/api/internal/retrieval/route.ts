@@ -1,5 +1,6 @@
 /** Bounded read-only retrieval. The service asserts the authenticated caller. */
 import { NextRequest } from "next/server";
+import { createHash } from "crypto";
 
 import { ApiError, withErrorHandler } from "@/lib/api-middleware";
 import { canReadTomeProject, isTomeAdminSubject } from "@/lib/tome/access";
@@ -8,6 +9,8 @@ import { requireAgentToken, resolveProject } from "@/lib/tome/internal-api";
 import { getPageStore } from "@/lib/tome/page-store";
 import { buildTomeRetrievalScope } from "@/lib/tome/retrieval-scope";
 import { publishedTomeSnapshotResponse } from "@/lib/tome/retrieval-snapshot";
+import { liveConfluenceEvidence } from "@/lib/tome/live-confluence";
+import { getCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +41,25 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const project = await resolveProject(entry.project_id);
   if (!await isTomeAdminSubject(subject) && !await canReadTomeProject(subject, project)) {
     throw new ApiError("TOME read access is required", 403, "TOME_READ_REQUIRED");
+  }
+  if (operation === "confluence_read" || operation === "confluence_search") {
+    const grant = request.headers.get("x-tome-live-grant");
+    if (!grant || !/^[0-9a-f]{64}$/.test(grant)) throw new ApiError("A live verification turn grant is required", 403, "TOME_LIVE_GRANT_REQUIRED");
+    const sessions = await getCollection("tome_global_chat_sessions");
+    const grantQuery = { live_grant_hash: createHash("sha256").update(grant).digest("hex"), owner_subject: subject,
+      live_scope_hash: scope.hash, live_project_ids: entry.project_id, live_mode: query.get("live_mode"), lease_until: { $gt: new Date() } };
+    if (!await sessions.findOne(grantQuery, { projection: { _id: 1 } })) throw new ApiError("Live verification grant expired or is outside scope", 403, "TOME_LIVE_GRANT_UNAVAILABLE");
+    const result = await liveConfluenceEvidence(project, subject, operation, query);
+    if ((await buildTomeRetrievalScope(subject)).hash !== scope.hash ||
+        !await isTomeAdminSubject(subject) && !await canReadTomeProject(subject, project)) {
+      throw new ApiError("TOME access changed during verification", 409, "TOME_SCOPE_CHANGED");
+    }
+    const latestProject = await resolveProject(entry.project_id);
+    if (JSON.stringify(latestProject.sources) !== JSON.stringify(project.sources) ||
+        !await sessions.findOne({ ...grantQuery, lease_until: { $gt: new Date() } }, { projection: { _id: 1 } })) {
+      throw new ApiError("Source scope or live verification grant changed during the read", 409, "TOME_SCOPE_CHANGED");
+    }
+    return Response.json(result, { headers: { "Cache-Control": "private, no-store" } });
   }
   const pages = await (await getPageStore()).listPages(project._id);
   const offset = integer(query.get("offset"), 0, 10_000_000);

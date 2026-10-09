@@ -144,6 +144,8 @@ class RetrievalMessage(BaseModel):
 class ChatRequest(BaseModel):
     global_chat: bool = False
     """Read-only reasoning over a caller-scoped published view, without MCP or SDK tools."""
+    live_verification: Literal["off", "required", "automatic"] = "off"
+    live_verification_grant: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
     retrieval_scope_hash: str | None = Field(default=None, max_length=64)
     retrieval_history: list[RetrievalMessage] = Field(default_factory=list, max_length=8)
     myagent_research: bool = False

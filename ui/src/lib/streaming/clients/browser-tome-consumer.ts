@@ -25,7 +25,8 @@ export class TomeStreamAdapter implements StreamAdapter {
       const response = await fetch("/api/tome/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ message: params.message, conversation_id: params.conversationId }),
+        body: JSON.stringify({ message: params.message, conversation_id: params.conversationId,
+          ...(typeof params.forwardedProps?.verify_sources === "boolean" ? { verify_sources: params.forwardedProps.verify_sources } : {}) }),
         signal: this.controller.signal,
       });
       if (!response.ok) throw await buildStreamErrorFromResponse(response);

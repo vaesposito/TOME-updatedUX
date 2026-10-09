@@ -51,6 +51,7 @@ flowchart TD
 
 - `tome_agent_search(query, scope?, session_id?)` is the primary global delegation
   tool. `tome_ask_global(question, scope?, session_id?)` aliases the same service.
+  Both accept optional `verify_sources` for the runtime-controlled live comparison.
   Raw list/get tools and project-scoped `tome_ask` remain available.
 - Both boundaries check the registered agent's use permission and derive the
   subject from authenticated credentials. MCP accepts existing user-owned TOME
@@ -109,6 +110,8 @@ flowchart TD
 | `glob_pages` | Paths with `*`, `?`, whole-segment `**`; optional entity/type filters | 200 paths/result, pagination |
 | `search_pages` | Ranked keyword excerpts or literal ripgrep; optional entity/type/path filters | 20 excerpts/result, pagination and coverage |
 | `read_project_page` | Published Markdown by character offset or line range | 48,000 characters/read, continuation offset |
+| `search_confluence` | Optional live discovery within a project's configured site/space/root scope | Six matches/site, at most 12 returned |
+| `read_confluence_page` | Optional current storage body and revision metadata | 24,000 code points/chunk, revision-bound continuation |
 
 - Keyword ranking uses term frequency, corpus rarity and title/heading matches.
   It is not semantic/vector search. Literal search uses a fixed ripgrep invocation
@@ -120,6 +123,42 @@ flowchart TD
   32 function calls. Preparation is limited to 75 seconds and a turn to 270 seconds.
 - Streaming honors backpressure; Mongo exports heads in small cursor batches.
   Integrity/count/hash checks reject incomplete or oversized views before reasoning.
+
+### Optional live verification
+
+- **TOME Settings → Assistant** sets `tome_live_verification_mode` in
+  `platform_config`: **Off** (default), **On demand**, or **Automatic**.
+  Popup visibility remains a separate setting.
+- On demand requires the per-question **Verify with Confluence** choice.
+  Automatic checks time-sensitive terms in the question or stale-evidence wording
+  in the answer. This heuristic uses no fixed two-day ingestion-age threshold.
+  **Wiki only** skips live verification for that question.
+- Browser chat and both global MCP tools accept optional `verify_sources`:
+  true requests verification, false skips it, omission follows runtime policy.
+  Requests for verification while Off fail with a clear 409 error.
+  A native runtime that does not acknowledge the policy cannot complete the turn;
+  deploy matching UI and agent images before enabling verification.
+- The native functions call the BFF directly. Caller-owned connected credentials
+  are resolved for exact configured sites, with configured space/root filtering.
+  OAuth tokens remain in the BFF. Current TOME authorization and a hashed,
+  expiring turn grant restrict live reads to the selected caller-accessible scope.
+  Source configuration and grant validity are checked again after each read.
+- Independent source pages are read concurrently, up to three at a time. Reads
+  require a complete storage body from one consistent revision. Search snippets
+  and incomplete chunks cannot establish claim support.
+- A separate native model pass compares answer claims with complete live bodies,
+  marks supported/conflicting/unverified claims and revises contradicted claims.
+  This is model-assisted review, not a formal correctness guarantee. No search
+  results cannot establish that no event or launch occurred.
+- `live_verification` in completion/MCP results reports status, claim checks,
+  current source URLs/revisions/read times and gaps. Timeouts, access failures
+  and failed comparison remain unverified. Published wiki dates and ingestion
+  freshness are not changed by verification.
+  Completed means the comparison finished; it does not mean every claim passed.
+- Bounds: 20 live calls, 120,000 live body characters, 8 MiB HTTP responses,
+  six pages and 65 seconds in the forced completion phase. Total turn bounds
+  still apply; comparison adds one model request after primary reasoning and can
+  add latency. Time-sensitive completion also searches for newly published pages.
 
 ### Isolation, authority and history
 
@@ -136,6 +175,9 @@ flowchart TD
 - Mongo stores eight bounded user/assistant messages per user/conversation, with
   a seven-day TTL and a lease serializing active turns. Raw pages and tool results
   are not persisted. Each participant has separate model context.
+- Live-enabled turns retain only user questions, discarding generated live answer
+  text and provider bodies from private context. Subsequent turns must reread
+  evidence under current access. Visible GRID history is retained separately.
 - GRID retains visible messages and tool timelines under conversation permissions.
   Resetting private model context does not erase already-shared visible messages.
 - Ingestion still writes under each project's lock and keeps its existing source

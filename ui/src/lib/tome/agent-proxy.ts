@@ -179,6 +179,8 @@ export interface ProjectSnapshot {
 
 /** ChatRequest — mirrors contract.ChatRequest. */
 export interface AgentChatRequest {
+  live_verification?: "off" | "required" | "automatic";
+  live_verification_grant?: string | null;
   retrieval_scope_hash?: string;
   retrieval_history?: Array<{ role: "user" | "assistant"; content: string }>;
   global_chat?: boolean;
@@ -407,7 +409,7 @@ function parseConfluenceSpaceUrl(
  * `confluence_spaces` array; falls back to parsing the legacy single
  * `confluence_url` the wizard writes today.
  */
-function projectConfluenceSpaces(
+export function projectConfluenceSpaces(
   project: Pick<ProjectDocument, "sources">,
 ): ConfluenceSpaceSnapshot[] {
   const typed = project.sources?.confluence_spaces ?? [];

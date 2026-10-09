@@ -36,6 +36,7 @@ export interface TomeAgentSearchResult {
   missing_evidence: string[];
   warnings: string[];
   context_coverage: Record<string, unknown>;
+  live_verification: Record<string, unknown>;
 }
 
 const STRING = { type: "string" };
@@ -68,8 +69,9 @@ export const TOME_AGENT_SEARCH_OUTPUT_SCHEMA: Record<string, unknown> = {
     citations: { type: "array", items: SOURCE_SCHEMA }, sources_consulted: { type: "array", items: SOURCE_SCHEMA },
     entities_consulted: { type: "array", items: STRING }, missing_evidence: { type: "array", items: STRING },
     warnings: { type: "array", items: STRING }, context_coverage: { type: "object" },
+    live_verification: { type: "object" },
   },
-  required: ["answer", "completion_status", "session_id", "scope", "citations", "sources_consulted", "entities_consulted", "missing_evidence", "warnings", "context_coverage"],
+  required: ["answer", "completion_status", "session_id", "scope", "citations", "sources_consulted", "entities_consulted", "missing_evidence", "warnings", "context_coverage", "live_verification"],
   additionalProperties: false,
 };
 
@@ -120,7 +122,8 @@ export async function tomeAgentSearch(
   origin: string,
 ): Promise<TomeAgentSearchResult> {
   if (!isTomeServerEnabled()) throw new ApiError("Not found", 404, "NOT_FOUND");
-  if (Object.keys(args).some((key) => !["query", "scope", "session_id"].includes(key)) ||
+  if (Object.keys(args).some((key) => !["query", "scope", "session_id", "verify_sources"].includes(key)) ||
+      args.verify_sources !== undefined && typeof args.verify_sources !== "boolean" ||
       typeof args.query !== "string" || !args.query.trim() || args.query.length > 12_000) {
     throw new ApiError("query is required and must be at most 12000 characters", 400, "INVALID_SEARCH_ARGUMENTS");
   }
@@ -154,6 +157,7 @@ export async function tomeAgentSearch(
   const turn = await startTomeGlobalTurn({
     subject: session.sub, email: user.email, message: args.query,
     session: { kind: "mcp", id: args.session_id as string | undefined }, scope, signal: request.signal,
+    verifySources: args.verify_sources as boolean | undefined,
   });
   let answer = "";
   let completed: Record<string, unknown> | null = null;
@@ -175,5 +179,6 @@ export async function tomeAgentSearch(
     citations: sources(completed.citations, origin), sources_consulted: sources(completed.sources_consulted, origin),
     entities_consulted: strings(completed.entities_consulted), missing_evidence: strings(completed.missing_evidence),
     warnings: strings(completed.warnings), context_coverage: record(completed.context_coverage),
+    live_verification: record(completed.live_verification ?? { mode: "off", status: "not_requested", live_sources: [], claim_checks: [], warnings: [] }),
   };
 }

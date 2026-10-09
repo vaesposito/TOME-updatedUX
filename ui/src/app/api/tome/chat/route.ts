@@ -23,7 +23,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   if (auth.isServiceAccount || !auth.subject) {
     throw new ApiError("Interactive user identity required", 403, "TOME_USER_REQUIRED");
   }
-  const input = await request.json() as { message?: unknown; conversation_id?: unknown };
+  const input = await request.json() as { message?: unknown; conversation_id?: unknown; verify_sources?: unknown };
+  if (input.verify_sources !== undefined && typeof input.verify_sources !== "boolean") {
+    throw new ApiError("verify_sources must be a boolean", 400, "BAD_REQUEST");
+  }
   if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 12_000 ||
       typeof input.conversation_id !== "string" || input.conversation_id.length > 128) {
     throw new ApiError("A message and conversation_id are required", 400, "BAD_REQUEST");
@@ -49,6 +52,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const turn = await startTomeGlobalTurn({
     subject: auth.subject, email: auth.email, message: input.message,
     session: { kind: "grid", id: input.conversation_id }, signal: request.signal,
+    verifySources: input.verify_sources as boolean | undefined,
   });
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

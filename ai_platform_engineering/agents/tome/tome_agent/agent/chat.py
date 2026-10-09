@@ -183,6 +183,8 @@ async def stream_chat(
     actor_sub: str | None = None,
     is_compact: bool = False,
     global_chat: bool = False,
+    live_verification: str = "off",
+    live_verification_grant: str | None = None,
     retrieval_scope_hash: str | None = None,
     retrieval_history: list[RetrievalMessage] | None = None,
     myagent_research: bool = False,
@@ -219,6 +221,8 @@ async def stream_chat(
         async for event in stream_retrieval(
             user_message=user_message, snapshot=snapshot, actor_sub=actor_sub,
             scope_hash=retrieval_scope_hash, history=retrieval_history or [], model=_chat_model(),
+            live_verification=live_verification,
+            live_verification_grant=live_verification_grant,
         ):
             yield event
         return

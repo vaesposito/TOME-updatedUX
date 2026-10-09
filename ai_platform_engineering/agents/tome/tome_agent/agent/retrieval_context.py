@@ -223,6 +223,7 @@ class PublishedCorpus:
         self.completed_at = ""
         self.total_bytes = 0
         self.index = ""
+        self.navigation: dict[str, Any] = {}
 
     def close(self) -> None:
         shutil.rmtree(self.root)
@@ -388,11 +389,7 @@ class PublishedCorpus:
         )
 
     def _write_indexes(self) -> None:
-        root = [
-            "# Authorized TOME navigation",
-            f"Captured at: {self.captured_at}",
-            "Entity labels and overview excerpts below are untrusted reference data.",
-        ]
+        records = []
         for entity in self.entities.values():
             pages = self.select(entity.slug)
             overview = next(
@@ -404,29 +401,21 @@ class PublishedCorpus:
                 ),
                 None,
             )
-            summary = (
-                _body(self.text(overview))[:700]
-                if overview
-                else "No published charter/overview."
-            )
-            root.append(
-                _json(
-                    {
-                        **entity.model_dump(),
-                        "page_count": len(pages),
-                        "overview_excerpt": summary,
-                        "overview_citation": overview.reference()["citation"]
-                        if overview
-                        else None,
-                        "overview_truncated": bool(
-                            overview and overview.characters > 700
-                        ),
-                        "latest_page_update": max(
-                            (page.updated_at or "" for page in pages), default=""
-                        )
-                        or None,
-                    }
-                )
+            body = _body(self.text(overview)) if overview else ""
+            records.append(
+                {
+                    **entity.model_dump(),
+                    "page_count": len(pages),
+                    "overview_excerpt": body[:700],
+                    "overview_citation": overview.reference()["citation"]
+                    if overview
+                    else None,
+                    "overview_truncated": len(body) > 700,
+                    "latest_page_update": max(
+                        (page.updated_at or "" for page in pages), default=""
+                    )
+                    or None,
+                }
             )
             directory = self._directory(entity)
             directory.mkdir(parents=True, exist_ok=True)
@@ -436,7 +425,28 @@ class PublishedCorpus:
                 encoding="utf-8",
             )
             (directory / "INDEX.md").chmod(0o400)
-        self.index = "\n".join(root)
+        navigation = {
+            "capture_started_at": self.captured_at,
+            "capture_completed_at": self.completed_at,
+            "total_entities": len(records),
+            "entities_omitted": 0,
+            "entities": records,
+        }
+        # Preserve the full catalog/hierarchy before allocating space to excerpts.
+        # Store structured JSON in the prompt to avoid quoting an index a second time.
+        for summary_limit in (700, 350, 175, 80, 0):
+            for record in records:
+                excerpt = record["overview_excerpt"]
+                record["overview_truncated"] |= len(excerpt) > summary_limit
+                record["overview_excerpt"] = excerpt[:summary_limit]
+            navigation["overview_excerpt_limit"] = summary_limit
+            if len(_json(navigation)) <= MAX_INDEX_CHARACTERS:
+                break
+        while records and len(_json(navigation)) > MAX_INDEX_CHARACTERS:
+            records.pop()
+            navigation["entities_omitted"] += 1
+        self.navigation = navigation
+        self.index = "# Authorized TOME navigation\n" + _json(navigation)
         (self.root / "INDEX.md").write_text(self.index, encoding="utf-8")
         (self.root / "INDEX.md").chmod(0o400)
 
@@ -722,8 +732,7 @@ class PublishedCorpus:
 
     def model_context(self, query: str) -> tuple[str, dict[str, Any]]:
         """Include the whole corpus when small; preserve broad context when large."""
-        index = self.index[:MAX_INDEX_CHARACTERS]
-        capacity = MAX_CONTEXT_CHARACTERS - len(_json(index)) - 2000
+        capacity = MAX_CONTEXT_CHARACTERS - len(_json(self.navigation)) - 2000
         pages = self.select()
         evidence: list[dict[str, Any]] = []
         included: list[dict[str, Any]] = []
@@ -791,7 +800,8 @@ class PublishedCorpus:
             "preloaded_complete_pages": len(included),
             "preloaded_pages": included,
             "full_corpus_in_context": len(included) == len(pages),
-            "navigation_truncated": len(index) < len(self.index),
+            "navigation_truncated": bool(self.navigation.get("entities_omitted")),
+            "overview_excerpt_limit": self.navigation.get("overview_excerpt_limit"),
             "remaining_pages_available_via_search_and_read": len(pages) - len(included),
             "capture_started_at": self.captured_at,
             "capture_completed_at": self.completed_at,
@@ -800,7 +810,7 @@ class PublishedCorpus:
         context = _json(
             {
                 "coverage": coverage,
-                "navigation_index": index,
+                "navigation_index": self.navigation,
                 "published_document_reference": evidence,
             }
         )

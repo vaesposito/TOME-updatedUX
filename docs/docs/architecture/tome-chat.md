@@ -55,6 +55,9 @@ flowchart TD
 - Small corpora enter context in full. Larger corpora preload an authorized
   navigation index with overview excerpts, broad charters, question-relevant
   complete documents, then core progress/decision/memory documents.
+- Navigation preserves entity identities and relationships before allocating
+  space to overview excerpts. Excerpts shrink to fit the navigation budget;
+  exceptionally large catalogs retain whole entries and report omitted entities.
 - Remaining pages stay available through scoped search and reads. Context records
   the exact preloaded pages and any omitted navigation; no silent full-coverage claim.
 - Citation references carry page path, revision id/time, content hash and capture

@@ -9,6 +9,7 @@
  */
 
 import { collectForwardedCredentials } from "@/lib/projects/onboarding-providers";
+import { ApiError } from "@/lib/api-error";
 import {
   githubRepoSlug,
   githubSourceFromValue,
@@ -33,7 +34,8 @@ import type { MyAgentEvidence } from "./myagent-webex";
 /**
  * Wire shape for forwarded user credentials. The agent reads these off the
  * request and routes them to the right MCP per-call. Values are strings on
- * the wire (incl. `expires_in`); the agent parses defensively.
+ * the wire (incl. `expires_in` and JSON-encoded `confluence_sites` bindings);
+ * the agent parses defensively.
  */
 export type ForwardedCredentials = Record<string, Record<string, string>>;
 
@@ -61,9 +63,14 @@ export function sessionSub(session: unknown): string {
  */
 export async function resolveCredentialsForSub(
   sub: string,
+  confluenceSiteUrls: string[] = [],
 ): Promise<ForwardedCredentials> {
-  if (!sub) return {};
-  return collectForwardedCredentials(sub, ALL_PROVIDERS);
+  if (!sub) {
+    if (confluenceSiteUrls.length) throw new ApiError("A signed-in credential owner is required for Confluence source reads.",
+      401, "CONFLUENCE_USER_REQUIRED");
+    return {};
+  }
+  return collectForwardedCredentials(sub, ALL_PROVIDERS, { confluenceSiteUrls });
 }
 
 /**
@@ -80,7 +87,8 @@ export async function resolveProjectCredentials(
     userEmail?: string | null;
   },
 ): Promise<ForwardedCredentials> {
-  const credentials = await resolveCredentialsForSub(sub);
+  const credentials = await resolveCredentialsForSub(sub, options.sourceScope === "webex_meetings"
+    ? [] : projectConfluenceSpaces(project).map((source) => source.base_url));
   if (options.sourceScope === "webex_meetings" || options.purpose === "chat") return credentials;
   if ((project.sources?.webex_rooms?.length ?? 0) === 0) return credentials;
 
@@ -400,7 +408,7 @@ function parseConfluenceSpaceUrl(
  * `confluence_url` the wizard writes today.
  */
 function projectConfluenceSpaces(
-  project: ProjectDocument,
+  project: Pick<ProjectDocument, "sources">,
 ): ConfluenceSpaceSnapshot[] {
   const typed = project.sources?.confluence_spaces ?? [];
   if (typed.length > 0) return typed.map(toConfluenceSpaceSnapshot);

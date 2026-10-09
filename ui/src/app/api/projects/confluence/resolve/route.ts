@@ -7,6 +7,7 @@ import {
   withErrorHandler,
 } from "@/lib/api-middleware";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
+import { resolveConfluenceSiteCredentials } from "@/lib/credentials/confluence-sites";
 import {
   parseConfluenceUrl,
   type ConfluenceTreePage,
@@ -14,11 +15,6 @@ import {
 
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 500;
-
-interface AccessibleResource {
-  id?: string;
-  url?: string;
-}
 
 interface SearchContent {
   id?: string;
@@ -242,55 +238,14 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
 
   const service = await getProviderConnectionService();
-  const connection = (
-    await service.listConnections({ type: "user", id: sub })
-  ).find(
-    (candidate) =>
-      candidate.provider === "atlassian" && candidate.status === "connected",
+  const credentials = await resolveConfluenceSiteCredentials(
+    service, await service.listConnections({ type: "user", id: sub }), [parsed.base_url],
   );
-  if (!connection) {
-    throw new ApiError(
-      "Connect Atlassian before previewing a page",
-      409,
-      "ATLASSIAN_NOT_CONNECTED",
-    );
-  }
-  const token = (await service.refreshConnection(connection.id)).accessToken;
+  const binding = credentials[parsed.base_url];
+  const token = binding.access_token;
+  const site = { id: binding.cloud_id, url: parsed.base_url };
 
-  const resourcesResponse = await fetch(
-    "https://api.atlassian.com/oauth/token/accessible-resources",
-    {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      cache: "no-store",
-    },
-  );
-  if (!resourcesResponse.ok) {
-    throw new ApiError(
-      "Could not resolve the connected Atlassian site",
-      502,
-      "ATLASSIAN_RESOURCES_FAILED",
-    );
-  }
-  const resources = (await resourcesResponse
-    .json()
-    .catch(() => [])) as AccessibleResource[];
-  const site = resources.find((resource) => {
-    if (!resource.id || !resource.url) return false;
-    try {
-      return new URL(resource.url).origin === parsed.base_url;
-    } catch {
-      return false;
-    }
-  });
-  if (!site?.id || !site.url) {
-    throw new ApiError(
-      "This source is not on your connected Atlassian site",
-      400,
-      "CONFLUENCE_SITE_MISMATCH",
-    );
-  }
-
-  const gateway = `https://api.atlassian.com/ex/confluence/${site.id}`;
+  const gateway = `https://api.atlassian.com/ex/confluence/${encodeURIComponent(site.id)}`;
   if (!parsed.page_id && parsed.space_key) {
     const space = await fetchConfluenceSpace(gateway, token, parsed.space_key);
     if (!space?.key) {

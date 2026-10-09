@@ -178,7 +178,9 @@ class ChatRequest(BaseModel):
     """Per-request OAuth credentials forwarded from the caller. Keyed by
     provider slug (`github`, `atlassian`, `webex`). Each value carries
     `access_token` and optionally `expires_in` (string seconds, parse
-    defensively as 0 = unknown), `cloud_id`, `site_url`. Stays in the
+    defensively as 0 = unknown), `cloud_id`, `site_url`, and JSON-encoded
+    `confluence_sites` mapping configured origins to caller-owned tokens/cloud
+    IDs. Legacy Confluence bindings must carry a matching `site_url`. Stays in the
     request's ContextVar — never written to disk or logs."""
 
 

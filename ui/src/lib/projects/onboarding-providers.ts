@@ -8,6 +8,8 @@ import {
 } from "@/lib/projects/onboarding-config";
 import { confluenceSpaceUrl } from "@/lib/projects/confluence-source";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
+import { resolveConfluenceSiteCredentials } from "@/lib/credentials/confluence-sites";
+import { ApiError } from "@/lib/api-error";
 
 export interface ProvisionResult {
   mock_ref: string;
@@ -146,26 +148,36 @@ function renderBodyTemplate(value: unknown, ctx: Record<string, unknown>): unkno
  * tab) for the providers a step opted into via `forwardCredentials`, so the
  * target system can act with the user's own creds. Best-effort: a provider the
  * user hasn't connected is simply omitted. For `atlassian` we also resolve the
- * first accessible site's cloud id + url (needed by Confluence/Jira APIs).
+ * first accessible site's cloud id + url for legacy consumers. TOME supplies
+ * configured site URLs and receives a separate credential binding for each.
  */
 export async function collectForwardedCredentials(
   sub: string,
   providers: string[],
+  options: { confluenceSiteUrls?: string[] } = {},
 ): Promise<Record<string, Record<string, string>>> {
   const out: Record<string, Record<string, string>> = {};
   let service: Awaited<ReturnType<typeof getProviderConnectionService>>;
   try {
     service = await getProviderConnectionService();
   } catch {
+    if (options.confluenceSiteUrls?.length) throw new ApiError("Could not load connected Atlassian credentials. Retry from Connections.", 503, "ATLASSIAN_CONNECTIONS_UNAVAILABLE");
     return out;
   }
   let connections: Awaited<ReturnType<typeof service.listConnections>> = [];
   try {
     connections = await service.listConnections({ type: "user", id: sub });
   } catch {
+    if (options.confluenceSiteUrls?.length) throw new ApiError("Could not load connected Atlassian credentials. Retry from Connections.", 503, "ATLASSIAN_CONNECTIONS_UNAVAILABLE");
     return out;
   }
   for (const provider of providers) {
+    if (provider === "atlassian" && options.confluenceSiteUrls?.length) {
+      const sites = await resolveConfluenceSiteCredentials(service, connections, options.confluenceSiteUrls);
+      const [siteUrl, site] = Object.entries(sites)[0];
+      out[provider] = { ...site, site_url: siteUrl, confluence_sites: JSON.stringify(sites) };
+      continue;
+    }
     const conn = connections.find((c) => c.provider === provider && c.status === "connected");
     if (!conn) continue;
     let accessToken = "";

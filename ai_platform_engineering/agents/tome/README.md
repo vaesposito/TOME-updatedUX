@@ -274,6 +274,19 @@ semantic understanding or a UI-to-wiki run.
 
 ## Confluence body chunking
 
+- Native project chat and ingestion resolve each configured Confluence site
+  against the calling user's Atlassian accessible resources. Site URLs match
+  by HTTPS origin, ignoring page paths and trailing slashes; only resources
+  with Confluence scopes qualify. Missing, ambiguous or unverifiable sites
+  produce a connection error before dispatch.
+- Multiple sites use separate SDK connectors and caller-owned credentials,
+  each limited to that site's attached spaces and selected page roots. Tool
+  names identify the site in the agent's source instructions. Body coverage
+  is tracked separately even when page IDs overlap between sites.
+- Both source previews and ingest preflight use the same site bindings.
+  The global published-wiki retrieval runtime continues using TOME access
+  checks; this connector resolution applies to live project source reads.
+
 - `confluence_get_page_content(page_id)` returns the first storage XHTML chunk
   with source version/time, `content_revision`, `total_chars`, and `next_offset`.
 - Each body response is capped at **8,000 serialized UTF-8 bytes**, including

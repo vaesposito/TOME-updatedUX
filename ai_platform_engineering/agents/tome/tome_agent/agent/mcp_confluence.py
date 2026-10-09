@@ -49,12 +49,13 @@ _CONFLUENCE_ALLOWED_ARGS = frozenset(
 )
 
 
-def _confluence_canonical_uri(tool_name: str, args: dict[str, Any]) -> str:
+def _confluence_canonical_uri(tool_name: str, args: dict[str, Any], *, cloud_id: str = "") -> str:
+    origin = "confluence://" + (quote(cloud_id, safe="") + "/" if cloud_id else "")
     if args.get("page_id"):
-        return f"confluence://pages/{args['page_id']}"
+        return f"{origin}pages/{args['page_id']}"
     if args.get("space_key"):
-        return f"confluence://spaces/{args['space_key']}"
-    return "confluence://spaces"
+        return f"{origin}spaces/{args['space_key']}"
+    return origin + "spaces"
 
 
 _ConfluenceTool = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -338,6 +339,8 @@ def build_confluence_mcp(
     page_scoped_space_keys: list[str] | None = None,
     selected_root_page_ids: list[str] | None = None,
     read_state: ConfluenceReadState | None = None,
+    server_name: str = "confluence",
+    read_namespace: str = "",
 ):
     """Create the MCP server for Confluence API calls (v1 / CQL).
 
@@ -351,7 +354,7 @@ def build_confluence_mcp(
     keys are conventionally upper-case but referenced inconsistently).
     """
 
-    base_url = f"https://api.atlassian.com/ex/confluence/{cloud_id}/wiki/rest/api"
+    base_url = f"https://api.atlassian.com/ex/confluence/{quote(cloud_id, safe='')}/wiki/rest/api"
     _site_url = site_url.rstrip("/") if site_url else ""
     _allowed = {k.upper() for k in (allowed_space_keys or []) if k}
     _page_scoped = {k.upper() for k in (page_scoped_space_keys or []) if k}
@@ -359,6 +362,10 @@ def build_confluence_mcp(
         str(page_id) for page_id in (selected_root_page_ids or []) if page_id
     }
     _discovered_page_ids = set(_selected_roots)
+    fetch_recorder = partial(
+        record_fetch, connector="confluence", allowed_arg_keys=_CONFLUENCE_ALLOWED_ARGS,
+        canonical_uri=partial(_confluence_canonical_uri, cloud_id=cloud_id),
+    ) if read_namespace else _record_fetch
 
     def _in_scope(space_key: str) -> bool:
         return bool(space_key) and space_key.upper() in _allowed
@@ -378,7 +385,7 @@ def build_confluence_mcp(
             except (httpx.RequestError, ValueError, TypeError, KeyError, AttributeError) as exc:
                 result = _err(_read_error(exc))
             if read_state is not None:
-                read_state.record(page_id, result)
+                read_state.record(read_namespace + page_id, result)
             return result
         return tracked
 
@@ -391,7 +398,7 @@ def build_confluence_mcp(
                 except (httpx.RequestError, ValueError, TypeError, KeyError, AttributeError) as exc:
                     result = _err(_read_error(exc))
                 if read_state is not None:
-                    key = tool_name + ":" + json.dumps(args, sort_keys=True)
+                    key = read_namespace + tool_name + ":" + json.dumps(args, sort_keys=True)
                     if result.get("is_error"):
                         read_state.errors[key] = "Confluence discovery failed"
                     else:
@@ -436,7 +443,7 @@ def build_confluence_mcp(
         "confluence_get_pages.",
         {},
     )
-    @_record_fetch(tool_name="confluence_list_spaces")
+    @fetch_recorder(tool_name="confluence_list_spaces")
     @track_discovery("confluence_list_spaces")
     async def list_spaces(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
@@ -471,7 +478,7 @@ def build_confluence_mcp(
         "changed recently. Optional `limit` (default 25).",
         {"space_key": str, "limit": int},
     )
-    @_record_fetch(tool_name="confluence_get_pages")
+    @fetch_recorder(tool_name="confluence_get_pages")
     @track_discovery("confluence_get_pages")
     async def get_pages(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
@@ -521,7 +528,7 @@ def build_confluence_mcp(
         "continuation call is needed. `page_id` is the selected root page.",
         {"page_id": str},
     )
-    @_record_fetch(tool_name="confluence_get_page_tree")
+    @fetch_recorder(tool_name="confluence_get_page_tree")
     @track_discovery("confluence_get_page_tree")
     async def get_page_tree(args: dict) -> dict[str, Any]:
         if not token or not cloud_id:
@@ -787,7 +794,7 @@ def build_confluence_mcp(
         "alone is not the complete page.",
         {"page_id": str},
     )
-    @_record_fetch(tool_name="confluence_get_page_content")
+    @fetch_recorder(tool_name="confluence_get_page_content")
     @track_content_read
     async def get_page_content(args: dict[str, Any]) -> dict[str, Any]:
         page = await fetch_page_content((args.get("page_id") or "").strip())
@@ -806,7 +813,7 @@ def build_confluence_mcp(
         "confluence_get_page_content; never combine different revisions.",
         {"page_id": str, "offset": int, "content_revision": str, "limit": int},
     )
-    @_record_fetch(tool_name="confluence_get_page_content_chunk")
+    @fetch_recorder(tool_name="confluence_get_page_content_chunk")
     @track_content_read
     async def get_page_content_chunk(args: dict[str, Any]) -> dict[str, Any]:
         offset = args.get("offset")
@@ -835,7 +842,7 @@ def build_confluence_mcp(
         return _page_content_result(page, offset=offset, limit=limit)
 
     return create_sdk_mcp_server(
-        name="confluence",
+        name=server_name,
         version="0.8.0",
         tools=[
             list_spaces,

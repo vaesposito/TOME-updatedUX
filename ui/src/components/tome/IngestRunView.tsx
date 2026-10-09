@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { ChevronLeft, Square } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
@@ -91,17 +92,13 @@ export function IngestRunView({
       )}
 
       {!selectedChild && parent?.status === "awaiting_review" && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-800/30 bg-amber-950/20 px-4 py-2.5">
-          <p className="text-sm text-amber-300">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 dark:border-amber-800/30 dark:bg-amber-950/20">
+          <p className="text-sm text-amber-800 dark:text-amber-300">
             This run&apos;s page changes are held as a draft, pending review.
           </p>
-          <button
-            type="button"
-            onClick={() => onReviewDraft?.(runId)}
-            className="shrink-0 rounded bg-amber-600/80 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-600"
-          >
+          <Button size="sm" className="shrink-0" onClick={() => onReviewDraft?.(runId)}>
             Review diff
-          </button>
+          </Button>
         </div>
       )}
 

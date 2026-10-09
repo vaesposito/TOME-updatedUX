@@ -764,6 +764,7 @@ function depthForNode(path: string): number {
 
 function pathToTitle(path: string): string {
   const leaf = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
+  if (path === "sharepoint") return "SharePoint";
   return leaf
     .replace(/[-_]/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());

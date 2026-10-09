@@ -26,6 +26,7 @@ import {
   type ManualWebexMeetingSelection,
 } from "@/lib/tome/webex-meeting-series";
 import type { ProjectDocument } from "@/types/projects";
+import { prepareManualSharePointDocuments } from "@/lib/tome/sharepoint";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     /** Re-ingest every child project first, then synthesize (a cascade). */
     refreshChildren?: boolean;
     webexMeetings?: ManualWebexMeetingSelection[];
+    sharepointDocuments?: unknown;
   };
 
   const childRefs =
@@ -108,6 +110,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   }
 
   try {
+    const sharepointDocuments = await prepareManualSharePointDocuments(body.sharepointDocuments, tctx.project.sources?.sharepoint_documents, tctx.projectId);
     // Cascade: enqueue a re-ingest per child, then the synthesize. The queue
     // worker drains them; the parent runs once all children are terminal.
     if (body.refreshChildren) {
@@ -124,6 +127,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         seed: body.seed ?? null,
         seedStablePages: body.seedStablePages,
         webexMeetings,
+        sharepointDocuments,
       });
       auditTome({
         action: "tome.synthesize.trigger",
@@ -145,6 +149,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       seedStablePages: body.seedStablePages,
       agentEndpoint: "/synthesize",
       webexMeetings,
+      sharepointDocuments,
     });
     auditTome({
       action: "tome.synthesize.trigger",

@@ -47,6 +47,7 @@ function nameKey(name: string): string {
 }
 
 function nameFromPath(path: string): string {
+  if (path === "sharepoint") return "SharePoint";
   const leaf = path.split("/").pop() ?? path;
   return leaf;
 }

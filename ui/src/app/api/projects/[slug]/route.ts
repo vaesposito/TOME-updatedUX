@@ -34,6 +34,8 @@ import {
   normalizeWebexCredentialSettings,
 } from "@/lib/tome/managed-webex";
 import { prepareWebexRooms } from "@/lib/tome/webex-room-execution";
+import { prepareSharePointSources } from "@/lib/tome/sharepoint";
+import { sharePointSourceKey } from "@/lib/projects/sharepoint-source";
 import { resolveUniqueTomeProjectBySlug } from "@/lib/tome/project-resolver";
 import {
   getTomeReadConfiguration,
@@ -114,6 +116,8 @@ function auditSourceChanges(
     );
 
   diffList("repo", before?.repos ?? [], after?.repos ?? []);
+  diffList("sharepoint_document", (before?.sharepoint_documents ?? []).map(sharePointSourceKey),
+    (after?.sharepoint_documents ?? []).map(sharePointSourceKey));
   diffList(
     "webex_room",
     (before?.webex_rooms ?? []).map((r) => r.room_id).filter(Boolean),
@@ -309,6 +313,7 @@ export const PATCH = withErrorHandler(
       areas?: string[];
       team_id?: string;
       sources?: {
+        sharepoint_documents?: unknown;
         repos?: string[];
         github_repos?: unknown;
         confluence_url?: string;
@@ -496,6 +501,11 @@ export const PATCH = withErrorHandler(
       else $unset["optionality"] = "";
     }
     if (body.sources) {
+      if ("sharepoint_documents" in body.sources) {
+        $set["sources.sharepoint_documents"] = await prepareSharePointSources(
+          body.sources.sharepoint_documents, project.sources?.sharepoint_documents,
+        );
+      }
       if (
         "myagent_connectors" in body.sources ||
         "myagent_enabled" in body.sources ||

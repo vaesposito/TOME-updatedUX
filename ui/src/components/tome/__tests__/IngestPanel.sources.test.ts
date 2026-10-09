@@ -1,6 +1,18 @@
 import { sourcesFromProject } from "@/components/tome/IngestPanel";
 
 describe("sourcesFromProject", () => {
+  it("shows selected SharePoint files and their app-only execution identity", () => {
+    expect(sourcesFromProject({ sharepoint_documents: [{ drive_id: "drive-1", item_id: "item-1", name: "Example.pptx" }] })).toEqual([
+      { kind: "sharepoint", label: "SharePoint", connectorKey: "sharepoint", items: [{ sourceKey: "drive-1/item-1", label: "Example.pptx", detail: "Runs as: configured SharePoint application" }] },
+    ]);
+  });
+  it("keeps distinct SharePoint files with the same display name independently keyed", () => {
+    const rows = sourcesFromProject({ sharepoint_documents: [
+      { drive_id: "drive-1", item_id: "item-1", name: "Example.pdf" },
+      { drive_id: "drive-2", item_id: "item-1", name: "Example.pdf" },
+    ] });
+    expect(rows[0].items.map((item) => item.sourceKey)).toEqual(["drive-1/item-1", "drive-2/item-1"]);
+  });
   it("shows every selected Confluence root with its exact descendant scope", () => {
     const rows = sourcesFromProject({
       confluence_url: "https://example.atlassian.net/wiki/spaces/ENG",

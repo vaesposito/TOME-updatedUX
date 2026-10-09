@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { WikiSidebar } from "@/components/tome/WikiSidebar";
+import { buildTree } from "@/lib/tome/schema";
 import type { PageTreeNode } from "@/types/tome";
 
 const tree: PageTreeNode[] = [
@@ -63,5 +64,33 @@ describe("WikiSidebar drag and drop", () => {
     expect(onCreatePage).toHaveBeenCalledWith(folder);
     expect(screen.queryByRole("button", { name: "Move Planning up" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Move Planning down" })).not.toBeInTheDocument();
+  });
+});
+
+describe("SharePoint document navigation", () => {
+  const path = "sharepoint/doc-example.md";
+  const pages = { [path]: "---\ntitle: Garden Survey.pdf\nkind: dynamic\norder: 0\n---\n## Summary\n\nDocument summary." };
+
+  it("groups dedicated document pages in a collapsed SharePoint folder with its logo", () => {
+    const onSelect = jest.fn();
+    const { container } = render(<WikiSidebar tree={buildTree(pages)} selectedPath={null} onSelect={onSelect} showHidden={false} />);
+    expect(screen.getByText("SharePoint")).toBeInTheDocument();
+    expect(container.querySelector('img[src="/provider-logos/sharepoint.svg"]')).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Garden Survey.pdf" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand SharePoint" }));
+    fireEvent.click(screen.getByRole("button", { name: "Garden Survey.pdf" }));
+    expect(onSelect).toHaveBeenCalledWith(path);
+  });
+
+  it("keeps the logo and dedicated pages when the source folder is persisted", () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+    const folderTree = buildTree(pages, [{ id: "folder-source", project_id: "project-1", parent_id: null,
+      name: "SharePoint", name_key: "sharepoint", source_path: "sharepoint", order: 999,
+      owner_subject: "test-user@example.com", permission_scope: "project", created_at: now, updated_at: now, updated_by: "test-user@example.com" }]);
+    const { container } = render(<WikiSidebar tree={folderTree} selectedPath={null} onSelect={jest.fn()} showHidden={false} />);
+    expect(container.querySelector('img[src="/provider-logos/sharepoint.svg"]')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand SharePoint" }));
+    expect(screen.getByRole("button", { name: "Garden Survey.pdf" })).toBeInTheDocument();
+    expect(folderTree[0].folderId).toBe("folder-source");
   });
 });

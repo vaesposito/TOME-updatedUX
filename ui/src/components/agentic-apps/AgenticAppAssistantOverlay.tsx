@@ -316,19 +316,20 @@ export function AgenticAppAssistantOverlay({
   );
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+    // Reserve the app header and keep the launcher inside the available height.
+    <div className="pointer-events-none fixed inset-x-4 bottom-4 top-18 z-40 flex flex-col items-end justify-end gap-3 sm:inset-x-6 sm:bottom-6">
       {open ? (
         <section
           aria-label={headerTitle}
           className={cn(
-            "pointer-events-auto relative flex flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl transition-colors",
+            "pointer-events-auto relative flex min-h-0 flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl transition-colors",
             glassMode
               ? "bg-popover/80 shadow-[0_24px_60px_rgba(15,23,42,0.12)] ring-1 ring-cyan-500/25 backdrop-blur-3xl backdrop-saturate-200 dark:border-cyan-200/55 dark:bg-cyan-950/15 dark:shadow-[0_24px_120px_rgba(34,211,238,0.22),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_0_64px_rgba(34,211,238,0.10)] dark:ring-cyan-200/45"
               : "shadow-black/10 dark:border-cyan-300/20 dark:bg-slate-950/95 dark:shadow-cyan-950/40",
           )}
           style={{
-            width: expanded ? "calc(100vw - 3rem)" : `min(${panelSize.width}px, calc(100vw - 2rem))`,
-            height: expanded ? "calc(100dvh - 7rem)" : `min(${panelSize.height}px, calc(100vh - 7rem))`,
+            width: expanded ? "100%" : `min(${panelSize.width}px, 100%)`,
+            height: expanded ? "100%" : `min(${panelSize.height}px, 100%)`,
           }}
         >
           <button
@@ -501,7 +502,7 @@ export function AgenticAppAssistantOverlay({
       <button
         type="button"
         aria-label={`Open ${bubbleLabel}`}
-        className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-cyan-200/30 bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-200"
+        className="pointer-events-auto inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-200/30 bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-200"
         onClick={() => onOpenChange(!open)}
       >
         <MessageCircle className="h-4 w-4" aria-hidden />

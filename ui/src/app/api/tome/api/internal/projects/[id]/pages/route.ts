@@ -148,6 +148,15 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         runs.findOne({ report_id: body.report_id, project_id: project._id }),
       )
     : null;
+  // A slow callback from an interrupted worker must not change a draft that
+  // a reviewer may already be inspecting.
+  if (body.report_id && run?.status && run.status !== "running") {
+    throw new ApiError(
+      "This ingest run is no longer accepting page writes",
+      409,
+      "INGEST_RUN_NOT_RUNNING",
+    );
+  }
 
   // Stable pages are human-owned: "don't rewrite unless asked" (CHAT.md).
   // Until now nothing enforced the "unless asked" half — stable pages were

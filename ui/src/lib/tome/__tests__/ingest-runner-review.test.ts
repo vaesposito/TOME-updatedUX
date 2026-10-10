@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { finalizeDraftFileReview } from "../ingest-runner";
+import { approveDraftRun, finalizeDraftFileReview } from "../ingest-runner";
 
 const mockFindRun = jest.fn();
 const mockUpdateRun = jest.fn();
@@ -90,5 +90,22 @@ describe("finalizeDraftFileReview", () => {
     expect(mockFinalizeReport).not.toHaveBeenCalled();
     expect(mockUpdateRun).not.toHaveBeenCalled();
     expect(mockUpdateProject).not.toHaveBeenCalled();
+  });
+
+  it("requires individual file decisions before accepting an interrupted draft", async () => {
+    mockFindRun.mockResolvedValue({
+      _id: "run-example",
+      project_id: "project-example",
+      report_id: "report-example",
+      status: "awaiting_review",
+      interrupted: true,
+    });
+
+    await expect(approveDraftRun("run-example", "reviewer@example.test"))
+      .rejects.toThrow("review each draft file");
+    await expect(finalizeDraftFileReview("run-example", "reviewer@example.test", "accept"))
+      .rejects.toThrow("review each draft file");
+    expect(mockFinalizeReport).not.toHaveBeenCalled();
+    expect(mockUpdateRun).not.toHaveBeenCalled();
   });
 });

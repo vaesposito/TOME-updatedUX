@@ -47,6 +47,13 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   if (run.status !== "awaiting_review") {
     throw new ApiError("Run is not awaiting review", 409, "RUN_NOT_AWAITING_REVIEW");
   }
+  if (run.interrupted === true) {
+    throw new ApiError(
+      "Review each changed file before accepting an interrupted ingest draft.",
+      409,
+      "INTERRUPTED_DRAFT_REQUIRES_FILE_REVIEW",
+    );
+  }
   if ((run.file_reviews?.length ?? 0) > 0) {
     throw new ApiError(
       "A file-level review is in progress. Complete it with Done.",

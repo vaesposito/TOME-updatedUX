@@ -70,6 +70,7 @@ interface RunSummary {
   finished_at: string | null;
   log_lines: number;
   error: string | null;
+  interrupted?: boolean;
   review_deadline?: string | null;
   review_outcome?: "approved" | "partially_approved" | "rejected" | "auto_promoted" | null;
   reviewed_by?: string | null;
@@ -400,6 +401,7 @@ function RunsDialog({
                     className="flex flex-1 items-center gap-4 px-4 py-3 text-left text-sm transition-colors hover:bg-muted"
                   >
                     <StatusPill status={r.status} />
+                    {r.interrupted && <span className="text-xs text-amber-600">Interrupted run</span>}
                     <span className="w-40 shrink-0 truncate text-muted-foreground">
                       {new Date(r.started_at).toLocaleString()}
                     </span>
@@ -794,13 +796,15 @@ export function IngestPanel({
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                    Draft awaiting review
+                    {reviewRun.interrupted ? "Run interrupted · draft awaiting review" : "Draft awaiting review"}
                   </p>
                   <p className="mt-0.5 text-xs text-amber-800 dark:text-muted-foreground">
-                    {reviewRun.myagent_evidence_received
+                    {reviewRun.interrupted
+                      ? "The worker stopped before completing this run. Review the partial draft manually; it will not auto-promote."
+                      : reviewRun.myagent_evidence_received
                       ? "This run includes private delegated MyAgent evidence. It remains a draft until you explicitly approve it and will never auto-promote."
                       : "This run's page changes are held as a draft until approved."}
-                    {!reviewRun.myagent_evidence_received && reviewRun.review_deadline && (
+                    {!reviewRun.interrupted && !reviewRun.myagent_evidence_received && reviewRun.review_deadline && (
                       <> Auto-promotes {timeUntil(reviewRun.review_deadline)} if unreviewed.</>
                     )}{" "}
                     <button

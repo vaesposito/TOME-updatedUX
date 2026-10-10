@@ -27,6 +27,7 @@ interface RunDetail {
   started_at: string;
   finished_at: string | null;
   error: string | null;
+  interrupted?: boolean;
   log: string;
   report_id?: string | null;
   cascade_id?: string | null;
@@ -94,7 +95,9 @@ export function IngestRunView({
       {!selectedChild && parent?.status === "awaiting_review" && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 dark:border-amber-800/30 dark:bg-amber-950/20">
           <p className="text-sm text-amber-800 dark:text-amber-300">
-            This run&apos;s page changes are held as a draft, pending review.
+            {parent.interrupted
+              ? "The worker stopped before completing this run. Its partial draft needs manual review and will not auto-promote."
+              : "This run's page changes are held as a draft, pending review."}
           </p>
           <Button size="sm" className="shrink-0" onClick={() => onReviewDraft?.(runId)}>
             Review diff
@@ -246,7 +249,7 @@ function RunLogPane({
           {headerLeft}
           <span className={`inline-block h-2 w-2 rounded-full ${dotClass(status)}`} />
           <span className="truncate text-xs font-medium uppercase tracking-wider text-neutral-400">
-            {label} · {status}
+            {label} · {run?.interrupted && status === "awaiting_review" ? "interrupted · review draft" : status}
           </span>
           {ctxPct != null && (
             <span

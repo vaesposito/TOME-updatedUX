@@ -46,6 +46,13 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   if (decision !== undefined && decision !== "accept" && decision !== "reject") {
     throw new ApiError("Decision must be accept or reject", 400, "INVALID_REVIEW_DECISION");
   }
+  if (run.interrupted === true && decision === "accept") {
+    throw new ApiError(
+      "Review each changed file before accepting an interrupted ingest draft.",
+      409,
+      "INTERRUPTED_DRAFT_REQUIRES_FILE_REVIEW",
+    );
+  }
 
   const store = await getPageStore();
   const summary = summarizeDraftFileReviews(

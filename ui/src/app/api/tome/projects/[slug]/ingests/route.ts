@@ -52,6 +52,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       finished_at: r.finished_at ?? null,
       log_lines: privateDetailsRestricted ? 0 : r.log?.length ?? 0,
       error: privateDetailsRestricted ? null : r.error ?? null,
+      interrupted: r.interrupted === true,
       review_deadline: r.review_deadline ?? null,
       review_outcome: r.review_outcome ?? null,
       reviewed_by: r.reviewed_by ?? null,

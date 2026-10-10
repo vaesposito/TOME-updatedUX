@@ -62,6 +62,7 @@ async function runStream(events: IngestEvent[]): Promise<Record<string, unknown>
   mockFindRun.mockImplementation(async () => run);
   mockUpdateRun.mockImplementation(async (_filter, update) => {
     Object.assign(run, update.$set ?? {});
+    return { matchedCount: 1, modifiedCount: 1 };
   });
   const unlocked = new Promise<void>((resolve) => {
     mockUpdateProject.mockImplementation(async (_filter, update) => {

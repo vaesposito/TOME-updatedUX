@@ -133,10 +133,7 @@ helm show values oci://ghcr.io/cnoe-io/charts/caipe-ui --version 0.5.68
 | image.repository | string | `"ghcr.io/caipe-io/caipe-ui"` |  |
 | image.tag | string | `""` |  |
 | imagePullSecrets | list | `[]` |  |
-| ingress.annotations."nginx.ingress.kubernetes.io/proxy-body-size" | string | `"12m"` |  |
-| ingress.annotations."nginx.ingress.kubernetes.io/proxy-buffering" | string | `"off"` |  |
-| ingress.annotations."nginx.ingress.kubernetes.io/proxy-read-timeout" | string | `"330"` |  |
-| ingress.annotations."nginx.ingress.kubernetes.io/proxy-send-timeout" | string | `"330"` |  |
+| ingress.annotations | object | `{"nginx.ingress.kubernetes.io/proxy-body-size":"12m"}` |  |
 | ingress.className | string | `"nginx"` |  |
 | ingress.enabled | bool | `false` |  |
 | ingress.hosts[0].host | string | `"caipe-ui.local"` |  |

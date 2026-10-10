@@ -364,6 +364,22 @@ set its `TOME_AGENT_TOKEN` to the same value.
 - Browser chat sends an SSE comment heartbeat every 10 seconds during model
   reasoning and live-source comparison. Configure proxy timeouts above the
   bounded turn deadline; the BFF still cancels a turn after 290 seconds.
+- Set deployment-owned ingress read/send timeouts to at least 330 seconds for
+  `/api/tome/chat` and `/api/tome/mcp`, and disable response buffering. Chat
+  heartbeats keep SSE active; MCP tool responses can remain silent until the
+  answer is complete. These settings belong in the deployment's ingress values
+  or reverse-proxy configuration:
+
+  ```yaml
+  nginx.ingress.kubernetes.io/proxy-read-timeout: "330"
+  nginx.ingress.kubernetes.io/proxy-send-timeout: "330"
+  nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  ```
+
+  For a standalone nginx reverse proxy, configure `proxy_read_timeout 330s;`,
+  `proxy_send_timeout 330s;`, and `proxy_buffering off;` in both endpoint
+  locations. Check every proxy in the request path; an outer load balancer's
+  shorter idle timeout can still interrupt a non-streaming MCP result.
 - The same service runs project operations as SDK runs and global retrieval as
   direct Messages function calls. Global turns use neither MCP nor Claude Code.
 - `ChatRequest.global_chat` selects read-only retrieval. The BFF provides an

@@ -17,7 +17,7 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 from urllib.parse import quote
 
 from tome_agent.agent import http_client
@@ -29,12 +29,11 @@ MAX_PAGES = 20_000
 MAX_CONTEXT_CHARACTERS = 128_000
 MAX_INDEX_CHARACTERS = 32_000
 MAX_SEARCH_MATCHES = 1_000
-_Result = TypeVar("_Result")
 
 
-async def view_operation(
-    function: Callable[..., _Result], *args: Any, **kwargs: Any
-) -> _Result:
+async def view_operation[Result](
+    function: Callable[..., Result], *args: Any, **kwargs: Any
+) -> Result:
     """Finish bounded file work before cancellation can remove the private view."""
     task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
     try:

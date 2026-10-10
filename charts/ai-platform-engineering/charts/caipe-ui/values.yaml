@@ -70,11 +70,6 @@ ingress:
   className: "nginx"
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "12m"
-    # Keep proxy idle limits above the bounded native TOME turn.
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "330"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "330"
-    # Deliver chat events and keep-alive comments without response buffering.
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
     # kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
   hosts:

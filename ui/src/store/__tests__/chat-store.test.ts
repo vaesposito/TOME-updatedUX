@@ -1311,6 +1311,10 @@ describe('chat-store', () => {
         agentic_app_id: 'weather',
         agentic_app_agent_id: 'agent-weather',
       };
+      mockApiClient.createConversation.mockResolvedValueOnce({
+        conversation: { _id: 'server-generated-id', metadata },
+        created: true,
+      });
 
       const id = await useChatStore.getState().createConversation('agent-weather', {
         title: 'Weather Lab Assistant',

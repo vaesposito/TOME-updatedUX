@@ -309,10 +309,10 @@ export function AgenticAppAssistantOverlay({
         <section
           aria-label={headerTitle}
           className={cn(
-            "pointer-events-auto relative flex flex-col overflow-hidden rounded-3xl border shadow-2xl transition-colors",
+            "pointer-events-auto relative flex flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl transition-colors",
             glassMode
-              ? "border-cyan-200/55 bg-cyan-950/15 shadow-[0_24px_120px_rgba(34,211,238,0.22),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_0_64px_rgba(34,211,238,0.10)] ring-1 ring-cyan-200/45 backdrop-blur-3xl backdrop-saturate-200"
-              : "border-cyan-300/20 bg-slate-950/95 shadow-cyan-950/40",
+              ? "bg-popover/80 shadow-[0_24px_60px_rgba(15,23,42,0.12)] ring-1 ring-cyan-500/25 backdrop-blur-3xl backdrop-saturate-200 dark:border-cyan-200/55 dark:bg-cyan-950/15 dark:shadow-[0_24px_120px_rgba(34,211,238,0.22),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_0_64px_rgba(34,211,238,0.10)] dark:ring-cyan-200/45"
+              : "shadow-black/10 dark:border-cyan-300/20 dark:bg-slate-950/95 dark:shadow-cyan-950/40",
           )}
           style={{
             width: `min(${panelSize.width}px, calc(100vw - 2rem))`,
@@ -323,25 +323,25 @@ export function AgenticAppAssistantOverlay({
             type="button"
             aria-label={`Resize ${headerTitle}`}
             onPointerDown={handleResizeStart}
-            className="absolute left-3 top-3 z-10 flex h-10 w-10 cursor-nwse-resize touch-none items-center justify-center rounded-full border border-cyan-200/30 bg-slate-950/35 shadow-lg shadow-cyan-950/30 backdrop-blur-md transition hover:border-cyan-200/60 hover:bg-cyan-300/10"
+            className="absolute left-3 top-3 z-10 flex h-10 w-10 cursor-nwse-resize touch-none items-center justify-center rounded-full border border-border bg-background/60 shadow-lg backdrop-blur-md transition hover:border-cyan-500/50 hover:bg-cyan-500/10 dark:border-cyan-200/30 dark:bg-slate-950/35 dark:shadow-cyan-950/30 dark:hover:border-cyan-200/60 dark:hover:bg-cyan-300/10"
           >
-            <span className="absolute h-7 w-7 rounded-full border border-cyan-200/30" aria-hidden />
-            <span className="absolute h-4 w-4 rounded-full border border-cyan-300/40" aria-hidden />
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.8)]" aria-hidden />
+            <span className="absolute h-7 w-7 rounded-full border border-cyan-600/30 dark:border-cyan-200/30" aria-hidden />
+            <span className="absolute h-4 w-4 rounded-full border border-cyan-600/40 dark:border-cyan-300/40" aria-hidden />
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-600 shadow-[0_0_14px_rgba(34,211,238,0.5)] dark:bg-cyan-200 dark:shadow-[0_0_14px_rgba(34,211,238,0.8)]" aria-hidden />
           </button>
           <header
             className={cn(
-              "flex items-center justify-between gap-3 border-b border-white/10 py-3 pl-16 pr-4",
-              glassMode ? "bg-cyan-950/30 backdrop-blur-3xl" : "bg-white/[0.02]",
+              "flex items-center justify-between gap-3 border-b border-border py-3 pl-16 pr-4",
+              glassMode ? "bg-popover/40 backdrop-blur-3xl dark:bg-cyan-950/30" : "dark:bg-white/[0.02]",
             )}
           >
             <div className="flex min-w-0 items-center gap-2">
-              <span className="rounded-full bg-cyan-300/15 p-2 text-cyan-100">
+              <span className="rounded-full bg-cyan-500/10 p-2 text-cyan-700 dark:bg-cyan-300/15 dark:text-cyan-100">
                 <Bot className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold text-white">{headerTitle}</h2>
-                <p className="truncate text-xs text-slate-400">
+                <h2 className="truncate text-sm font-semibold text-foreground">{headerTitle}</h2>
+                <p className="truncate text-xs text-muted-foreground">
                   {activeContext ? `${activeContext.route} context active` : `Waiting for ${appId} context`}
                 </p>
               </div>
@@ -353,7 +353,7 @@ export function AgenticAppAssistantOverlay({
                 title="New chat"
                 disabled={conversationActionPending}
                 onClick={() => void handleNewChat()}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-white/10 hover:text-white disabled:cursor-wait disabled:opacity-50"
+                className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-50"
               >
                 {conversationActionPending ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
@@ -367,7 +367,7 @@ export function AgenticAppAssistantOverlay({
                 title="Clear chat"
                 disabled={!assistantConversation || conversationActionPending}
                 onClick={() => void handleClearChat()}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-red-400/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-full p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" aria-hidden />
               </button>
@@ -375,7 +375,7 @@ export function AgenticAppAssistantOverlay({
                 type="button"
                 aria-label={`Assistant font size ${fontScale}`}
                 onClick={() => setFontScale((value) => nextFontScale(value))}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/40 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 transition hover:text-white"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/40 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:text-foreground dark:border-white/10 dark:bg-slate-950/40"
               >
                 <Type className="h-3.5 w-3.5" aria-hidden />
                 {fontScaleLabel(fontScale)}
@@ -392,8 +392,8 @@ export function AgenticAppAssistantOverlay({
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-medium transition",
                   glassMode
-                    ? "border-cyan-200/70 bg-cyan-300/25 text-cyan-50 shadow-[0_0_24px_rgba(34,211,238,0.25)]"
-                    : "border-white/10 bg-slate-950/40 text-slate-300 hover:text-white",
+                    ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-800 shadow-[0_0_12px_rgba(34,211,238,0.18)] dark:border-cyan-200/70 dark:bg-cyan-300/25 dark:text-cyan-50 dark:shadow-[0_0_24px_rgba(34,211,238,0.25)]"
+                    : "border-border bg-background/40 text-muted-foreground hover:text-foreground dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-300 dark:hover:text-white",
                 )}
               >
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
@@ -401,7 +401,7 @@ export function AgenticAppAssistantOverlay({
               </button>
               <button
                 type="button"
-                className="rounded-full p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
                 aria-label="Close assistant"
                 onClick={() => onOpenChange(false)}
               >
@@ -411,24 +411,24 @@ export function AgenticAppAssistantOverlay({
           </header>
 
           <div className={cn(
-            "border-b border-white/10 px-4 py-3 text-xs text-slate-300",
-            glassMode ? "bg-cyan-300/15 backdrop-blur-2xl" : "bg-white/[0.03]",
+            "border-b border-border px-4 py-3 text-xs text-muted-foreground",
+            glassMode ? "bg-cyan-500/5 backdrop-blur-2xl dark:bg-cyan-300/15" : "dark:bg-white/[0.03]",
           )}>
             {activeContext ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-cyan-100">
+                  <span className="font-medium text-cyan-700 dark:text-cyan-100">
                     {activeContext.title ?? "Published app context"}
                   </span>
                   <button
                     type="button"
-                    className="rounded-full border border-white/10 px-2 py-1 text-[11px] text-slate-200 transition hover:bg-white/10"
+                    className="rounded-full border border-border px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-accent dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10"
                     onClick={onClearContext}
                   >
                     Clear context
                   </button>
                 </div>
-                {activeContext.summary ? <p className="line-clamp-2 text-slate-400">{activeContext.summary}</p> : null}
+                {activeContext.summary ? <p className="line-clamp-2 text-muted-foreground">{activeContext.summary}</p> : null}
               </div>
             ) : (
               <p>External apps can publish bounded page context. CAIPE treats it as untrusted data, not instructions.</p>
@@ -451,11 +451,11 @@ export function AgenticAppAssistantOverlay({
                 fontScale={fontScale}
               />
             ) : conversationError?.agentId === assistantAgentId ? (
-              <div className="flex h-full items-center justify-center p-6 text-center text-sm text-red-200">
+              <div className="flex h-full items-center justify-center p-6 text-center text-sm text-destructive">
                 {conversationError.message}
               </div>
             ) : (
-              <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-300">
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
                 Starting {bubbleLabel}…
               </div>

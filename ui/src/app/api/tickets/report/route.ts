@@ -3,8 +3,7 @@
  *
  * Creates a templated GitHub issue for the Provide Feedback dialog and TOME
  * product feedback. Requires GITHUB_TICKET_ENABLED=true, GITHUB_TICKET_REPO,
- * and a server token (GITHUB_TICKET_TOKEN or GITHUB_TOKEN with issues:write
- * on the target repo).
+ * and a server credential with issues:write on the target repo.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,6 +17,7 @@ import {
   type TicketReportSource,
 } from "@/lib/github-ticket";
 import { recordProblemReportFeedback } from "@/lib/feedback-report-store";
+import { reportProblemGitHubToken } from "@/lib/report-problem-github-auth";
 import type { FeedbackContext } from "@/lib/ticket-client";
 
 interface ReportBody {
@@ -34,10 +34,6 @@ interface ReportBody {
   screenshotDataUrl?: string;
 }
 
-function env(name: string): string | undefined {
-  return process.env[name] || process.env[`NEXT_PUBLIC_${name}`];
-}
-
 export const POST = withErrorHandler(async (request: NextRequest) => {
   return withAuth(request, async (_req, user) => {
     const cfg = getServerConfig();
@@ -49,14 +45,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       );
     }
 
-    const token = env("REPORT_PROBLEM_GITHUB_TOKEN") || env("GITHUB_TICKET_TOKEN") || env("GITHUB_TOKEN");
-    if (!token?.trim()) {
-      throw new ApiError(
-        "GitHub ticket token is not configured",
-        503,
-        "ticket_token_missing",
-      );
-    }
+    const token = await reportProblemGitHubToken(cfg.githubTicketRepo, "issues");
 
     let body: ReportBody;
     try {
@@ -90,7 +79,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     let screenshotUrl: string | undefined;
     if (screenshotDataUrl && cfg.githubScreenshotsRepo) {
       try {
-        screenshotUrl = await uploadScreenshotToGitHub(cfg.githubScreenshotsRepo, token, screenshotDataUrl);
+        const screenshotToken = await reportProblemGitHubToken(cfg.githubScreenshotsRepo, "contents");
+        screenshotUrl = await uploadScreenshotToGitHub(cfg.githubScreenshotsRepo, screenshotToken, screenshotDataUrl);
       } catch (err) {
         console.warn("[api/tickets/report] Failed to upload screenshot:", err);
       }

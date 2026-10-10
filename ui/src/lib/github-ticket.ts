@@ -1,6 +1,6 @@
 /**
  * Server-only GitHub issue creation for the Provide Feedback dialog / TOME product feedback.
- * Uses a service token (GITHUB_TICKET_TOKEN or GITHUB_TOKEN) — never the user's OAuth token.
+ * Uses a server credential resolved by the report route, never the user's OAuth token.
  */
 
 import { randomUUID } from "crypto";

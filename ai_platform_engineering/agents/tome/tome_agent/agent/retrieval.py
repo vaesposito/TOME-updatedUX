@@ -351,7 +351,10 @@ async def _reason(
                     yield _event("tool_result", id=check_id, preview=json.dumps(verification, ensure_ascii=False)[:3000],
                         is_error=verification["status"] != "completed")
                 original_links = linked_urls("\n\n".join(answer))
-                ledger.add_live(live.complete_evidence())
+                complete_live = live.complete_evidence()
+                ledger.add_live(complete_live)
+                verification["live_sources"] = [{key: value for key, value in page.items()
+                    if key not in {"body", "offset", "next_offset"}} for page in complete_live]
                 final_answer += comparison_notes(verification)
                 citation_id = "citations-" + uuid4().hex
                 yield _event("tool_call", id=citation_id, tool="validate_answer_citations", input={"mode": "turn-evidence"})

@@ -35,7 +35,8 @@ the passive `/metrics` scrape endpoint are unauthenticated.
   the native retrieval runtime. Draft prose is buffered; tool progress still streams.
 - Each factual paragraph, list item or table row is reviewed against current-turn
   published evidence and, when enabled, complete live Confluence reads.
-- Code validates source IDs and verbatim supporting quotes, records revision-bound
+- Code validates source IDs and supporting line spans, extracts quotations from
+  those spans, records revision-bound
   line ranges, and constructs canonical links beside the supported text. Sources
   only inspected appear in a separate consulted list and never in `citations`.
 - Live rewriting preserves wiki evidence in the turn ledger. Live reads do not
@@ -43,10 +44,11 @@ the passive `/metrics` scrape endpoint are unauthenticated.
 - `context_coverage.citation_validation` records support bindings and gaps.
   Published citations retain their existing schema; live provenance stays in
   `live_verification.live_sources` with `cited_in_answer` flags.
-- Review uses at most 60,000 evidence characters and 90 seconds, including one
-  mapping repair. Missing support is disclosed; a failed review withholds the
+- Review uses at most 60,000 evidence characters and 90 seconds. Batches contain
+  at most ten answer blocks, with three concurrent requests and one mapping
+  repair per batch. Missing support is disclosed; a failed review withholds the
   draft. Permission validity is rechecked before final emission.
-- Semantic support remains model judgment. Valid links and matching quotations
+- Semantic support remains model judgment. Valid links and existing source spans
   do not prove completeness or guarantee that every conclusion is correct.
 
 ## Configuration (env)

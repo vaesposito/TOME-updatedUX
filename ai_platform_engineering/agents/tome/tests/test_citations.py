@@ -1,5 +1,6 @@
 """Final citations use current evidence and never promote inspected-only sources."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock
 
@@ -33,8 +34,8 @@ def review(bindings: list[dict]) -> CitationReview:
     return CitationReview.model_validate({"blocks": bindings})
 
 
-def supported(block: int, source: str = "source-0", quote: str = "Milestone is ready but awaiting approval.") -> dict:
-    return {"block_id": block, "status": "supported", "supports": [{"source_id": source, "quote": quote}], "reason": ""}
+def supported(block: int, source: str = "source-0", start: int = 2, end: int | None = None) -> dict:
+    return {"block_id": block, "status": "supported", "supports": [{"source_id": source, "start_line": start, "end_line": end if end is not None else start}], "reason": ""}
 
 
 def render(ledger: CitationLedger, answer: str, bindings: list[dict]) -> tuple[str, dict]:
@@ -43,7 +44,7 @@ def render(ledger: CitationLedger, answer: str, bindings: list[dict]) -> tuple[s
 
 def test_preserves_wiki_support_and_adds_live_support_beside_each_claim(ledger: CitationLedger) -> None:
     answer = "Milestone is ready but awaiting approval.\n\nLaunch planning starts January 2."
-    output, report = render(ledger, answer, [supported(0), supported(1, "source-1", "Launch planning starts 2026-01-02")])
+    output, report = render(ledger, answer, [supported(0), supported(1, "source-1", 2)])
     assert output.split("\n\n")[0].endswith(f"]({WIKI})")
     assert output.split("\n\n")[1].endswith(f"]({LIVE})")
     assert report["supporting_urls"] == sorted([WIKI, LIVE])
@@ -55,7 +56,7 @@ def test_preserves_wiki_support_and_adds_live_support_beside_each_claim(ledger: 
 def test_table_rows_get_links_inside_the_row_and_all_supporting_sources(ledger: CitationLedger) -> None:
     answer = "| Item | Progress |\n| --- | --- |\n| Primary | Ready, awaiting approval; planning starts January 2 |\n"
     binding = supported(0)
-    binding["supports"].append({"source_id": "source-1", "quote": "Launch planning starts 2026-01-02"})
+    binding["supports"].append({"source_id": "source-1", "start_line": 2, "end_line": 2})
     output, report = render(ledger, answer, [binding])
     assert len(answer_blocks(answer)) == 1
     assert output.splitlines()[2].endswith(f"]({LIVE}) |")
@@ -71,13 +72,13 @@ def test_inspected_sources_are_separate_and_not_classified_as_support(ledger: Ci
     assert "not used to support" in footer
 
 
-@pytest.mark.parametrize("change", ["unknown-source", "fabricated-quote", "omitted-block", "duplicate-block", "empty-support"])
+@pytest.mark.parametrize("change", ["unknown-source", "unavailable-lines", "omitted-block", "duplicate-block", "empty-support"])
 def test_invalid_citation_mappings_are_rejected(ledger: CitationLedger, change: str) -> None:
     bindings = [supported(0)]
     if change == "unknown-source":
         bindings[0]["supports"][0]["source_id"] = "source-unauthorized"
-    elif change == "fabricated-quote":
-        bindings[0]["supports"][0]["quote"] = "Milestone was launched."
+    elif change == "unavailable-lines":
+        bindings[0]["supports"][0]["start_line"] = 999
     elif change == "omitted-block":
         bindings = []
     elif change == "duplicate-block":
@@ -100,15 +101,15 @@ def test_catalog_only_and_unread_portions_cannot_support_a_quote() -> None:
     ledger.collect({"citation": WIKI, "title": "Roadmap", "overview_excerpt": "Milestone was launched."})
     assert not ledger.sources
     ledger.collect({"citation": WIKI, "snippet": "Milestone is ready.", "start_line": 8})
-    with pytest.raises(ValueError, match="absent"):
-        render(ledger, "Milestone was launched.", [supported(0, quote="Milestone was launched.")])
-    _, report = render(ledger, "Milestone is ready.", [supported(0, quote="Milestone is ready.")])
+    with pytest.raises(ValueError, match="line range"):
+        render(ledger, "Milestone was launched.", [supported(0, start=1)])
+    _, report = render(ledger, "Milestone is ready.", [supported(0, start=8)])
     assert report["bindings"][0]["start_line"] == 8
 
 
-def test_support_quotes_allow_whitespace_only_normalization(ledger: CitationLedger) -> None:
+def test_support_quotes_are_extracted_from_exact_source_lines(ledger: CitationLedger) -> None:
     ledger.add({"citation": "/projects/primary/tome/wiki/activity.md"}, "Approval is\n pending.", 12)
-    _, report = render(ledger, "Approval is pending.", [supported(0, "source-2", "Approval is pending.")])
+    _, report = render(ledger, "Approval is pending.", [supported(0, "source-2", 12, 13)])
     assert report["bindings"][0]["start_line"] == 12
     assert report["bindings"][0]["end_line"] == 13
 
@@ -131,6 +132,16 @@ def test_incomplete_live_reads_do_not_enter_citation_evidence() -> None:
     assert not ledger.sources
 
 
+def test_same_url_revisions_never_merge_quote_provenance(ledger: CitationLedger) -> None:
+    ledger.add_live([{"url": LIVE, "body": "<p>Milestone is now complete.</p>", "content_revision": "new-revision",
+        "read_coverage": "complete"}])
+    _, previous = render(ledger, "Launch planning starts January 2.", [supported(0, "source-1", 2)])
+    assert previous["bindings"][0]["revision_id"] == "live-revision"
+    assert "Milestone is now complete" not in previous["bindings"][0]["quote"]
+    _, report = render(ledger, "Milestone is complete.", [supported(0, "source-2", 2)])
+    assert report["bindings"][0]["revision_id"] == "new-revision"
+
+
 def test_review_excerpt_budget_is_explicit_and_bounded(ledger: CitationLedger) -> None:
     for index in range(50):
         ledger.add({"citation": f"/projects/primary/tome/wiki/{index}.md"}, "Example\n" * 2000)
@@ -140,12 +151,12 @@ def test_review_excerpt_budget_is_explicit_and_bounded(ledger: CitationLedger) -
 
 
 @pytest.mark.asyncio
-async def test_one_bounded_repair_fixes_invalid_quotes(ledger: CitationLedger) -> None:
+async def test_one_bounded_repair_fixes_invalid_ranges(ledger: CitationLedger) -> None:
     def response(bindings: list[dict]) -> httpx.Response:
         return httpx.Response(200, request=httpx.Request("POST", "https://example.test/v1/messages"), json={
             "stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({"blocks": bindings})}]})
     client = AsyncMock()
-    client.post.side_effect = [response([supported(0, quote="Milestone launched.")]), response([supported(0)])]
+    client.post.side_effect = [response([supported(0, start=999)]), response([supported(0)])]
     output, report = await ledger.cite(client, "https://example.test", {}, "example-model", "milestone",
         "Milestone is ready but awaiting approval.", set())
     assert client.post.await_count == 2
@@ -161,3 +172,31 @@ async def test_failed_review_withholds_draft(ledger: CitationLedger) -> None:
     assert "Milestone launched" not in output
     assert "withheld" in output and report["status"] == "incomplete"
     assert not report["supporting_urls"]
+
+
+@pytest.mark.asyncio
+async def test_long_answers_use_bounded_batches_with_one_combined_result(ledger: CitationLedger) -> None:
+    active, peak = 0, 0
+    sizes: list[int] = []
+
+    async def post(*args: object, **kwargs: object) -> httpx.Response:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        request = json.loads(kwargs["json"]["messages"][0]["content"])
+        sizes.append(len(request["blocks"]))
+        await asyncio.sleep(0)
+        active -= 1
+        return httpx.Response(200, request=httpx.Request("POST", "https://example.test/v1/messages"), json={
+            "stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({
+                "blocks": [supported(block["block_id"]) for block in request["blocks"]]})}],
+        })
+
+    client = AsyncMock()
+    client.post.side_effect = post
+    answer = "\n\n".join("Milestone is ready but awaiting approval." for _ in range(31))
+    output, report = await ledger.cite(client, "https://example.test", {}, "example-model", "milestone", answer, set())
+    assert max(sizes) <= 10 and sum(sizes) == 31
+    assert peak <= 3
+    assert report["status"] == "completed" and len(report["bindings"]) == 31
+    assert output.count(f"]({WIKI})") == 31

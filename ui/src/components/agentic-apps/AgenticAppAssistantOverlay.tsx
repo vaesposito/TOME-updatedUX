@@ -365,7 +365,7 @@ export function AgenticAppAssistantOverlay({
                 aria-label={expanded ? "Reduce assistant size" : "Expand assistant"}
                 aria-pressed={expanded}
                 onClick={() => setExpanded((value) => !value)}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
               >
                 {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </button>
@@ -379,7 +379,7 @@ export function AgenticAppAssistantOverlay({
                   setActiveConversation(assistantConversation.id);
                   router.push(`/chat/${encodeURIComponent(assistantConversation.id)}`);
                 }}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-40"
               >
                 <ExternalLink className="h-4 w-4" />
               </button>

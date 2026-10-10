@@ -55,22 +55,44 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     verifySources: input.verify_sources as boolean | undefined,
   });
   const encoder = new TextEncoder();
+  let closed = false;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const stopHeartbeat = () => {
+    closed = true;
+    if (heartbeat) clearInterval(heartbeat);
+  };
   const stream = new ReadableStream({
     async start(output) {
+      // Model reasoning and live-source comparison can be silent for longer
+      // than a proxy's idle timeout. SSE comments keep the connection alive
+      // without adding chat content or changing the bounded turn deadline.
+      heartbeat = setInterval(() => {
+        if (closed) return;
+        try {
+          output.enqueue(encoder.encode(": keep-alive\n\n"));
+        } catch {
+          stopHeartbeat();
+          turn.cancel();
+        }
+      }, 10_000);
       try {
         for await (const frame of turn.events) {
+          if (closed) break;
           output.enqueue(encoder.encode(`event: ${frame.event}\ndata: ${frame.data}\n\n`));
         }
-        output.close();
+        if (!closed) output.close();
       } catch (error) {
+        if (closed) return;
         console.error("[TOME global chat] Stream failed", error instanceof Error ? error.name : "unknown");
         if (!request.signal.aborted) {
           output.enqueue(encoder.encode('event: error\ndata: {"message":"TOME stream failed before completion"}\n\n'));
           output.close();
         } else output.error(new Error("TOME request was cancelled or timed out"));
+      } finally {
+        stopHeartbeat();
       }
     },
-    cancel() { turn.cancel(); },
+    cancel() { stopHeartbeat(); turn.cancel(); },
   });
   return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" } });
 });

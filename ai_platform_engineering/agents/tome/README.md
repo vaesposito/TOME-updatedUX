@@ -361,6 +361,9 @@ set its `TOME_AGENT_TOKEN` to the same value.
 
 ### Global Ask Tome
 
+- Browser chat sends an SSE comment heartbeat every 10 seconds during model
+  reasoning and live-source comparison. Configure proxy timeouts above the
+  bounded turn deadline; the BFF still cancels a turn after 290 seconds.
 - The same service runs project operations as SDK runs and global retrieval as
   direct Messages function calls. Global turns use neither MCP nor Claude Code.
 - `ChatRequest.global_chat` selects read-only retrieval. The BFF provides an

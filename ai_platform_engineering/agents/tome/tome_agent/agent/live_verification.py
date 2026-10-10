@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -16,6 +17,7 @@ from tome_agent.agent.confluence_reads import ConfluenceReadState
 
 TIME_SENSITIVE = re.compile(r"\b(today|yesterday|latest|current|recent|now|status|progress|launch(?:ed)?|this week|last week|20\d\d)\b", re.IGNORECASE)
 MAX_LIVE_CHARACTERS = 120_000
+log = logging.getLogger(__name__)
 
 
 class ClaimCheck(BaseModel):
@@ -31,6 +33,12 @@ class Comparison(BaseModel):
     answer: str = Field(min_length=1, max_length=24_000)
     claim_checks: list[ClaimCheck] = Field(min_length=1, max_length=40)
     warnings: list[str] = Field(max_length=20)
+
+
+def parse_comparison(text: str) -> Comparison:
+    """Accept a JSON document, optionally wrapped in a single Markdown fence."""
+    match = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", text, re.DOTALL)
+    return Comparison.model_validate_json(match.group(1) if match else text)
 
 
 class LiveVerification:
@@ -176,8 +184,10 @@ class LiveVerification:
         metadata = [{key: value for key, value in page.items() if key not in {"body", "offset", "next_offset"}} for page in evidence]
         warnings = list(dict.fromkeys(self.failures))
         fallback = {"mode": self.mode, "status": "incomplete", "live_sources": metadata,
-            "claim_checks": [], "warnings": warnings or ["No complete live Confluence evidence was available."]}
+            "claim_checks": [], "warnings": warnings.copy()}
         if not evidence:
+            if not fallback["warnings"]:
+                fallback["warnings"].append("No complete live Confluence evidence was available.")
             return answer + "\n\n**Live verification incomplete:** " + " ".join(fallback["warnings"]), fallback
         try:
             response = await client.post(f"{base_url}/v1/messages", headers=headers, json={
@@ -186,7 +196,10 @@ class LiveVerification:
                     "Return only JSON matching the supplied schema. Mark each substantive answer claim supported, conflicting, or unverified. "
                     "A current read alone does not establish support. Cite only supplied source URLs. Correct contradicted claims, preserve TOME citations "
                     "for claims outside live evidence, disclose verification gaps and report source revision and read times. Do not infer no launch from no search results. "
-                    "No ingestion or wiki write occurred. Schema: " + json.dumps(Comparison.model_json_schema()),
+                    "No ingestion or wiki write occurred. Claim source_urls may contain ONLY these exact URLs: "
+                    + json.dumps([page["url"] for page in evidence])
+                    + ". Proposed-answer citations are not verified evidence. Claims requiring any other source must be unverified with source_urls empty. "
+                    "Schema: " + json.dumps(Comparison.model_json_schema()),
                 "messages": [{"role": "user", "content": json.dumps({"question": question, "proposed_answer": answer,
                     "live_evidence": evidence, "verification_gaps": warnings}, ensure_ascii=False)}],
             })
@@ -195,12 +208,16 @@ class LiveVerification:
             if payload.get("stop_reason") != "end_turn":
                 raise ValueError("Comparison was interrupted")
             text = "".join(block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text")
-            comparison = Comparison.model_validate_json(text)
+            comparison = parse_comparison(text)
             urls = {page["url"] for page in evidence}
             for check in comparison.claim_checks:
                 if any(url not in urls for url in check.source_urls) or check.status != "unverified" and not check.source_urls:
                     raise ValueError("Comparison cites unavailable source evidence")
-        except (httpx.HTTPError, ValueError, ValidationError, KeyError, TypeError):
+        except (httpx.HTTPError, ValueError, ValidationError, KeyError, TypeError) as exc:
+            # Diagnose schema/transport failures without logging source bodies
+            # or generated answers into application telemetry.
+            details = [(error["type"], error["loc"]) for error in exc.errors(include_input=False)] if isinstance(exc, ValidationError) else []
+            log.warning("Live comparison failed: %s; schema failures: %s", type(exc).__name__, details)
             fallback["warnings"].append("The claim comparison could not finish; fetched sources alone do not verify the answer.")
             return answer + "\n\n**Live verification incomplete:** " + " ".join(fallback["warnings"]), fallback
         await http_client.fetch_retrieval(self.actor_sub, self.scope_hash, "scope", {})

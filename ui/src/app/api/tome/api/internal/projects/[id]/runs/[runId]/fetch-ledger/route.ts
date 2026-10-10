@@ -21,7 +21,7 @@ type Ctx = { params: Promise<{ id: string; runId: string }> };
  * route does not trust the agent's own redaction, it re-checks it. */
 const ALLOWED_ARGS: Record<string, ReadonlySet<string>> = {
   github: new Set(["repo", "since", "state", "number", "path", "ref", "offset", "limit", "project_number"]),
-  confluence: new Set(["space_key", "page_id", "limit"]),
+  confluence: new Set(["space_key", "page_id", "offset", "content_revision", "limit"]),
   webex: new Set([
     "roomId", "messageId", "personId", "meetingId", "hostEmail",
     "meetingType", "state", "from", "to", "max", "meetingNumber",

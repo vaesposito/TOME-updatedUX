@@ -151,9 +151,23 @@ def _verification_pages(
     retrieved: set[tuple[str, str]],
     cited: set[str],
     corpus: PublishedCorpus,
+    source_cited: set[tuple[str, str]] | None = None,
 ) -> list[tuple[str, str]]:
     """Select answer evidence without promoting unrelated catalog excerpts."""
-    return [key for key in sorted(consulted) if corpus.pages[key].reference()["citation"] in cited] or sorted(retrieved)
+    matched = {key for key in consulted if corpus.pages[key].reference()["citation"] in cited}
+    return sorted(matched | (source_cited or set())) or sorted(retrieved)
+
+
+def _confluence_source_urls(text: str) -> list[str]:
+    urls = re.findall(r"https://[^\s<>\)\]\"']+/wiki/(?:spaces/[^\s<>\)\]\"']*/pages/\d+|pages/\d+|pages/viewpage\.action\?pageId=\d+)", text)
+    valid = []
+    for url in urls:
+        try:
+            urlsplit(url)
+        except ValueError:
+            continue
+        valid.append(url)
+    return list(dict.fromkeys(valid))
 
 
 async def _read(
@@ -205,12 +219,14 @@ async def _reason(
         (entry["project_slug"], entry["path"])
         for entry in coverage["preloaded_pages"]
     }
+    # Complete preloaded documents are answer evidence even when the model
+    # needs no further function calls. Catalog excerpts remain separate.
+    retrieved: set[tuple[str, str]] = consulted.copy()
     for entry in corpus.navigation.get("entities", []):
         key = (entry.get("slug"), entry.get("overview_path"))
         if entry.get("overview_excerpt") and key in corpus.pages:
             consulted.add(key)
     missing_evidence: list[str] = []
-    retrieved: set[tuple[str, str]] = set()
     live = LiveVerification(actor_sub, scope_hash, live_verification, set(corpus.entities), live_verification_grant)
 
     def collect_references(value: Any) -> None:
@@ -290,10 +306,22 @@ async def _reason(
                     # Catalog excerpts orient the model but do not identify the
                     # pages it used for this answer. Prioritize explicit reads
                     # and search results when no rendered citation is present.
-                    relevant = _verification_pages(consulted, retrieved, cited, corpus)
-                    for key in relevant[:12]:
+                    source_cited: set[tuple[str, str]] = set()
+                    source_links: dict[tuple[str, str], list[str]] = {}
+                    for key in sorted(retrieved):
                         text = await view_operation(corpus.text, corpus.pages[key])
-                        targets.extend((key[0], url) for url in re.findall(r"https://[^\s<>\)\]\"']+/wiki/(?:spaces/[^\s<>\)\]\"']*/pages/\d+|pages/\d+|pages/viewpage\.action\?pageId=\d+)", text))
+                        urls = _confluence_source_urls(text)
+                        matches = [url for url in urls if urlsplit(url).path in cited]
+                        source_links[key] = matches or urls
+                        if matches:
+                            source_cited.add(key)
+                    relevant = _verification_pages(consulted, retrieved, cited, corpus, source_cited)
+                    for key in relevant[:12]:
+                        urls = source_links.get(key)
+                        if urls is None:
+                            text = await view_operation(corpus.text, corpus.pages[key])
+                            urls = _confluence_source_urls(text)
+                        targets.extend((key[0], url) for url in urls)
                     preferred = list(dict.fromkeys(key[0] for key in relevant))
                     matched = [slug for slug, entity in corpus.entities.items() if slug.replace("-", " ").casefold() in user_message.casefold()
                         or entity.name.casefold() in user_message.casefold()]

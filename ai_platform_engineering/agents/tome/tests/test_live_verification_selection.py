@@ -25,3 +25,14 @@ def test_live_verification_prioritizes_cited_pages() -> None:
     }))
 
     assert _verification_pages({relevant, other}, {relevant, other}, {"/example/launch"}, corpus) == [relevant]
+
+
+def test_live_verification_accepts_upstream_citations_from_preloaded_evidence() -> None:
+    relevant = ("example-project", "launch.md")
+    unrelated = ("another-project", "overview.md")
+    corpus = cast(PublishedCorpus, SimpleNamespace(pages={
+        relevant: SimpleNamespace(reference=lambda: {"citation": "/example/launch"}),
+        unrelated: SimpleNamespace(reference=lambda: {"citation": "/another/overview"}),
+    }))
+    assert _verification_pages({relevant, unrelated}, {relevant, unrelated},
+        {"/wiki/pages/123"}, corpus, {relevant}) == [relevant]

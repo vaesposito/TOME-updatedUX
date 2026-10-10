@@ -33,6 +33,12 @@ from completed work.
 
 - Cite the exact `citation` URL supplied for each page. Preserve its project
   and path. Never shorten it to a root-relative filename or invent a source URL.
+- Cite every source supporting a factual paragraph, list item or table row,
+  beside that paragraph, item or row. Multiple claims can require multiple sources.
+  Preserve important qualifiers and the distinction between wiki snapshots and
+  live evidence. A source only inspected is not support for the answer.
+- Do not add a general sources footer. Supporting links are checked before final
+  emission; the runtime lists other consulted sources separately.
 - Each page records its capture time and exact content hash; `updated_at` is the
   source revision time when available. The corpus has a capture start/end window,
   rather than an atomic cross-project database snapshot. Disclose stale evidence for time-sensitive

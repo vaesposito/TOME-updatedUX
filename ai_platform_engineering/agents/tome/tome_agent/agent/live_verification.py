@@ -47,6 +47,23 @@ def _warning_bullets(warnings: list[str]) -> str:
     return "\n".join("- " + warning.replace("\n", "\n  ") for warning in warnings)
 
 
+def comparison_notes(report: dict[str, Any], include_sources: bool = False) -> str:
+    if report["status"] == "not_requested":
+        return ""
+    if report["status"] != "completed":
+        return "\n\n**Live verification incomplete:**\n\n" + _warning_bullets(report["warnings"])
+    counts = {status: sum(check["status"] == status for check in report["claim_checks"])
+        for status in ("supported", "conflicting", "unverified")}
+    footer = "\n\n**Live Confluence comparison:** " + ", ".join(f"{count} {status}" for status, count in counts.items()) + "."
+    if report["warnings"]:
+        footer += "\n\n" + _warning_bullets(report["warnings"])
+    if include_sources:
+        footer += "\n\nLive sources checked:\n" + "\n".join(
+            f"- [{page['url']}]({page['url']}) — revision {page['source_version']} "
+            f"({page['source_revision_at']}), read {page['read_at']}." for page in report["live_sources"])
+    return footer
+
+
 class LiveVerification:
     """Per-turn memory only; provider credentials never cross this boundary."""
 
@@ -187,7 +204,7 @@ class LiveVerification:
 
     async def compare(
         self, client: httpx.AsyncClient, base_url: str, headers: dict[str, str], model: str,
-        question: str, answer: str,
+        question: str, answer: str, *, render_notes: bool = True,
     ) -> tuple[str, dict[str, Any]]:
         evidence = self.complete_evidence()
         metadata = [{key: value for key, value in page.items() if key not in {"body", "offset", "next_offset"}} for page in evidence]
@@ -197,7 +214,7 @@ class LiveVerification:
         if not evidence:
             if not fallback["warnings"]:
                 fallback["warnings"].append("No complete live Confluence evidence was available.")
-            return answer + "\n\n**Live verification incomplete:**\n\n" + _warning_bullets(fallback["warnings"]), fallback
+            return answer + (comparison_notes(fallback) if render_notes else ""), fallback
         try:
             response = await client.post(f"{base_url}/v1/messages", headers=headers,
                 timeout=COMPARISON_TIMEOUT_SECONDS, json={
@@ -237,16 +254,9 @@ class LiveVerification:
             reason = str(exc) if str(exc) == "Comparison was interrupted" else ""
             log.warning("Live comparison failed: %s %s; schema failures: %s", type(exc).__name__, reason, details)
             fallback["warnings"].append("The claim comparison could not finish; fetched sources alone do not verify the answer.")
-            return answer + "\n\n**Live verification incomplete:**\n\n" + _warning_bullets(fallback["warnings"]), fallback
+            return answer + (comparison_notes(fallback) if render_notes else ""), fallback
         await http_client.fetch_retrieval(self.actor_sub, self.scope_hash, "scope", {})
         warnings = list(dict.fromkeys(warnings + comparison.warnings))
-        counts = {status: sum(check.status == status for check in comparison.claim_checks)
-            for status in ("supported", "conflicting", "unverified")}
-        footer = "\n\n**Live Confluence comparison:** " + ", ".join(f"{count} {status}" for status, count in counts.items()) + "."
-        if warnings:
-            footer += "\n\n" + _warning_bullets(warnings)
-        footer += "\n\nLive sources checked:\n" + "\n".join(
-            f"- [{page['url']}]({page['url']}) — revision {page['source_version']} "
-            f"({page['source_revision_at']}), read {page['read_at']}." for page in metadata)
-        return comparison.answer + footer, {"mode": self.mode, "status": "completed", "checked_at": datetime.now(UTC).isoformat(),
+        report = {"mode": self.mode, "status": "completed", "checked_at": datetime.now(UTC).isoformat(),
             "live_sources": metadata, "claim_checks": [check.model_dump() for check in comparison.claim_checks], "warnings": warnings}
+        return comparison.answer + (comparison_notes(report, include_sources=True) if render_notes else ""), report

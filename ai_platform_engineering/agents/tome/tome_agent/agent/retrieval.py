@@ -17,7 +17,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from tome_agent import prompts
 from tome_agent.agent import http_client
-from tome_agent.agent.live_verification import TIME_SENSITIVE, LiveVerification
+from tome_agent.agent.citations import CitationLedger, linked_urls
+from tome_agent.agent.live_verification import (
+    TIME_SENSITIVE,
+    LiveVerification,
+    comparison_notes,
+)
 from tome_agent.agent.retrieval_context import (
     PublishedCorpus,
     SnapshotPreparationError,
@@ -213,8 +218,12 @@ async def _reason(
     headers: dict[str, str],
     live_verification: str = "off",
     live_verification_grant: str | None = None,
+    deadline: float | None = None,
 ) -> AsyncIterator[ChatEventPayload]:
     context, coverage = await view_operation(corpus.model_context, user_message)
+    ledger = CitationLedger()
+    for entry in json.loads(context)["published_document_reference"]:
+        ledger.add(entry["source"], entry["markdown"])
     consulted = {
         (entry["project_slug"], entry["path"])
         for entry in coverage["preloaded_pages"]
@@ -286,8 +295,8 @@ async def _reason(
             for block in blocks:
                 if block.get("type") == "text" and isinstance(block.get("text"), str):
                     answer.append(block["text"])
-                    if calls or live_verification == "off":
-                        yield _event("token", text=block["text"])
+                    # Tool events communicate progress. Draft prose is withheld
+                    # until the final supporting citations have been checked.
             if not calls:
                 if payload.get("stop_reason") != "end_turn" or not answer:
                     raise ValueError("Missing model answer")
@@ -325,13 +334,37 @@ async def _reason(
                     preferred = list(dict.fromkeys(key[0] for key in relevant))
                     matched = [slug for slug, entity in corpus.entities.items() if slug.replace("-", " ").casefold() in user_message.casefold()
                         or entity.name.casefold() in user_message.casefold()]
-                    await live.finish_reads(targets, user_message, matched + preferred)
-                    final_answer, verification = await live.compare(client, base_url, headers, model, user_message, final_answer)
+                    # Reserve time for the final citation check within the same
+                    # turn deadline, including slow upstream/model requests.
+                    budget = max(0.01, deadline - asyncio.get_running_loop().time() - 65) if deadline else 200
+                    try:
+                        async with asyncio.timeout(budget):
+                            await live.finish_reads(targets, user_message, matched + preferred)
+                            final_answer, verification = await live.compare(client, base_url, headers, model, user_message,
+                                final_answer, render_notes=False)
+                    except TimeoutError:
+                        verification.update(status="incomplete", warnings=["Live comparison exceeded its budget; current source correctness remains unverified."])
                     yield _event("tool_result", id=check_id, preview=json.dumps(verification, ensure_ascii=False)[:3000],
                         is_error=verification["status"] != "completed")
-                if live_verification != "off":
-                    yield _event("token", text=final_answer)
+                original_links = linked_urls("\n\n".join(answer))
+                ledger.add_live(live.complete_evidence())
+                final_answer += comparison_notes(verification)
+                citation_id = "citations-" + uuid4().hex
+                yield _event("tool_call", id=citation_id, tool="validate_answer_citations", input={"mode": "turn-evidence"})
                 await http_client.fetch_retrieval(actor_sub, scope_hash, "scope", {})
+                budget = min(60, max(0.01, deadline - asyncio.get_running_loop().time())) if deadline else 60
+                final_answer, citation_check = await ledger.cite(client, base_url, headers, model, user_message,
+                    final_answer, original_links, timeout=budget)
+                coverage["citation_validation"] = citation_check
+                missing_evidence.extend(citation_check["missing_evidence"])
+                supporting = set(citation_check["supporting_urls"])
+                for source in verification["live_sources"]:
+                    source["cited_in_answer"] = source["url"] in supporting
+                final_answer += ledger.consulted_list(supporting)
+                yield _event("tool_result", id=citation_id, preview=json.dumps({key: value for key, value in citation_check.items()
+                    if key != "bindings"}, ensure_ascii=False)[:3000], is_error=citation_check["status"] != "completed")
+                await http_client.fetch_retrieval(actor_sub, scope_hash, "scope", {})
+                yield _event("token", text=final_answer)
                 transcript = [message.model_dump() for message in history] + [
                     {"role": "user", "content": user_message},
                     {"role": "assistant", "content": final_answer[-12_000:]},
@@ -340,7 +373,6 @@ async def _reason(
                 # in model history that could outlive a source permission grant.
                 retained = [message for message in transcript if message["role"] == "user"] if live_verification != "off" else transcript
                 yield _event("session", retrieval_history=retained[-8:])
-                linked_paths = _linked_paths(final_answer)
                 sources = []
                 for key in sorted(consulted):
                     page = corpus.pages[key]
@@ -355,13 +387,13 @@ async def _reason(
                         "captured_at": page.captured_at,
                         "content_hash": page.content_hash,
                         "upstream_verified_at": None,
-                        "cited_in_answer": reference["citation"] in linked_paths,
+                        "cited_in_answer": reference["citation"] in supporting,
                     })
                 citations = [source for source in sources if source["cited_in_answer"]]
                 warnings = ["Published wiki evidence is not live upstream verification."]
                 warnings.extend(verification["warnings"])
-                if not citations:
-                    missing_evidence.append("No recognized published-page citation in the answer.")
+                if not supporting:
+                    missing_evidence.append("No supporting source citation in the answer.")
                 if coverage["navigation_truncated"]:
                     warnings.append("The navigation index omitted some authorized entities.")
                 if not coverage["full_corpus_in_context"]:
@@ -377,7 +409,7 @@ async def _reason(
                     success=True,
                     context_coverage=coverage,
                     citations=citations[:500],
-                    sources_consulted=sources[:500],
+                    sources_consulted=[source for source in sources if not source["cited_in_answer"]][:500],
                     entities_consulted=sorted({key[0] for key in consulted}),
                     missing_evidence=missing_evidence,
                     warnings=warnings,
@@ -428,6 +460,7 @@ async def _reason(
                     evidence_characters += len(result_text)
                     if name in {"search_pages", "read_project_page"}:
                         collect_references(result)
+                        ledger.collect(result)
                 except ValueError as exc:
                     failed = True
                     result_text = json.dumps({"error": str(exc)})
@@ -484,6 +517,7 @@ async def stream_retrieval(
     preparation_id = f"context-{uuid4().hex}"
     preparing = True
     try:
+        deadline = asyncio.get_running_loop().time() + 265
         async with asyncio.timeout(270):
             corpus = PublishedCorpus(actor_sub, snapshot)
             yield _event(
@@ -520,6 +554,7 @@ async def stream_retrieval(
                 headers=headers,
                 live_verification=live_verification,
                 live_verification_grant=live_verification_grant,
+                deadline=deadline,
             ):
                 yield event
     except SnapshotPreparationError as exc:

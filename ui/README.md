@@ -89,9 +89,12 @@ Open http://localhost:3000.
 
 - The same Assistant tab controls `platform_config.tome_live_verification_mode`:
   `off` (default), `on_demand`, or `automatic`, independently of the popup flag.
-- Native chat's **Live sources** control requests **Verify with Confluence** or
-  **Wiki only** per question. Automatic checks time-sensitive questions and
-  answers that describe evidence as stale; it uses no fixed ingestion-age cutoff.
+- Native chat's **Search sources** selector offers **Tome Only Search** and
+  **Tome + Confluence Live Search** when live verification is enabled. Off hides
+  the selector in both the popup and regular chat, and sends Tome-only requests
+  even if a queued message previously selected live search. Automatic checks
+  time-sensitive questions and answers that describe evidence as stale; it uses
+  no fixed ingestion-age cutoff.
 - Browser chat and both global MCP tools accept optional `verify_sources`.
   `true` requests comparison, `false` skips it, omission follows the policy.
   Explicit verification while Off returns 409.

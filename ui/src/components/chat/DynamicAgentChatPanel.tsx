@@ -283,6 +283,7 @@ export function ChatPanel({
   ));
   const isNativeTome = conversation?.metadata?.assistant_runtime === "tome-native";
   const tomeSettings = useTomeAssistantSettings(isNativeTome);
+  const tomeLiveVerificationEnabled = tomeSettings.tome_live_verification_mode !== "off";
   const [verificationChoice, setVerificationChoice] = useState<"default" | "verify" | "wiki">("default");
   useEffect(() => { setVerificationChoice("default"); }, [conversationId]);
   useEffect(() => {
@@ -1124,8 +1125,8 @@ export function ChatPanel({
           conversationId: convId,
           agentId,
           clientContext,
-          ...(getActiveConversation()?.metadata?.assistant_runtime === "tome-native" && choice !== "default"
-            ? { forwardedProps: { verify_sources: choice === "verify" } } : {}),
+          ...(getActiveConversation()?.metadata?.assistant_runtime === "tome-native" && (!tomeLiveVerificationEnabled || choice !== "default")
+            ? { forwardedProps: { verify_sources: tomeLiveVerificationEnabled && choice === "verify" } } : {}),
           ...(filesToSend.length > 0 && { files: filesToSend }),
         },
         callbacks,
@@ -1161,7 +1162,7 @@ export function ChatPanel({
       });
       setConversationStreaming(convId, null);
     }
-  }, [isThisConversationStreaming, activeConversationId, accessToken, agentId, agentProtocol, getActiveConversation, createConversation, clearStreamEvents, addMessage, appendToMessage, updateMessage, setConversationStreaming, buildStreamCallbacks, finalizeStreamLoop, session?.user, showAuthErrorToast, suppliedClientContext, toast, verificationChoice]);
+  }, [isThisConversationStreaming, activeConversationId, accessToken, agentId, agentProtocol, getActiveConversation, createConversation, clearStreamEvents, addMessage, appendToMessage, updateMessage, setConversationStreaming, buildStreamCallbacks, finalizeStreamLoop, session?.user, showAuthErrorToast, suppliedClientContext, toast, verificationChoice, tomeLiveVerificationEnabled]);
 
   // The Home page hero composer creates a conversation and navigates here
   // before a message can be sent (this panel only mounts once a conversation
@@ -2217,7 +2218,7 @@ export function ChatPanel({
 
               {/* Staged attachment previews (above the input row). */}
               <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
-              {isNativeTome && <div className="flex items-center gap-2 px-3 text-xs text-muted-foreground">
+              {isNativeTome && tomeLiveVerificationEnabled && <div className="flex items-center gap-2 px-3 text-xs text-muted-foreground">
                 <label className="sr-only" htmlFor={`tome-live-choice-${conversationId ?? "new"}`}>Search sources</label>
                 <Select id={`tome-live-choice-${conversationId ?? "new"}`} className="h-8 w-auto text-xs"
                   value={verificationChoice === "default"
@@ -2226,7 +2227,7 @@ export function ChatPanel({
                   disabled={isThisConversationStreaming}
                   onChange={(event) => setVerificationChoice(event.target.value as typeof verificationChoice)}>
                   <option value="wiki">Tome Only Search</option>
-                  <option value="verify" disabled={tomeSettings.tome_live_verification_mode === "off"}>Tome + Confluence Live Search</option>
+                  <option value="verify">Tome + Confluence Live Search</option>
                 </Select>
               </div>}
 

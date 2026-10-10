@@ -34,6 +34,7 @@ from tome_agent.agent.loop import (
 )
 from tome_agent.agent.run_stream import (
     agent_event_failed,
+    confluence_completion_event,
     consume_agent_query,
     emit_log,
     now_iso,
@@ -856,16 +857,7 @@ async def stream_ingest(
         async for event in consume_agent_query(
             prompt, options, log_buf, model_provenance=model_provenance
         ):
-            if event.type == "done" and not agent_event_failed(event):
-                incomplete = confluence_read_state.incomplete_pages()
-                if incomplete:
-                    yield IngestEventPayload(type="error", data={
-                        "message": "Confluence ingestion is incomplete; required page bodies were not fully read",
-                        "code": "incomplete_source_read",
-                        "incomplete_sources": incomplete,
-                        "is_error": True,
-                    })
-                    return
+            event = confluence_completion_event(event, confluence_read_state)
             yield event
             if agent_event_failed(event):
                 return

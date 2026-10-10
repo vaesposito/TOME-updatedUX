@@ -42,6 +42,7 @@ class LiveVerification:
         self.state = ConfluenceReadState()
         self.pages: dict[str, dict[str, Any]] = {}
         self.parts: dict[str, dict[int, str]] = {}
+        self.responses: dict[str, dict[int, dict[str, Any]]] = {}
         self.failures: list[str] = []
         self.characters = 0
         self.calls = 0
@@ -51,6 +52,14 @@ class LiveVerification:
         project = arguments.get("project_slug")
         if self.mode == "off" or project not in self.projects:
             raise ValueError("Live verification is unavailable in this turn's authorized scope")
+        key = str(project) + ":" + str(arguments.get("url", ""))
+        if name == "read_confluence_page":
+            cached = self.responses.get(key, {}).get(arguments.get("offset", 0))
+            if cached and arguments.get("content_revision", cached["content_revision"]) == cached["content_revision"]:
+                # Reuse this turn's revision-bound evidence only after checking
+                # that the caller's current scope still authorizes the turn.
+                await http_client.fetch_retrieval(self.actor_sub, self.scope_hash, "scope", {})
+                return cached
         self.calls += 1
         if self.calls > 20:
             raise ValueError("Live verification call budget exhausted")
@@ -59,7 +68,6 @@ class LiveVerification:
             result = await http_client.fetch_retrieval(self.actor_sub, self.scope_hash, operation,
                 {**arguments, "live_mode": self.mode}, live_grant=self.grant)
         if result.get("status") == "read":
-            key = str(project) + ":" + str(arguments["url"])
             body, offset = result.get("body"), result.get("offset")
             if not isinstance(body, str) or type(offset) is not int:
                 raise ValueError("Invalid live body response")
@@ -69,7 +77,9 @@ class LiveVerification:
                 raise ValueError("Live evidence character budget exhausted")
             if offset == 0:
                 self.parts[key] = {}
+                self.responses[key] = {}
             self.parts.setdefault(key, {})[offset] = body
+            self.responses.setdefault(key, {})[offset] = result
             self.state.record(key, {"content": [{"text": json.dumps(result)}]})
             self.pages[key] = {"project_slug": project, **{field: value for field, value in result.items() if field != "body"}}
         elif result.get("status") == "unverified":
@@ -85,13 +95,23 @@ class LiveVerification:
             return
         offset = 0
         revision: str | None = None
+        # Continue the contiguous prefix already retrieved by the model. A
+        # missing intermediate chunk must be fetched before later chunks count.
+        for start, result in sorted(self.responses.get(key, {}).items()):
+            if start != offset:
+                break
+            revision = result["content_revision"]
+            next_offset = result.get("next_offset")
+            if next_offset is None:
+                return
+            offset = next_offset
         while True:
             result = await self.read("read_confluence_page", {"project_slug": project, "url": url,
                 "offset": offset, **({"content_revision": revision} if revision else {})})
             if result.get("status") != "read":
                 return
             next_offset = result.get("next_offset")
-            if next_offset is None:
+            if next_offset is None or key not in self.state.incomplete_pages():
                 return
             if type(next_offset) is not int or next_offset <= offset:
                 raise ValueError("Invalid live continuation offset")

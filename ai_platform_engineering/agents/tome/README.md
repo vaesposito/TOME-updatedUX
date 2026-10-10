@@ -435,6 +435,9 @@ set its `TOME_AGENT_TOKEN` to the same value.
   model pass compares substantive claims with complete bodies, labels them
   supported/conflicting/unverified, and revises the answer with current citations.
   This is model-assisted comparison, not a formal accuracy guarantee.
+- Verification includes complete documents preloaded into context and their
+  cited upstream pages. The completion pass resumes partial reads and reuses
+  revision-bound chunks within that turn after checking current access.
 - `done.live_verification` and MCP results report comparison status, claim checks,
   source URLs/revisions/read times, and warnings. Published wiki metadata keeps
   `upstream_verified_at: null`; the wiki and ingestion freshness are unchanged.
@@ -444,6 +447,9 @@ set its `TOME_AGENT_TOKEN` to the same value.
   produce an explicit incomplete result rather than a verification claim.
   Comparison adds one model request after primary reasoning. Time-sensitive
   completion also searches for newly published pages, within the same live budget.
+  The comparison request allows 150 seconds within the 290-second turn deadline.
+  Configure external MCP reverse proxies above that deadline; a default
+  60-second idle timeout can interrupt a valid non-streaming tool result.
 - Live-enabled turns retain only the last eight user questions in private model
   history. Source bodies and generated live answers are reauthorized and reread
   each turn. GRID's visible conversation history remains under its usual access

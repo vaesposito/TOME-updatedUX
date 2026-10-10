@@ -42,6 +42,11 @@ def parse_comparison(text: str) -> Comparison:
     return Comparison.model_validate_json(match.group(1) if match else text)
 
 
+def _warning_bullets(warnings: list[str]) -> str:
+    """Keep each comparison note in its own Markdown list item."""
+    return "\n".join("- " + warning.replace("\n", "\n  ") for warning in warnings)
+
+
 class LiveVerification:
     """Per-turn memory only; provider credentials never cross this boundary."""
 
@@ -192,7 +197,7 @@ class LiveVerification:
         if not evidence:
             if not fallback["warnings"]:
                 fallback["warnings"].append("No complete live Confluence evidence was available.")
-            return answer + "\n\n**Live verification incomplete:** " + " ".join(fallback["warnings"]), fallback
+            return answer + "\n\n**Live verification incomplete:**\n\n" + _warning_bullets(fallback["warnings"]), fallback
         try:
             response = await client.post(f"{base_url}/v1/messages", headers=headers,
                 timeout=COMPARISON_TIMEOUT_SECONDS, json={
@@ -205,6 +210,7 @@ class LiveVerification:
                     + json.dumps([page["url"] for page in evidence])
                     + ". Proposed-answer citations are not verified evidence. Claims requiring any other source must be unverified with source_urls empty. "
                     "Keep the revised answer concise (under 9000 characters), group related claims into at most 32 checks, and use short one-sentence reasons. "
+                    "Return warnings as separate concise notes, with one concern per entry. "
                     "Schema: " + json.dumps(Comparison.model_json_schema()),
                 "messages": [{"role": "user", "content": json.dumps({"question": question, "proposed_answer": answer,
                     "live_evidence": evidence, "verification_gaps": warnings}, ensure_ascii=False)}],
@@ -231,14 +237,14 @@ class LiveVerification:
             reason = str(exc) if str(exc) == "Comparison was interrupted" else ""
             log.warning("Live comparison failed: %s %s; schema failures: %s", type(exc).__name__, reason, details)
             fallback["warnings"].append("The claim comparison could not finish; fetched sources alone do not verify the answer.")
-            return answer + "\n\n**Live verification incomplete:** " + " ".join(fallback["warnings"]), fallback
+            return answer + "\n\n**Live verification incomplete:**\n\n" + _warning_bullets(fallback["warnings"]), fallback
         await http_client.fetch_retrieval(self.actor_sub, self.scope_hash, "scope", {})
         warnings = list(dict.fromkeys(warnings + comparison.warnings))
         counts = {status: sum(check.status == status for check in comparison.claim_checks)
             for status in ("supported", "conflicting", "unverified")}
         footer = "\n\n**Live Confluence comparison:** " + ", ".join(f"{count} {status}" for status, count in counts.items()) + "."
         if warnings:
-            footer += " " + " ".join(warnings)
+            footer += "\n\n" + _warning_bullets(warnings)
         footer += "\n\nLive sources checked:\n" + "\n".join(
             f"- [{page['url']}]({page['url']}) — revision {page['source_version']} "
             f"({page['source_revision_at']}), read {page['read_at']}." for page in metadata)

@@ -38,22 +38,26 @@ async def test_comparison_has_a_bounded_large_evidence_timeout_and_safe_referenc
         "source_version": 1, "source_revision_at": "2026-01-01T00:00:00Z", "read_at": "2026-01-02T00:00:00Z"}
     monkeypatch.setattr(live, "complete_evidence", lambda: [page])
     monkeypatch.setattr(http_client, "fetch_retrieval", AsyncMock())
+    notes = ["Example source has an older revision.", "Example milestone lacks live evidence."]
     response = httpx.Response(200, request=httpx.Request("POST", "https://example.test/v1/messages"), json={
         "stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({
             "answer": "Example answer", "claim_checks": [{"claim": "Example claim", "status": "supported",
-                "source_urls": [reference] if reference else [], "reason": "Present in evidence"}], "warnings": [],
+                "source_urls": [reference] if reference else [], "reason": "Present in evidence"}], "warnings": notes,
         })}],
     })
     client = AsyncMock()
     client.post.return_value = response
-    _, verification = await live.compare(client, "https://example.test", {}, "example-model", "Question", "Answer")
+    answer, verification = await live.compare(client, "https://example.test", {}, "example-model", "Question", "Answer")
     assert client.post.call_args.kwargs["timeout"] == COMPARISON_TIMEOUT_SECONDS
     assert 60 < COMPARISON_TIMEOUT_SECONDS < 290
     assert verification["status"] == "completed"
+    assert "\n\n- " + "\n- ".join(notes) in answer
+    assert "\n\nLive sources checked:\n- " in answer
     if reference == page["url"]:
-        assert verification["warnings"] == []
+        assert verification["warnings"] == notes
         assert verification["claim_checks"][0]["status"] == "supported"
     else:
         assert verification["warnings"]
+        assert "\n- A claim lacked an available live source reference and remains unverified." in answer
         assert verification["claim_checks"][0]["status"] == "unverified"
         assert verification["claim_checks"][0]["source_urls"] == []

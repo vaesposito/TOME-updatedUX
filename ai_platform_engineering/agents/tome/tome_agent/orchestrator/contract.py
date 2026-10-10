@@ -67,6 +67,9 @@ class ChildProjectSnapshot(BaseModel):
     project_id: str  # CAIPE project id; also the on-disk workspace dir name
     slug: str = ""
     name: str = ""
+    project_type: Literal["project", "bhag", "area"] = "project"
+    bhags: list[str] = Field(default_factory=list)
+    areas: list[str] = Field(default_factory=list)
 
 
 class ProjectSnapshot(BaseModel):
@@ -133,7 +136,18 @@ class IssueContext(BaseModel):
 # ---------- agent inbound: /chat ----------
 
 
+class RetrievalMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=12_000)
+
+
 class ChatRequest(BaseModel):
+    global_chat: bool = False
+    """Read-only reasoning over a caller-scoped published view, without MCP or SDK tools."""
+    live_verification: Literal["off", "required", "automatic"] = "off"
+    live_verification_grant: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
+    retrieval_scope_hash: str | None = Field(default=None, max_length=64)
+    retrieval_history: list[RetrievalMessage] = Field(default_factory=list, max_length=8)
     myagent_research: bool = False
     myagent_run_id: UUID | None = None
     myagent_sources: list[Literal["outlook", "salesforce", "sharepoint"]] = Field(default_factory=list, max_length=3)
@@ -166,7 +180,9 @@ class ChatRequest(BaseModel):
     """Per-request OAuth credentials forwarded from the caller. Keyed by
     provider slug (`github`, `atlassian`, `webex`). Each value carries
     `access_token` and optionally `expires_in` (string seconds, parse
-    defensively as 0 = unknown), `cloud_id`, `site_url`. Stays in the
+    defensively as 0 = unknown), `cloud_id`, `site_url`, and JSON-encoded
+    `confluence_sites` mapping configured origins to caller-owned tokens/cloud
+    IDs. Legacy Confluence bindings must carry a matching `site_url`. Stays in the
     request's ContextVar — never written to disk or logs."""
 
 

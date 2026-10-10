@@ -16,6 +16,7 @@ withErrorHandler,
 } from '@/lib/api-middleware';
 import { getCollection,isMongoDBConfigured } from '@/lib/mongodb';
 import { requireConversationResourcePermission } from '@/lib/rbac/conversation-implicit-authz';
+import { getTomeNativeChatAgentId, withTomeChatRouting } from '@/lib/tome/chat-routing';
 import type { Conversation,PatchConversationMetadataRequest } from '@/types/mongodb';
 import { NextRequest,NextResponse } from 'next/server';
 
@@ -53,6 +54,11 @@ export const PATCH = withErrorHandler(async (
   }
   await requireConversationResourcePermission(session, user.email, conversation, 'write');
 
+  // Runtime selection is derived from the registered agent, never caller metadata.
+  if (Object.keys(body.metadata).some((key) => key === 'assistant_runtime' || key.startsWith('assistant_runtime.'))) {
+    throw new ApiError('assistant_runtime is managed by the server', 400, 'SERVER_OWNED_METADATA');
+  }
+
   // Shallow-merge provided keys into existing metadata using dot notation
   // so MongoDB only updates the specified fields without replacing the entire
   // metadata object (avoids TypeScript intersection type issues).
@@ -67,5 +73,5 @@ export const PATCH = withErrorHandler(async (
   );
 
   const updated = await conversations.findOne({ _id: conversationId });
-  return successResponse(updated);
+  return successResponse(updated && withTomeChatRouting(updated, getTomeNativeChatAgentId()));
 });

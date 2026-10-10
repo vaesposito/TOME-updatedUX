@@ -6,6 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   LoaderCircle,
+  Maximize2,
+  Minimize2,
+  ExternalLink,
   MessageCircle,
   Plus,
   Sparkles,
@@ -13,6 +16,8 @@ import {
   Type,
   X,
 } from "lucide-react";
+
+import { useRouter } from "next/navigation";
 
 import { ChatPanel } from "@/components/chat/DynamicAgentChatPanel";
 import { buildAssistantClientContext } from "@/lib/agentic-apps/assistant-context";
@@ -47,6 +52,7 @@ export interface AgenticAppAssistantOverlayProps {
   activeContext: AgenticAppAssistantContextRecord | null;
   onClearContext: () => void;
   assistantAgentId: string;
+  assistantRuntime?: "tome-native";
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -59,9 +65,11 @@ export function AgenticAppAssistantOverlay({
   activeContext,
   onClearContext,
   assistantAgentId,
+  assistantRuntime,
   open,
   onOpenChange,
 }: AgenticAppAssistantOverlayProps) {
+  const isTomeAssistant = assistantRuntime === "tome-native";
   const bubbleLabel = (assistantLabel?.trim() || "Ask CAIPE").slice(0, 32);
   const headerTitle = (assistantAgentName?.trim() || `CAIPE assistant for ${appName}`).slice(0, 64);
   const chatPanelAgentName = (assistantAgentName?.trim() || "CAIPE Assistant").slice(0, 64);
@@ -73,6 +81,8 @@ export function AgenticAppAssistantOverlay({
     () => ({ name: chatPanelAgentName }) as DynamicAgentConfig,
     [chatPanelAgentName],
   );
+  const router = useRouter();
+  const [expanded, setExpanded] = useState(false);
   const [panelSize, setPanelSize] = useState(DEFAULT_PANEL_SIZE);
   const [glassMode, setGlassMode] = useState(readStoredGlassMode);
   const [fontScale, setFontScale] = useState<AssistantFontScale>(readStoredFontScale);
@@ -144,6 +154,7 @@ export function AgenticAppAssistantOverlay({
       useChatStore.getState().conversations,
       appId,
       assistantAgentId,
+      assistantRuntime,
     );
     if (!existing) return createAppConversation();
 
@@ -153,6 +164,7 @@ export function AgenticAppAssistantOverlay({
   }, [
     appId,
     assistantAgentId,
+    assistantRuntime,
     createAppConversation,
     loadConversationsFromServer,
     loadMessagesFromServer,
@@ -304,19 +316,20 @@ export function AgenticAppAssistantOverlay({
   );
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+    // Reserve the app header and keep the launcher inside the available height.
+    <div className="pointer-events-none fixed inset-x-4 bottom-4 top-18 z-40 flex flex-col items-end justify-end gap-3 sm:inset-x-6 sm:bottom-6">
       {open ? (
         <section
           aria-label={headerTitle}
           className={cn(
-            "pointer-events-auto relative flex flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl transition-colors",
+            "pointer-events-auto relative flex min-h-0 flex-col overflow-hidden rounded-3xl border border-border bg-popover shadow-2xl transition-colors",
             glassMode
               ? "bg-popover/80 shadow-[0_24px_60px_rgba(15,23,42,0.12)] ring-1 ring-cyan-500/25 backdrop-blur-3xl backdrop-saturate-200 dark:border-cyan-200/55 dark:bg-cyan-950/15 dark:shadow-[0_24px_120px_rgba(34,211,238,0.22),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_0_64px_rgba(34,211,238,0.10)] dark:ring-cyan-200/45"
               : "shadow-black/10 dark:border-cyan-300/20 dark:bg-slate-950/95 dark:shadow-cyan-950/40",
           )}
           style={{
-            width: `min(${panelSize.width}px, calc(100vw - 2rem))`,
-            height: `min(${panelSize.height}px, calc(100vh - 7rem))`,
+            width: expanded ? "100%" : `min(${panelSize.width}px, 100%)`,
+            height: expanded ? "100%" : `min(${panelSize.height}px, 100%)`,
           }}
         >
           <button
@@ -341,12 +354,35 @@ export function AgenticAppAssistantOverlay({
               </span>
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold text-foreground">{headerTitle}</h2>
-                <p className="truncate text-xs text-muted-foreground">
+                {!isTomeAssistant && <p className="truncate text-xs text-muted-foreground">
                   {activeContext ? `${activeContext.route} context active` : `Waiting for ${appId} context`}
-                </p>
+                </p>}
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label={expanded ? "Reduce assistant size" : "Expand assistant"}
+                aria-pressed={expanded}
+                onClick={() => setExpanded((value) => !value)}
+                className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+              <button
+                type="button"
+                aria-label="Open conversation in regular chat"
+                disabled={!assistantConversation}
+                onClick={() => {
+                  if (!assistantConversation) return;
+                  previousActiveConversationRef.current = assistantConversation.id;
+                  setActiveConversation(assistantConversation.id);
+                  router.push(`/chat/${encodeURIComponent(assistantConversation.id)}`);
+                }}
+                className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-40"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 aria-label="Start new assistant chat"
@@ -371,7 +407,7 @@ export function AgenticAppAssistantOverlay({
               >
                 <Trash2 className="h-4 w-4" aria-hidden />
               </button>
-              <button
+              {!isTomeAssistant && <button
                 type="button"
                 aria-label={`Assistant font size ${fontScale}`}
                 onClick={() => setFontScale((value) => nextFontScale(value))}
@@ -379,8 +415,8 @@ export function AgenticAppAssistantOverlay({
               >
                 <Type className="h-3.5 w-3.5" aria-hidden />
                 {fontScaleLabel(fontScale)}
-              </button>
-              <button
+              </button>}
+              {!isTomeAssistant && <button
                 type="button"
                 aria-label={
                   glassMode
@@ -398,7 +434,7 @@ export function AgenticAppAssistantOverlay({
               >
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
                 Glass
-              </button>
+              </button>}
               <button
                 type="button"
                 className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
@@ -410,7 +446,7 @@ export function AgenticAppAssistantOverlay({
             </div>
           </header>
 
-          <div className={cn(
+          {!isTomeAssistant && <div className={cn(
             "border-b border-border px-4 py-3 text-xs text-muted-foreground",
             glassMode ? "bg-cyan-500/5 backdrop-blur-2xl dark:bg-cyan-300/15" : "dark:bg-white/[0.03]",
           )}>
@@ -433,7 +469,7 @@ export function AgenticAppAssistantOverlay({
             ) : (
               <p>External apps can publish bounded page context. CAIPE treats it as untrusted data, not instructions.</p>
             )}
-          </div>
+          </div>}
 
           <div className="min-h-0 flex-1">
             {assistantConversation?.agentId === assistantAgentId ? (
@@ -445,8 +481,7 @@ export function AgenticAppAssistantOverlay({
                 clientContext={clientContext}
                 suggestedPrompts={suggestedPrompts}
                 suggestedPromptsInitiallyHidden={false}
-                emptyStateTitle={`Ask about ${appName}`}
-                emptyStateSubtitle="The accepted app context is attached as structured metadata."
+                emptyStateTitle={isTomeAssistant ? "Ask Tome" : undefined}
                 surface={glassMode ? "glass" : "default"}
                 fontScale={fontScale}
               />
@@ -467,7 +502,7 @@ export function AgenticAppAssistantOverlay({
       <button
         type="button"
         aria-label={`Open ${bubbleLabel}`}
-        className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-cyan-200/30 bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-200"
+        className="pointer-events-auto inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-200/30 bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-200"
         onClick={() => onOpenChange(!open)}
       >
         <MessageCircle className="h-4 w-4" aria-hidden />
@@ -486,6 +521,7 @@ function findLatestAppConversation(
   conversations: Conversation[],
   appId: string,
   agentId: string,
+  runtime?: "tome-native",
 ): Conversation | null {
   return conversations.reduce<Conversation | null>((latest, conversation) => {
     const metadata = conversation.metadata;
@@ -493,6 +529,7 @@ function findLatestAppConversation(
       metadata?.conversation_surface !== AGENTIC_APP_CONVERSATION_KIND
       || metadata.agentic_app_id !== appId
       || metadata.agentic_app_agent_id !== agentId
+      || metadata.assistant_runtime !== runtime
     ) {
       return latest;
     }

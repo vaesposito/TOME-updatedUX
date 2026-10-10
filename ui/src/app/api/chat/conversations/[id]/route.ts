@@ -12,6 +12,7 @@ withErrorHandler,
 } from '@/lib/api-middleware';
 import { getCollection,isMongoDBConfigured } from '@/lib/mongodb';
 import { requireConversationResourcePermission } from '@/lib/rbac/conversation-implicit-authz';
+import { getTomeNativeChatAgentId, withTomeChatRouting } from '@/lib/tome/chat-routing';
 import type { Conversation,UpdateConversationRequest } from '@/types/mongodb';
 import { NextRequest,NextResponse } from 'next/server';
 import { deleteConversationsPermanently } from '../delete-permanently';
@@ -49,7 +50,7 @@ export const GET = withErrorHandler(async (
     );
     await requireConversationResourcePermission(session, user.email, conversation, 'read');
 
-    return successResponse({ ...conversation, access_level });
+    return successResponse({ ...withTomeChatRouting(conversation, getTomeNativeChatAgentId()), access_level });
   });
 });
 
@@ -108,7 +109,7 @@ export const PUT = withErrorHandler(async (
 
     const updated = await conversations.findOne({ _id: conversationId });
 
-    return successResponse(updated);
+    return successResponse(updated && withTomeChatRouting(updated, getTomeNativeChatAgentId()));
   });
 });
 

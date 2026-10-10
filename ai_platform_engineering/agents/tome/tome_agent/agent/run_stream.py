@@ -16,7 +16,7 @@ import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from tempfile import NamedTemporaryFile
 
 from claude_agent_sdk import (
@@ -37,11 +37,28 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from tome_agent.agent.confluence_reads import ConfluenceReadState
 from tome_agent.agent.http_client import ModelResolution
 from tome_agent.orchestrator.contract import IngestEventPayload
 from tome_agent.tracing import suppress_sensitive_evidence_tracing
 
 log = logging.getLogger("tome_agent.agent.run_stream")
+
+
+def confluence_completion_event(
+    event: IngestEventPayload, read_state: ConfluenceReadState
+) -> IngestEventPayload:
+    """Require complete source coverage before any ingest path reports success."""
+    if event.type == "done" and not agent_event_failed(event):
+        incomplete = read_state.incomplete_pages()
+        if incomplete:
+            return IngestEventPayload(type="error", data={
+                "message": "Confluence ingestion is incomplete; required page bodies were not fully read",
+                "code": "incomplete_source_read",
+                "incomplete_sources": incomplete,
+                "is_error": True,
+            })
+    return event
 
 
 def _restricted_stream_error_message(error: Exception) -> str:
@@ -89,7 +106,7 @@ def agent_event_failed(event: IngestEventPayload) -> bool:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%H:%M:%S")
+    return datetime.now(UTC).strftime("%H:%M:%S")
 
 
 def emit_log(line: str) -> IngestEventPayload:
@@ -99,7 +116,7 @@ def emit_log(line: str) -> IngestEventPayload:
 def stringify_tool_input(value: object) -> str:
     try:
         return json.dumps(value, separators=(", ", "="))[:300]
-    except Exception:
+    except (TypeError, ValueError, OverflowError, RecursionError):
         return str(value)[:300]
 
 

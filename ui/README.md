@@ -23,6 +23,153 @@ npm run dev
 
 Open http://localhost:3000.
 
+## Tome Assistant
+
+- **Ask Tome** calls the native `tome-agent` retrieval runtime on `/projects` and inside
+  projects. No project selection is required; the current page is optional context.
+- `/api/tome/chat` authenticates the user and checks conversation write access and
+  assistant use permission. The registered assistant ID is an authorization and
+  display identity; Dynamic Agents does not execute these native conversations.
+- Each turn streams the caller's published BHAG/area/project pages into a private
+  read-only view. Navigation preserves relationships without merging project
+  folders. Small corpora enter context in full; larger corpora preload broad
+  foundations and relevant documents, then expose scoped glob/search/section reads.
+- Global retrieval uses direct Messages functions without MCP or Claude Code.
+  The model cannot execute arbitrary commands, choose network endpoints or write
+  wiki files. Current permissions are rechecked around reads/search and replies.
+- Staged files are deleted at turn completion, failure or ordinary cancellation.
+  Citation metadata includes revision time/hash and capture time. Coverage and
+  pagination identify partial results; published evidence is not a live source check.
+- Model history is isolated by conversation and user subject; a changed access
+  catalog resets it. Active turns are serialized per session. Only eight bounded
+  user/assistant messages persist, with a seven-day TTL; raw retrieved pages do not.
+- GRID stores the conversation, messages, and timeline. **Open conversation in
+  regular chat** opens the same thread; **Expand assistant** enlarges the popup.
+- `TOME_CHAT_AGENT_ID` binds a registered agent to native global retrieval. When
+  unset, the deployment-owned TOME app's `manifest.assistant.agentId` supplies the
+  binding. That exact agent must be enabled and available to the caller; there is
+  no fallback identity or inference from the agent name.
+- The native agent uses TOME's global chat model configuration, then its environment
+  defaults. Its service token stays server-side; caller identity accompanies reads.
+- New and existing browser conversations with that registered agent use native
+  global retrieval. Routing is derived server-side on creation and read, so an
+  existing chat picks up the binding on reload. Visible history is retained;
+  prior Dynamic Agents model checkpoints are not imported into native history.
+- Opening Ask Tome resolves its configured agent with current access checks,
+  without waiting for user defaults or integration settings. Startup requests
+  stop after 15 seconds and offer Retry. Direct chat links preserve the native
+  runtime metadata, so they do not initialize Dynamic Agents files or interrupts.
+
+### Runtime popup toggle
+
+- **TOME Settings → Assistant** (`/projects/admin?tab=assistant`) lets TOME admins
+  switch **Ask Tome popup** on or off for both Projects and wiki pages.
+- MongoDB `platform_config`, `_id: platform_settings`, stores the boolean
+  `tome_assistant_popup_enabled`. Missing or invalid values default to **false**.
+- `/api/tome/assistant-settings` exposes the popup flag, live-verification mode
+  and registered agent ID to authenticated chat users. PATCH requires TOME admin
+  access and at least one valid setting; omitted fields are preserved.
+  The existing `/api/admin/platform-config` API also reads and updates the flag
+  under its existing system configuration permissions. Both write paths emit
+  `tome.assistant.settings.update` audit events.
+- Visible pages refresh every 30 seconds, on focus, and after saving in the same
+  window. Disabling unmounts the popup; a failed settings refresh hides it.
+  The toggle changes no agent grants and does not disable regular GRID chat.
+- For rollout, keep `TOME_ENABLED=true`, configure `TOME_AGENT_URL` and its service
+  token, and set `TOME_CHAT_AGENT_ID` to the registered agent's actual ID. This
+  binding works without enabling External Apps. Alternatively, use the existing
+  deployment-owned app catalog (`AGENTIC_APPS_INSTALL_ENABLED` /
+  `AGENTIC_APPS_CONFIG_PATH`) with an installed, enabled TOME app and its
+  `manifest.assistant.agentId`. App hub visibility and `manifest.assistant.enabled`
+  do not select the chat runtime.
+  Deploy the updated UI and native agent images; keep the popup flag off until
+  an administrator enables it. No restart or rebuild is needed to change the flag.
+
+### Optional live Confluence verification
+
+- The same Assistant tab controls `platform_config.tome_live_verification_mode`:
+  `off` (default), `on_demand`, or `automatic`, independently of the popup flag.
+- Native chat's **Search sources** selector offers **Tome Only Search** and
+  **Tome + Confluence Live Search** when live verification is enabled. Off hides
+  the selector in both the popup and regular chat, and sends Tome-only requests
+  even if a queued message previously selected live search. Automatic checks
+  time-sensitive questions and answers that describe evidence as stale; it uses
+  no fixed ingestion-age cutoff.
+- Browser chat and both global MCP tools accept optional `verify_sources`.
+  `true` requests comparison, `false` skips it, omission follows the policy.
+  Explicit verification while Off returns 409.
+- The BFF keeps connected Atlassian tokens server-side and resolves exact
+  configured sites. Current TOME access and configured space/root scopes apply;
+  an opaque per-turn grant prevents access outside the selected global scope.
+- Complete current page bodies feed a separate native claim-comparison pass.
+  Results include supported/conflicting/unverified claims, current citations,
+  revision/read times and incomplete-evidence warnings. Search alone is discovery.
+- Neither source ingestion nor published wiki freshness changes. Provider failures
+  and comparison failures remain unverified. The UI and native agent both require
+  the updated images before enabling this mode.
+
+### Global agent over MCP
+
+- Keep both interfaces: raw list/get tools for precise reads, and
+  `tome_agent_search(query, scope?, session_id?, verify_sources?)` for global search,
+  retrieval and cited synthesis. `tome_ask_global(question, scope?, session_id?, verify_sources?)` is an alias;
+  existing `tome_ask(project_slug, question)` keeps its project-scoped behavior.
+- Both global tools live on the existing `/api/tome/mcp` server. They invoke
+  `lib/tome/global-chat-service.ts`, shared with the browser chat endpoint.
+  The native agent still uses its internal Glob/search/read functions, without
+  calling an MCP server inside the retrieval loop.
+- Without scope, the view includes all caller-readable entities. Optional
+  `{ "type": "bhag" | "area" | "project", "slug": "example" }` limits the
+  actual published export. BHAG/area scopes include their readable descendants;
+  a project scope includes only that project. Scope never grants extra access.
+- The MCP boundary derives the user subject from a verified user JWT, linked
+  secondary OIDC identity, browser session or user-owned TOME API key. It checks
+  registered-agent use permission before starting retrieval. A service-account
+  token cannot impersonate a human; GRID delegation must preserve the user token.
+  Caller tokens and source credentials are not forwarded to native reasoning.
+- Results include `answer`, `completion_status`, `session_id`, `citations`,
+  `sources_consulted`, `entities_consulted`, `missing_evidence`, `warnings` and
+  `context_coverage`. MCP advertises an output schema and returns matching
+  `structuredContent` plus serialized JSON text for older clients.
+- Source metadata records published revision ID/time, content hash and capture
+  time. `upstream_verified_at` is null: no live upstream verification is claimed.
+  Consulted sources include preloaded pages, navigation overview excerpts and
+  search/read results; citations are the recognized links in the answer.
+  Evidence gaps report retrieval failures or absent recognized citations, not
+  an independent factual-completeness score. Source arrays cap at 500 entries;
+  the response limit counts both structured and text representations.
+- Reuse the opaque returned `session_id` for follow-ups. MCP sessions are isolated
+  from GRID chat sessions, owned by the caller, retain at most eight bounded
+  messages, expire after seven days, and serialize turns. Current access or scope
+  changes discard retained context. Failed/incomplete turns do not save history
+  or return a completed answer; partial text is not treated as success.
+- For a GRID delegating agent, select `tome_agent_search` in its existing MCP tool
+  configuration. Add raw tools when precise reads are needed. The tool registry
+  lists the agent search first; this does not rewrite deployment-owned agent
+  configurations or grant access. Allow a client timeout over 300 seconds for
+  the existing bounded native turn. Benchmark freshness and timeout limits remain.
+- Deploy matching UI and native agent images. Selected exports use the internal
+  authenticated POST snapshot API; existing full-snapshot GET remains supported.
+  Global MCP tools are independent of the popup visibility toggle.
+
+Example MCP call:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "tome_agent_search",
+    "arguments": {
+      "query": "Summarize the launch plan and its current progress, with citations",
+      "scope": { "type": "bhag", "slug": "example" }
+    }
+  }
+}
+```
+
+
 ## Tome ingest review
 
 The review screen lists every file an ingest created or modified. Files held

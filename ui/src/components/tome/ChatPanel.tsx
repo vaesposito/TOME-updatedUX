@@ -925,6 +925,10 @@ const Composer = memo(function Composer({
   // State, not a ref, tracks what's already been consumed: refs can't be
   // read during render.
   const [consumedInitialPrompt, setConsumedInitialPrompt] = useState<string | null>(null);
+  // A cleared one-shot prompt can be requested again without replacing a draft.
+  if (!initialPrompt && consumedInitialPrompt !== null) {
+    setConsumedInitialPrompt(null);
+  }
   if (initialPrompt && !viewSessionId && consumedInitialPrompt !== initialPrompt) {
     setConsumedInitialPrompt(initialPrompt);
     setInput(initialPrompt);

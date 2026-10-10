@@ -37,10 +37,12 @@ from tome_agent.agent.loop import (
     project_root,
     sources_for_connector,
 )
+from tome_agent.agent.retrieval import stream_retrieval
 from tome_agent.orchestrator.contract import (
     ChatEventPayload,
     IssueContext,
     ProjectSnapshot,
+    RetrievalMessage,
 )
 from tome_agent.reports import schema as report_schema
 from tome_agent.tracing import rename_current_span
@@ -178,7 +180,13 @@ async def stream_chat(
     stable_pages: dict[str, str],
     issue_context: IssueContext | None = None,
     actor_email: str | None = None,
+    actor_sub: str | None = None,
     is_compact: bool = False,
+    global_chat: bool = False,
+    live_verification: str = "off",
+    live_verification_grant: str | None = None,
+    retrieval_scope_hash: str | None = None,
+    retrieval_history: list[RetrievalMessage] | None = None,
     myagent_research: bool = False,
     myagent_run_id: str | None = None,
     myagent_sources: list[str] | None = None,
@@ -202,12 +210,25 @@ async def stream_chat(
         return
 
     models = await asyncio.to_thread(
-        http_client.fetch_model_config, snapshot.project_id, snapshot.project_type
+        http_client.fetch_model_config, snapshot.project_id, "global" if global_chat else snapshot.project_type
     )
     http_client.set_model_overrides(models)
 
+    if global_chat:
+        if not actor_sub or not retrieval_scope_hash or is_compact:
+            yield ChatEventPayload(type="error", data={"message": "A scoped retrieval session is required."})
+            return
+        async for event in stream_retrieval(
+            user_message=user_message, snapshot=snapshot, actor_sub=actor_sub,
+            scope_hash=retrieval_scope_hash, history=retrieval_history or [], model=_chat_model(),
+            live_verification=live_verification,
+            live_verification_grant=live_verification_grant,
+        ):
+            yield event
+        return
+
     prompt = "/compact" if is_compact else user_message
-    if not is_compact and user_message.strip():
+    if not global_chat and not is_compact and user_message.strip():
         try:
             relevant_gists = await http_client.search_gists(
                 user_message, project_id=snapshot.project_id, limit=3

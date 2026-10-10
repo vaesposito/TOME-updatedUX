@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from urllib.parse import urlsplit
+
 from pydantic import BaseModel, Field
 
 from tome_agent.agent import http_client, mcp_confluence
@@ -12,11 +16,35 @@ from tome_agent.reports.schema import (
 )
 
 
-def _atlassian_cloud_id() -> str:
-    """Resolve the active request's Atlassian cloud_id from forwarded
-    credentials. Empty when no Atlassian connection is forwarded — the MCP
-    surfaces that as a clean tool-result error."""
-    return http_client.get_active_credentials().get("atlassian", {}).get("cloud_id", "")
+def _site_origin(value: str) -> str:
+    url = urlsplit(value.strip())
+    if url.scheme.lower() != "https" or not url.hostname or url.username or url.password:
+        raise ValueError("Confluence Cloud source requires a valid HTTPS site URL")
+    host = url.hostname.encode("idna").decode("ascii").lower()
+    port = f":{url.port}" if url.port not in (None, 443) else ""
+    return f"https://{host}{port}"
+
+
+def _site_credentials() -> dict[str, dict[str, str]]:
+    credentials = http_client.get_active_credentials().get("atlassian", {})
+    raw = credentials.get("confluence_sites")
+    if raw is None:
+        # Older callers must explicitly bind their cloud ID to a matching URL.
+        if credentials.get("site_url") and credentials.get("cloud_id"):
+            return {_site_origin(credentials["site_url"]): credentials}
+        return {}
+    try:
+        sites = json.loads(raw)
+        if not isinstance(sites, dict) or any(
+            not isinstance(site, str) or not isinstance(entry, dict)
+            or not isinstance(entry.get("cloud_id"), str) or not entry["cloud_id"]
+            or not isinstance(entry.get("access_token"), str) or not entry["access_token"]
+            for site, entry in sites.items()
+        ):
+            raise ValueError("Invalid site bindings")
+        return {_site_origin(site): entry for site, entry in sites.items()}
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise ValueError("Confluence site credentials are invalid; reconnect Atlassian") from exc
 
 
 class ConfluencePageItem(BaseModel):
@@ -36,17 +64,51 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
     extra_model = ConfluenceExtra
 
     def is_enabled(self, token: str) -> bool:
-        # Confluence cloud requires both an access token and a cloud_id. Both
-        # arrive together in the per-request credentials under the `atlassian`
-        # provider (the caller resolves the cloud_id from the user's first
-        # accessible site at request time).
-        return bool(token and _atlassian_cloud_id())
+        return bool(token)
 
-    def build_mcp(self, *, token: str, sources: list[SourceItem], read_state: ConfluenceReadState | None = None) -> object:
+    def build_mcp_servers(
+        self, *, sources: list[SourceItem], read_state: ConfluenceReadState | None = None,
+    ) -> dict[str, object]:
+        groups: dict[str, list[SourceItem]] = {}
+        for source in sources:
+            groups.setdefault(_site_origin(source.extra.get("base_url", "")), []).append(source)
+        if not groups:
+            return {}
+        credentials = _site_credentials()
+        missing = [site for site in groups if not credentials.get(site, {}).get("access_token")]
+        if missing:
+            raise ValueError(f"Confluence connection does not authorize configured sites: {', '.join(missing)}")
+        servers: dict[str, object] = {}
+        for site, scoped_sources in groups.items():
+            name = self.server_name(site, multiple_sites=len(groups) > 1)
+            entry = credentials[site]
+            servers[name] = self.build_mcp(
+                token=entry["access_token"], cloud_id=entry["cloud_id"], sources=scoped_sources,
+                read_state=read_state, server_name=name,
+                read_namespace=site + ":" if len(groups) > 1 else "",
+            )
+        return servers
+
+    @staticmethod
+    def server_name(site: str, *, multiple_sites: bool) -> str:
+        return "confluence_" + hashlib.sha256(site.encode()).hexdigest()[:12] if multiple_sites else "confluence"
+
+    @staticmethod
+    def coverage_namespace(source: SourceItem, sources: list[SourceItem]) -> str:
+        sites = {_site_origin(s.extra["base_url"]) if s.extra.get("base_url") else "" for s in sources}
+        return _site_origin(source.extra.get("base_url", "")) + ":" if len(sites) > 1 else ""
+
+    def build_mcp(
+        self, *, token: str, sources: list[SourceItem], read_state: ConfluenceReadState | None = None,
+        cloud_id: str | None = None, server_name: str = "confluence", read_namespace: str = "",
+    ) -> object:
         site_url = next(
             (s.extra.get("base_url", "") for s in sources if s.extra.get("base_url")),
             "",
         )
+        if site_url:
+            site_url = _site_origin(site_url)
+        resolved_cloud_id = cloud_id if cloud_id is not None else _site_credentials().get(site_url, {}).get("cloud_id", "")
         # Scope the MCP to the project's attached spaces.
         allowed_space_keys = [
             s.extra.get("space_key", "") for s in sources if s.extra.get("space_key")
@@ -69,12 +131,14 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
             )
         return mcp_confluence.build_confluence_mcp(
             token=token,
-            cloud_id=_atlassian_cloud_id(),
+            cloud_id=resolved_cloud_id,
             site_url=site_url,
             allowed_space_keys=allowed_space_keys,
             page_scoped_space_keys=page_scoped_space_keys,
             selected_root_page_ids=selected_root_page_ids,
             read_state=read_state,
+            server_name=server_name,
+            read_namespace=read_namespace,
         )
 
     @property
@@ -113,6 +177,7 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
 
         template = report_schema.confluence_template()
         blocks = []
+        sites = {_site_origin(s.extra["base_url"]) if s.extra.get("base_url") else "" for s in sources}
         for source in sources:
             expanded = report_schema.expand_template(
                 f"confluence/{source.slug}", template
@@ -147,8 +212,11 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
                 if scope_lines
                 else ""
             )
+            site = _site_origin(source.extra["base_url"]) if source.extra.get("base_url") else ""
+            server = self.server_name(site, multiple_sites=len(sites) > 1)
             blocks.append(
                 f"### Confluence space `{source.slug}` ({source.display_name}, key={key})\n"
+                f"Site: {site}; use tools prefixed `mcp__{server}__` for this source.\n"
                 f"{scope_block}\n" + format_pages(expanded)
             )
         spaces_section = "\n\n".join(blocks)

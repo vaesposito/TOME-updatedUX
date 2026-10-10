@@ -172,6 +172,7 @@ export function ChatContainer() {
               messages: [],
               streamEvents: [],
               participants: conv.participants || [],
+              metadata: conv.metadata,
               // assisted-by Codex Codex-sonnet-4-6
               // Direct-open shared chats may skip the list route; keep share metadata for sidebar badges.
               owner_id: conv.owner_id,

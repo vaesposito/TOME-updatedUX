@@ -21,6 +21,7 @@ from uuid import UUID
 
 from tome_agent import prompts
 from tome_agent.agent import http_client
+from tome_agent.agent.confluence_reads import ConfluenceReadState
 from tome_agent.agent.connectors import REGISTRY
 from tome_agent.agent.ingestor import (
     expected_template_pages,
@@ -34,7 +35,13 @@ from tome_agent.agent.loop import (
     project_root,
     sources_for_connector,
 )
-from tome_agent.agent.run_stream import consume_agent_query, emit_log, now_iso
+from tome_agent.agent.run_stream import (
+    agent_event_failed,
+    confluence_completion_event,
+    consume_agent_query,
+    emit_log,
+    now_iso,
+)
 from tome_agent.agent.sharepoint_documents import (
     PreparedDocument,
     SharePointPreparationError,
@@ -335,6 +342,7 @@ async def stream_synthesis(
                 "edit any other page, and stop when the selected pages are complete."
             )
     expected_pages = expected_template_pages(snapshot)
+    confluence_read_state = ConfluenceReadState()
     options = build_agent_options(
         snapshot=snapshot,
         system_prompt=system_prompt,
@@ -347,6 +355,7 @@ async def stream_synthesis(
         offline=experiment is not None,
         max_budget_usd=experiment.max_budget_usd if experiment is not None else None,
         expected_template_pages=expected_pages,
+        confluence_read_state=confluence_read_state,
     )
 
     entity_kind = "Area" if snapshot.project_type == "area" else "BHAG"
@@ -413,7 +422,10 @@ async def stream_synthesis(
     async for event in consume_agent_query(
         prompt, options, log_buf, model_provenance=model_provenance
     ):
+        event = confluence_completion_event(event, confluence_read_state)
         yield event
+        if agent_event_failed(event):
+            return
 
     # Deterministic, code-owned template-binding reconcile (#488) — see
     # ingestor.stream_ingest's identical step for why this can't be left to

@@ -4,6 +4,8 @@ import { AgentAvatar } from "@/components/dynamic-agents/AgentAvatar";
 import type { TaskItem } from "@/components/shared/timeline";
 import { MarkdownRenderer } from "@/components/shared/timeline";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { useTomeAssistantSettings } from "@/hooks/use-tome-assistant-settings";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/components/ui/toast";
 import { useAgentTimeline } from "@/hooks/useDynamicAgentTimeline";
@@ -54,6 +56,7 @@ type ReadOnlyReason = 'admin_audit' | 'shared_readonly' | 'agent_deleted' | 'age
 interface QueuedMessage {
   text: string;
   files: InputFile[];
+  verificationChoice?: "default" | "verify" | "wiki";
 }
 
 interface ChatPanelProps {
@@ -80,6 +83,8 @@ export function ChatPanel({
   agent,
   isLoadingMessages,
   clientContext: suppliedClientContext,
+  emptyStateTitle,
+  emptyStateSubtitle,
 }: ChatPanelProps) {
   // Derive display values from agent object
   const agentGradient = agent?.ui?.gradient_theme ?? null;
@@ -215,14 +220,14 @@ export function ChatPanel({
     try {
       const agentId = await resolveUsableChatAgentId();
       const newParticipants = buildParticipants(agentId);
-      await apiClient.updateConversation(conversationId, {
+      const updated = await apiClient.updateConversation(conversationId, {
         participants: newParticipants,
       });
       // Patch the Zustand store in-place so ChatContainer sees the new participants
       // immediately — it skips the API fetch when the conversation is already cached.
       useChatStore.setState((state) => ({
         conversations: state.conversations.map((c) =>
-          c.id === conversationId ? { ...c, participants: newParticipants } : c,
+          c.id === conversationId ? { ...c, participants: newParticipants, metadata: updated.metadata } : c,
         ),
       }));
       router.refresh();
@@ -254,10 +259,10 @@ export function ChatPanel({
     if (!conversationId || !chosenAgentId) return;
     try {
       const newParticipants = buildParticipants(chosenAgentId);
-      await apiClient.updateConversation(conversationId, { participants: newParticipants });
+      const updated = await apiClient.updateConversation(conversationId, { participants: newParticipants });
       useChatStore.setState((state) => ({
         conversations: state.conversations.map((c) =>
-          c.id === conversationId ? { ...c, participants: newParticipants } : c,
+          c.id === conversationId ? { ...c, participants: newParticipants, metadata: updated.metadata } : c,
         ),
       }));
       router.refresh();
@@ -273,7 +278,17 @@ export function ChatPanel({
   const ssoEnabled = getConfig('ssoEnabled');
   const accessToken = ssoEnabled ? session?.accessToken : undefined;
 
-  const conversation = getActiveConversation();
+  const conversation = useChatStore((state) => state.conversations.find(
+    (item) => item.id === (conversationId ?? state.activeConversationId),
+  ));
+  const isNativeTome = conversation?.metadata?.assistant_runtime === "tome-native";
+  const tomeSettings = useTomeAssistantSettings(isNativeTome);
+  const tomeLiveVerificationEnabled = tomeSettings.tome_live_verification_mode !== "off";
+  const [verificationChoice, setVerificationChoice] = useState<"default" | "verify" | "wiki">("default");
+  useEffect(() => { setVerificationChoice("default"); }, [conversationId]);
+  useEffect(() => {
+    if (tomeSettings.tome_live_verification_mode === "off") setVerificationChoice("default");
+  }, [tomeSettings.tome_live_verification_mode]);
 
   // Ref to track which conversations we've checked for HITL interrupt state
   const interruptCheckedRef = useRef<Set<string>>(new Set());
@@ -441,7 +456,7 @@ export function ChatPanel({
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
     // Skip if no conversationId (new conversation) or agentId
-    if (!conversationId || !agentId) return;
+    if (!conversation || !conversationId || !agentId || isNativeTome) return;
     
     // Wait for messages to be loaded (race condition on page refresh:
     // this effect can fire before ChatContainer finishes loading messages
@@ -542,7 +557,7 @@ export function ChatPanel({
     };
 
     checkInterruptState();
-  }, [conversationId, agentId, isLoadingMessages, isThisConversationStreaming, hasAssistantMessageForInterruptCheck]);
+  }, [conversation, conversationId, agentId, isLoadingMessages, isThisConversationStreaming, hasAssistantMessageForInterruptCheck, isNativeTome]);
 
   // ═══════════════════════════════════════════════════════════════
   // FILES & TASKS FETCH (for timeline display in latest message)
@@ -550,7 +565,7 @@ export function ChatPanel({
 
   // Fetch files from API
   useEffect(() => {
-    if (!conversationId || !agentId) {
+    if (!conversation || !conversationId || !agentId || isNativeTome) {
       setTimelineFiles([]);
       filesFetchedForRef.current = null;
       return;
@@ -585,7 +600,7 @@ export function ChatPanel({
     };
 
     fetchFiles();
-  }, [conversationId, agentId, filesFetchKey]);
+  }, [conversation, conversationId, agentId, filesFetchKey, isNativeTome]);
 
   // Handle file download
   const handleTimelineFileDownload = useCallback(
@@ -1008,7 +1023,7 @@ export function ChatPanel({
   }, [updateMessage, setConversationStreaming, agentName]);
 
   // Core submit function that accepts a message directly
-  const submitMessage = useCallback(async (messageToSend: string, filesToSend: InputFile[] = []) => {
+  const submitMessage = useCallback(async (messageToSend: string, filesToSend: InputFile[] = [], choice = verificationChoice) => {
     // A turn is valid if it has text OR at least one attachment.
     if ((!messageToSend.trim() && filesToSend.length === 0) || isThisConversationStreaming) return;
 
@@ -1078,6 +1093,7 @@ export function ChatPanel({
     // Create protocol-agnostic adapter
     const adapter = createStreamAdapter({
       protocol: agentProtocol as "custom" | "agui",
+      runtime: getActiveConversation()?.metadata?.assistant_runtime === "tome-native" ? "tome-native" : undefined,
       accessToken,
     });
 
@@ -1103,10 +1119,14 @@ export function ChatPanel({
 
       await adapter.streamMessage(
         {
-          message: buildContextGroundedMessage(messageToSend, suppliedClientContext),
+          message: conv?.metadata?.assistant_runtime === "tome-native"
+            ? messageToSend
+            : buildContextGroundedMessage(messageToSend, suppliedClientContext),
           conversationId: convId,
           agentId,
           clientContext,
+          ...(getActiveConversation()?.metadata?.assistant_runtime === "tome-native" && (!tomeLiveVerificationEnabled || choice !== "default")
+            ? { forwardedProps: { verify_sources: tomeLiveVerificationEnabled && choice === "verify" } } : {}),
           ...(filesToSend.length > 0 && { files: filesToSend }),
         },
         callbacks,
@@ -1142,7 +1162,7 @@ export function ChatPanel({
       });
       setConversationStreaming(convId, null);
     }
-  }, [isThisConversationStreaming, activeConversationId, accessToken, agentId, agentProtocol, getActiveConversation, createConversation, clearStreamEvents, addMessage, appendToMessage, updateMessage, setConversationStreaming, buildStreamCallbacks, finalizeStreamLoop, session?.user, showAuthErrorToast, suppliedClientContext, toast]);
+  }, [isThisConversationStreaming, activeConversationId, accessToken, agentId, agentProtocol, getActiveConversation, createConversation, clearStreamEvents, addMessage, appendToMessage, updateMessage, setConversationStreaming, buildStreamCallbacks, finalizeStreamLoop, session?.user, showAuthErrorToast, suppliedClientContext, toast, verificationChoice, tomeLiveVerificationEnabled]);
 
   // The Home page hero composer creates a conversation and navigates here
   // before a message can be sent (this panel only mounts once a conversation
@@ -1166,7 +1186,7 @@ export function ChatPanel({
       setQueuedMessages(remaining);
       // Small delay to ensure previous message is fully processed
       setTimeout(() => {
-        submitMessage(firstMessage.text, firstMessage.files);
+        submitMessage(firstMessage.text, firstMessage.files, firstMessage.verificationChoice ?? "default");
       }, 300);
     }
   }, [isThisConversationStreaming, queuedMessages, submitMessage]);
@@ -1382,7 +1402,7 @@ export function ChatPanel({
 
       // Add to queue if under limit
       if (queuedMessages.length < 3) {
-        setQueuedMessages(prev => [...prev, { text: message, files: encodedFiles }]);
+        setQueuedMessages(prev => [...prev, { text: message, files: encodedFiles, verificationChoice }]);
         setInput("");
         setAttachments([]);
       } else {
@@ -1413,7 +1433,7 @@ export function ChatPanel({
     setAttachments([]);
 
     await submitMessage(message, encodedFiles);
-  }, [input, attachments, submitMessage, isThisConversationStreaming, queuedMessages, pendingUserInput, slashCommands, executeSlashCommand, handleStop]);
+  }, [input, attachments, submitMessage, isThisConversationStreaming, queuedMessages, pendingUserInput, slashCommands, executeSlashCommand, handleStop, verificationChoice]);
 
   // Auto-submit pending message from use case selection
   useEffect(() => {
@@ -1769,21 +1789,30 @@ export function ChatPanel({
                       iconSize="h-8 w-8"
                       icon={Sparkles}
                     />
-                    <h2 className="text-2xl font-bold mb-4">Welcome to {getConfig('appName')}</h2>
-                    <p className="text-muted-foreground mb-3">
-                      Start your conversation with
-                    </p>
-                    <div className="flex items-center justify-center gap-3">
-                      <AgentAvatar
-                        agent={agent}
-                        rounded="rounded-lg"
-                        size="w-8 h-8"
-                        iconSize="h-4 w-4"
-                      />
-                      <span className="text-lg font-semibold">
-                        {agentName || "your agent"}
-                      </span>
-                    </div>
+                    {emptyStateTitle ? (
+                      <>
+                        <h2 className="text-2xl font-bold mb-4">{emptyStateTitle}</h2>
+                        {emptyStateSubtitle && <p className="text-muted-foreground mb-3">{emptyStateSubtitle}</p>}
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-2xl font-bold mb-4">Welcome to {getConfig('appName')}</h2>
+                        <p className="text-muted-foreground mb-3">
+                          Start your conversation with
+                        </p>
+                        <div className="flex items-center justify-center gap-3">
+                          <AgentAvatar
+                            agent={agent}
+                            rounded="rounded-lg"
+                            size="w-8 h-8"
+                            iconSize="h-4 w-4"
+                          />
+                          <span className="text-lg font-semibold">
+                            {agentName || "your agent"}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -2189,6 +2218,18 @@ export function ChatPanel({
 
               {/* Staged attachment previews (above the input row). */}
               <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
+              {isNativeTome && tomeLiveVerificationEnabled && <div className="flex items-center gap-2 px-3 text-xs text-muted-foreground">
+                <label className="sr-only" htmlFor={`tome-live-choice-${conversationId ?? "new"}`}>Search sources</label>
+                <Select id={`tome-live-choice-${conversationId ?? "new"}`} className="h-8 w-auto text-xs"
+                  value={verificationChoice === "default"
+                    ? tomeSettings.tome_live_verification_mode === "automatic" ? "verify" : "wiki"
+                    : verificationChoice}
+                  disabled={isThisConversationStreaming}
+                  onChange={(event) => setVerificationChoice(event.target.value as typeof verificationChoice)}>
+                  <option value="wiki">Tome Only Search</option>
+                  <option value="verify">Tome + Confluence Live Search</option>
+                </Select>
+              </div>}
 
               <div className="flex items-center gap-3">
                 <TextareaAutosize
@@ -2202,7 +2243,7 @@ export function ChatPanel({
                       ? queuedMessages.length >= 3
                         ? "Queue full (3/3). Send or cancel messages to queue more, or Cmd+Enter to force send..."
                         : `Type to queue message (${queuedMessages.length}/3), or Cmd+Enter to force send...`
-                      : `Ask anything, or type / to see commands, skills, and agents...`
+                      : isNativeTome ? "Ask Tome…" : `Ask anything, or type / to see commands, skills, and agents...`
                   }
                   className="flex-1 bg-transparent resize-none outline-none px-3 py-2.5 text-sm"
                   minRows={1}

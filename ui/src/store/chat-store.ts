@@ -261,6 +261,7 @@ const storeImplementation: StateCreator<ChatState> = (set, get) => ({
         }
 
         let id: string;
+        let metadata = options?.metadata;
 
         if (storageMode === 'mongodb') {
           // MongoDB mode: server owns ID generation
@@ -271,6 +272,7 @@ const storeImplementation: StateCreator<ChatState> = (set, get) => ({
             ...(options?.metadata ? { metadata: options.metadata } : {}),
           });
           id = result.conversation._id;
+          metadata = result.conversation.metadata;
         } else {
           // localStorage mode: generate locally
           id = generateId();
@@ -284,7 +286,7 @@ const storeImplementation: StateCreator<ChatState> = (set, get) => ({
           messages: [],
           streamEvents: [],
           participants: buildParticipants(normalizedAgentId),
-          ...(options?.metadata ? { metadata: options.metadata } : {}),
+          ...(metadata ? { metadata } : {}),
         };
 
         // Update local state

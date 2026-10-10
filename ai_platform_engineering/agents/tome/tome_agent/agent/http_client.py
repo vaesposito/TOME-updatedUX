@@ -18,6 +18,7 @@ log.
 from __future__ import annotations
 
 import contextvars
+import json
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -466,7 +467,53 @@ def fetch_model_config(
     return by_role or None
 
 
-def fetch_all_pages_sync(project_id: str | None = None) -> dict[str, str]:
+async def fetch_retrieval(
+    actor_sub: str, scope_hash: str, operation: str, arguments: dict[str, Any], *, live_grant: str | None = None,
+) -> dict[str, Any]:
+    """Call the bounded read API with the trusted caller identity, never model headers."""
+    headers = {**_auth_headers(), "X-Tome-Actor-Sub": actor_sub}
+    if live_grant:
+        headers["X-Tome-Live-Grant"] = live_grant
+    async with httpx.AsyncClient(timeout=65.0 if operation.startswith("confluence_") else DEFAULT_TIMEOUT) as client:
+        response = await client.get(
+            f"{_backend_url()}/api/internal/retrieval",
+            headers=headers,
+            params={**arguments, "operation": operation, "scope_hash": scope_hash},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+async def stream_retrieval_snapshot(
+    actor_sub: str, scope_hash: str, project_ids: list[str] | None = None
+) -> AsyncIterator[dict[str, Any]]:
+    """Stream the authenticated caller's published heads without model-selected URLs."""
+    headers = {**_auth_headers(), "X-Tome-Actor-Sub": actor_sub}
+    async with (
+        httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client,
+        client.stream(
+            "POST" if project_ids is not None else "GET",
+            f"{_backend_url()}/api/internal/retrieval",
+            headers=headers,
+            params={"operation": "snapshot", "scope_hash": scope_hash},
+            **({"json": {"project_ids": project_ids}} if project_ids is not None else {}),
+        ) as response,
+    ):
+        response.raise_for_status()
+        if "application/x-ndjson" not in response.headers.get("content-type", ""):
+            raise ValueError("Invalid published snapshot response")
+        async for line in response.aiter_lines():
+            if len(line.encode("utf-8")) > 56 * 1024 * 1024:
+                raise ValueError("Published snapshot frame exceeds its limit")
+            frame = json.loads(line)
+            if not isinstance(frame, dict):
+                raise TypeError("Invalid published snapshot frame")
+            yield frame
+
+
+def fetch_all_pages_sync(
+    project_id: str | None = None, *, actor_sub: str | None = None
+) -> dict[str, str]:
     """All current pages as `{path: markdown}` from the backend. Used to
     materialize a project's on-disk working copy (startup load, periodic sync,
     and at the start of an ingest) so the agent's filesystem tools
@@ -474,7 +521,11 @@ def fetch_all_pages_sync(project_id: str | None = None) -> dict[str, str]:
     pid = project_id or _project_id()
     url = f"{_backend_url()}/api/internal/projects/{pid}/pages"
     with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
-        resp = client.get(url, headers=_auth_headers())
+        headers = _auth_headers()
+        subject = actor_sub or _active_actor_sub.get()
+        if subject:
+            headers["X-Tome-Actor-Sub"] = subject
+        resp = client.get(url, headers=headers)
         resp.raise_for_status()
         return resp.json()
 

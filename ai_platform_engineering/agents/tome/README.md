@@ -29,6 +29,29 @@ the passive `/metrics` scrape endpoint are unauthenticated.
 | POST | `/model-check` | Toolless smoke test for an administrator-selected model id |
 | GET | `/healthz` · `/readyz` · `/metrics` | Liveness / readiness / metrics |
 
+### Global answer citations
+
+- Popup, regular chat and global MCP delegation share a final citation pass in
+  the native retrieval runtime. Draft prose is buffered; tool progress still streams.
+- Each factual paragraph, list item or table row is reviewed against current-turn
+  published evidence and, when enabled, complete live Confluence reads.
+- Code validates source IDs and supporting line spans, extracts quotations from
+  those spans, records revision-bound
+  line ranges, and constructs canonical links beside the supported text. Sources
+  only inspected appear in a separate consulted list and never in `citations`.
+- Live rewriting preserves wiki evidence in the turn ledger. Live reads do not
+  imply every wiki claim was verified against its upstream source.
+- `context_coverage.citation_validation` records support bindings and gaps.
+  Published citations retain their existing schema; live provenance stays in
+  `live_verification.live_sources` with `cited_in_answer` flags.
+- Review uses at most 60,000 evidence characters and 90 seconds. Batches contain
+  at most ten answer blocks, with three concurrent requests and one mapping
+  repair per batch. Invalid spans withhold the affected detail as an evidence
+  gap; an unavailable overall review withholds the
+  draft. Permission validity is rechecked before final emission.
+- Semantic support remains model judgment. Valid links and existing source spans
+  do not prove completeness or guarantee that every conclusion is correct.
+
 ## Configuration (env)
 
 ### Ingest startup and completion
@@ -274,6 +297,19 @@ semantic understanding or a UI-to-wiki run.
 
 ## Confluence body chunking
 
+- Native project chat and ingestion resolve each configured Confluence site
+  against the calling user's Atlassian accessible resources. Site URLs match
+  by HTTPS origin, ignoring page paths and trailing slashes; only resources
+  with Confluence scopes qualify. Missing, ambiguous or unverifiable sites
+  produce a connection error before dispatch.
+- Multiple sites use separate SDK connectors and caller-owned credentials,
+  each limited to that site's attached spaces and selected page roots. Tool
+  names identify the site in the agent's source instructions. Body coverage
+  is tracked separately even when page IDs overlap between sites.
+- Both source previews and ingest preflight use the same site bindings.
+  The global published-wiki retrieval runtime continues using TOME access
+  checks; this connector resolution applies to live project source reads.
+
 - `confluence_get_page_content(page_id)` returns the first storage XHTML chunk
   with source version/time, `content_revision`, `total_chars`, and `next_offset`.
 - Each body response is capped at **8,000 serialized UTF-8 bytes**, including
@@ -344,3 +380,122 @@ uv run uvicorn tome_agent.agent.main:app --host 127.0.0.1 --port 8766
 
 Point the UI at it with `TOME_AGENT_URL` (e.g. `http://127.0.0.1:8766`) and
 set its `TOME_AGENT_TOKEN` to the same value.
+
+
+### Global Ask Tome
+
+- Browser chat sends an SSE comment heartbeat every 10 seconds during model
+  reasoning and live-source comparison. Configure proxy timeouts above the
+  bounded turn deadline; the BFF still cancels a turn after 290 seconds.
+- Set deployment-owned ingress read/send timeouts to at least 330 seconds for
+  `/api/tome/chat` and `/api/tome/mcp`, and disable response buffering. Chat
+  heartbeats keep SSE active; MCP tool responses can remain silent until the
+  answer is complete. These settings belong in the deployment's ingress values
+  or reverse-proxy configuration:
+
+  ```yaml
+  nginx.ingress.kubernetes.io/proxy-read-timeout: "330"
+  nginx.ingress.kubernetes.io/proxy-send-timeout: "330"
+  nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  ```
+
+  For a standalone nginx reverse proxy, configure `proxy_read_timeout 330s;`,
+  `proxy_send_timeout 330s;`, and `proxy_buffering off;` in both endpoint
+  locations. Check every proxy in the request path; an outer load balancer's
+  shorter idle timeout can still interrupt a non-streaming MCP result.
+- The same service runs project operations as SDK runs and global retrieval as
+  direct Messages function calls. Global turns use neither MCP nor Claude Code.
+- `ChatRequest.global_chat` selects read-only retrieval. The BFF provides an
+  access-filtered BHAG/area/project catalog and the authenticated actor subject.
+- Each turn streams published page heads from the canonical PageStore into a
+  private temporary view. Drafts, rejected revisions and tombstones are excluded.
+  The ingestion mirror and its credentials are never opened by this runtime.
+- Files live at `entities/<hashed-entity-id>/pages/<published-path>`. Navigation
+  indexes express relationships without duplicating a project's wiki. Root mode
+  is 0700; staged files are 0400. The view is removed on success, error or ordinary
+  cancellation. A forced process termination can leave files in container `/tmp`.
+- Initial context includes navigation/overview excerpts and complete documents:
+  the entire corpus when it fits, otherwise broad charters, question-relevant
+  pages and core progress/decision/memory pages within a 128,000-character budget.
+- Native functions are `list_projects`, `list_project_pages`, `glob_pages`,
+  `search_pages` and `read_project_page`. Search supports ranked keyword excerpts
+  or literal ripgrep; it is not semantic/vector search. Globs use relative POSIX
+  `*`, `?` and whole-segment `**`. Reads support offsets and line ranges.
+- Permission checks run before/after search and reads, before/after model calls,
+  and at snapshot completion. A changed catalog aborts the turn; the next turn
+  discards private model history. No partial snapshot is used for reasoning.
+- Source references contain citation, revision id/time, content hash and capture
+  time. Page capture times span a reported window; the corpus is not an atomic
+  database snapshot or live verification of upstream systems.
+- Limits: 64 MiB corpus, 8 MiB/page, 20,000 pages; 75 seconds to prepare, 270 seconds
+  per turn; 12 model calls, 32 function calls, 120,000 additional evidence
+  characters; 48,000 characters/read. Search returns pagination and coverage;
+  literal search caps at three matching lines/page, 1,000 matches, 8 MiB output
+  and eight seconds. Oversized/incomplete snapshots fail closed.
+- GRID owns visible history. Mongo stores eight bounded user/assistant messages
+  per user/conversation, TTL seven days. Raw pages and function results are not
+  persisted in model history. The global model setting applies.
+- These functions and the optional scoped live reads are the model capability boundary. There is no arbitrary
+  filesystem, shell, write, credential or model-selected network capability.
+  Private views are not separate OS sandboxes; adding code execution would
+  require stronger isolation. Project ingestion/chat still use their existing SDK
+  and connector MCPs.
+- The UI's MCP boundary exposes `tome_agent_search` and its `tome_ask_global`
+  alias through the shared global service. This is an external interface to native
+  reasoning; it does not introduce MCP calls inside the retrieval loop.
+- Snapshot preparation POSTs the requested entity IDs to the internal published
+  export. The UI verifies that selection against the caller's current authorized
+  catalog and keeps the full authorization hash for revocation checks.
+- Successful `done` events carry recognized page citations, consulted source
+  metadata, entity slugs, retrieval gaps and coverage warnings. Revision dates are
+  published-wiki dates; `upstream_verified_at` is null. Metadata arrays cap at 500
+  sources/citations. These fields do not independently score factual completeness.
+
+#### Optional live Confluence comparison
+
+- **TOME Settings → Assistant → Live Confluence verification** stores
+  `platform_config.tome_live_verification_mode`: `off` (default), `on_demand`,
+  or `automatic`. It is independent of popup visibility.
+- The popup uses **Ask Tome** for its header and welcome title, without context
+  notices or font/appearance controls.
+- On demand: select **Tome + Confluence Live Search** in native chat's search
+  control. Automatic: check questions containing time-sensitive terms (such as
+  yesterday, current, status or progress), or answers describing evidence as
+  stale. This is a heuristic, not a fixed two-day ingestion threshold.
+  **Tome Only Search** overrides Automatic for a question. The initial selection
+  follows the runtime policy; an explicit choice overrides it for that question.
+- Browser `/api/tome/chat` and MCP `tome_agent_search` / `tome_ask_global` accept
+  optional `verify_sources`: `true` requests comparison, `false` skips it,
+  omission uses the runtime policy. Requesting `true` while Off returns 409.
+- Native `search_confluence` and `read_confluence_page` call the BFF directly.
+  No MCP or Dynamic Agents runtime is used internally. The BFF resolves the
+  caller's connected Atlassian credentials for each project's configured site;
+  tokens remain in the BFF. Space and selected-root restrictions apply to
+  search results and page reads, along with current TOME access checks.
+- A hashed, caller-bound turn grant narrows live access to the selected catalog,
+  expires with the turn lease, and is cleared on release. Grant and source scope
+  are rechecked after each provider read. Provider failures remain unverified.
+- A complete storage body and revision metadata are required. Chunks must cover
+  one consistent revision; Unicode offsets count code points. The final native
+  model pass compares substantive claims with complete bodies, labels them
+  supported/conflicting/unverified, and revises the answer with current citations.
+  This is model-assisted comparison, not a formal accuracy guarantee.
+- Verification includes complete documents preloaded into context and their
+  cited upstream pages. The completion pass resumes partial reads and reuses
+  revision-bound chunks within that turn after checking current access.
+- `done.live_verification` and MCP results report comparison status, claim checks,
+  source URLs/revisions/read times, and warnings. Published wiki metadata keeps
+  `upstream_verified_at: null`; the wiki and ingestion freshness are unchanged.
+- Bounds: 20 live calls, 120,000 live body characters, three concurrent requests,
+  up to six pages in the forced completion phase, and 65 seconds for that phase.
+  HTTP responses cap at 8 MiB. Timeouts, missing evidence or failed comparison
+  produce an explicit incomplete result rather than a verification claim.
+  Comparison adds one model request after primary reasoning. Time-sensitive
+  completion also searches for newly published pages, within the same live budget.
+  The comparison request allows 150 seconds within the 290-second turn deadline.
+  Configure external MCP reverse proxies above that deadline; a default
+  60-second idle timeout can interrupt a valid non-streaming tool result.
+- Live-enabled turns retain only the last eight user questions in private model
+  history. Source bodies and generated live answers are reauthorized and reread
+  each turn. GRID's visible conversation history remains under its usual access
+  controls. Follow-ups cannot rely on retained live answer text.

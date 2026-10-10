@@ -30,6 +30,7 @@ import { ProjectOnboardingWizard } from "@/components/projects/ProjectOnboarding
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { OnboardingModal } from "@/components/tome/OnboardingModal";
 import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBanner";
+import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { Button } from "@/components/ui/button";
@@ -1344,6 +1345,9 @@ export function ProjectsHub() {
         )}
       </section>
 
+      {!error && (
+        <TomeAssistantBubble />
+      )}
       <OnboardingModal open={onboardingOpen} onOpenChange={handleOnboardingChange} />
     </div>
   );

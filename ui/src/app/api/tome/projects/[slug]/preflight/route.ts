@@ -18,6 +18,7 @@ import {
 import { resolveWebexRoomExecution } from "@/lib/tome/webex-room-execution";
 import { checkSharePointSources } from "@/lib/tome/sharepoint";
 import { githubApiBaseUrl, githubFullName } from "@/lib/projects/github-repository";
+import { forwardedConfluenceSiteCredential } from "@/lib/credentials/confluence-sites";
 
 export const dynamic = "force-dynamic";
 
@@ -56,21 +57,18 @@ async function checkGitHub(
 
 async function checkConfluence(
   spaces: { space_key: string; base_url: string; name?: string }[],
-  token: string,
-  cloudId: string | undefined,
+  credential: Record<string, string>,
 ): Promise<Omit<PreflightSourceResult, "label" | "provider">> {
   // The classic /rest/api/space/{key} endpoint is gone (HTTP 410) on Atlassian
   // Cloud. Use a CQL search scoped to each space key instead — same approach as
   // the confluence MCP connector. Requires cloud_id from the credential entry.
-  if (!cloudId) {
-    return { no_token: false, accessible: [], inaccessible: spaces.map((s) => s.name || s.space_key) };
-  }
-  const apiBase = `https://api.atlassian.com/ex/confluence/${cloudId}/wiki/rest/api`;
-  const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
-
   const results = await Promise.all(
     spaces.map(async (s) => {
       const label = s.name || s.space_key;
+      const binding = forwardedConfluenceSiteCredential(credential, s.base_url);
+      if (!binding) return { item: label, ok: false };
+      const apiBase = `https://api.atlassian.com/ex/confluence/${encodeURIComponent(binding.cloud_id)}/wiki/rest/api`;
+      const headers = { Authorization: `Bearer ${binding.access_token}`, Accept: "application/json" };
       try {
         const cql = `type=space AND space.key="${s.space_key.replace(/"/g, '\\"')}"`;
         const url = `${apiBase}/search?${new URLSearchParams({ cql, limit: "1" }).toString()}`;
@@ -119,8 +117,6 @@ async function checkMyAgent(
 export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const { slug } = await ctx.params;
   const tctx = await loadTomeProject(request, slug);
-  const creds = await resolveCredentialsForSub(sessionSub(tctx.session));
-
   const project = tctx.project;
   const sources = project.sources ?? {};
   const results: PreflightSourceResult[] = [];
@@ -146,6 +142,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         ? [parseConfluenceUrl(sources.confluence_url as string)].filter(Boolean) as CFSpace[]
         : []
   );
+  const creds = await resolveCredentialsForSub(sessionSub(tctx.session), confluenceSpaces.map((source) => source.base_url));
   const webexRooms = Array.isArray(sources.webex_rooms)
     ? sources.webex_rooms
     : [];
@@ -162,7 +159,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       : null,
     confluenceSpaces.length > 0
       ? creds["atlassian"]?.access_token
-        ? checkConfluence(confluenceSpaces, creds["atlassian"].access_token, creds["atlassian"]?.cloud_id)
+        ? checkConfluence(confluenceSpaces, creds["atlassian"])
         : Promise.resolve({ no_token: true, accessible: [], inaccessible: confluenceSpaces.map((s) => s.name || s.space_key) })
       : null,
     webexRooms.length > 0

@@ -23,7 +23,7 @@ WORKDIR /app
 # Trusted local PPTX rendering fallback. The renderer is run with filesystem
 # and network restrictions, not exposed as an agent shell tool.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libreoffice-impress libseccomp2 fonts-liberation \
+    && apt-get install -y --no-install-recommends libreoffice-impress libseccomp2 fonts-liberation ripgrep \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

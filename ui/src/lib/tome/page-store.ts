@@ -31,6 +31,14 @@ export interface ConditionalPageWriteResult {
   current?: PageRevision;
 }
 
+/** A published page and the revision supplying its current body. */
+export interface PublishedPageSnapshot {
+  path: string;
+  markdown: string;
+  revision_id?: string;
+  updated_at?: string;
+}
+
 /** Backend-agnostic contract for reading/writing wiki page bodies. */
 export interface PageStore {
   /** Write one page (append a new revision). */
@@ -73,6 +81,9 @@ export interface PageStore {
     projectId: string,
     opts?: { includeDrafts?: boolean },
   ): Promise<Record<string, string>>;
+
+  /** Current published heads, excluding drafts, rejected revisions and tombstones. */
+  publishedPages?(projectId: string): AsyncIterable<PublishedPageSnapshot>;
 
   /** Tombstone a page (append a deleted revision). Idempotent. */
   deletePage(
@@ -195,6 +206,9 @@ export async function getPageStore(): Promise<PageStore> {
  */
 function withStructuredIndexes(store: PageStore): PageStore {
   return {
+    ...(store.publishedPages
+      ? { publishedPages: (projectId: string) => store.publishedPages!(projectId) }
+      : {}),
     writePage: async (projectId, path, markdown, opts) => {
       await store.writePage(projectId, path, markdown, opts);
       if (opts.status !== "draft") {

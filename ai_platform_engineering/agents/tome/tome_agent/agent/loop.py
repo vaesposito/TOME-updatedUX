@@ -408,7 +408,7 @@ def make_constrain_reads_hook(
     return constrain
 
 
-def make_deny_non_wiki_tools_hook(available_tools: set[str]):
+def make_deny_non_wiki_tools_hook(available_tools: set[str], *, reason: str | None = None):
     """Defense in depth for delegated untrusted-evidence turns.
 
     `ClaudeAgentOptions.tools` is the authoritative availability allowlist,
@@ -426,7 +426,7 @@ def make_deny_non_wiki_tools_hook(available_tools: set[str]):
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
-                "permissionDecisionReason": (
+                "permissionDecisionReason": reason or (
                     "This delegated-evidence pass is limited to the current "
                     "project's Markdown wiki files. External, MCP, shell, and "
                     "cross-project tools are unavailable."
@@ -806,13 +806,18 @@ def build_agent_options(
                 roots = [str(scope["page_id"]) for scope in scopes if scope.get("page_id")]
                 if not scopes and source.extra.get("root_page_id"):
                     roots.append(str(source.extra["root_page_id"]))
-                confluence_read_state.required_pages.update(roots)
+                namespace = connector.coverage_namespace(source, sources)
+                confluence_read_state.required_pages.update(namespace + root for root in roots)
             if sources and not connector.is_enabled(token):
                 confluence_read_state.errors["connection"] = "Confluence credentials are unavailable"
         if not connector.is_enabled(token):
             continue
         if isinstance(connector, ConfluenceConnector):
-            mcp_servers[connector.slug] = connector.build_mcp(token=token, sources=sources, read_state=confluence_read_state)
+            servers = connector.build_mcp_servers(sources=sources, read_state=confluence_read_state)
+            mcp_servers.update(servers)
+            for name in servers:
+                allowed.extend(tool.replace("mcp__confluence__", f"mcp__{name}__", 1) for tool in connector.mcp_tools)
+            continue
         else:
             mcp_servers[connector.slug] = connector.build_mcp(token=token, sources=sources)
         allowed.extend(connector.mcp_tools)

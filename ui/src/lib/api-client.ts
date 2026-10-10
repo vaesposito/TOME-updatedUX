@@ -471,9 +471,10 @@ class APIClient {
     });
   }
 
-  async getAgenticApps(): Promise<AgenticAppsListResponse> {
+  async getAgenticApps(signal?: AbortSignal): Promise<AgenticAppsListResponse> {
     const url = `${this.baseURL}/api/agentic-apps`;
     const response = await fetch(url, {
+      signal,
       headers: {
         'Content-Type': 'application/json',
         'X-Client-Source': 'caipe-ui',

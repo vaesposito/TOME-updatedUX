@@ -70,6 +70,8 @@ export async function* parseSSEStream(
         }
 
         // Join multiple data lines with newlines (SSE spec)
+        // Comment-only keep-alives do not dispatch an event.
+        if (dataLines.length === 0) continue;
         const eventData = dataLines.join("\n");
         yield { event: eventType, data: eventData };
       }

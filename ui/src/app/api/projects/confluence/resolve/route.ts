@@ -7,37 +7,15 @@ import {
   withErrorHandler,
 } from "@/lib/api-middleware";
 import { getProviderConnectionService } from "@/lib/credentials/oauth-service-factory";
+import { resolveConfluenceSiteCredentials } from "@/lib/credentials/confluence-sites";
 import {
   parseConfluenceUrl,
   type ConfluenceTreePage,
 } from "@/lib/projects/confluence-source";
 
-const PAGE_LIMIT = 100;
+import { fetchConfluenceSpace, collectConfluencePages, confluenceSearch, cqlQuote, type SearchContent } from "@/lib/projects/confluence-api";
+
 const MAX_PAGES = 500;
-
-interface AccessibleResource {
-  id?: string;
-  url?: string;
-}
-
-interface SearchContent {
-  id?: string;
-  title?: string;
-  space?: { key?: string };
-  ancestors?: Array<{ id?: string; title?: string }>;
-  childTypes?: { page?: { value?: boolean } };
-}
-
-interface SearchResult {
-  title?: string;
-  content?: SearchContent;
-  space?: { key?: string };
-}
-
-interface SearchResponse {
-  results?: SearchResult[];
-  _links?: { next?: string };
-}
 
 function hasChildren(content: SearchContent): boolean | undefined {
   const value = content.childTypes?.page?.value;
@@ -50,111 +28,6 @@ function pageUrl(siteUrl: string, spaceKey: string, pageId: string): string {
 
 function spaceUrl(siteUrl: string, spaceKey: string): string {
   return `${siteUrl.replace(/\/$/, "")}/wiki/spaces/${encodeURIComponent(spaceKey)}`;
-}
-
-function cqlQuote(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-async function confluenceSearch(
-  gateway: string,
-  token: string,
-  cql: string,
-  limit: number,
-  nextLink?: string,
-): Promise<SearchResponse> {
-  const params = nextLink
-    ? new URL(nextLink, "https://confluence-pagination.invalid").searchParams
-    : new URLSearchParams();
-  if (!params.has("cql")) params.set("cql", cql);
-  if (!params.has("expand")) {
-    params.set(
-      "expand",
-      "content.space,content.ancestors,content.childTypes.page",
-    );
-  }
-  if (!params.has("limit")) params.set("limit", String(limit));
-  const response = await fetch(`${gateway}/wiki/rest/api/search?${params}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
-  if (response.status === 401 || response.status === 403) {
-    throw new ApiError(
-      "Your Atlassian connection cannot read this page",
-      403,
-      "CONFLUENCE_PAGE_FORBIDDEN",
-    );
-  }
-  if (!response.ok) {
-    throw new ApiError(
-      `Confluence page lookup failed (${response.status})`,
-      502,
-      "CONFLUENCE_LOOKUP_FAILED",
-    );
-  }
-  return (await response.json().catch(() => ({}))) as SearchResponse;
-}
-
-// v1 `/rest/api/space/{key}` is retired and v2 `/wiki/api/v2/spaces?keys=`
-// 403s on a viewable-but-not-joined space, so check existence via CQL
-// search against `type=space`, same as the space directory does.
-async function fetchConfluenceSpace(
-  gateway: string,
-  token: string,
-  spaceKey: string,
-): Promise<{ key: string } | null> {
-  const search = await confluenceSearch(
-    gateway,
-    token,
-    `type=space and space.key="${cqlQuote(spaceKey)}"`,
-    1,
-  );
-  const key = search.results?.[0]?.space?.key;
-  return key ? { key } : null;
-}
-
-async function collectConfluencePages(
-  gateway: string,
-  token: string,
-  cql: string,
-  maxPages: number,
-): Promise<{ results: SearchResult[]; truncated: boolean }> {
-  const results: SearchResult[] = [];
-  const seenPageIds = new Set<string>();
-  const seenNextLinks = new Set<string>();
-  let nextLink: string | undefined;
-
-  while (results.length < maxPages) {
-    const data = await confluenceSearch(
-      gateway,
-      token,
-      cql,
-      Math.min(PAGE_LIMIT, maxPages - results.length),
-      nextLink,
-    );
-    for (const result of data.results ?? []) {
-      const pageId = result.content?.id;
-      if (!pageId || seenPageIds.has(pageId)) continue;
-      seenPageIds.add(pageId);
-      results.push(result);
-      if (results.length >= maxPages) break;
-    }
-
-    const returnedNext = data._links?.next;
-    if (!returnedNext) {
-      return { results, truncated: false };
-    }
-    if (seenNextLinks.has(returnedNext)) {
-      return { results, truncated: true };
-    }
-    seenNextLinks.add(returnedNext);
-    nextLink = returnedNext;
-  }
-
-  return { results, truncated: Boolean(nextLink) };
 }
 
 function orderForest(pages: ConfluenceTreePage[]): ConfluenceTreePage[] {
@@ -242,55 +115,14 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
 
   const service = await getProviderConnectionService();
-  const connection = (
-    await service.listConnections({ type: "user", id: sub })
-  ).find(
-    (candidate) =>
-      candidate.provider === "atlassian" && candidate.status === "connected",
+  const credentials = await resolveConfluenceSiteCredentials(
+    service, await service.listConnections({ type: "user", id: sub }), [parsed.base_url],
   );
-  if (!connection) {
-    throw new ApiError(
-      "Connect Atlassian before previewing a page",
-      409,
-      "ATLASSIAN_NOT_CONNECTED",
-    );
-  }
-  const token = (await service.refreshConnection(connection.id)).accessToken;
+  const binding = credentials[parsed.base_url];
+  const token = binding.access_token;
+  const site = { id: binding.cloud_id, url: parsed.base_url };
 
-  const resourcesResponse = await fetch(
-    "https://api.atlassian.com/oauth/token/accessible-resources",
-    {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      cache: "no-store",
-    },
-  );
-  if (!resourcesResponse.ok) {
-    throw new ApiError(
-      "Could not resolve the connected Atlassian site",
-      502,
-      "ATLASSIAN_RESOURCES_FAILED",
-    );
-  }
-  const resources = (await resourcesResponse
-    .json()
-    .catch(() => [])) as AccessibleResource[];
-  const site = resources.find((resource) => {
-    if (!resource.id || !resource.url) return false;
-    try {
-      return new URL(resource.url).origin === parsed.base_url;
-    } catch {
-      return false;
-    }
-  });
-  if (!site?.id || !site.url) {
-    throw new ApiError(
-      "This source is not on your connected Atlassian site",
-      400,
-      "CONFLUENCE_SITE_MISMATCH",
-    );
-  }
-
-  const gateway = `https://api.atlassian.com/ex/confluence/${site.id}`;
+  const gateway = `https://api.atlassian.com/ex/confluence/${encodeURIComponent(site.id)}`;
   if (!parsed.page_id && parsed.space_key) {
     const space = await fetchConfluenceSpace(gateway, token, parsed.space_key);
     if (!space?.key) {

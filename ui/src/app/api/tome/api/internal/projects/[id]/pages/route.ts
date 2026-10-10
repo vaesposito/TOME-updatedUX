@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 
 import { ApiError, withErrorHandler } from "@/lib/api-middleware";
 import { requireAgentToken, resolveProject } from "@/lib/tome/internal-api";
+import { canReadTomeProject, isTomeAdminSubject } from "@/lib/tome/access";
 import { getPageStore } from "@/lib/tome/page-store";
 import { getTomeIngestRunsCollection } from "@/lib/tome/mongo-collections";
 import { canWriteAs } from "@/lib/tome/data-steward";
@@ -29,6 +30,10 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   requireAgentToken(request);
   const { id } = await ctx.params;
   const project = await resolveProject(id);
+  const actorSub = request.headers.get("x-tome-actor-sub");
+  if (actorSub && !await isTomeAdminSubject(actorSub) && !await canReadTomeProject(actorSub, project)) {
+    throw new ApiError("TOME read access is required", 403, "TOME_READ_REQUIRED");
+  }
   const store = await getPageStore();
   const pages = await store.listPages(project._id);
   return Response.json(pages);

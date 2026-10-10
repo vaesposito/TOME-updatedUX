@@ -1,5 +1,6 @@
 """Agent errors cannot advance a pass, reconcile pages, or count as success."""
 
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,7 @@ from uuid import uuid4
 
 import pytest
 
-from tome_agent.agent import ingestor, main
+from tome_agent.agent import ingestor, main, synthesize
 from tome_agent.orchestrator.contract import (
     IngestEventPayload,
     IngestRequest,
@@ -124,4 +125,47 @@ async def test_incomplete_confluence_read_cannot_emit_success(
     else:
         assert not any(event.type == "done" for event in events)
         assert events[-1].data["code"] == "incomplete_source_read"
+        reconcile.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("project_type", ["bhag", "area"])
+@pytest.mark.parametrize("complete", [False, True])
+async def test_synthesis_requires_complete_confluence_revisions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, project_type: str, complete: bool,
+) -> None:
+    monkeypatch.setenv("TTT_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(synthesize.http_client, "fetch_page_templates", lambda: None)
+    monkeypatch.setattr(synthesize.http_client, "fetch_model_config", lambda *args: None)
+    monkeypatch.setattr(synthesize.http_client, "fetch_all_pages_sync", lambda *args: {})
+    monkeypatch.setattr(synthesize, "resolve_connector_extras", AsyncMock(return_value={}))
+    reconcile = Mock(return_value={})
+    monkeypatch.setattr(synthesize.report_schema, "reconcile_template_bindings", reconcile)
+
+    def options(**kwargs: Any) -> dict[str, Any]:
+        state = kwargs["confluence_read_state"]
+        state.required_pages.add("123")
+        state.record("123", {"content": [{"text": json.dumps({
+            "offset": 0, "body": "complete" if complete else "part",
+            "total_chars": 8, "content_revision": "example-revision",
+        })}]})
+        return kwargs
+
+    monkeypatch.setattr(synthesize, "build_agent_options", options)
+
+    async def consume(*args: Any, **kwargs: Any) -> AsyncIterator[IngestEventPayload]:
+        yield IngestEventPayload(type="done", data={"subtype": "success", "is_error": False})
+
+    monkeypatch.setattr(synthesize, "consume_agent_query", consume)
+    events = [event async for event in synthesize.stream_synthesis(
+        run_id=uuid4(), report_id=uuid4(), seed=None, connector_data={},
+        snapshot=ProjectSnapshot(project_id="example-project", name="Example", project_type=project_type),
+        is_greenfield=False,
+    )]
+    if complete:
+        assert any(event.type == "done" for event in events)
+    else:
+        assert not any(event.type == "done" for event in events)
+        assert events[-1].data["code"] == "incomplete_source_read"
+        assert events[-1].data["incomplete_sources"] == ["123"]
         reconcile.assert_not_called()

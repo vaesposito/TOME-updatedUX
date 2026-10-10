@@ -31,6 +31,8 @@ RAG_TEAM_SLUG_PATTERN,
 } from '@/lib/rag-settings';
 import { normalizeRagIngestorLimits } from '@/lib/rag-ingestor-limits';
 import { isValidReleaseNotesRef } from '@/lib/release-notes-ref';
+import { validateTomeAssistantPopupEnabled, validateTomeLiveVerificationMode } from '@/lib/tome/assistant-settings-store';
+import { auditTome, tomeActorFromAuth } from '@/lib/tome/audit';
 import { NextRequest,NextResponse } from 'next/server';
 
 const platformConfigCache = createJsonResponseCacheStore();
@@ -45,6 +47,8 @@ interface PlatformConfigDoc extends PlatformDefaultAgentDocument {
   rag_default_search_team_slug?: unknown;
   rag_ingestor_limits?: unknown;
   top_nav?: unknown;
+  tome_assistant_popup_enabled?: unknown;
+  tome_live_verification_mode?: unknown;
 }
 
 interface TeamConfigDoc {
@@ -295,6 +299,8 @@ async function getPlatformConfig(request: NextRequest) {
             : null,
         rag_ingestor_limits: ragIngestorLimits,
         top_nav: normalizeTopNavConfig(doc?.top_nav),
+        tome_assistant_popup_enabled: doc?.tome_assistant_popup_enabled === true,
+        tome_live_verification_mode: doc?.tome_live_verification_mode === "on_demand" || doc?.tome_live_verification_mode === "automatic" ? doc.tome_live_verification_mode : "off",
       },
     });
   });
@@ -429,6 +435,13 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
       update.top_nav = normalizeTopNavConfig(body.top_nav);
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, 'tome_live_verification_mode')) {
+      update.tome_live_verification_mode = validateTomeLiveVerificationMode(body.tome_live_verification_mode);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'tome_assistant_popup_enabled')) {
+      update.tome_assistant_popup_enabled = validateTomeAssistantPopupEnabled(body.tome_assistant_popup_enabled);
+    }
+
     const col = await getCollection<PlatformConfigDoc>('platform_config');
     const previousDoc = hasDefaultAgentUpdate
       ? await col.findOne({ _id: PLATFORM_CONFIG_ID } as never)
@@ -478,6 +491,14 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
     );
     platformConfigCache.responses.clear();
     platformConfigCache.inflight.clear();
+    if (Object.prototype.hasOwnProperty.call(update, 'tome_assistant_popup_enabled') || Object.prototype.hasOwnProperty.call(update, 'tome_live_verification_mode')) {
+      auditTome({
+        action: 'tome.assistant.settings.update',
+        actor: tomeActorFromAuth({ user, session }),
+        projectSlug: 'global',
+        metadata: { ...Object.fromEntries(Object.entries(update).filter(([key]) => key.startsWith("tome_"))) },
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -517,6 +538,11 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
           : {}),
         ...(Object.prototype.hasOwnProperty.call(update, 'top_nav')
           ? { top_nav: update.top_nav }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(update, 'tome_live_verification_mode')
+          ? { tome_live_verification_mode: update.tome_live_verification_mode } : {}),
+        ...(Object.prototype.hasOwnProperty.call(update, 'tome_assistant_popup_enabled')
+          ? { tome_assistant_popup_enabled: update.tome_assistant_popup_enabled }
           : {}),
       },
     });

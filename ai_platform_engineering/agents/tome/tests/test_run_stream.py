@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -245,13 +246,15 @@ class FileBackedPromptTest(TestCase):
             # Exercise the installed SDK's actual command builder, without
             # invoking a model or making any network calls.
             transport = SubprocessCLITransport(prompt="Ingest", options=file_options)
-            transport._cli_path = "/bin/true"
+            true_path = shutil.which("true")
+            self.assertIsNotNone(true_path)
+            transport._cli_path = true_path
             command = transport._build_command()
             self.assertIn("--system-prompt-file", command)
             self.assertNotIn("--system-prompt", command)
             self.assertNotIn(prompt, command)
             self.assertEqual(command[command.index("--system-prompt-file") + 1], str(path))
-            subprocess.run(["/bin/true", *command], check=True)
+            subprocess.run([true_path, *command], check=True)
         self.assertFalse(path.exists())
 
     def test_cleanup_on_failure_and_concurrent_prompts_are_isolated(self) -> None:

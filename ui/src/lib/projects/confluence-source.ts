@@ -2,6 +2,15 @@ import type { ConfluencePageScope, ConfluenceSpaceSource } from "@/types/project
 
 export const MAX_CONFLUENCE_SOURCES_PER_PROJECT = 5;
 
+/** Cloud identity ignores page paths, query strings and trailing slashes. */
+export function normalizeConfluenceSiteUrl(value: string): string {
+  const url = new URL(value.trim());
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw new Error("Confluence Cloud requires an HTTPS site URL without credentials");
+  }
+  return url.origin;
+}
+
 export interface ParsedConfluenceUrl {
   url: string;
   base_url: string;

@@ -39,7 +39,7 @@ jest.mock("@/lib/tome/fetch-ledger-store", () => ({
 
 import { POST } from "../route";
 
-const PROJECT = { _id: "proj-1", slug: "quantum" };
+const PROJECT = { _id: "proj-1", slug: "example" };
 
 function postRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest(
@@ -139,6 +139,24 @@ describe("internal fetch-ledger callback route", () => {
       ctx(),
     );
     expect(response.status).toBe(204);
+  });
+
+  it("persists revision-bound Confluence chunk metadata", async () => {
+    const toolArgs = { page_id: "12345", offset: 6000, content_revision: "a".repeat(64), limit: 6000 };
+    const response = await POST(postRequest(successBody({
+      connector: "confluence", tool_name: "confluence_get_page_content_chunk", tool_args: toolArgs,
+      canonical_uri: "confluence://pages/12345",
+    })), ctx());
+    expect(response.status).toBe(204);
+    expect(mockInsertFetchLedgerEntry).toHaveBeenCalledWith(expect.objectContaining({ tool_args: toolArgs }));
+  });
+
+  it("continues rejecting unredacted Confluence search text", async () => {
+    const response = await POST(postRequest(successBody({
+      connector: "confluence", tool_args: { page_id: "12345", query: "private query" },
+    })), ctx());
+    expect(response.status).toBe(400);
+    expect(mockInsertFetchLedgerEntry).not.toHaveBeenCalled();
   });
 
   it("requires the agent token", async () => {

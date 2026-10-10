@@ -204,6 +204,7 @@ class LiveVerification:
                     "No ingestion or wiki write occurred. Claim source_urls may contain ONLY these exact URLs: "
                     + json.dumps([page["url"] for page in evidence])
                     + ". Proposed-answer citations are not verified evidence. Claims requiring any other source must be unverified with source_urls empty. "
+                    "Keep the revised answer concise (under 9000 characters), group related claims into at most 32 checks, and use short one-sentence reasons. "
                     "Schema: " + json.dumps(Comparison.model_json_schema()),
                 "messages": [{"role": "user", "content": json.dumps({"question": question, "proposed_answer": answer,
                     "live_evidence": evidence, "verification_gaps": warnings}, ensure_ascii=False)}],
@@ -217,12 +218,18 @@ class LiveVerification:
             urls = {page["url"] for page in evidence}
             for check in comparison.claim_checks:
                 if any(url not in urls for url in check.source_urls) or check.status != "unverified" and not check.source_urls:
-                    raise ValueError("Comparison cites unavailable source evidence")
+                    # An unavailable reference cannot establish support, but
+                    # should not discard valid checks of other source claims.
+                    check.status = "unverified"
+                    check.source_urls = []
+                    check.reason = "This check did not cite complete live evidence available in this turn."
+                    comparison.warnings.append("A claim lacked an available live source reference and remains unverified.")
         except (httpx.HTTPError, ValueError, ValidationError, KeyError, TypeError) as exc:
             # Diagnose schema/transport failures without logging source bodies
             # or generated answers into application telemetry.
             details = [(error["type"], error["loc"]) for error in exc.errors(include_input=False)] if isinstance(exc, ValidationError) else []
-            log.warning("Live comparison failed: %s; schema failures: %s", type(exc).__name__, details)
+            reason = str(exc) if str(exc) == "Comparison was interrupted" else ""
+            log.warning("Live comparison failed: %s %s; schema failures: %s", type(exc).__name__, reason, details)
             fallback["warnings"].append("The claim comparison could not finish; fetched sources alone do not verify the answer.")
             return answer + "\n\n**Live verification incomplete:** " + " ".join(fallback["warnings"]), fallback
         await http_client.fetch_retrieval(self.actor_sub, self.scope_hash, "scope", {})

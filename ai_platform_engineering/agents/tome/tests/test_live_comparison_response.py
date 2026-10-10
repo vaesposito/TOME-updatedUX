@@ -29,7 +29,10 @@ def test_comparison_rejects_non_json_prose() -> None:
 
 
 @pytest.mark.asyncio
-async def test_comparison_has_a_bounded_large_evidence_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("reference", ["https://example.test/wiki/pages/123", "https://example.test/wiki/pages/456", None])
+async def test_comparison_has_a_bounded_large_evidence_timeout_and_safe_references(
+    monkeypatch: pytest.MonkeyPatch, reference: str | None,
+) -> None:
     live = LiveVerification("test-user", "example-scope", "required", {"example"}, "example-grant")
     page = {"body": "example", "url": "https://example.test/wiki/pages/123",
         "source_version": 1, "source_revision_at": "2026-01-01T00:00:00Z", "read_at": "2026-01-02T00:00:00Z"}
@@ -38,7 +41,7 @@ async def test_comparison_has_a_bounded_large_evidence_timeout(monkeypatch: pyte
     response = httpx.Response(200, request=httpx.Request("POST", "https://example.test/v1/messages"), json={
         "stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({
             "answer": "Example answer", "claim_checks": [{"claim": "Example claim", "status": "supported",
-                "source_urls": [page["url"]], "reason": "Present in evidence"}], "warnings": [],
+                "source_urls": [reference] if reference else [], "reason": "Present in evidence"}], "warnings": [],
         })}],
     })
     client = AsyncMock()
@@ -47,4 +50,10 @@ async def test_comparison_has_a_bounded_large_evidence_timeout(monkeypatch: pyte
     assert client.post.call_args.kwargs["timeout"] == COMPARISON_TIMEOUT_SECONDS
     assert 60 < COMPARISON_TIMEOUT_SECONDS < 290
     assert verification["status"] == "completed"
-    assert verification["warnings"] == []
+    if reference == page["url"]:
+        assert verification["warnings"] == []
+        assert verification["claim_checks"][0]["status"] == "supported"
+    else:
+        assert verification["warnings"]
+        assert verification["claim_checks"][0]["status"] == "unverified"
+        assert verification["claim_checks"][0]["source_urls"] == []

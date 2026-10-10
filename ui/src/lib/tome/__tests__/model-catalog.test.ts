@@ -1,5 +1,7 @@
 import {
+  MODEL_CATALOG,
   MODEL_PROFILE_VERSION,
+  isCatalogModel,
   modelProfile,
   recommendedUpperBoundEvaluator,
   upperBoundEvaluatorError,
@@ -9,8 +11,10 @@ const HAIKU = "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0";
 const SONNET_45 = "bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0";
 const SONNET_46 = "bedrock/global.anthropic.claude-sonnet-4-6";
 const SONNET_5 = "bedrock/global.anthropic.claude-sonnet-5";
+const SONNET_55 = "bedrock/global.anthropic.claude-sonnet-5-5";
 const OPUS_48 = "bedrock/global.anthropic.claude-opus-4-8";
 const OPUS_5 = "bedrock/global.anthropic.claude-opus-5";
+const OPUS_55 = "bedrock/global.anthropic.claude-opus-5-5";
 
 describe("TOME upper-bound evaluator profiles", () => {
   it("recommends the least expensive strictly stronger eligible evaluator", () => {
@@ -39,5 +43,20 @@ describe("TOME upper-bound evaluator profiles", () => {
       max_output_tokens: 128_000,
       supports_structured_output: true,
     });
+  });
+
+  it("offers Sonnet 5.5 and Opus 5.5 with their Bedrock capabilities", () => {
+    for (const model of [SONNET_55, OPUS_55]) {
+      expect(MODEL_CATALOG).toContain(model);
+      expect(isCatalogModel(model)).toBe(true);
+      expect(modelProfile(model)).toMatchObject({
+        profile_version: MODEL_PROFILE_VERSION,
+        context_window_tokens: 1_000_000,
+        max_output_tokens: 128_000,
+        supports_structured_output: false,
+      });
+    }
+    expect(recommendedUpperBoundEvaluator(SONNET_5, SONNET_55)).toBe(OPUS_48);
+    expect(recommendedUpperBoundEvaluator(OPUS_5, OPUS_55)).toBeNull();
   });
 });

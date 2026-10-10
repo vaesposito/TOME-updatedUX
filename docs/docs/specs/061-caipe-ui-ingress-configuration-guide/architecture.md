@@ -95,6 +95,33 @@ caipe-ui:
       nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
 ```
 
+### Streaming and Long-running TOME Requests
+
+The UI chart defaults to a 330-second nginx read/send idle timeout with response
+buffering disabled. Deployment values can override these defaults:
+
+```yaml
+caipe-ui:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "330"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "330"
+      nginx.ingress.kubernetes.io/proxy-buffering: "off"
+```
+
+- Native TOME chat emits an SSE keep-alive comment every 10 seconds while tools run.
+- Native turns remain bounded to 270 seconds; the UI bridge allows 290 seconds.
+- `/api/tome/mcp` can wait for a global answer without emitting chat heartbeats.
+  Give that route the same proxy budget when configuring standalone nginx.
+- Check every proxy and load balancer on the request path. A shorter idle timeout
+  at another hop can still interrupt a valid request.
+- These nginx limits measure inactivity between reads or writes, not the total
+  turn duration. Heartbeats keep the connection active without extending the
+  agent's execution deadline.
+
+See [nginx timeout semantics](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_read_timeout)
+and [ingress-nginx timeout annotations](https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#custom-timeouts).
+
 ### Rate Limiting
 
 ```yaml

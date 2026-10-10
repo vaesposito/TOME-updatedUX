@@ -17,7 +17,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from tome_agent import prompts
 from tome_agent.agent import http_client
-from tome_agent.agent.citations import CitationLedger, linked_urls
+from tome_agent.agent.citations import (
+    REVIEW_TIMEOUT_SECONDS,
+    CitationLedger,
+    linked_urls,
+)
 from tome_agent.agent.live_verification import (
     TIME_SENSITIVE,
     LiveVerification,
@@ -336,7 +340,7 @@ async def _reason(
                         or entity.name.casefold() in user_message.casefold()]
                     # Reserve time for the final citation check within the same
                     # turn deadline, including slow upstream/model requests.
-                    budget = max(0.01, deadline - asyncio.get_running_loop().time() - 65) if deadline else 200
+                    budget = max(0.01, deadline - asyncio.get_running_loop().time() - REVIEW_TIMEOUT_SECONDS - 5) if deadline else 165
                     try:
                         async with asyncio.timeout(budget):
                             await live.finish_reads(targets, user_message, matched + preferred)
@@ -352,7 +356,7 @@ async def _reason(
                 citation_id = "citations-" + uuid4().hex
                 yield _event("tool_call", id=citation_id, tool="validate_answer_citations", input={"mode": "turn-evidence"})
                 await http_client.fetch_retrieval(actor_sub, scope_hash, "scope", {})
-                budget = min(60, max(0.01, deadline - asyncio.get_running_loop().time())) if deadline else 60
+                budget = min(REVIEW_TIMEOUT_SECONDS, max(0.01, deadline - asyncio.get_running_loop().time())) if deadline else REVIEW_TIMEOUT_SECONDS
                 final_answer, citation_check = await ledger.cite(client, base_url, headers, model, user_message,
                     final_answer, original_links, timeout=budget)
                 coverage["citation_validation"] = citation_check

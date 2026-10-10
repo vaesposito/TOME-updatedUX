@@ -43,7 +43,7 @@ the passive `/metrics` scrape endpoint are unauthenticated.
 - `context_coverage.citation_validation` records support bindings and gaps.
   Published citations retain their existing schema; live provenance stays in
   `live_verification.live_sources` with `cited_in_answer` flags.
-- Review uses at most 160,000 evidence characters and 60 seconds, including one
+- Review uses at most 60,000 evidence characters and 90 seconds, including one
   mapping repair. Missing support is disclosed; a failed review withholds the
   draft. Permission validity is rechecked before final emission.
 - Semantic support remains model judgment. Valid links and matching quotations

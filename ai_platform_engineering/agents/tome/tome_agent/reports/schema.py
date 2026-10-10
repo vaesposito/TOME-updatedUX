@@ -1132,5 +1132,7 @@ def _depth_for_node(path: str) -> int:
 
 
 def path_to_title(path: str) -> str:
+    if path == "sharepoint":
+        return "SharePoint"
     leaf = path.rsplit("/", 1)[-1].removesuffix(".md")
     return leaf.replace("-", " ").replace("_", " ").title()

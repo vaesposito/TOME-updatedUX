@@ -115,6 +115,7 @@ jest.mock("@/lib/tome/audit", () => ({
   })),
 }));
 
+import { auditTome } from "@/lib/tome/audit";
 import { DELETE, GET, PATCH } from "../route";
 
 function request(slug: string): NextRequest {
@@ -404,5 +405,140 @@ describe("PATCH Webex source authorization and attribution", () => {
     expect((await save()).status).toBe(403);
     expect(mockPrepareRooms).not.toHaveBeenCalled();
     expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /api/projects/[slug] Confluence multi-space sources", () => {
+  const platformSpace = {
+    slug: "platform",
+    name: "Platform",
+    space_key: "PLATFORM",
+    base_url: "https://example.atlassian.net",
+  };
+  const project = {
+    _id: "example-id",
+    slug: "example",
+    type: "project",
+    sources: {
+      confluence_url: "https://example.atlassian.net/wiki/spaces/PLATFORM",
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetTomeProjectPermissions.mockResolvedValue({
+      canRead: true,
+      canEdit: true,
+      canManageSteward: false,
+    });
+    mockFindBySlug.mockReturnValue({
+      limit: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([project]),
+      }),
+    });
+  });
+
+  it("never puts sources.confluence_url in both $set and $unset, even though the client always sends both fields together", async () => {
+    mockFindOne.mockResolvedValue({
+      ...project,
+      sources: { confluence_spaces: [platformSpace] },
+    });
+
+    const response = await PATCH(
+      patchRequest("example", {
+        sources: {
+          // A real save always includes the legacy fields alongside the new
+          // array.
+          confluence_url: "",
+          confluence_page_scopes: [],
+          confluence_page_scope: null,
+          confluence_spaces: [platformSpace],
+        },
+      }),
+      { params: Promise.resolve({ slug: "example" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const [, updateDoc] = mockUpdateOne.mock.calls[0];
+    const setKeys = Object.keys(updateDoc.$set ?? {});
+    const unsetKeys = Object.keys(updateDoc.$unset ?? {});
+    expect(setKeys.filter((key) => unsetKeys.includes(key))).toEqual([]);
+    expect(updateDoc.$set["sources.confluence_spaces"]).toEqual([platformSpace]);
+    expect(updateDoc.$unset["sources.confluence_url"]).toBe("");
+  });
+
+  it("audits the legacy space as detached and the new space as attached when the array replaces it entirely", async () => {
+    const marketingSpace = {
+      slug: "marketing",
+      name: "Marketing",
+      space_key: "MARKETING",
+      base_url: "https://example.atlassian.net",
+    };
+    mockFindOne.mockResolvedValue({
+      ...project,
+      sources: { confluence_spaces: [marketingSpace] },
+    });
+
+    await PATCH(
+      patchRequest("example", {
+        sources: { confluence_spaces: [marketingSpace] },
+      }),
+      { params: Promise.resolve({ slug: "example" }) },
+    );
+
+    expect(auditTome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "tome.source.detach",
+        metadata: { source_type: "confluence", ref: "PLATFORM" },
+      }),
+    );
+    expect(auditTome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "tome.source.attach",
+        metadata: { source_type: "confluence", ref: "MARKETING" },
+      }),
+    );
+  });
+
+  it("does not spuriously re-attach the same space when it just carries over from the legacy URL into the array", async () => {
+    mockFindOne.mockResolvedValue({
+      ...project,
+      sources: { confluence_spaces: [platformSpace] },
+    });
+
+    await PATCH(
+      patchRequest("example", {
+        sources: { confluence_spaces: [platformSpace] },
+      }),
+      { params: Promise.resolve({ slug: "example" }) },
+    );
+
+    expect(auditTome).not.toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ source_type: "confluence" }) }),
+    );
+  });
+
+  it("dedupes and caps confluence_spaces before storing them", async () => {
+    const space = (key: string) => ({ ...platformSpace, slug: key.toLowerCase(), name: key, space_key: key });
+    mockFindOne.mockResolvedValue({ ...project, sources: {} });
+
+    const response = await PATCH(
+      patchRequest("example", {
+        sources: {
+          confluence_spaces: [
+            ...["A", "B", "C", "D", "E", "F", "G"].map(space),
+            space("A"),
+          ],
+        },
+      }),
+      { params: Promise.resolve({ slug: "example" }) },
+    );
+
+    expect(response.status).toBe(200);
+    const [, updateDoc] = mockUpdateOne.mock.calls[0];
+    expect(
+      updateDoc.$set["sources.confluence_spaces"].map((s: { space_key: string }) => s.space_key),
+    ).toEqual(["A", "B", "C", "D", "E"]);
   });
 });

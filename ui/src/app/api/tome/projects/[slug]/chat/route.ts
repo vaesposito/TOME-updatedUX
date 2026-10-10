@@ -43,11 +43,13 @@ import {
   createChatRun,
   finishChatRun,
   markChatRunRunning,
+  watchChatRun,
 } from "@/lib/tome/chat-run-store";
 import type { ChatPart, ChatSession, ModelProvenance } from "@/types/tome";
 import { myAgentConnectorsForSubject, myAgentConsentRevisionForSubject, myAgentConsentSubjectFromSession } from "@/lib/projects/myagent-source";
 import { isMyAgentInteractiveBrowserAction } from "@/lib/tome/myagent-interactive";
 import { compatibleChatResume, requestsMyAgent } from "@/lib/tome/myagent-chat-mode";
+import { getMyAgentWebexConfig } from "@/lib/tome/myagent-webex";
 
 export const dynamic = "force-dynamic";
 
@@ -87,8 +89,9 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   }
 
   const ownedSession = await ensureSession(tctx.projectId, userIdOf(tctx.user.email));
-  const research = body.is_compact ? ownedSession.myagent_research === true
-    : body.myagent_research === true || requestsMyAgent(body.message ?? "");
+  const research = getMyAgentWebexConfig().enabled && (body.is_compact
+    ? ownedSession.myagent_research === true
+    : body.myagent_research === true || requestsMyAgent(body.message ?? ""));
   const subject = myAgentConsentSubjectFromSession(tctx.session);
   const sources = research ? myAgentConnectorsForSubject(tctx.project.sources, subject) : [];
   const revision = subject ? myAgentConsentRevisionForSubject(tctx.project.sources, subject) : null;
@@ -122,6 +125,10 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   // the assistant side is just a boundary marker) — nothing to persist.
   let session: ChatSession | null = null;
   let runId: string | null = null;
+  // Aborting the upstream fetch drops the agent connection, which cancels the
+  // agent's turn. Fired when the run is stopped from any UI replica.
+  const upstreamAbort = new AbortController();
+  let unwatch = () => {};
   if (!body.is_compact && body.message) {
     session = ownedSession;
     await appendMessage(session, "user", body.message);
@@ -133,6 +140,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       chatRequest.myagent_sources = sources;
     }
     await markChatRunRunning(runId);
+    unwatch = watchChatRun(runId, () => upstreamAbort.abort());
   }
 
   let upstream: Response;
@@ -144,13 +152,16 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         ...tomeAgentAuthorizationHeaders(),
       },
       body: JSON.stringify(chatRequest),
+      signal: upstreamAbort.signal,
     });
   } catch (error) {
+    unwatch();
     if (runId) await finishChatRun(runId, "failed", String(error));
     throw error;
   }
 
   if (!upstream.ok || !upstream.body) {
+    unwatch();
     const detail = await upstream.text().catch(() => "");
     if (runId) {
       await finishChatRun(
@@ -196,7 +207,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     chatRequest.sdk_session_id ?? null,
     runId!,
     research,
-  );
+  ).finally(unwatch);
   return new Response(clientBody, { headers });
 });
 

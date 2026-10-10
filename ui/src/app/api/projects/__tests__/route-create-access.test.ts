@@ -236,6 +236,44 @@ describe("POST /api/projects access setup failures", () => {
     expect(mockAuditTome).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes and caps confluence_spaces and mirrors the first into integrations", async () => {
+    const site = "https://example.atlassian.net";
+    const space = (key: string) => ({
+      slug: key.toLowerCase(),
+      name: key,
+      space_key: key,
+      base_url: site,
+    });
+
+    const response = await POST(
+      createRequest({
+        confluence_spaces: [
+          ...["A", "B", "C", "D", "E", "F", "G"].map(space),
+          space("A"),
+        ],
+      }),
+    );
+    const inserted = projects.insertOne.mock.calls[0][0];
+
+    expect(response.status).toBe(201);
+    expect(
+      inserted.sources.confluence_spaces.map((s: { space_key: string }) => s.space_key),
+    ).toEqual(["A", "B", "C", "D", "E"]);
+    expect(inserted.integrations.confluence_url).toBe(`${site}/wiki/spaces/A`);
+  });
+
+  it("keeps a legacy-only confluence_url and mirrors it into integrations", async () => {
+    const legacyUrl = "https://example.atlassian.net/wiki/spaces/PLATFORM";
+
+    const response = await POST(createRequest({ confluence_url: legacyUrl }));
+    const inserted = projects.insertOne.mock.calls[0][0];
+
+    expect(response.status).toBe(201);
+    expect(inserted.sources.confluence_url).toBe(legacyUrl);
+    expect(inserted.sources.confluence_spaces).toEqual([]);
+    expect(inserted.integrations.confluence_url).toBe(legacyUrl);
+  });
+
   it("requires an explicit first-party browser action before creating MyAgent consent", async () => {
     mockGetAuthFromBearerOrSession.mockResolvedValue({
       user: { email: "creator@example.test" },

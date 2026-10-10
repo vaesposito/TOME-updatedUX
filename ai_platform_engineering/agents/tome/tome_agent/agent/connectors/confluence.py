@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from tome_agent.agent import http_client
+from tome_agent.agent import http_client, mcp_confluence
+from tome_agent.agent.confluence_reads import ConfluenceReadState
 from tome_agent.agent.connectors.base import Connector, SourceItem, format_pages
-from tome_agent.agent.mcp_confluence import build_confluence_mcp
 from tome_agent.reports.schema import (
     CONFLUENCE_PAGE_FRONTMATTER,
     PageSpec,
@@ -42,7 +42,7 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
         # accessible site at request time).
         return bool(token and _atlassian_cloud_id())
 
-    def build_mcp(self, *, token: str, sources: list[SourceItem]) -> object:
+    def build_mcp(self, *, token: str, sources: list[SourceItem], read_state: ConfluenceReadState | None = None) -> object:
         site_url = next(
             (s.extra.get("base_url", "") for s in sources if s.extra.get("base_url")),
             "",
@@ -67,13 +67,14 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
                 for scope in scopes
                 if scope.get("page_id")
             )
-        return build_confluence_mcp(
+        return mcp_confluence.build_confluence_mcp(
             token=token,
             cloud_id=_atlassian_cloud_id(),
             site_url=site_url,
             allowed_space_keys=allowed_space_keys,
             page_scoped_space_keys=page_scoped_space_keys,
             selected_root_page_ids=selected_root_page_ids,
+            read_state=read_state,
         )
 
     @property
@@ -83,6 +84,7 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
             "mcp__confluence__confluence_get_pages",
             "mcp__confluence__confluence_get_page_tree",
             "mcp__confluence__confluence_get_page_content",
+            "mcp__confluence__confluence_get_page_content_chunk",
         ]
 
     def citation_urls(self, sources: list[SourceItem]) -> list[str]:
@@ -171,7 +173,20 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
             "most-recently-edited first with `last_modified`. Use recency to find "
             "what's *active* — not to structure the page. Skim titles; read "
             "deeply only the pages that carry the project's substance.\n"
-            "3. `confluence_get_page_content(page_id)` for the bodies that matter.\n"
+            "3. `confluence_get_page_content(page_id)` returns the first bounded "
+            "storage-format body chunk, not necessarily the complete page. "
+            "When `next_offset` is not null, call "
+            "`confluence_get_page_content_chunk(page_id=<SAME_PAGE_ID>, "
+            "offset=<NEXT_OFFSET>, content_revision=<RETURNED_REVISION>, limit=6000)` "
+            "repeatedly until `next_offset` is null. Concatenate bodies in offset "
+            "order before interpreting tables; keep manual and embedded workflow "
+            "status fields separate. For mutable tracker/status claims, read the "
+            "complete relevant page rather than relying on tree excerpts. If "
+            "the revision changes, restart from the first chunk; never mix "
+            "revisions. If any chunk fails or the budget prevents finishing, "
+            "report the page as partially read and do not claim its status "
+            "table is verified or freshly ingested. Do not read the SDK's "
+            "externalized result files with Read or shell commands.\n"
             "4. `confluence/<slug>/overview.md` — explain what this source IS and "
             "what the team is currently working through in it, as prose. Not a "
             "page index.\n"
@@ -239,7 +254,11 @@ class ConfluenceConnector(Connector[ConfluenceExtra]):
         return (
             f"CONFLUENCE DEEP RESEARCH: When investigating {space_names}:\n"
             "1. Scan `confluence_get_pages` for signal (most-recently-edited first, titles carry context)\n"
-            "2. Central pages or recently-churned docs → `confluence_get_page_content` for full body; walk child pages if they exist\n"
+            "2. Central pages or recently-churned docs → `confluence_get_page_content`, "
+            "then `confluence_get_page_content_chunk` with the returned "
+            "content_revision and next_offset until next_offset is null for "
+            "the full body; walk child pages if they exist. Incomplete reads "
+            "must be disclosed, not treated as verified source freshness.\n"
             "3. Don't write about a page you only saw in the tree. Breadth scan for what's active and matters; "
             "depth calls on the pages that carry the substance.\n"
             "4. Write concepts and decisions, not page indices. Interpret the activity: what themes, decisions, "

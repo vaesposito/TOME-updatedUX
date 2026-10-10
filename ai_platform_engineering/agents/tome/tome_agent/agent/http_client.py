@@ -28,6 +28,7 @@ from uuid import UUID
 import httpx
 
 from tome_agent.orchestrator.contract import (
+    AppendFetchLedgerEntryRequest,
     AppendLogRequest,
     ProjectSnapshot,
     WritePageRequest,
@@ -176,6 +177,23 @@ def set_active_actor_sub(sub: str | None) -> None:
 
 def get_active_actor_sub() -> str | None:
     return _active_actor_sub.get()
+
+
+_active_run_id: contextvars.ContextVar[UUID | None] = contextvars.ContextVar(
+    "tome_active_run_id", default=None
+)
+
+
+def set_active_run_id(run_id: UUID | None) -> None:
+    """Scope this request's fetch-ledger recording to `run_id`. Set only for
+    runs with a Run Ledger concept (ingest/synthesize/compact); left unset
+    (None) for chat, so connector calls made outside a tracked run simply
+    produce no ledger entries rather than an error."""
+    _active_run_id.set(run_id)
+
+
+def get_active_run_id() -> UUID | None:
+    return _active_run_id.get()
 
 
 def _project_id() -> str:
@@ -331,6 +349,24 @@ async def append_log(run_id: UUID, line: str) -> None:
             resp.raise_for_status()
         except httpx.HTTPError:
             log.warning("append_log failed for run %s", run_id, exc_info=True)
+
+
+async def append_fetch_ledger_entry(run_id: UUID, entry: AppendFetchLedgerEntryRequest) -> None:
+    """Best-effort fetch-ledger append, one call per recorded source fetch.
+    Mirrors `append_log`'s failure posture exactly: losing a ledger entry to a
+    transient backend error is acceptable, failing the run is not."""
+    pid = _project_id()
+    url = f"{_backend_url()}/api/internal/projects/{pid}/runs/{run_id}/fetch-ledger"
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        try:
+            resp = await client.post(
+                url,
+                headers=_auth_headers(),
+                json=entry.model_dump(mode="json"),
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError:
+            log.warning("append_fetch_ledger_entry failed for run %s", run_id, exc_info=True)
 
 
 # ---------- sync wrappers for SDK PostToolUse hooks ----------

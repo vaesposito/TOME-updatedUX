@@ -375,7 +375,15 @@ something you actually found, not something you assumed.
   per run); `webex_list_rooms()`; `webex_meetings_list_meetings()` +
   transcript/summary tools.
 - **Confluence** (`mcp__confluence__*`): `confluence_get_pages(space_key)`
-  (newest edited first) → `confluence_get_page_content(page_id)`.
+  (newest edited first) → `confluence_get_page_content(page_id)`. Body results
+  are bounded to 8,000 encoded UTF-8 bytes. Follow every `next_offset` with
+  `confluence_get_page_content_chunk`, keeping the same page id and returned
+  `content_revision`, using `offset=next_offset` and `limit=6000`, until
+  `next_offset` is null. Concatenate bodies in offset order before interpreting
+  tables. Restart on a revision change; never combine versions. If a chunk
+  fails or the run budget prevents finishing, disclose the partial read and
+  do not declare that page freshly verified. Do not read externalized
+  tool-result files with Read or shell commands.
 - **Feed** (`mcp__mycelium__feed_read_messages`, when available): discussion
   about the project, not a source of record — weave in decisions/themes,
   don't transcribe; GitHub/Confluence/Webex win on facts. `gist_ref` rows

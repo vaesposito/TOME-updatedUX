@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowUp, Bot, Eraser, Loader2, Sparkles, Wrench } from "lucide-react";
+import { ArrowUp, Bot, Eraser, Loader2, Sparkles, Square, Wrench } from "lucide-react";
 import TextareaAutosize from "react-textarea-autosize";
 
 import { AuditNotice } from "@/components/chat/AuditNotice";
@@ -23,6 +23,7 @@ import { MarkdownRenderer } from "@/components/shared/timeline";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import type { ChatPart as Part, ModelProvenance } from "@/types/tome";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import { requestsMyAgent } from "@/lib/tome/myagent-chat-mode";
 import { MYAGENT_BROWSER_ACTION_HEADER } from "@/lib/tome/myagent-interactive";
 import {
@@ -57,6 +58,11 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CONTEXT_COMPACT_THRESHOLD = 75;
+
+// The browser-side reader for each chat's live send, so Stop can detach it and
+// a late frame from the stopped turn can't land on the next one. Module scope
+// because a send outlives the ChatPanel that started it (navigation).
+const liveSendAborts = new Map<string, AbortController>();
 
 function isTomeSessionId(id: string | null | undefined): id is string {
   return typeof id === "string" && UUID_RE.test(id);
@@ -103,18 +109,18 @@ export function ChatPanel({
     resumeRunId,
     myAgentResearch = false,
   } = chat;
-  const [input, setInput] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(!storedChat?.hydrated);
   const [confirmDialog, setConfirmDialog] = useState<"clear" | "compact" | null>(null);
   const [autoCompact, setAutoCompact] = useState(true);
+  const myAgentEnabled = useMyAgentEnabled();
   const [sessionContextTooLarge, setSessionContextTooLarge] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!initialPrompt || viewSessionId) return;
-    setInput(initialPrompt);
-    onInitialPromptConsumed?.();
-  }, [initialPrompt, onInitialPromptConsumed, viewSessionId]);
+    if (myAgentEnabled === false) {
+      updateChat(chatKey, (current) => ({ ...current, myAgentResearch: false }));
+    }
+  }, [chatKey, myAgentEnabled, updateChat]);
 
   const updateMessages = useCallback(
     (updater: (messages: ChatMsg[]) => ChatMsg[]) => {
@@ -221,6 +227,7 @@ export function ChatPanel({
               : data.session?.userId ?? null,
           contextUsage: null,
           resumeRunId: activeRunId,
+          activeRunId,
           ...(activeRunId
             ? {
                 streamDestination: {
@@ -349,6 +356,7 @@ export function ChatPanel({
             ...current,
             streaming: false,
             resumeRunId: null,
+            activeRunId: null,
           }));
         }
       }
@@ -462,8 +470,8 @@ export function ChatPanel({
     }
   }, [chatKey, slug, updateChat, updateMessages]);
 
-  const send = useCallback(async (overrideText?: string) => {
-    const text = (overrideText ?? input).trim();
+  const send = useCallback(async (rawText: string) => {
+    const text = rawText.trim();
     let current = useTomeChatStore.getState().chats[chatKey] ?? emptyTomeChatViewState();
     // Also blocked while compacting: both calls resume the same sdk_session_id,
     // so a concurrent send would race the SDK's compaction turn.
@@ -478,7 +486,6 @@ export function ChatPanel({
       current = useTomeChatStore.getState().chats[chatKey] ?? emptyTomeChatViewState();
       if (current.streaming || current.compacting || current.readOnly) return;
     }
-    if (overrideText === undefined) setInput("");
     updateChat(chatKey, (chat) => ({
       ...chat,
       streaming: true,
@@ -487,6 +494,7 @@ export function ChatPanel({
         label: projectTitle ?? slug,
       },
       resumeRunId: null,
+      activeRunId: null,
       messages: [
         ...chat.messages,
         { id: newMessageId(), role: "user", parts: [{ kind: "text", text }] },
@@ -544,8 +552,11 @@ export function ChatPanel({
       });
     };
 
+    const abort = new AbortController();
+    liveSendAborts.set(chatKey, abort);
+
     try {
-      const research = current.myAgentResearch === true || requestsMyAgent(text);
+      const research = myAgentEnabled === true && (current.myAgentResearch === true || requestsMyAgent(text));
       updateChat(chatKey, (chat) => ({ ...chat, myAgentResearch: research }));
       const res = await fetch(`/api/tome/projects/${slug}/chat`, {
         method: "POST",
@@ -555,6 +566,7 @@ export function ChatPanel({
           sdk_session_id: current.sdkSessionId,
           myagent_research: research,
         }),
+        signal: abort.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -571,12 +583,12 @@ export function ChatPanel({
       // session id (created on the very first message) so the client can keep
       // pointing at it for reads/feedback grouping.
       const persistedSessionId = res.headers.get("X-Tome-Session-Id");
-      if (persistedSessionId) {
-        updateChat(chatKey, (chat) => ({
-          ...chat,
-          sessionId: persistedSessionId,
-        }));
-      }
+      const runId = res.headers.get("X-Tome-Run-Id");
+      updateChat(chatKey, (chat) => ({
+        ...chat,
+        ...(persistedSessionId ? { sessionId: persistedSessionId } : {}),
+        activeRunId: runId,
+      }));
 
       let turnModel: string | null = null;
       let turnModelProvenance: ModelProvenance | null = null;
@@ -608,11 +620,16 @@ export function ChatPanel({
         modelProvenance: turnModelProvenance ?? undefined,
       }));
     } catch (e) {
+      // Stop already settled this turn's message and state.
+      if (abort.signal.aborted) return;
       pushErrorIfEmpty(String((e as Error)?.message ?? e));
     } finally {
-      updateChat(chatKey, (chat) => ({ ...chat, streaming: false }));
+      if (liveSendAborts.get(chatKey) === abort) liveSendAborts.delete(chatKey);
+      if (!abort.signal.aborted) {
+        updateChat(chatKey, (chat) => ({ ...chat, streaming: false, activeRunId: null }));
+      }
     }
-  }, [autoCompact, chatKey, handleCompact, input, onPagesChanged, projectTitle, sessionContextTooLarge, slug, updateChat, updateMessages]);
+  }, [autoCompact, chatKey, handleCompact, myAgentEnabled, onPagesChanged, projectTitle, sessionContextTooLarge, slug, updateChat, updateMessages]);
 
   // Regenerate: re-sends the same prompt as a fresh turn (append, not
   // in-place replace — the SDK session already has the prior answer in its
@@ -625,6 +642,47 @@ export function ChatPanel({
       void send(text);
     },
     [chatKey, send],
+  );
+
+  // Stable references, required for `MessageRow`/`Composer` memoization.
+  // Settle the turn locally right away, then ask the server to stop the run.
+  // Clearing resumeRunId tears down a reload-resume stream via its effect.
+  const handleStop = useCallback(() => {
+    const current = useTomeChatStore.getState().chats[chatKey];
+    const runId = current?.activeRunId;
+    if (!current?.streaming || !runId) return;
+    liveSendAborts.get(chatKey)?.abort();
+    liveSendAborts.delete(chatKey);
+    updateChat(chatKey, (chat) => {
+      const messages = chat.messages.slice();
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const message = messages[i];
+        if (message.role !== "assistant" || !message.pending) continue;
+        messages[i] = {
+          ...message,
+          pending: false,
+          parts: [...message.parts, { kind: "text", text: "\n\n_Stopped._" }],
+        };
+        break;
+      }
+      return { ...chat, messages, streaming: false, resumeRunId: null, activeRunId: null };
+    });
+    void fetch(
+      `/api/tome/projects/${slug}/chat/runs/${encodeURIComponent(runId)}`,
+      { method: "DELETE" },
+    ).catch((error) => console.error("Failed to stop TOME chat run", error));
+  }, [chatKey, slug, updateChat]);
+
+  const handleComposerSend = useCallback(
+    (text: string) => void send(text),
+    [send],
+  );
+
+  const handleMyAgentResearchChange = useCallback(
+    (checked: boolean) => {
+      updateChat(chatKey, (chat) => ({ ...chat, myAgentResearch: checked }));
+    },
+    [chatKey, updateChat],
   );
 
   return (
@@ -730,10 +788,11 @@ export function ChatPanel({
                 tomeProjectSlug={slug}
                 tomeSessionId={isTomeSessionId(sessionId) ? sessionId : undefined}
                 userQuestion={m.role === "assistant" ? retryText : undefined}
+                retryText={retryText}
                 onOpenPage={onOpenPage}
                 glossaryPreview={glossaryPreview}
-                onFeedbackChange={(feedback) => updateFeedback(m.id, feedback)}
-                onRetry={retryText ? () => handleRegenerate(retryText!) : undefined}
+                onFeedbackChange={updateFeedback}
+                onRetry={handleRegenerate}
                 retryDisabled={readOnlyView || streaming || compacting}
               />
             );
@@ -741,48 +800,22 @@ export function ChatPanel({
         </div>
       </ScrollArea>
 
-      {/* Floating composer — no hard divider above it; sits over the transcript. */}
-      <div className="pointer-events-none px-4 pb-5 pt-2">
-        <label className="pointer-events-auto mx-auto mb-2 flex max-w-4xl items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" checked={myAgentResearch}
-            disabled={readOnlyView || streaming || compacting}
-            onChange={(event) => updateChat(chatKey, (chat) => ({ ...chat, myAgentResearch: event.target.checked }))} />
-          Ask MyAgent · selected Outlook, SharePoint and Salesforce sources
-        </label>
-        <div className="pointer-events-auto mx-auto flex max-w-4xl items-center gap-2 rounded-2xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur transition focus-within:ring-2 focus-within:ring-ring">
-          <TextareaAutosize
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            minRows={1}
-            maxRows={10}
-            disabled={readOnlyView || compacting || loadingHistory || sessionContextTooLarge}
-            placeholder={readOnlyView ? "Read-only session view" : loadingHistory ? "Loading conversation…" : compacting ? "Compacting…" : sessionContextTooLarge ? "Start a new chat to continue" : "Ask about this project…"}
-            className="flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-relaxed outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
-          />
-          <Button
-            size="icon"
-            className="shrink-0 rounded-full"
-            onClick={() => void send()}
-            disabled={readOnlyView || loadingHistory || !input.trim() || streaming || compacting || sessionContextTooLarge}
-            title={compacting ? "Compacting…" : "Send"}
-          >
-            {streaming ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-        <p className="pointer-events-none mt-1.5 text-center text-xs text-muted-foreground">
-          <AuditNotice />
-        </p>
-      </div>
+      <Composer
+        readOnlyView={readOnlyView}
+        streaming={streaming}
+        compacting={compacting}
+        loadingHistory={loadingHistory}
+        sessionContextTooLarge={sessionContextTooLarge}
+        myAgentResearch={myAgentResearch}
+        myAgentEnabled={myAgentEnabled === true}
+        onMyAgentResearchChange={handleMyAgentResearchChange}
+        initialPrompt={initialPrompt}
+        onInitialPromptConsumed={onInitialPromptConsumed}
+        viewSessionId={viewSessionId}
+        onSend={handleComposerSend}
+        canStop={streaming && Boolean(chat.activeRunId)}
+        onStop={handleStop}
+      />
 
       <Dialog open={confirmDialog === "compact"} onOpenChange={(open) => !open && setConfirmDialog(null)}>
         <DialogContent>
@@ -852,12 +885,134 @@ function EmptyState({ slug }: { slug: string }) {
   );
 }
 
-function MessageRow({
+// Owns its own keystroke-local `input` state so typing never re-renders
+// `ChatPanel` (and with it the full, unwindowed message list) — see #655.
+const Composer = memo(function Composer({
+  readOnlyView,
+  streaming,
+  compacting,
+  loadingHistory,
+  sessionContextTooLarge,
+  myAgentResearch,
+  myAgentEnabled,
+  onMyAgentResearchChange,
+  initialPrompt,
+  onInitialPromptConsumed,
+  viewSessionId,
+  onSend,
+  canStop,
+  onStop,
+}: {
+  readOnlyView: boolean;
+  streaming: boolean;
+  compacting: boolean;
+  loadingHistory: boolean;
+  sessionContextTooLarge: boolean;
+  myAgentResearch: boolean;
+  myAgentEnabled: boolean;
+  onMyAgentResearchChange: (checked: boolean) => void;
+  initialPrompt?: string | null;
+  onInitialPromptConsumed?: () => void;
+  viewSessionId: string | null;
+  onSend: (text: string) => void;
+  canStop: boolean;
+  onStop: () => void;
+}) {
+  const [input, setInput] = useState("");
+
+  // Seed `input` from the one-shot prompt during render (not in an effect —
+  // it's local state derived from a prop, not a sync to an external system).
+  // State, not a ref, tracks what's already been consumed: refs can't be
+  // read during render.
+  const [consumedInitialPrompt, setConsumedInitialPrompt] = useState<string | null>(null);
+  if (initialPrompt && !viewSessionId && consumedInitialPrompt !== initialPrompt) {
+    setConsumedInitialPrompt(initialPrompt);
+    setInput(initialPrompt);
+  }
+
+  // Notifying the parent is a real side effect, so it stays in an effect.
+  useEffect(() => {
+    if (initialPrompt && !viewSessionId && consumedInitialPrompt === initialPrompt) {
+      onInitialPromptConsumed?.();
+    }
+  }, [initialPrompt, onInitialPromptConsumed, viewSessionId, consumedInitialPrompt]);
+
+  const submit = () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
+    onSend(text);
+  };
+
+  return (
+    <div className="pointer-events-none px-4 pb-5 pt-2">
+      {myAgentEnabled && (
+        <label className="pointer-events-auto mx-auto mb-2 flex max-w-4xl items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={myAgentResearch}
+            disabled={readOnlyView || streaming || compacting}
+            onChange={(event) => onMyAgentResearchChange(event.target.checked)} />
+          Ask MyAgent · selected Outlook, SharePoint and Salesforce sources
+        </label>
+      )}
+      <div className="pointer-events-auto mx-auto flex max-w-4xl items-center gap-2 rounded-2xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur transition focus-within:ring-2 focus-within:ring-ring">
+        <TextareaAutosize
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          minRows={1}
+          maxRows={10}
+          disabled={readOnlyView || compacting || loadingHistory || sessionContextTooLarge}
+          placeholder={readOnlyView ? "Read-only session view" : loadingHistory ? "Loading conversation…" : compacting ? "Compacting…" : sessionContextTooLarge ? "Start a new chat to continue" : "Ask about this project…"}
+          className="flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-relaxed outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        />
+        {streaming ? (
+          <Button
+            size="icon"
+            className="shrink-0 rounded-full"
+            onClick={onStop}
+            disabled={!canStop}
+            title="Stop"
+            aria-label="Stop"
+          >
+            {canStop ? (
+              <Square className="h-3.5 w-3.5 fill-current" />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            className="shrink-0 rounded-full"
+            onClick={submit}
+            disabled={readOnlyView || loadingHistory || !input.trim() || compacting || sessionContextTooLarge}
+            title={compacting ? "Compacting…" : "Send"}
+          >
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+      <p className="pointer-events-none mt-1.5 text-center text-xs text-muted-foreground">
+        <AuditNotice />
+      </p>
+    </div>
+  );
+});
+
+// Memoized: a row only re-renders when its own props change, not on every
+// unrelated ChatPanel re-render (e.g. a streaming token for another message).
+const MessageRow = memo(function MessageRow({
   msg,
   conversationId,
   tomeProjectSlug,
   tomeSessionId,
   userQuestion,
+  retryText,
   onOpenPage,
   glossaryPreview,
   onFeedbackChange,
@@ -869,12 +1024,20 @@ function MessageRow({
   tomeProjectSlug?: string;
   tomeSessionId?: string;
   userQuestion?: string | null;
+  /** The prompt this turn would resend on retry. */
+  retryText?: string | null;
   onOpenPage?: (path: string) => void;
   glossaryPreview?: GlossaryResolver;
-  onFeedbackChange?: (feedback: Feedback) => void;
-  onRetry?: () => void;
+  onFeedbackChange?: (id: string, feedback: Feedback) => void;
+  onRetry?: (text: string) => void;
   retryDisabled?: boolean;
 }) {
+  const handleRetry =
+    retryText && onRetry ? () => onRetry(retryText) : undefined;
+  const handleFeedbackChange = onFeedbackChange
+    ? (feedback: Feedback) => onFeedbackChange(msg.id, feedback)
+    : undefined;
+
   if (msg.system) {
     const text = msg.parts.map((p) => (p.kind === "text" ? p.text : "")).join("");
     return (
@@ -899,7 +1062,7 @@ function MessageRow({
           content={text}
           messageId={msg.id}
           copyLabel="Copy message"
-          onRetry={onRetry}
+          onRetry={handleRetry}
           retryLabel="Retry this prompt"
           disabled={retryDisabled}
           className="justify-end"
@@ -963,12 +1126,12 @@ function MessageRow({
               tomeUserQuestion={userQuestion ?? undefined}
               tomeAssistantResponse={textOfParts(msg.parts)}
               copyLabel="Copy response"
-              onRetry={onRetry}
+              onRetry={handleRetry}
               retryLabel="Regenerate response"
               disabled={retryDisabled}
               showFeedback
               feedback={msg.feedback}
-              onFeedbackChange={onFeedbackChange}
+              onFeedbackChange={handleFeedbackChange}
             />
             {msg.model && (
               <span
@@ -983,7 +1146,7 @@ function MessageRow({
       </div>
     </div>
   );
-}
+});
 
 function textOfParts(parts: Part[]): string {
   return parts.map((p) => (p.kind === "text" ? p.text : "")).join("");

@@ -219,7 +219,30 @@ export interface GitHubRepositorySource {
  * editable later). Forwarded to connected external apps so they can
  * ingest the repo/space/components.
  */
+export interface SharePointDocumentSource {
+  kind?: "file";
+  drive_id: string;
+  item_id: string;
+  name: string;
+  web_url?: string;
+  size?: number;
+  /** Current Graph tag, used only for read-only change detection. */
+  version?: string;
+}
+
+export interface SharePointFolderSource extends Omit<SharePointDocumentSource, "kind"> {
+  kind: "folder";
+  /** Files explicitly chosen from existing contents; empty when attaching an empty folder. */
+  selected_item_ids?: string[];
+  /** Existing files explicitly left unchecked. New IDs remain eligible on later runs. */
+  excluded_item_ids?: string[];
+}
+
+export type SharePointSource = SharePointDocumentSource | SharePointFolderSource;
+
 export interface ProjectSources {
+  /** Direct-only folders and previously saved files. Storage key retained for compatibility. */
+  sharepoint_documents?: SharePointSource[];
   /** @deprecated Compatibility mirror of `github_repos[].html_url`. */
   repos?: string[]; // GitHub repo URLs / owner/name
   /** GitHub repositories with stable identities and canonical metadata. */
@@ -395,6 +418,7 @@ export interface ProjectDocument {
 }
 
 export interface CreateProjectRequest {
+  sharepoint_documents?: SharePointSource[];
   name: string;
   /** Defaults to "project". Pass "bhag" for a strategic-goal entity or "area" for a mid-tier grouping. */
   type?: ProjectType;
@@ -411,6 +435,7 @@ export interface CreateProjectRequest {
   confluence_url?: string;
   confluence_page_scopes?: ConfluencePageScope[];
   confluence_page_scope?: ConfluencePageScope;
+  confluence_spaces?: ConfluenceSpaceSource[];
   webex_rooms?: WebexRoomSource[];
   webex_credential_mode?: WebexCredentialMode;
   webex_credential_provider?: string;

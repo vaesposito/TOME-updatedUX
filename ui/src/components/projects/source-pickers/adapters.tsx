@@ -6,6 +6,12 @@ import {
   encodeGitHubPickerValue,
   githubSourceKey,
 } from "@/lib/projects/github-repository";
+import {
+  MAX_CONFLUENCE_SOURCES_PER_PROJECT,
+  decodeConfluenceSource,
+  encodeConfluenceSource,
+  parseConfluenceUrl,
+} from "@/lib/projects/confluence-source";
 import type { SourceAdapter } from "./SourceItemPicker";
 import type { BrowsableSourceKind } from "./index";
 
@@ -70,12 +76,17 @@ const github: SourceAdapter = {
   footer: (sel) => <p className="text-xs text-muted-foreground">{sel.length} selected</p>,
 };
 
+/** Keys an option by its space, independent of which page URL found it. */
+const confluenceSpaceKeyOf = (baseUrl: string, spaceKey: string) =>
+  `${baseUrl}::${spaceKey}`;
+
 const confluence: SourceAdapter = {
   provider: "atlassian",
   title: "Confluence source",
   subtitle: "Add a space or page trees as project context",
   chipClass: "bg-[#2684FF]/10",
-  multi: false,
+  multi: true,
+  maxSelected: MAX_CONFLUENCE_SOURCES_PER_PROJECT,
   nounOne: "space",
   nounMany: "spaces",
   connectedPreposition: "to",
@@ -88,9 +99,24 @@ const confluence: SourceAdapter = {
   ),
   notConnectedBare: "Paste a Confluence space or page URL below.",
   slowLoadHint: "Confluence can take a few seconds to list your spaces — still working…",
-  selectedKeyOf: (v) => v,
-  labelOf: (v) => v,
-  encodeOnAdd: (o) => o.value,
+  selectedKeyOf: (v) => {
+    const d = decodeConfluenceSource(v);
+    return confluenceSpaceKeyOf(d.base_url, d.space_key || d.url);
+  },
+  optionKeyOf: (o) => {
+    const parsed = parseConfluenceUrl(o.value);
+    return confluenceSpaceKeyOf(parsed?.base_url ?? "", parsed?.space_key ?? o.value);
+  },
+  labelOf: (v) => decodeConfluenceSource(v).name,
+  encodeOnAdd: (o) => {
+    const parsed = parseConfluenceUrl(o.value);
+    return encodeConfluenceSource({
+      url: o.value,
+      base_url: parsed?.base_url ?? "",
+      space_key: parsed?.space_key ?? "",
+      name: o.label || parsed?.space_key || o.value,
+    });
+  },
   manualAdd: {
     hint: "Know the source? Paste a space or page URL.",
     placeholder: "https://your.atlassian.net/wiki/spaces/PROJ/pages/123/Page",

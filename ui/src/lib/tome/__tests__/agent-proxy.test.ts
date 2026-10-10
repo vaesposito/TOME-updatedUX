@@ -77,6 +77,52 @@ beforeEach(() => {
     roomTokens: { "room-id": "bound-owner-token" } });
 });
 
+it.each(["manual", "auto"] as const)("sends saved SharePoint IDs through the shared %s ingest contract without app credentials", (triggeredBy) => {
+  const project = synthesizedProject("project");
+  project.sources = { sharepoint_documents: [{ drive_id: "drive-1", item_id: "item-1", name: "Example.pptx" }] };
+  const request = buildIngestRequest(project, { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false, triggeredBy });
+  expect(request.connector_data).toEqual({ sharepoint: { documents: [{ drive_id: "drive-1", item_id: "item-1" }] } });
+  expect(request.credentials).toEqual({});
+});
+
+it("excludes SharePoint from isolated recurring-meeting ingests", () => {
+  const project = synthesizedProject("project");
+  project.sources = { sharepoint_documents: [{ drive_id: "drive-1", item_id: "item-1", name: "Example.pptx" }] };
+  expect(buildIngestRequest(project, { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false,
+    sourceScope: "webex_meetings", sharepointDocuments: [{ drive_id: "drive-1", item_id: "one-off", name: "Context.pdf" }] }).connector_data).toEqual({});
+});
+
+it("requires folder resolution and forwards only document IDs, never the folder as a file", () => {
+  const project = synthesizedProject("project");
+  project.sources = { sharepoint_documents: [{ kind: "folder", drive_id: "drive-1", item_id: "folder-1", name: "Example folder" }] };
+  const options = { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false };
+  expect(() => buildIngestRequest(project, options)).toThrow("must be resolved");
+  expect(buildIngestRequest(project, { ...options, resolvedSharepointDocuments: [{ drive_id: "drive-1", item_id: "file-1", name: "Example.pdf" }] })
+    .connector_data.sharepoint).toEqual({ documents: [{ drive_id: "drive-1", item_id: "file-1" }] });
+  expect(buildIngestRequest(project, { ...options, sourceScope: "webex_meetings" }).connector_data).toEqual({});
+});
+
+it.each(["project", "area", "bhag"] as const)("includes one-off documents in %s runs without attaching them to the project", (type) => {
+  const project = synthesizedProject(type);
+  const saved = { drive_id: "drive-1", item_id: "saved", name: "Saved.pptx" };
+  const context = { drive_id: "drive-1", item_id: "context", name: "Context.pdf" };
+  project.sources!.sharepoint_documents = [saved];
+  const request = buildIngestRequest(project, { runId: "run-1", reportId: "report-1", seed: null, isGreenfield: false,
+    sharepointDocuments: [saved, context], connectorData: { webex: { meetings: [{ id: "meeting-1" }] } } });
+  expect(request.connector_data).toEqual({ sharepoint: { documents: [
+    { drive_id: "drive-1", item_id: "saved" }, { drive_id: "drive-1", item_id: "context" },
+  ] }, webex: { meetings: [{ id: "meeting-1" }] } });
+  expect(project.sources!.sharepoint_documents).toEqual([saved]);
+  expect(buildIngestRequest(project, { runId: "next-run", reportId: "next-report", seed: null, isGreenfield: false,
+    triggeredBy: "auto" }).connector_data).toEqual({ sharepoint: { documents: [{ drive_id: "drive-1", item_id: "saved" }] } });
+});
+
+it("can ingest one-off documents without any saved SharePoint source", () => {
+  const request = buildIngestRequest(synthesizedProject("project"), { runId: "run-1", reportId: "report-1", seed: null,
+    isGreenfield: false, sharepointDocuments: [{ drive_id: "drive-1", item_id: "context", name: "Context.pdf" }] });
+  expect(request.connector_data.sharepoint).toEqual({ documents: [{ drive_id: "drive-1", item_id: "context" }] });
+});
+
 it("forwards scoped room tokens without replacing the caller's meeting token", async () => {
   const project = synthesizedProject("project");
   await expect(resolveProjectCredentials(project, "caller", { purpose: "ingest" })).resolves.toEqual({
@@ -219,6 +265,122 @@ it("forwards multiple Confluence page roots to one space snapshot", () => {
           include_descendants: false,
         },
       ],
+    }),
+  ]);
+});
+
+it("forwards multiple independent Confluence spaces, each with its own scope", () => {
+  const project = synthesizedProject("project");
+  project.sources = {
+    ...project.sources,
+    confluence_url: undefined,
+    confluence_spaces: [
+      {
+        slug: "platform",
+        name: "Platform",
+        space_key: "PLATFORM",
+        base_url: "https://example.atlassian.net",
+        page_scopes: [
+          {
+            page_id: "123",
+            page_title: "Overview",
+            space_key: "PLATFORM",
+            include_descendants: true,
+          },
+        ],
+      },
+      {
+        slug: "marketing",
+        name: "Marketing",
+        space_key: "MARKETING",
+        base_url: "https://example.atlassian.net",
+      },
+    ],
+  };
+
+  expect(buildSnapshotFromProject(project).confluence_spaces).toEqual([
+    expect.objectContaining({
+      slug: "platform",
+      space_key: "PLATFORM",
+      page_scopes: [
+        { page_id: "123", page_title: "Overview", include_descendants: true },
+      ],
+    }),
+    expect.objectContaining({
+      slug: "marketing",
+      space_key: "MARKETING",
+    }),
+  ]);
+});
+
+it("falls back to the legacy confluence_url when confluence_spaces is absent or empty", () => {
+  const legacyUrl = "https://example.atlassian.net/wiki/spaces/ENG";
+
+  for (const confluence_spaces of [undefined, []]) {
+    const project = synthesizedProject("project");
+    project.sources = {
+      ...project.sources,
+      confluence_url: legacyUrl,
+      confluence_spaces,
+    };
+
+    expect(buildSnapshotFromProject(project).confluence_spaces).toEqual([
+      expect.objectContaining({
+        space_key: "ENG",
+        base_url: "https://example.atlassian.net",
+      }),
+    ]);
+  }
+});
+
+it("prefers confluence_spaces over a legacy confluence_url", () => {
+  const project = synthesizedProject("project");
+  project.sources = {
+    ...project.sources,
+    confluence_url: "https://example.atlassian.net/wiki/spaces/LEGACY",
+    confluence_spaces: [
+      {
+        slug: "platform",
+        name: "Platform",
+        space_key: "PLATFORM",
+        base_url: "https://example.atlassian.net",
+      },
+    ],
+  };
+
+  expect(
+    buildSnapshotFromProject(project).confluence_spaces.map((s) => s.space_key),
+  ).toEqual(["PLATFORM"]);
+});
+
+it("reads the deprecated singular page_scope on a typed Confluence space", () => {
+  const project = synthesizedProject("project");
+  project.sources = {
+    ...project.sources,
+    confluence_url: undefined,
+    confluence_spaces: [
+      {
+        slug: "platform",
+        name: "Platform",
+        space_key: "PLATFORM",
+        base_url: "https://example.atlassian.net",
+        page_scope: {
+          page_id: "123",
+          page_title: "Overview",
+          space_key: "PLATFORM",
+          include_descendants: false,
+        },
+      },
+    ],
+  };
+
+  expect(buildSnapshotFromProject(project).confluence_spaces).toEqual([
+    expect.objectContaining({
+      page_scopes: [
+        { page_id: "123", page_title: "Overview", include_descendants: false },
+      ],
+      root_page_id: "123",
+      include_descendants: false,
     }),
   ]);
 });

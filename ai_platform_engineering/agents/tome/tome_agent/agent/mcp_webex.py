@@ -16,14 +16,47 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from tome_agent.agent.connectors.base import record_fetch
+
 API = "https://webexapis.com/v1"
 DEFAULT_MAX = 50
+
+# No current tool takes a free-text argument — hostEmail/meetingType/state
+# etc. are structural, not prose — but the allowlist is explicit so a future
+# free-text argument (e.g. a message-search query) is redacted by default.
+_WEBEX_ALLOWED_ARGS = frozenset(
+    {
+        "roomId", "messageId", "personId", "meetingId", "hostEmail",
+        "meetingType", "state", "from", "to", "max", "meetingNumber",
+    }
+)
+
+
+def _webex_canonical_uri(tool_name: str, args: dict[str, Any]) -> str:
+    if args.get("roomId"):
+        return f"webex://rooms/{args['roomId']}"
+    if args.get("messageId"):
+        return f"webex://messages/{args['messageId']}"
+    if args.get("personId"):
+        return f"webex://people/{args['personId']}"
+    if args.get("meetingId"):
+        return f"webex://meetings/{args['meetingId']}"
+    return f"webex://{tool_name.removeprefix('webex_')}"
+
+
+_record_fetch = partial(
+    record_fetch,
+    connector="webex",
+    allowed_arg_keys=_WEBEX_ALLOWED_ARGS,
+    canonical_uri=_webex_canonical_uri,
+)
 
 
 def _ok(payload: Any) -> dict[str, Any]:
@@ -106,6 +139,7 @@ def build_webex_mcp(
         "List the Webex rooms attached to THIS project (scoped). Returns newest-first.",
         {"max": int},
     )
+    @_record_fetch(tool_name="webex_list_rooms")
     async def list_rooms(args: dict) -> dict[str, Any]:
         if not allowed:
             return _ok([])  # no Webex rooms attached to this project
@@ -141,6 +175,7 @@ def build_webex_mcp(
         "List messages in a Webex room (newest first). `roomId` is required.",
         {"roomId": str, "max": int},
     )
+    @_record_fetch(tool_name="webex_list_messages")
     async def list_messages(args: dict) -> dict[str, Any]:
         room_id = args.get("roomId") or ""
         if not room_id:
@@ -190,6 +225,7 @@ def build_webex_mcp(
         "Get a specific Webex message. `messageId` is required.",
         {"messageId": str},
     )
+    @_record_fetch(tool_name="webex_get_message")
     async def get_message(args: dict) -> dict[str, Any]:
         message_id = args.get("messageId") or ""
         if not message_id:
@@ -233,6 +269,7 @@ def build_webex_mcp(
         "Get Webex person details (cached). `personId` is required.",
         {"personId": str},
     )
+    @_record_fetch(tool_name="webex_get_person")
     async def get_person(args: dict) -> dict[str, Any]:
         person_id = args.get("personId") or ""
         if not person_id:
@@ -268,6 +305,7 @@ def build_webex_mcp(
         "List Webex meetings. All params optional. `meetingType`: meetingSeries|scheduledMeeting|meeting. `state`: active|scheduled|ready|lobby|ended|missed|expired. `from`/`to` are ISO8601 timestamps.",
         {"meetingType": str, "state": str, "from": str, "to": str, "max": int, "hostEmail": str, "meetingNumber": str},
     )
+    @_record_fetch(tool_name="webex_meetings_list_meetings")
     async def list_meetings(args: dict) -> dict[str, Any]:
         if not token:
             return _err("webex_token is not configured")
@@ -312,6 +350,7 @@ def build_webex_mcp(
         "List Webex meeting transcripts. All params optional. Provide `meetingId` to filter to a specific meeting. `from`/`to` are ISO8601 timestamps.",
         {"meetingId": str, "hostEmail": str, "from": str, "to": str, "max": int},
     )
+    @_record_fetch(tool_name="webex_meetings_list_transcripts")
     async def list_transcripts(args: dict) -> dict[str, Any]:
         if not token:
             return _err("webex_token is not configured")
@@ -347,6 +386,7 @@ def build_webex_mcp(
         "Get the AI-generated summary for a specific Webex meeting. `meetingId` is required.",
         {"meetingId": str},
     )
+    @_record_fetch(tool_name="webex_meetings_get_summary")
     async def get_summary(args: dict) -> dict[str, Any]:
         if not token:
             return _err("webex_token is not configured")

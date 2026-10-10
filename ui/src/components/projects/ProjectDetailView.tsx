@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
 import { SourcesEditor } from "@/components/projects/source-pickers/SourcesEditor";
 import { useProjectSourceKinds } from "@/components/projects/source-pickers/useProjectSourceKinds";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import {
   myAgentConsentSelection,
   sameMyAgentConsentSelection,
@@ -39,6 +40,7 @@ import { isSynthesizedType, type ProjectDocument, type ProjectSources } from "@/
 
 export function ProjectDetailView({ slug }: { slug: string }) {
   const { kinds: sourceKinds } = useProjectSourceKinds();
+  const myAgentEnabled = useMyAgentEnabled() === true;
   const [project, setProject] = useState<ProjectDocument | null>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [catalogYaml, setCatalogYaml] = useState("");
@@ -55,9 +57,9 @@ export function ProjectDetailView({ slug }: { slug: string }) {
     repos: [],
     confluence_url: "",
   });
-  const visibleSourceKinds = isSynthesizedType(project?.type)
-    ? sourceKinds.filter((kind) => kind !== "myagent")
-    : sourceKinds;
+  const visibleSourceKinds = sourceKinds.filter(
+    (kind) => kind !== "myagent" || (!isSynthesizedType(project?.type) && myAgentEnabled),
+  );
 
   async function confirmDelete() {
     if (!project) return;
@@ -87,6 +89,7 @@ export function ProjectDetailView({ slug }: { slug: string }) {
       confluence_url: project.sources?.confluence_url ?? "",
       confluence_page_scopes: project.sources?.confluence_page_scopes,
       confluence_page_scope: project.sources?.confluence_page_scope,
+      confluence_spaces: project.sources?.confluence_spaces,
       webex_rooms: project.sources?.webex_rooms ?? [],
       webex_credential_mode:
         project.sources?.webex_credential_mode === "managed" ? "managed" : "personal",
@@ -124,6 +127,7 @@ export function ProjectDetailView({ slug }: { slug: string }) {
               editSources.confluence_page_scopes ?? [],
             confluence_page_scope:
               editSources.confluence_page_scope ?? null,
+            confluence_spaces: editSources.confluence_spaces,
             webex_rooms: editSources.webex_rooms ?? [],
             webex_credential_mode:
               editSources.webex_credential_mode ?? "personal",

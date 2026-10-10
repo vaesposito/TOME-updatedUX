@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ---------- shared identity / project snapshot ----------
 
@@ -281,10 +281,31 @@ class MyAgentEvidence(BaseModel):
         return self
 
 
+class SharePointDocumentRef(BaseModel):
+    """Stable configured-site item IDs, never a caller-provided download URL."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    drive_id: str = Field(min_length=1, max_length=512, pattern=r"^[A-Za-z0-9!._~-]+$")
+    item_id: str = Field(min_length=1, max_length=512, pattern=r"^[A-Za-z0-9!._~-]+$")
+
+    @field_validator("drive_id", "item_id")
+    @classmethod
+    def reject_dot_segments(cls, value: str) -> str:
+        if value in {".", ".."}:
+            raise ValueError("A document ID cannot be a URL dot segment")
+        return value
+
+
+class SharePointSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    documents: list[SharePointDocumentRef] = Field(default_factory=list, max_length=10)
+
+
 class IngestRequest(BaseModel):
     run_id: UUID
     seed: str | None = None
     connector_data: dict[str, Any] = Field(default_factory=dict)
+
     myagent_evidence: MyAgentEvidence | None = None
     """Validated external evidence from the user-approved MyAgent source."""
     myagent_questions_enabled: bool = False
@@ -316,6 +337,22 @@ class IngestRequest(BaseModel):
     """When present, run from the supplied frozen workspace, force the named
     candidate model, disable live connector tools, and route every page write
     to an experiment artifact instead of normal wiki revisions."""
+
+    @field_validator("connector_data")
+    @classmethod
+    def validate_sharepoint_selection(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if "sharepoint" in value:
+            selection = SharePointSelection.model_validate(value["sharepoint"])
+            return {**value, "sharepoint": selection.model_dump()}
+        return value
+
+    @model_validator(mode="after")
+    def reject_live_documents_in_frozen_experiment(self) -> IngestRequest:
+        if self.experiment and self.connector_data.get("sharepoint", {}).get("documents"):
+            raise ValueError("Frozen experiments cannot prepare live SharePoint documents")
+        return self
+
+
 # ---------- agent → backend callbacks ----------
 
 
@@ -337,6 +374,37 @@ class WritePageRequest(BaseModel):
 class AppendLogRequest(BaseModel):
     """POST /internal/projects/{id}/runs/{run_id}/log — ingest log line."""
     line: str
+
+
+class AppendFetchLedgerEntryRequest(BaseModel):
+    """POST /internal/projects/{id}/runs/{run_id}/fetch-ledger — one recorded
+    source-system fetch made by the ingestion agent, regardless of whether the
+    agent goes on to cite it. `id`/`run_id`/`project_id` are not carried here —
+    the route derives them from the URL, not the body."""
+
+    connector: str = Field(min_length=1)
+    """The connector slug (`github`/`confluence`/`webex` today). Deliberately
+    not a closed Literal — a new connector must be able to produce ledger
+    entries without a change to this shared contract (FR-005)."""
+    tool_name: str
+    tool_args: dict[str, Any] = Field(default_factory=dict)
+    """Redacted before this model is constructed — see connectors/base.py's
+    `redact_tool_args()`. Non-allowlisted fields never reach this payload."""
+    canonical_uri: str
+    status: Literal["success", "error"]
+    content: str | None = None
+    content_hash: str | None = None
+    error_message: str | None = Field(default=None, max_length=500)
+    timestamp: datetime
+
+    @model_validator(mode="after")
+    def require_content_pair_matching_status(self) -> AppendFetchLedgerEntryRequest:
+        if self.status == "success":
+            if not self.content or not self.content_hash:
+                raise ValueError("a successful fetch-ledger entry requires content and content_hash")
+        elif self.content is not None or self.content_hash is not None:
+            raise ValueError("a failed fetch-ledger entry must not carry content or content_hash")
+        return self
 
 
 # ---------- SSE event wire format ----------
@@ -541,6 +609,62 @@ class ArtifactEvaluationResponse(BaseModel):
     peak_estimated_input_tokens: int | None = Field(default=None, ge=1)
 
 
+# ---------- agent /evaluate/chat ----------
+
+
+class ChatTranscriptTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class RubricCriterion(BaseModel):
+    id: str
+    description: str
+    weight: float = Field(default=1.0, gt=0)
+
+
+class DimensionScore(BaseModel):
+    score: float = Field(ge=0, le=1)
+    rationale: str
+    findings: list[str] = Field(default_factory=list)
+
+
+class RelevanceCompletenessResult(BaseModel):
+    method: Literal["reference_answer", "rubric"]
+    relevance: DimensionScore
+    completeness: DimensionScore
+    rubric_applied: list[RubricCriterion] | None = None
+
+
+class ChatEvaluationRequest(BaseModel):
+    blind_label: str
+    evaluator_model: str
+    evaluator_profile: EvaluatorModelProfile | None = None
+    evaluator_prompt_version: str | None = None
+    max_claims: int | None = Field(default=None, ge=1, le=50)
+    transcript: list[ChatTranscriptTurn]
+    evidence: list[EvaluationEvidenceItem]
+    reference_answer: str | None = None
+    rubric: list[RubricCriterion] | None = None
+    max_cost_usd: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _require_assistant_turn(self) -> ChatEvaluationRequest:
+        if not any(turn.role == "assistant" for turn in self.transcript):
+            raise ValueError("transcript must contain at least one assistant turn")
+        return self
+
+
+class ChatEvaluationResponse(BaseModel):
+    claims: list[EvaluationClaim]
+    relevance_completeness: RelevanceCompletenessResult
+    tokens: dict[str, int] = Field(default_factory=dict)
+    turns: int = 1
+    cost_usd: float | None = None
+    batches: int = Field(default=1, ge=1)
+    attempts: int = Field(default=1, ge=1)
+
+
 # ---------- agent /healthz, /readyz ----------
 
 
@@ -552,14 +676,19 @@ class HealthResponse(BaseModel):
 
 
 __all__ = [
+    "AppendFetchLedgerEntryRequest",
     "AppendLogRequest",
     "ArtifactEvaluationRequest",
     "ArtifactEvaluationResponse",
+    "ChatEvaluationRequest",
+    "ChatEvaluationResponse",
     "ChatEventPayload",
     "ChatEventType",
     "ChatRequest",
+    "ChatTranscriptTurn",
     "ChildProjectSnapshot",
     "ConfluenceSpaceSnapshot",
+    "DimensionScore",
     "EvaluationClaim",
     "EvaluationClaimEvidence",
     "EvaluationEvidenceItem",
@@ -578,7 +707,9 @@ __all__ = [
     "ModelCheckResponse",
     "MyAgentEvidence",
     "ProjectSnapshot",
+    "RelevanceCompletenessResult",
     "RepoSnapshot",
+    "RubricCriterion",
     "WebexRoomSnapshot",
     "WritePageRequest",
 ]

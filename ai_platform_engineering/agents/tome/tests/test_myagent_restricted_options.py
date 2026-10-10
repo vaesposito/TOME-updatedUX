@@ -3,6 +3,9 @@
 import asyncio
 from pathlib import Path
 
+from tome_agent.agent import loop
+from tome_agent.agent.confluence_reads import ConfluenceReadState
+from tome_agent.agent.connectors.confluence import ConfluenceConnector
 from tome_agent.agent.loop import (
     WIKI_TOOLS,
     build_agent_options,
@@ -91,3 +94,22 @@ def test_write_hook_refuses_configuration_and_instruction_files(tmp_path) -> Non
             )
         )
         assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_missing_confluence_credentials_remain_in_required_coverage(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("TTT_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TTT_AGENT_ROLE", "viewer")
+    monkeypatch.setattr(loop, "_connector_token", lambda slug: "")
+    monkeypatch.setattr(ConfluenceConnector, "is_enabled", lambda self, token: False)
+    state = ConfluenceReadState()
+    snapshot = ProjectSnapshot(project_id="project-example", name="Example", confluence_spaces=[{
+        "slug": "example", "name": "Example", "space_key": "EXAMPLE", "root_page_id": "999",
+        "page_scopes": [{"page_id": "123"}, {"page_id": "456"}],
+    }])
+    options = build_agent_options(
+        snapshot=snapshot, system_prompt="test", model="example-model", max_turns=1,
+        persist_author="test-user", confluence_read_state=state,
+    )
+    assert "confluence" not in options.mcp_servers
+    assert state.required_pages == {"123", "456"}
+    assert state.incomplete_pages() == ["123", "456", "connection"]

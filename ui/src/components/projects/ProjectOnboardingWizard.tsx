@@ -34,8 +34,10 @@ import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { OnboardingWebexMeetingSeriesPicker } from "@/components/projects/OnboardingWebexMeetingSeriesPicker";
 import { SourcePicker } from "@/components/projects/source-pickers";
 import { MyAgentSourcePicker } from "@/components/projects/source-pickers/MyAgentSourcePicker";
+import { SharePointSourcePicker } from "@/components/projects/source-pickers/SharePointSourcePicker";
 import { WebexCredentialModePicker } from "@/components/projects/source-pickers/WebexCredentialModePicker";
 import { getConfig } from "@/lib/config";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import {
   toHierarchyOptions,
   type HierarchyOption,
@@ -43,6 +45,10 @@ import {
 } from "@/lib/projects/hierarchy-options";
 import { cn } from "@/lib/utils";
 import { toWebexRoomSource } from "@/lib/projects/webex-room";
+import {
+  decodeConfluenceSource,
+  toConfluenceSpaceSource,
+} from "@/lib/projects/confluence-source";
 import {
   myAgentConnectorLabel,
   normalizeMyAgentConnectors,
@@ -55,9 +61,9 @@ import {
   scheduleToCron,
 } from "@/lib/tome/auto-ingest/schedule-presets";
 import type {
-  ConfluencePageScope,
   ProjectDocument,
   WebexCredentialMode,
+  SharePointSource,
 } from "@/types/projects";
 
 const BLAST_RADIUS_OPTIONS = [
@@ -73,13 +79,14 @@ const OPTIONALITY_OPTIONS = [
   "Free Service with Adoption",
 ] as const;
 
-type SourceKind = "github" | "confluence" | "webex" | "myagent";
+type SourceKind = "github" | "confluence" | "webex" | "myagent" | "sharepoint";
 
 /** Source kind → credentials provider id for the shared `ProviderLogo`. */
 const SOURCE_PROVIDER: Record<Exclude<SourceKind, "myagent">, string> = {
   github: "github",
   confluence: "atlassian",
   webex: "webex",
+  sharepoint: "sharepoint",
 };
 
 interface OnboardingStepConfig {
@@ -237,6 +244,7 @@ export function ProjectOnboardingWizard({
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(initialOpen);
   const [configSteps, setConfigSteps] = useState<OnboardingStepConfig[]>([]);
+  const myAgentFeatureEnabled = useMyAgentEnabled() === true;
   // Which integrations the user has enabled (id → on), seeded from the config's
   // `default_enabled`. Drives the Integrations step + which apps provision.
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
@@ -265,12 +273,11 @@ export function ProjectOnboardingWizard({
   const [stewardTeamId, setStewardTeamId] = useState("");
   const [blastRadius, setBlastRadius] = useState<"small" | "large" | "">("");
   const [optionality, setOptionality] = useState<string[]>([]);
-  const [confluenceUrl, setConfluenceUrl] = useState("");
-  const [confluencePageScopes, setConfluencePageScopes] = useState<
-    ConfluencePageScope[]
-  >([]);
+  // Encoded Confluence space blobs from the picker (see lib/projects/confluence-source).
+  const [confluenceSpaces, setConfluenceSpaces] = useState<string[]>([]);
   // Encoded {room_id, name} blobs from the picker (see lib/projects/webex-room).
   const [webexRooms, setWebexRooms] = useState<string[]>([]);
+  const [sharePointDocuments, setSharePointDocuments] = useState<SharePointSource[]>([]);
   const [webexCredentialMode, setWebexCredentialMode] =
     useState<WebexCredentialMode>("personal");
   const [webexCredentialProvider, setWebexCredentialProvider] = useState("webex");
@@ -296,16 +303,22 @@ export function ProjectOnboardingWizard({
       selectedAreaSlug
     : null;
 
+  const availableConfigSteps = useMemo(
+    () => myAgentFeatureEnabled
+      ? configSteps
+      : configSteps.filter((step) => !isSourceStep(step) || step.source !== "myagent"),
+    [configSteps, myAgentFeatureEnabled],
+  );
   const wizardSteps = useMemo(
-    () => buildWizardSteps(configSteps, entityType),
-    [configSteps, entityType],
+    () => buildWizardSteps(availableConfigSteps, entityType),
+    [availableConfigSteps, entityType],
   );
   const entityConfigSteps = useMemo(
     () =>
       entityType === "project"
-        ? configSteps
-        : configSteps.filter((step) => isSourceStep(step) && step.source !== "myagent"),
-    [configSteps, entityType],
+        ? availableConfigSteps
+        : availableConfigSteps.filter((step) => isSourceStep(step) && step.source !== "myagent"),
+    [availableConfigSteps, entityType],
   );
   const phase = wizardSteps[phaseIndex] ?? wizardSteps[0];
   // Flow: type=0, create, [slt], access, [integrations], review. Review is
@@ -410,9 +423,9 @@ export function ProjectOnboardingWizard({
     setStewardTeamId("");
     setBlastRadius("");
     setOptionality([]);
-    setConfluenceUrl("");
-    setConfluencePageScopes([]);
+    setConfluenceSpaces([]);
     setWebexRooms([]);
+    setSharePointDocuments([]);
     setWebexCredentialMode("personal");
     setWebexCredentialProvider("webex");
     setMyAgentConnectors([]);
@@ -448,11 +461,8 @@ export function ProjectOnboardingWizard({
     const github_repos = enabledSourceKinds.has("github")
       ? githubReposRaw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
       : [];
-    const confluence_url = enabledSourceKinds.has("confluence")
-      ? confluenceUrl.trim() || undefined
-      : undefined;
-    const confluence_page_scopes = enabledSourceKinds.has("confluence")
-      ? confluencePageScopes
+    const confluence_spaces = enabledSourceKinds.has("confluence")
+      ? confluenceSpaces.map(toConfluenceSpaceSource)
       : [];
     const webex_rooms = enabledSourceKinds.has("webex")
       ? webexRooms.map(toWebexRoomSource)
@@ -465,6 +475,7 @@ export function ProjectOnboardingWizard({
       myagent_connectors.length > 0 &&
       myAgentEnabled;
     const common = {
+      sharepoint_documents: enabledSourceKinds.has("sharepoint") ? sharePointDocuments : [],
       name: projectName.trim(),
       description: description.trim() || undefined,
       team_id: teamId,
@@ -475,8 +486,7 @@ export function ProjectOnboardingWizard({
             ? { type: "user", email: stewardEmail.trim() }
             : undefined,
       github_repos,
-      confluence_url,
-      confluence_page_scopes,
+      confluence_spaces,
       webex_rooms,
       webex_credential_mode: webexCredentialMode,
       webex_credential_provider: webexCredentialProvider,
@@ -1082,7 +1092,9 @@ export function ProjectOnboardingWizard({
                                 />
                               </div>
                             ) : null}
-                            {step.source === "myagent" ? (
+                            {step.source === "sharepoint" ? (
+                              <SharePointSourcePicker selected={sharePointDocuments} onChange={setSharePointDocuments} />
+                            ) : step.source === "myagent" ? (
                               <MyAgentSourcePicker
                                 selected={myAgentConnectors}
                                 onChange={(next) => {
@@ -1102,9 +1114,7 @@ export function ProjectOnboardingWizard({
                                       .map((s) => s.trim())
                                       .filter(Boolean)
                                   : step.source === "confluence"
-                                    ? confluenceUrl.trim()
-                                      ? [confluenceUrl.trim()]
-                                      : []
+                                    ? confluenceSpaces
                                     : step.source === "webex"
                                       ? webexRooms
                                       : []
@@ -1113,7 +1123,7 @@ export function ProjectOnboardingWizard({
                                 if (step.source === "github")
                                   setGithubReposRaw(next.join(", "));
                                 else if (step.source === "confluence")
-                                  setConfluenceUrl(next[0] ?? "");
+                                  setConfluenceSpaces(next);
                                 else if (step.source === "webex")
                                   setWebexRooms(next);
                               }}
@@ -1125,20 +1135,6 @@ export function ProjectOnboardingWizard({
                               webexCredentialProvider={
                                 step.source === "webex"
                                   ? webexCredentialProvider
-                                  : undefined
-                              }
-                              confluencePageScopes={
-                                step.source === "confluence"
-                                  ? confluencePageScopes
-                                  : undefined
-                              }
-                              onConfluencePageScopesChange={
-                                step.source === "confluence"
-                                  ? (scopes, sourceUrl) => {
-                                      setConfluencePageScopes(scopes);
-                                      if (sourceUrl !== undefined)
-                                        setConfluenceUrl(sourceUrl);
-                                    }
                                   : undefined
                               }
                             />
@@ -1342,6 +1338,11 @@ export function ProjectOnboardingWizard({
                               </span>
                             </Row>
                           ) : null}
+                          {enabledSourceKinds.has("sharepoint") ? (
+                            <Row label={<SourceLabel provider="sharepoint" name="SharePoint" />}>
+                              {sharePointDocuments.length ? sharePointDocuments.map((document) => document.name).join(", ") : muted}
+                            </Row>
+                          ) : null}
                           {entityType === "project" && showGithub ? (
                             <Row label={<SourceLabel provider="github" name="GitHub" />}>
                               {repos.length ? (
@@ -1367,27 +1368,42 @@ export function ProjectOnboardingWizard({
                           ) : null}
                           {showConfluence ? (
                             <Row label={<SourceLabel provider="atlassian" name="Confluence" />}>
-                              {confluenceUrl.trim() ? (
-                                <span className="space-y-1.5">
+                              {confluenceSpaces.length ? (
+                                <span className="space-y-2">
                                   <span className="block text-xs text-muted-foreground">
-                                    {confluencePageScopes.length
-                                      ? `${confluencePageScopes.length} page root${confluencePageScopes.length === 1 ? "" : "s"}`
-                                      : "1 space"}
+                                    {confluenceSpaces.length} space
+                                    {confluenceSpaces.length === 1 ? "" : "s"}
                                   </span>
-                                  {confluencePageScopes.map((scope) => (
-                                    <span
-                                      key={scope.page_id}
-                                      className="block text-xs font-medium"
-                                    >
-                                      {scope.page_title}
-                                      {scope.include_descendants
-                                        ? " and all subpages"
-                                        : ""}
-                                    </span>
-                                  ))}
-                                  <span className="block break-all text-xs">
-                                    {confluenceUrl.trim()}
-                                  </span>
+                                  {confluenceSpaces.map((value) => {
+                                    const decoded = decodeConfluenceSource(value);
+                                    return (
+                                      <span key={value} className="block space-y-1">
+                                        <span className="block text-xs font-medium">
+                                          {decoded.name}
+                                        </span>
+                                        {decoded.page_scopes.length ? (
+                                          decoded.page_scopes.map((scope) => (
+                                            <span
+                                              key={scope.page_id}
+                                              className="block pl-2 text-xs"
+                                            >
+                                              {scope.page_title}
+                                              {scope.include_descendants
+                                                ? " and all subpages"
+                                                : ""}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="block pl-2 text-xs text-muted-foreground">
+                                            Entire space
+                                          </span>
+                                        )}
+                                        <span className="block break-all pl-2 text-xs text-muted-foreground">
+                                          {decoded.url}
+                                        </span>
+                                      </span>
+                                    );
+                                  })}
                                 </span>
                               ) : (
                                 muted

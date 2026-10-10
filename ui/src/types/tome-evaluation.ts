@@ -102,7 +102,8 @@ export type EvidenceKind =
   | "wiki"
   | "template"
   | "seed"
-  | "project_snapshot";
+  | "project_snapshot"
+  | "source_fetch";
 
 export interface EvidenceItem {
   id: string;
@@ -128,6 +129,45 @@ export interface EvidenceBundle {
   items: EvidenceItem[];
   created_at: string;
   created_by: string;
+}
+
+/**
+ * A single recorded source-system fetch made by the ingestion agent during a
+ * run — independent of whether the agent's generated output ever cites it.
+ * See docs/docs/specs/2026-09-28-tome-source-fetch-ledger/data-model.md.
+ *
+ * `connector` is deliberately `string`, not a closed union: a new connector
+ * must be able to produce entries without a type change here (FR-005).
+ */
+export interface FetchLedgerEntry {
+  id: string;
+  run_id: string;
+  project_id: string;
+  connector: string;
+  tool_name: string;
+  /** Redacted server-side before storage — see the internal callback route. */
+  tool_args: Record<string, unknown>;
+  canonical_uri: string;
+  status: "success" | "error";
+  content: string | null;
+  content_hash: string | null;
+  error_message: string | null;
+  timestamp: string;
+}
+
+/**
+ * Per-run rollup maintained incrementally alongside FetchLedgerEntry writes
+ * (FR-013/SC-006) — never recomputed by scanning entries, since that would
+ * mean reading every entry's (potentially large) content just to answer
+ * "how many fetches / how many bytes."
+ */
+export interface RunLedgerSummary {
+  run_id: string;
+  project_id: string;
+  fetch_count: number;
+  success_count: number;
+  total_bytes_fetched: number;
+  updated_at: string;
 }
 
 export type ExperimentOperation = "ingest" | "synthesize" | "compact";

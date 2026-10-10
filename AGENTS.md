@@ -130,3 +130,8 @@ Do not add Slack/Webex bots to that default path.
 - Python + Slack Bolt, Slack SDK, httpx (SSE streaming), Pydantic (config models), requests, loguru, PyYAML — no new dependencies (100-slack-agui-migration)
 - MongoDB (LangGraph checkpointer on dynamic agents side; Slack bot is stateless beyond in-memory TTL caches) (100-slack-agui-migration)
 - Service accounts: dynamic Keycloak confidential clients + OpenFGA `service_account` tuples + Mongo `service_accounts` collection; BFF (Next.js) orchestrates create/rotate/revoke/scope; caller-keyed tool authz added to the OpenFGA ext_authz bridge (2026-06-05-service-accounts)
+- Python 3.11+ (`tome_agent` connector/MCP layer, Claude Agent SDK, httpx) and TypeScript 5 / Next.js (BFF) (2026-09-28-tome-source-fetch-ledger)
+- MongoDB — new `tome_fetch_ledger_entries` collection, TTL-indexed, alongside existing Tome evidence collections (2026-09-28-tome-source-fetch-ledger)
+
+## Recent Changes
+- 2026-09-28-tome-source-fetch-ledger: Added a per-run fetch-ledger for Tome's GitHub/Confluence/Webex connectors, surfaced as a new `source_fetch` evidence-bundle kind

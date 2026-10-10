@@ -4,6 +4,7 @@ import { GitBranch } from "lucide-react";
 
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import type { ProjectSources } from "@/types/projects";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import {
   decodeWebexRoom,
   toWebexRoomSource,
@@ -13,8 +14,16 @@ import {
   decodeGitHubPickerValue,
   encodeGitHubPickerValue,
 } from "@/lib/projects/github-repository";
+import {
+  confluenceSourceToPickerValue,
+  decodeConfluenceSource,
+  encodeConfluenceSource,
+  parseConfluenceUrl,
+  toConfluenceSpaceSource,
+} from "@/lib/projects/confluence-source";
 import { SourcePicker, type SourceKind } from "./index";
 import { MyAgentSourcePicker } from "./MyAgentSourcePicker";
+import { SharePointSourcePicker } from "./SharePointSourcePicker";
 import { WebexCredentialModePicker } from "./WebexCredentialModePicker";
 import { WebexSettingsSources } from "./WebexSettingsSources";
 import { normalizeMyAgentConnectors } from "@/lib/projects/myagent-source";
@@ -33,6 +42,7 @@ const LABELS: Record<SourceKind, string> = {
   confluence: "Confluence source",
   webex: "Webex",
   myagent: "MyAgent",
+  sharepoint: "SharePoint",
 };
 
 /** Source kind → credentials provider id (for the shared ProviderLogo). */
@@ -40,6 +50,7 @@ const PROVIDER_FOR_KIND: Record<Exclude<SourceKind, "myagent">, string> = {
   github: "github",
   confluence: "atlassian",
   webex: "webex",
+  sharepoint: "sharepoint",
 };
 
 /** Canonical ProjectSources ↔ per-connector string[] (the picker contract). */
@@ -50,8 +61,27 @@ function valueFor(kind: SourceKind, sources: ProjectSources): string[] {
     }
     return sources.repos ?? [];
   }
-  if (kind === "confluence")
-    return sources.confluence_url ? [sources.confluence_url] : [];
+  if (kind === "confluence") {
+    if (sources.confluence_spaces?.length) {
+      return sources.confluence_spaces.map(confluenceSourceToPickerValue);
+    }
+    if (!sources.confluence_url) return [];
+    const parsed = parseConfluenceUrl(sources.confluence_url);
+    const pageScopes = sources.confluence_page_scopes?.length
+      ? sources.confluence_page_scopes
+      : sources.confluence_page_scope
+        ? [sources.confluence_page_scope]
+        : [];
+    return [
+      encodeConfluenceSource({
+        url: sources.confluence_url,
+        base_url: parsed?.base_url ?? "",
+        space_key: parsed?.space_key ?? "",
+        name: parsed?.space_key ?? sources.confluence_url,
+        page_scopes: pageScopes,
+      }),
+    ];
+  }
   if (kind === "webex")
     return (sources.webex_rooms ?? []).map(webexRoomToPickerValue);
   if (kind === "myagent") return sources.myagent_connectors ?? [];
@@ -72,7 +102,13 @@ function applyTo(
     };
   }
   if (kind === "confluence")
-    return { ...sources, confluence_url: next[0] ?? "" };
+    return {
+      ...sources,
+      confluence_spaces: next.map(toConfluenceSpaceSource),
+      confluence_url: undefined,
+      confluence_page_scopes: undefined,
+      confluence_page_scope: undefined,
+    };
   if (kind === "webex")
     return { ...sources, webex_rooms: next.map(toWebexRoomSource) };
   if (kind === "myagent") {
@@ -105,7 +141,10 @@ export function SourcesEditor({
   readOnly = false,
   settingsProjectSlug,
 }: SourcesEditorProps) {
-  if (kinds.length === 0) {
+  const myAgentEnabled = useMyAgentEnabled() === true;
+  const visibleKinds = myAgentEnabled ? kinds : kinds.filter((kind) => kind !== "myagent");
+
+  if (visibleKinds.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
         No sources are configured for this deployment.
@@ -115,7 +154,10 @@ export function SourcesEditor({
 
   return (
     <div className="space-y-5">
-      {kinds.map((kind) => {
+      {visibleKinds.map((kind) => {
+        if (kind === "sharepoint") return <SharePointSourcePicker key={kind}
+          selected={value.sharepoint_documents ?? []} readOnly={readOnly} projectSlug={settingsProjectSlug}
+          onChange={(next) => onChange({ ...value, sharepoint_documents: next })} />;
         if (kind === "myagent") {
           return (
             <div key={kind} className="space-y-3">
@@ -192,27 +234,6 @@ export function SourcesEditor({
                   ? value.webex_credential_provider || "webex"
                   : undefined
               }
-              confluencePageScopes={
-                kind === "confluence"
-                  ? value.confluence_page_scopes?.length
-                    ? value.confluence_page_scopes
-                    : value.confluence_page_scope
-                      ? [value.confluence_page_scope]
-                      : []
-                  : undefined
-              }
-              onConfluencePageScopesChange={
-                kind === "confluence"
-                  ? (scopes, sourceUrl) =>
-                      onChange({
-                        ...value,
-                        confluence_url:
-                          sourceUrl ?? value.confluence_url ?? "",
-                        confluence_page_scopes: scopes,
-                        confluence_page_scope: undefined,
-                      })
-                  : undefined
-              }
             />
           </div>
         );
@@ -258,25 +279,29 @@ function ReadOnlyKind({ kind, value }: { kind: SourceKind; value: string[] }) {
       </ul>
     );
   }
-  // confluence: single URL or plain value(s)
+  // confluence: one or more encoded space entries
   return (
     <ul className="space-y-1 text-sm">
-      {value.map((v) => (
-        <li key={v}>
-          {/^https?:\/\//.test(v) ? (
-            <a
-              href={v}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all text-foreground hover:underline"
-            >
-              {v}
-            </a>
-          ) : (
-            <span className="break-all text-foreground">{v}</span>
-          )}
-        </li>
-      ))}
+      {value.map((v) => {
+        const { url, name, space_key } = decodeConfluenceSource(v);
+        const label = space_key && name !== space_key ? `${name} (${space_key})` : name;
+        return (
+          <li key={v}>
+            {/^https?:\/\//.test(url) ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="break-all text-foreground hover:underline"
+              >
+                {label}
+              </a>
+            ) : (
+              <span className="break-all text-foreground">{label}</span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

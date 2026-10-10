@@ -16,6 +16,21 @@ const selectedSources = {
   ],
 };
 
+const selectedSpaces = [
+  {
+    slug: "platform",
+    name: "Platform",
+    space_key: "PLATFORM",
+    base_url: "https://example.atlassian.net",
+  },
+  {
+    slug: "marketing",
+    name: "Marketing",
+    space_key: "MARKETING",
+    base_url: "https://example.atlassian.net",
+  },
+];
+
 jest.mock("../SourcesEditor", () => ({
   SourcesEditor: ({
     onChange,
@@ -25,6 +40,12 @@ jest.mock("../SourcesEditor", () => ({
     <>
       <button type="button" onClick={() => onChange(selectedSources)}>
         Select page root
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange({ confluence_spaces: selectedSpaces })}
+      >
+        Select spaces
       </button>
       <button
         type="button"
@@ -98,6 +119,33 @@ describe("AutosavingSourcesEditor", () => {
           confluence_page_scope: null,
         },
       }),
+    });
+  });
+
+  it("sends confluence_spaces in the PATCH alongside the cleared legacy fields", async () => {
+    render(
+      <AutosavingSourcesEditor
+        slug="example"
+        kinds={["confluence"]}
+        value={{}}
+        onChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Select spaces" }));
+    await act(async () => {
+      jest.advanceTimersByTime(800);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(JSON.parse(init.body).sources).toEqual({
+      repos: [],
+      confluence_spaces: selectedSpaces,
+      confluence_url: "",
+      confluence_page_scopes: [],
+      confluence_page_scope: null,
     });
   });
 

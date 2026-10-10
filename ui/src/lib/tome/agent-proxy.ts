@@ -14,6 +14,8 @@ import {
   githubSourceFromValue,
 } from "@/lib/projects/github-repository";
 import { webexRoomSlug } from "@/lib/projects/webex-room";
+import { mergeSharePointSelections } from "@/lib/projects/sharepoint-source";
+import { slugifyConfluenceSpaceKey } from "@/lib/projects/confluence-source";
 import { resolveWebexRoomExecution } from "./webex-room-execution";
 
 import { resolveAreaChildren, resolveBhagChildren } from "./bhag";
@@ -320,13 +322,7 @@ function toConfluenceSpaceSnapshot(
 
 /** Slugify a Confluence space key for use as a wiki folder name. */
 function spaceSlug(key: string): string {
-  return (
-    key
-      .normalize("NFKD")
-      .replace(/[^\w]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .toLowerCase() || key
-  );
+  return slugifyConfluenceSpaceKey(key) || key;
 }
 
 /**
@@ -518,6 +514,8 @@ export function buildIngestRequest(
     isGreenfield: boolean;
     mode?: "full" | "quick";
     connectorData?: Record<string, unknown>;
+    sharepointDocuments?: IngestDispatch["sharepointDocuments"];
+    resolvedSharepointDocuments?: IngestDispatch["sharepointDocuments"];
     myAgentEvidence?: MyAgentEvidence;
     myAgentQuestionsEnabled?: boolean;
     myAgentSources?: string[];
@@ -550,11 +548,22 @@ export function buildIngestRequest(
   if (opts.sourceScope !== "webex_meetings" && opts.readableProjects?.length) {
     snapshot.readable_projects = opts.readableProjects;
   }
+  if (opts.sourceScope !== "webex_meetings" && project.sources?.sharepoint_documents?.some((source) => source.kind === "folder") && opts.resolvedSharepointDocuments === undefined) {
+    throw new Error("SharePoint folders must be resolved before building the ingest request.");
+  }
+  const documents = opts.sourceScope === "webex_meetings" ? [] : opts.resolvedSharepointDocuments
+    ?? mergeSharePointSelections((project.sources?.sharepoint_documents ?? []).filter((source) => source.kind !== "folder"), opts.sharepointDocuments ?? []);
   return {
     run_id: opts.runId,
     report_id: opts.reportId,
     seed: opts.seed,
-    connector_data: opts.connectorData ?? {},
+    connector_data: {
+      ...opts.connectorData,
+      ...(documents.length
+        ? { sharepoint: { documents: documents
+            .map(({ drive_id, item_id }) => ({ drive_id, item_id })) } }
+        : {}),
+    },
     ...(opts.myAgentEvidence ? { myagent_evidence: opts.myAgentEvidence } : {}),
     ...(opts.myAgentQuestionsEnabled ? { myagent_questions_enabled: true, myagent_sources: opts.myAgentSources ?? [] } : {}),
     snapshot,

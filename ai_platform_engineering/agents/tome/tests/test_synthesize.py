@@ -55,7 +55,7 @@ class SynthesisSourcePromptTest(TestCase):
         self.assertEqual(payload["included_body_chars"], 31_950)
         self.assertEqual(
             payload["page_url_template"],
-            "https://example.atlassian.net/wiki/pages/{id}",
+            "https://example.atlassian.net/wiki/spaces/EXAMPLE/pages/{id}",
         )
 
     def test_confluence_max_tree_stays_in_one_bounded_result(self) -> None:
@@ -201,7 +201,7 @@ class SynthesisSourcePromptTest(TestCase):
         self.assertIn("NEVER call `confluence_get_pages`", prompt)
         self.assertIn("do not scan unrelated pages", prompt)
 
-    @patch("tome_agent.agent.connectors.confluence.build_confluence_mcp")
+    @patch("tome_agent.agent.connectors.confluence.mcp_confluence.build_confluence_mcp")
     def test_confluence_page_scopes_lock_mcp_to_saved_roots(self, build_mcp) -> None:
         source = SourceItem(
             slug="example-space",

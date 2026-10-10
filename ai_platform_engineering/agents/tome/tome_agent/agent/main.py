@@ -57,7 +57,11 @@ from tome_agent.agent import drift, http_client, workspace
 from tome_agent.agent.chat import stream_chat
 from tome_agent.agent.compact import stream_compaction
 from tome_agent.agent.drift import build_drift_report, classify_structural
-from tome_agent.agent.evaluator import evaluate_artifact, evaluator_prompt_contract
+from tome_agent.agent.evaluator import (
+    evaluate_artifact,
+    evaluate_chat_transcript,
+    evaluator_prompt_contract,
+)
 from tome_agent.agent.inbound_auth import has_valid_bearer_token
 from tome_agent.agent.ingestor import expected_template_pages, stream_ingest
 from tome_agent.agent.presentation import (
@@ -66,6 +70,7 @@ from tome_agent.agent.presentation import (
     stream_presentation_requirements,
     suggest_presentation_requirements,
 )
+from tome_agent.agent.run_stream import agent_event_failed
 from tome_agent.agent.synthesize import stream_synthesis
 from tome_agent.config import settings
 from tome_agent.metrics import (
@@ -77,6 +82,8 @@ from tome_agent.metrics import (
 from tome_agent.orchestrator.contract import (
     ArtifactEvaluationRequest,
     ArtifactEvaluationResponse,
+    ChatEvaluationRequest,
+    ChatEvaluationResponse,
     ChatEventPayload,
     ChatRequest,
     EvaluatorPromptContract,
@@ -463,6 +470,19 @@ async def evaluate_endpoint(
         raise HTTPException(502, str(exc)) from exc
 
 
+@app.post("/evaluate/chat", response_model=ChatEvaluationResponse)
+async def evaluate_chat_endpoint(
+    body: ChatEvaluationRequest,
+) -> ChatEvaluationResponse:
+    """Evaluate one chat transcript's final assistant answer against its frozen evidence."""
+    if not _state.ready:
+        raise HTTPException(503, "agent not ready")
+    try:
+        return await evaluate_chat_transcript(body)
+    except ValueError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
 @app.get("/evaluate/prompt", response_model=EvaluatorPromptContract)
 async def evaluator_prompt_endpoint(
     mode: Literal["quick", "deep"] = "deep",
@@ -563,10 +583,18 @@ async def ingest_endpoint(body: IngestRequest):
             body.experiment.experiment_id if body.experiment else None,
             body.experiment.artifact_id if body.experiment else None,
         )
+        # Scope fetch-ledger recording (connectors/base.py's record_fetch) to
+        # this run, so every GitHub/Confluence/Webex tool call it makes is
+        # attributed to it. Experiment runs disable live connector tools
+        # anyway (nothing to record), but setting this unconditionally keeps
+        # the ingest/compact/synthesize endpoints symmetric.
+        http_client.set_active_run_id(body.run_id)
         _state.in_flight_runs += 1
         _state.last_activity_at = datetime.now(UTC)
         run_start = run_started()
         success = False
+        result_seen = False
+        failed = False
         try:
             # Hold the per-project lock for the whole run (serializing it
             # against other ingests and the periodic sync), and refresh the
@@ -596,6 +624,8 @@ async def ingest_endpoint(body: IngestRequest):
                         quick=body.mode == "quick" and not body.is_greenfield,
                         experiment=body.experiment,
                     ):
+                        result_seen = result_seen or event.type == "done"
+                        failed = failed or agent_event_failed(event)
                         yield _sse_format(event)
                 finally:
                     # `stream_ingest` can leave draft-only MyAgent output in
@@ -604,9 +634,10 @@ async def ingest_endpoint(body: IngestRequest):
                     # read unapproved delegated evidence from stale files.
                     if body.experiment is None:
                         await workspace.refresh_project(pid)
-            success = True
+            success = result_seen and not failed
         finally:
             http_client.set_active_experiment(None, None)
+            http_client.set_active_run_id(None)
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
             _state.last_activity_at = datetime.now(UTC)
             run_finished("ingest", run_start, success)
@@ -634,6 +665,7 @@ async def compact_endpoint(body: IngestRequest):
             body.experiment.experiment_id if body.experiment else None,
             body.experiment.artifact_id if body.experiment else None,
         )
+        http_client.set_active_run_id(body.run_id)
         _state.in_flight_runs += 1
         _state.last_activity_at = datetime.now(UTC)
         run_start = run_started()
@@ -657,6 +689,7 @@ async def compact_endpoint(body: IngestRequest):
             success = True
         finally:
             http_client.set_active_experiment(None, None)
+            http_client.set_active_run_id(None)
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
             _state.last_activity_at = datetime.now(UTC)
             run_finished("compact", run_start, success)
@@ -681,6 +714,7 @@ async def synthesize_endpoint(body: IngestRequest):
             body.experiment.experiment_id if body.experiment else None,
             body.experiment.artifact_id if body.experiment else None,
         )
+        http_client.set_active_run_id(body.run_id)
         _state.in_flight_runs += 1
         _state.last_activity_at = datetime.now(UTC)
         run_start = run_started()
@@ -721,6 +755,7 @@ async def synthesize_endpoint(body: IngestRequest):
             success = True
         finally:
             http_client.set_active_experiment(None, None)
+            http_client.set_active_run_id(None)
             _state.in_flight_runs = max(0, _state.in_flight_runs - 1)
             _state.last_activity_at = datetime.now(UTC)
             run_finished("synthesize", run_start, success)

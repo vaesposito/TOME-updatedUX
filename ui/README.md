@@ -168,6 +168,10 @@ WEBEX_MYAGENT_CLIENT_SECRET=<dedicated Webex OAuth app client secret>
 WEBEX_MYAGENT_REDIRECT_URI=https://app.example.com/api/credentials/oauth/webex_myagent/callback
 ```
 
+`TOME_MYAGENT_ENABLED` gates MyAgent in TOME chat and project source settings.
+When unset or false, MyAgent source controls and per-ingest selectors are
+hidden, the chat checkbox is hidden, and chat requests use ordinary project chat.
+
 Use an existing dedicated app or register one with only these scopes: `spark:kms`,
 `spark:messages_read`, and `spark:messages_write`. It appears in Connections as
 **MyAgent (Webex)**, independently of the general Webex connector. Keep the

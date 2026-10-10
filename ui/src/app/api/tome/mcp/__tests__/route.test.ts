@@ -957,3 +957,157 @@ describe("Tome MCP authentication challenge", () => {
     }
   });
 });
+
+describe("Tome MCP Confluence space tools", () => {
+  const originalFetch = global.fetch;
+  const site = "https://example.atlassian.net";
+  const space = (key: string) => ({
+    slug: key.toLowerCase(),
+    name: key,
+    space_key: key,
+    base_url: site,
+  });
+  const spaceUrl = (key: string) => `${site}/wiki/spaces/${key}`;
+
+  function mockProject(sources: Record<string, unknown>): jest.Mock {
+    const fetchMock = jest.fn(async (_url: unknown, init?: RequestInit) =>
+      init?.method === "PATCH"
+        ? Response.json({ success: true, data: {} })
+        : Response.json({ success: true, data: { project: { sources } } }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  async function callTool(name: string, args: Record<string, unknown>) {
+    const response = await POST(
+      new NextRequest("http://caipe-ui:3000/api/tome/mcp", {
+        method: "POST",
+        headers: { authorization: "Bearer redacted" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      }),
+    );
+    return response.json();
+  }
+
+  function patchedSpaces(fetchMock: jest.Mock): { space_key: string }[] {
+    const patch = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "PATCH",
+    );
+    return JSON.parse(String((patch?.[1] as RequestInit).body)).sources
+      .confluence_spaces;
+  }
+
+  beforeEach(() => {
+    mockGetAuthFromBearerOrSession.mockResolvedValue({
+      user: { email: "viewer@example.test" },
+      session: { principalType: "oidc_user", sub: "viewer-subject" },
+    });
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("tome_add_confluence_space appends to the existing spaces", async () => {
+    const fetchMock = mockProject({ confluence_spaces: [space("PLATFORM")] });
+
+    const body = await callTool("tome_add_confluence_space", {
+      project_slug: "example",
+      confluence_url: spaceUrl("MARKETING"),
+    });
+
+    expect(body.result.isError).toBeFalsy();
+    expect(patchedSpaces(fetchMock).map((s) => s.space_key)).toEqual([
+      "PLATFORM",
+      "MARKETING",
+    ]);
+  });
+
+  it("tome_add_confluence_space keeps a legacy confluence_url as the first space", async () => {
+    const fetchMock = mockProject({ confluence_url: spaceUrl("PLATFORM") });
+
+    await callTool("tome_add_confluence_space", {
+      project_slug: "example",
+      confluence_url: spaceUrl("MARKETING"),
+    });
+
+    expect(patchedSpaces(fetchMock)).toEqual([
+      expect.objectContaining({ space_key: "PLATFORM", base_url: site }),
+      expect.objectContaining({ space_key: "MARKETING", base_url: site }),
+    ]);
+  });
+
+  it("tome_add_confluence_space rejects a URL with no space key", async () => {
+    const fetchMock = mockProject({ confluence_spaces: [] });
+
+    const body = await callTool("tome_add_confluence_space", {
+      project_slug: "example",
+      confluence_url: "https://example.test/not-confluence",
+    });
+
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toMatch(/Could not find a Confluence space/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("tome_add_confluence_space rejects a space the project already has", async () => {
+    const fetchMock = mockProject({ confluence_spaces: [space("PLATFORM")] });
+
+    const body = await callTool("tome_add_confluence_space", {
+      project_slug: "example",
+      confluence_url: spaceUrl("PLATFORM"),
+    });
+
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toMatch(/already has this space/);
+    expect(
+      fetchMock.mock.calls.some(([, init]) => (init as RequestInit)?.method === "PATCH"),
+    ).toBe(false);
+  });
+
+  it("tome_add_confluence_space rejects a sixth space", async () => {
+    const fetchMock = mockProject({
+      confluence_spaces: ["A", "B", "C", "D", "E"].map(space),
+    });
+
+    const body = await callTool("tome_add_confluence_space", {
+      project_slug: "example",
+      confluence_url: spaceUrl("F"),
+    });
+
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toMatch(/maximum of 5 Confluence spaces/);
+    expect(
+      fetchMock.mock.calls.some(([, init]) => (init as RequestInit)?.method === "PATCH"),
+    ).toBe(false);
+  });
+
+  it("tome_list_confluence_spaces returns the URL of every attached space", async () => {
+    mockProject({ confluence_spaces: [space("PLATFORM"), space("MARKETING")] });
+
+    const body = await callTool("tome_list_confluence_spaces", {
+      project_slug: "example",
+    });
+
+    expect(JSON.parse(body.result.content[0].text)).toEqual([
+      spaceUrl("PLATFORM"),
+      spaceUrl("MARKETING"),
+    ]);
+  });
+
+  it("tome_list_confluence_spaces falls back to a legacy confluence_url", async () => {
+    mockProject({ confluence_url: spaceUrl("PLATFORM") });
+
+    const body = await callTool("tome_list_confluence_spaces", {
+      project_slug: "example",
+    });
+
+    expect(JSON.parse(body.result.content[0].text)).toEqual([spaceUrl("PLATFORM")]);
+  });
+});

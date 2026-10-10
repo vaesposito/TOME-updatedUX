@@ -25,16 +25,23 @@ interface SearchContent {
   title?: string;
   space?: { key?: string };
   ancestors?: Array<{ id?: string; title?: string }>;
+  childTypes?: { page?: { value?: boolean } };
 }
 
 interface SearchResult {
   title?: string;
   content?: SearchContent;
+  space?: { key?: string };
 }
 
 interface SearchResponse {
   results?: SearchResult[];
   _links?: { next?: string };
+}
+
+function hasChildren(content: SearchContent): boolean | undefined {
+  const value = content.childTypes?.page?.value;
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function pageUrl(siteUrl: string, spaceKey: string, pageId: string): string {
@@ -61,7 +68,10 @@ async function confluenceSearch(
     : new URLSearchParams();
   if (!params.has("cql")) params.set("cql", cql);
   if (!params.has("expand")) {
-    params.set("expand", "content.space,content.ancestors");
+    params.set(
+      "expand",
+      "content.space,content.ancestors,content.childTypes.page",
+    );
   }
   if (!params.has("limit")) params.set("limit", String(limit));
   const response = await fetch(`${gateway}/wiki/rest/api/search?${params}`, {
@@ -86,6 +96,24 @@ async function confluenceSearch(
     );
   }
   return (await response.json().catch(() => ({}))) as SearchResponse;
+}
+
+// v1 `/rest/api/space/{key}` is retired and v2 `/wiki/api/v2/spaces?keys=`
+// 403s on a viewable-but-not-joined space, so check existence via CQL
+// search against `type=space`, same as the space directory does.
+async function fetchConfluenceSpace(
+  gateway: string,
+  token: string,
+  spaceKey: string,
+): Promise<{ key: string } | null> {
+  const search = await confluenceSearch(
+    gateway,
+    token,
+    `type=space and space.key="${cqlQuote(spaceKey)}"`,
+    1,
+  );
+  const key = search.results?.[0]?.space?.key;
+  return key ? { key } : null;
 }
 
 async function collectConfluencePages(
@@ -264,22 +292,25 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   const gateway = `https://api.atlassian.com/ex/confluence/${site.id}`;
   if (!parsed.page_id && parsed.space_key) {
-    const requestedSpaceKey = parsed.space_key;
-    const found: Array<{
-      page: ConfluenceTreePage;
-      ancestorIds: string[];
-      spaceKey: string;
-    }> = [];
+    const space = await fetchConfluenceSpace(gateway, token, parsed.space_key);
+    if (!space?.key) {
+      throw new ApiError(
+        "Space not found or not accessible",
+        404,
+        "CONFLUENCE_SPACE_NOT_FOUND",
+      );
+    }
+    const resolvedSpaceKey = space.key;
     const pageSearch = await collectConfluencePages(
       gateway,
       token,
-      `space="${cqlQuote(requestedSpaceKey)}" and type=page`,
+      `space="${cqlQuote(resolvedSpaceKey)}" and type=page`,
       MAX_PAGES,
     );
+    const found: Array<{ page: ConfluenceTreePage; ancestorIds: string[] }> = [];
     for (const result of pageSearch.results) {
       const content = result.content;
-      const resolvedSpaceKey = content?.space?.key;
-      if (!content?.id || !resolvedSpaceKey) continue;
+      if (!content?.id) continue;
       found.push({
         page: {
           id: content.id,
@@ -287,27 +318,21 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
           parent_id: null,
           depth: 0,
           url: pageUrl(site.url, resolvedSpaceKey, content.id),
+          has_children: hasChildren(content),
         },
         ancestorIds: (content.ancestors ?? [])
           .map((ancestor) => ancestor.id)
           .filter((id): id is string => Boolean(id)),
-        spaceKey: resolvedSpaceKey,
       });
     }
 
-    const resolvedSpaceKey = found[0]?.spaceKey ?? requestedSpaceKey;
     const known = new Set(found.map(({ page }) => page.id));
     const pages = orderForest(
-      found
-        .filter(
-          ({ spaceKey: key }) =>
-            key.toLocaleUpperCase() === resolvedSpaceKey.toLocaleUpperCase(),
-        )
-        .map(({ page, ancestorIds }) => ({
-          ...page,
-          parent_id:
-            [...ancestorIds].reverse().find((id) => known.has(id)) ?? null,
-        })),
+      found.map(({ page, ancestorIds }) => ({
+        ...page,
+        parent_id:
+          [...ancestorIds].reverse().find((id) => known.has(id)) ?? null,
+      })),
     );
     return successResponse({
       kind: "space",
@@ -362,6 +387,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       parent_id: parentId,
       depth: ancestors.length - rootIndex,
       url: pageUrl(site.url, spaceKey, content.id),
+      has_children: hasChildren(content),
     });
   }
 
@@ -371,6 +397,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     parent_id: null,
     depth: 0,
     url: pageUrl(site.url, spaceKey, rootId),
+    has_children: hasChildren(rootContent),
   };
   const pages = orderTree(root, descendants);
   return successResponse({

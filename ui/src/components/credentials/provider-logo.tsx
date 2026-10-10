@@ -1,7 +1,7 @@
 /**
  * Provider brand marks, shared so the credentials page and the project source
  * pickers render the same logos. GitHub / GitLab / PagerDuty are inline SVGs;
- * Atlassian and Webex come from `/public/provider-logos/*.svg`.
+ * Atlassian, Webex and SharePoint come from `/public/provider-logos/*.svg`.
  */
 export function ProviderLogo({
   provider,
@@ -11,6 +11,16 @@ export function ProviderLogo({
   className?: string;
 }) {
   switch (provider) {
+    case "sharepoint":
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt=""
+          aria-hidden="true"
+          className={className ?? "h-6 w-6 object-contain"}
+          src="/provider-logos/sharepoint.svg"
+        />
+      );
     case "github":
       return (
         <svg aria-hidden="true" className={className ?? "h-6 w-6"} viewBox="0 0 24 24" fill="currentColor">

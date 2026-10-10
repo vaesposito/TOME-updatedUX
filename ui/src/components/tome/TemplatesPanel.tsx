@@ -239,7 +239,7 @@ function StatCard({
       className={cn(
         "flex flex-1 items-center gap-2.5 rounded-lg border px-3 py-2.5",
         tone === "attention" && count > 0
-          ? "border-amber-500/30 bg-amber-950/20"
+          ? "border-amber-300 bg-amber-100 dark:border-amber-500/30 dark:bg-amber-950/20"
           : "border-border bg-muted/20",
       )}
     >
@@ -247,9 +247,9 @@ function StatCard({
         className={cn(
           "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
           tone === "attention" && count > 0
-            ? "bg-amber-950/40 text-amber-400"
+            ? "bg-amber-200 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400"
             : tone === "good"
-              ? "bg-emerald-950/30 text-emerald-400"
+              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400"
               : "bg-muted text-muted-foreground",
         )}
       >
@@ -431,7 +431,7 @@ export function TemplatesPanel({ slug, onNavigate, onIngestStarted }: Props) {
 
             {/* The actual work: what's wrong, explained, one card each. */}
             {attention.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-950/10 px-3 py-3 text-sm text-emerald-400">
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-950/10 dark:text-emerald-400">
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                 Nothing needs attention right now.
               </div>
@@ -440,7 +440,7 @@ export function TemplatesPanel({ slug, onNavigate, onIngestStarted }: Props) {
                 {attention.map((p) => (
                   <li
                     key={p.path}
-                    className="rounded-lg border border-amber-500/20 bg-amber-950/10 px-3 py-2.5 text-sm"
+                    className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm dark:border-amber-500/20 dark:bg-amber-950/10"
                   >
                     <div className="flex flex-wrap items-baseline gap-1.5">
                       {p.status === "missing" ? (

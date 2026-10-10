@@ -28,8 +28,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ChildProjectsPanel } from "@/components/tome/BhagProjectsPanel";
 import { PanelShell } from "@/components/tome/PanelHeader";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
+import { useMyAgentEnabled } from "@/hooks/use-myagent-enabled";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import {
+  confluenceSpaceUrl,
   normalizeConfluencePageScope,
   normalizeConfluencePageScopes,
   parseConfluenceUrl,
@@ -44,10 +46,19 @@ import {
   normalizeMyAgentConnectors,
 } from "@/lib/projects/myagent-source";
 import { preflightState, type PreflightSourceResult } from "@/lib/tome/preflight";
+import { sharePointSourceKey } from "@/lib/projects/sharepoint-source";
 import { describeRelativeTime, nextCronRun } from "@/lib/tome/auto-ingest/schedule-presets";
 import { cn } from "@/lib/utils";
-import type { AutoIngestConfig, ConfluencePageScope, WebexCredentialMode } from "@/types/projects";
+import type {
+  AutoIngestConfig,
+  ConfluencePageScope,
+  ConfluenceSpaceSource,
+  WebexCredentialMode,
+  SharePointDocumentSource,
+  SharePointSource,
+} from "@/types/projects";
 import { WebexIngestSources } from "./WebexIngestSources";
+import { SharePointIngestContext } from "./SharePointIngestContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,11 +91,13 @@ interface WebexMeeting {
 }
 
 interface ProjectSources {
+  sharepoint_documents?: SharePointSource[];
   webex_credential_mode?: WebexCredentialMode;
   repos: string[];
   confluence_url: string;
   confluence_page_scopes?: unknown;
   confluence_page_scope?: unknown;
+  confluence_spaces?: ConfluenceSpaceSource[];
   // Stored shape is { room_id, name, slug }; tolerate older { id, title } too.
   webex_rooms: Array<{
     room_id?: string;
@@ -99,6 +112,7 @@ interface ProjectSources {
 }
 
 interface SourceItem {
+  sourceKey?: string;
   label: string;
   room_id?: string;
   webexMode?: WebexCredentialMode;
@@ -107,7 +121,7 @@ interface SourceItem {
 }
 
 interface SourceRow {
-  kind: "github" | "confluence" | "webex" | "myagent";
+  kind: "github" | "confluence" | "webex" | "myagent" | "sharepoint";
   label: string;
   items: SourceItem[];
   connectorKey: string;
@@ -153,6 +167,33 @@ function confluencePageHref(
   return `${parsed.base_url}/wiki/spaces/${encodeURIComponent(scope.space_key)}/pages/${encodeURIComponent(scope.page_id)}`;
 }
 
+function confluenceSpaceItems(space: ConfluenceSpaceSource): SourceItem[] {
+  const scopes = space.page_scopes?.length
+    ? space.page_scopes
+    : space.page_scope
+      ? [space.page_scope]
+      : [];
+  if (scopes.length > 0) {
+    return scopes.map((scope) => ({
+      label: `${space.name}: ${scope.page_title}`,
+      detail: `Space ${scope.space_key} · ${
+        scope.include_descendants ? "This page and all subpages" : "This page only"
+      }`,
+      href:
+        space.base_url &&
+        `${space.base_url}/wiki/spaces/${encodeURIComponent(scope.space_key)}/pages/${encodeURIComponent(scope.page_id)}`,
+    }));
+  }
+  const href = confluenceSpaceUrl(space) || undefined;
+  return [
+    {
+      label: `Entire ${space.name} space`,
+      detail: href ?? space.space_key,
+      href,
+    },
+  ];
+}
+
 function savedConfluenceScopes(s: Partial<ProjectSources>): ConfluencePageScope[] {
   const scopes = normalizeConfluencePageScopes(s.confluence_page_scopes);
   if (scopes.length > 0) return scopes;
@@ -162,6 +203,13 @@ function savedConfluenceScopes(s: Partial<ProjectSources>): ConfluencePageScope[
 
 export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
   const rows: SourceRow[] = [];
+  if (s.sharepoint_documents?.length) {
+    rows.push({ kind: "sharepoint", label: "SharePoint", connectorKey: "sharepoint",
+      items: s.sharepoint_documents.map((document) => ({ sourceKey: sharePointSourceKey(document), label: document.name, href: document.web_url,
+        detail: document.kind === "folder"
+          ? `${document.selected_item_ids ? `Folder · ${document.selected_item_ids.length} initially selected file(s)${document.excluded_item_ids ? " + future additions" : " · previously saved fixed selection"}` : "Previously attached folder · All direct PDF/PPTX files"} · Runs as: configured SharePoint application`
+          : "Runs as: configured SharePoint application" })) });
+  }
   const repos = Array.isArray(s.repos) ? s.repos.filter(Boolean) : [];
   if (repos.length > 0) {
     rows.push({
@@ -171,7 +219,15 @@ export function sourcesFromProject(s: Partial<ProjectSources>): SourceRow[] {
       connectorKey: "github",
     });
   }
-  if (typeof s.confluence_url === "string" && s.confluence_url.trim()) {
+  const confluenceSpaces = Array.isArray(s.confluence_spaces) ? s.confluence_spaces : [];
+  if (confluenceSpaces.length > 0) {
+    rows.push({
+      kind: "confluence",
+      label: "Confluence",
+      items: confluenceSpaces.flatMap((space) => confluenceSpaceItems(space)),
+      connectorKey: "atlassian",
+    });
+  } else if (typeof s.confluence_url === "string" && s.confluence_url.trim()) {
     const sourceUrl = s.confluence_url.trim();
     const scopes = savedConfluenceScopes(s);
     const parsed = parseConfluenceUrl(sourceUrl);
@@ -421,6 +477,7 @@ export function IngestPanel({
    * `isSynthesized`. */
   entityKind?: "bhag" | "area";
 }) {
+  const myAgentEnabled = useMyAgentEnabled() === true;
   // Run state
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [seed, setSeed] = useState("");
@@ -462,6 +519,10 @@ export function IngestPanel({
   const [selectedMeetings, setSelectedMeetings] = useState<Set<string>>(new Set());
   const [meetingFilter, setMeetingFilter] = useState("");
   const [meetingLookbackDays, setMeetingLookbackDays] = useState(3);
+  const [savedSharePointDocuments, setSavedSharePointDocuments] = useState<SharePointSource[]>([]);
+  const [sharepointDocuments, setSharePointDocuments] = useState<SharePointDocumentSource[]>([]);
+
+  useEffect(() => { setSharePointDocuments([]); setSavedSharePointDocuments([]); }, [slug]);
 
   // ── Load runs ──────────────────────────────────────────────────────────────
 
@@ -500,7 +561,10 @@ export function IngestPanel({
         setProjectName(proj.slug ?? "");
         setAutoIngest(proj.autoIngest);
         const s = proj.sources ?? {};
-        const allowed = s.myagent_enabled ? normalizeMyAgentConnectors(s.myagent_connectors) : [];
+        setSavedSharePointDocuments(s.sharepoint_documents ?? []);
+        const allowed = myAgentEnabled && s.myagent_enabled
+          ? normalizeMyAgentConnectors(s.myagent_connectors)
+          : [];
         setMyAgentAllowed(allowed);
         setMyAgentSelection(allowed);
         // MyAgent delegated evidence is intentionally unsupported for Area and
@@ -508,7 +572,9 @@ export function IngestPanel({
         // synthesis never dispatches it, and showing it would misleadingly
         // suggest that it can be used from this surface.
         setSourceRows(
-          sourcesFromProject(s).filter((row) => !isSynthesized || row.kind !== "myagent"),
+          sourcesFromProject(s).filter(
+            (row) => row.kind !== "myagent" || (myAgentEnabled && !isSynthesized),
+          ),
         );
         setPreflight(preflightJson?.data?.sources ?? null);
       })
@@ -520,7 +586,7 @@ export function IngestPanel({
       });
 
     return () => { cancelled = true; };
-  }, [slug, isSynthesized]);
+  }, [slug, isSynthesized, myAgentEnabled]);
 
   // ── Meetings ───────────────────────────────────────────────────────────────
 
@@ -635,12 +701,14 @@ export function IngestPanel({
           seedStablePages: isGreenfield ? seedPages : undefined,
           refreshChildren: refreshChildren || undefined,
           webexMeetings: selectedList.length > 0 ? selectedList : undefined,
+          sharepointDocuments: sharepointDocuments.length > 0 ? sharepointDocuments : undefined,
         }
       : {
           seed: seed.trim() || undefined,
           mode,
-          myAgentSources: preflightLoading ? undefined : myAgentSelection,
+          myAgentSources: myAgentEnabled && !preflightLoading ? myAgentSelection : [],
           webexMeetings: selectedList.length > 0 ? selectedList : undefined,
+          sharepointDocuments: action === "full" && sharepointDocuments.length > 0 ? sharepointDocuments : undefined,
           sourceScope: action === "meeting" ? "webex_meetings" : undefined,
           seedStablePages: isGreenfield ? seedPages : undefined,
         };
@@ -663,6 +731,7 @@ export function IngestPanel({
       const json = await res.json();
       setSeed("");
       setSelectedMeetings(new Set());
+      if (isSynthesized || action === "full") setSharePointDocuments([]);
       await loadRuns();
       onRunStarted(json.data.runId);
     } catch (e) {
@@ -670,7 +739,7 @@ export function IngestPanel({
     } finally {
       setStarting(false);
     }
-  }, [slug, seed, action, meetings, selectedMeetings, myAgentSelection, preflightLoading, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
+  }, [slug, seed, action, meetings, selectedMeetings, sharepointDocuments, myAgentEnabled, myAgentSelection, preflightLoading, loadRuns, onRunStarted, isGreenfield, seedPages, refreshChildren, isSynthesized]);
 
   // Compaction — an in-place editing pass (tighten prose, fix stale tome:// links).
   // Its own run through the shared lifecycle; shows in the same log + history.
@@ -723,13 +792,13 @@ export function IngestPanel({
           {/* Draft awaiting review — a blocking state, called out above the
               card rather than folded into "what do you want to do". */}
           {reviewRun && (
-            <div className="rounded-lg border border-amber-800/30 bg-amber-950/20 px-4 py-3">
+            <div className="rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 dark:border-amber-800/30 dark:bg-amber-950/20">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-amber-300">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
                     {reviewRun.interrupted ? "Run interrupted · draft awaiting review" : "Draft awaiting review"}
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-xs text-amber-800 dark:text-muted-foreground">
                     {reviewRun.interrupted
                       ? "The worker stopped before completing this run. Review the partial draft manually; it will not auto-promote."
                       : reviewRun.myagent_evidence_received
@@ -741,7 +810,7 @@ export function IngestPanel({
                     <button
                       type="button"
                       onClick={() => onOpenRun(reviewRun.id)}
-                      className="text-primary hover:underline"
+                      className="text-[color-mix(in_srgb,hsl(var(--primary))_60%,black)] hover:underline dark:text-primary"
                     >
                       Open log
                     </button>
@@ -751,7 +820,7 @@ export function IngestPanel({
                       {draftPaths.map((p) => (
                         <li
                           key={p}
-                          className="rounded bg-amber-900/30 px-1.5 py-0.5 text-[11px] text-amber-200"
+                          className="rounded bg-amber-200 px-1.5 py-0.5 text-[11px] text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
                         >
                           {p}
                         </li>
@@ -760,7 +829,7 @@ export function IngestPanel({
                   )}
                 </div>
                 {reviewRun.review_access_restricted ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-amber-800 dark:text-muted-foreground">
                     This draft can be reviewed only by its authorizing user or a Tome administrator.
                   </p>
                 ) : (
@@ -1011,7 +1080,7 @@ export function IngestPanel({
                               ) : <ul className="mt-1 space-y-1">
                                 {row.items.map((item) => (
                                   <li
-                                    key={`${item.label}:${item.detail ?? ""}`}
+                                    key={item.sourceKey ?? `${item.label}:${item.detail ?? ""}`}
                                     className="flex min-w-0 items-start gap-1.5 text-xs"
                                   >
                                     <span
@@ -1222,6 +1291,10 @@ export function IngestPanel({
                 </div>
               )}
 
+              {(isSynthesized || action === "full") && <SharePointIngestContext key={slug} slug={slug}
+                selected={sharepointDocuments} saved={savedSharePointDocuments} onChange={setSharePointDocuments}
+                disabled={!canEdit || starting || preflightLoading} />}
+
               {/* Seed instruction — always shown; copy adapts to the selected action.
                   Hidden for compact, which doesn't take one. */}
               {action !== "compact" && (
@@ -1257,13 +1330,13 @@ export function IngestPanel({
 
               {/* First ingest — stable-page seeding (greenfield only) */}
               {(isSynthesized || action === "full") && isGreenfield && (
-                <div className="bg-emerald-950/20 px-4 py-3">
+                <div className="bg-emerald-100 px-4 py-3 dark:bg-emerald-950/20">
                   <div className="flex items-start gap-3">
-                    <Sprout className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                    <Sprout className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
                     <div className="flex-1 space-y-2.5">
                       <div>
-                        <p className="text-sm font-medium text-emerald-300">First ingest</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">First ingest</p>
+                        <p className="mt-0.5 text-xs text-emerald-800 dark:text-muted-foreground">
                           No previous ingests for this project. The agent will build the wiki from
                           scratch.
                         </p>
@@ -1276,9 +1349,9 @@ export function IngestPanel({
                           disabled={!canEdit || starting}
                           className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
                         />
-                        <span className="text-sm">
+                        <span className="text-sm text-emerald-800 dark:text-foreground">
                           Let the agent draft the stable pages
-                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                          <span className="mt-0.5 block text-xs text-emerald-800 dark:text-muted-foreground">
                             By default Charter, Objectives, and Roadmap stay yours to write. Check this
                             to let the agent take a best-effort first pass at them from your sources,
                             clearly marked as a draft. Only safe if a human reviews and edits the

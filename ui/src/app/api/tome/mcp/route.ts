@@ -18,6 +18,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getMcpAuthFromBearerOrSession } from "@/lib/auth/mcp-auth";
+import {
+  confluenceSpaceUrl,
+  normalizeConfluenceSpaces,
+  parseConfluenceUrl,
+} from "@/lib/projects/confluence-source";
 import { MYAGENT_CONNECTOR_SETTINGS_URL } from "@/lib/projects/myagent-source";
 import { SECONDARY_OIDC_PROOF_HEADER } from "@/lib/auth/secondary-oidc";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
@@ -760,6 +765,10 @@ const TOOLS: ToolDef[] = [
     handler: async (_req, fwd, args) => {
       const slug = String(args.project_slug);
       const data = ensureOk(await fwd("GET", `/api/projects/${encodeURIComponent(slug)}`), "get project");
+      const spaces = data?.project?.sources?.confluence_spaces;
+      if (Array.isArray(spaces) && spaces.length > 0) {
+        return toolText(JSON.stringify(spaces.map((s: any) => confluenceSpaceUrl(s)), null, 2));
+      }
       const url = data?.project?.sources?.confluence_url;
       return toolText(JSON.stringify(url ? [url] : [], null, 2));
     },
@@ -1297,16 +1306,44 @@ const TOOLS: ToolDef[] = [
   {
     name: "tome_add_confluence_space",
     description:
-      "Set the Confluence space URL for a project. `project_slug` and `confluence_url` are required.",
+      "Attach a Confluence space to a project (appends to its existing spaces, up to 5). `project_slug` and `confluence_url` are required.",
     inputSchema: schema({ project_slug: STR, confluence_url: STR }, ["project_slug", "confluence_url"]),
     handler: async (_req, fwd, args) => {
       const slug = encodeURIComponent(String(args.project_slug));
       const confluence_url = String(args.confluence_url);
+      const parsed = parseConfluenceUrl(confluence_url);
+      if (!parsed?.space_key) {
+        throw new Error(
+          `Could not find a Confluence space in "${confluence_url}" — expected a URL like https://<site>/wiki/spaces/<KEY>/...`,
+        );
+      }
+      const detail = ensureOk(await fwd("GET", `/api/projects/${slug}`), "get project");
+      const legacyParsed = detail?.project?.sources?.confluence_url
+        ? parseConfluenceUrl(detail.project.sources.confluence_url)
+        : undefined;
+      const existing: unknown[] = Array.isArray(detail?.project?.sources?.confluence_spaces)
+        ? detail.project.sources.confluence_spaces
+        : legacyParsed?.space_key
+          ? [{
+              space_key: legacyParsed.space_key,
+              base_url: legacyParsed.base_url,
+              name: legacyParsed.space_key,
+            }]
+          : [];
+      const nextSpaces = normalizeConfluenceSpaces([
+        ...existing,
+        { space_key: parsed.space_key, base_url: parsed.base_url, name: parsed.space_key },
+      ]);
+      if (nextSpaces.length <= existing.length) {
+        throw new Error(
+          `Could not attach "${confluence_url}" — the project already has ${existing.length >= 5 ? "the maximum of 5 Confluence spaces" : "this space"}.`,
+        );
+      }
       ensureOk(
-        await fwd("PATCH", `/api/projects/${slug}`, { sources: { confluence_url } }),
-        "set confluence space",
+        await fwd("PATCH", `/api/projects/${slug}`, { sources: { confluence_spaces: nextSpaces } }),
+        "add confluence space",
       );
-      return toolText(`Set Confluence space to ${confluence_url}.`);
+      return toolText(`Attached Confluence space. Project now has ${nextSpaces.length} space(s).`);
     },
   },
   {

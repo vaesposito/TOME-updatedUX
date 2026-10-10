@@ -172,7 +172,10 @@ class LiveVerification:
                 body += part[max(0, len(body) - offset):]
             else:
                 if len(body) == page["total_chars"]:
-                    evidence.append({**page, "body": body})
+                    # The assembled document is a full body, not the terminal
+                    # chunk whose offset was retained in the page metadata.
+                    evidence.append({**page, "body": body, "offset": 0,
+                        "next_offset": None, "read_coverage": "complete"})
                     continue
             self.failures.append("Live chunks did not reconstruct a complete, consistent page body.")
         return evidence

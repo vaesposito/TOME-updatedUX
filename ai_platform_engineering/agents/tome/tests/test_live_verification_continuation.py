@@ -33,6 +33,9 @@ async def test_completion_resumes_the_existing_prefix(monkeypatch: pytest.Monkey
     assert [call.args[3]["offset"] for call in fetch.call_args_list] == [0, 24_000, 48_000]
     assert live.characters == 72_000
     assert live.complete_evidence()[0]["body"] == "x" * 72_000
+    assert live.complete_evidence()[0]["offset"] == 0
+    assert live.complete_evidence()[0]["next_offset"] is None
+    assert live.complete_evidence()[0]["read_coverage"] == "complete"
     assert not live.failures
 
 

@@ -146,6 +146,16 @@ def _linked_paths(answer: str) -> set[str]:
     return paths
 
 
+def _verification_pages(
+    consulted: set[tuple[str, str]],
+    retrieved: set[tuple[str, str]],
+    cited: set[str],
+    corpus: PublishedCorpus,
+) -> list[tuple[str, str]]:
+    """Select answer evidence without promoting unrelated catalog excerpts."""
+    return [key for key in sorted(consulted) if corpus.pages[key].reference()["citation"] in cited] or sorted(retrieved)
+
+
 async def _read(
     name: str,
     arguments: dict[str, Any],
@@ -200,6 +210,7 @@ async def _reason(
         if entry.get("overview_excerpt") and key in corpus.pages:
             consulted.add(key)
     missing_evidence: list[str] = []
+    retrieved: set[tuple[str, str]] = set()
     live = LiveVerification(actor_sub, scope_hash, live_verification, set(corpus.entities), live_verification_grant)
 
     def collect_references(value: Any) -> None:
@@ -207,6 +218,7 @@ async def _reason(
             key = (value.get("project_slug"), value.get("path"))
             if all(isinstance(part, str) for part in key) and key in corpus.pages:
                 consulted.add(key)
+                retrieved.add(key)
             for nested in value.values():
                 collect_references(nested)
         elif isinstance(value, list):
@@ -275,7 +287,10 @@ async def _reason(
                     yield _event("tool_call", id=check_id, tool="verify_confluence_sources", input={"mode": live_verification})
                     targets: list[tuple[str, str]] = []
                     cited = _linked_paths(final_answer)
-                    relevant = [key for key in sorted(consulted) if corpus.pages[key].reference()["citation"] in cited] or sorted(consulted)
+                    # Catalog excerpts orient the model but do not identify the
+                    # pages it used for this answer. Prioritize explicit reads
+                    # and search results when no rendered citation is present.
+                    relevant = _verification_pages(consulted, retrieved, cited, corpus)
                     for key in relevant[:12]:
                         text = await view_operation(corpus.text, corpus.pages[key])
                         targets.extend((key[0], url) for url in re.findall(r"https://[^\s<>\)\]\"']+/wiki/(?:spaces/[^\s<>\)\]\"']*/pages/\d+|pages/\d+|pages/viewpage\.action\?pageId=\d+)", text))

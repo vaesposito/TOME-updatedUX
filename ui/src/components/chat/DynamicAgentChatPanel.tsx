@@ -1116,7 +1116,9 @@ export function ChatPanel({
 
       await adapter.streamMessage(
         {
-          message: buildContextGroundedMessage(messageToSend, suppliedClientContext),
+          message: conv?.metadata?.assistant_runtime === "tome-native"
+            ? messageToSend
+            : buildContextGroundedMessage(messageToSend, suppliedClientContext),
           conversationId: convId,
           agentId,
           clientContext,

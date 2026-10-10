@@ -129,10 +129,11 @@ flowchart TD
 - **TOME Settings → Assistant** sets `tome_live_verification_mode` in
   `platform_config`: **Off** (default), **On demand**, or **Automatic**.
   Popup visibility remains a separate setting.
-- On demand requires the per-question **Verify with Confluence** choice.
+- On demand requires the per-question **Tome + Confluence Live Search** choice.
   Automatic checks time-sensitive terms in the question or stale-evidence wording
   in the answer. This heuristic uses no fixed two-day ingestion-age threshold.
-  **Wiki only** skips live verification for that question.
+  **Tome Only Search** skips live verification for that question. Before an explicit
+  choice, chat follows the runtime policy. Live search is unavailable while Off.
 - Browser chat and both global MCP tools accept optional `verify_sources`:
   true requests verification, false skips it, omission follows runtime policy.
   Requests for verification while Off fail with a clear 409 error.

@@ -69,6 +69,7 @@ export function AgenticAppAssistantOverlay({
   open,
   onOpenChange,
 }: AgenticAppAssistantOverlayProps) {
+  const isTomeAssistant = assistantRuntime === "tome-native";
   const bubbleLabel = (assistantLabel?.trim() || "Ask CAIPE").slice(0, 32);
   const headerTitle = (assistantAgentName?.trim() || `CAIPE assistant for ${appName}`).slice(0, 64);
   const chatPanelAgentName = (assistantAgentName?.trim() || "CAIPE Assistant").slice(0, 64);
@@ -352,9 +353,9 @@ export function AgenticAppAssistantOverlay({
               </span>
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold text-foreground">{headerTitle}</h2>
-                <p className="truncate text-xs text-muted-foreground">
+                {!isTomeAssistant && <p className="truncate text-xs text-muted-foreground">
                   {activeContext ? `${activeContext.route} context active` : `Waiting for ${appId} context`}
-                </p>
+                </p>}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -405,7 +406,7 @@ export function AgenticAppAssistantOverlay({
               >
                 <Trash2 className="h-4 w-4" aria-hidden />
               </button>
-              <button
+              {!isTomeAssistant && <button
                 type="button"
                 aria-label={`Assistant font size ${fontScale}`}
                 onClick={() => setFontScale((value) => nextFontScale(value))}
@@ -413,8 +414,8 @@ export function AgenticAppAssistantOverlay({
               >
                 <Type className="h-3.5 w-3.5" aria-hidden />
                 {fontScaleLabel(fontScale)}
-              </button>
-              <button
+              </button>}
+              {!isTomeAssistant && <button
                 type="button"
                 aria-label={
                   glassMode
@@ -432,7 +433,7 @@ export function AgenticAppAssistantOverlay({
               >
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
                 Glass
-              </button>
+              </button>}
               <button
                 type="button"
                 className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
@@ -444,7 +445,7 @@ export function AgenticAppAssistantOverlay({
             </div>
           </header>
 
-          <div className={cn(
+          {!isTomeAssistant && <div className={cn(
             "border-b border-border px-4 py-3 text-xs text-muted-foreground",
             glassMode ? "bg-cyan-500/5 backdrop-blur-2xl dark:bg-cyan-300/15" : "dark:bg-white/[0.03]",
           )}>
@@ -467,7 +468,7 @@ export function AgenticAppAssistantOverlay({
             ) : (
               <p>External apps can publish bounded page context. CAIPE treats it as untrusted data, not instructions.</p>
             )}
-          </div>
+          </div>}
 
           <div className="min-h-0 flex-1">
             {assistantConversation?.agentId === assistantAgentId ? (
@@ -479,8 +480,7 @@ export function AgenticAppAssistantOverlay({
                 clientContext={clientContext}
                 suggestedPrompts={suggestedPrompts}
                 suggestedPromptsInitiallyHidden={false}
-                emptyStateTitle={`Ask about ${appName}`}
-                emptyStateSubtitle="The accepted app context is attached as structured metadata."
+                emptyStateTitle={isTomeAssistant ? "Ask Tome" : undefined}
                 surface={glassMode ? "glass" : "default"}
                 fontScale={fontScale}
               />

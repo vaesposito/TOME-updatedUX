@@ -83,6 +83,8 @@ export function ChatPanel({
   agent,
   isLoadingMessages,
   clientContext: suppliedClientContext,
+  emptyStateTitle,
+  emptyStateSubtitle,
 }: ChatPanelProps) {
   // Derive display values from agent object
   const agentGradient = agent?.ui?.gradient_theme ?? null;
@@ -1786,21 +1788,30 @@ export function ChatPanel({
                       iconSize="h-8 w-8"
                       icon={Sparkles}
                     />
-                    <h2 className="text-2xl font-bold mb-4">Welcome to {getConfig('appName')}</h2>
-                    <p className="text-muted-foreground mb-3">
-                      Start your conversation with
-                    </p>
-                    <div className="flex items-center justify-center gap-3">
-                      <AgentAvatar
-                        agent={agent}
-                        rounded="rounded-lg"
-                        size="w-8 h-8"
-                        iconSize="h-4 w-4"
-                      />
-                      <span className="text-lg font-semibold">
-                        {agentName || "your agent"}
-                      </span>
-                    </div>
+                    {emptyStateTitle ? (
+                      <>
+                        <h2 className="text-2xl font-bold mb-4">{emptyStateTitle}</h2>
+                        {emptyStateSubtitle && <p className="text-muted-foreground mb-3">{emptyStateSubtitle}</p>}
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-2xl font-bold mb-4">Welcome to {getConfig('appName')}</h2>
+                        <p className="text-muted-foreground mb-3">
+                          Start your conversation with
+                        </p>
+                        <div className="flex items-center justify-center gap-3">
+                          <AgentAvatar
+                            agent={agent}
+                            rounded="rounded-lg"
+                            size="w-8 h-8"
+                            iconSize="h-4 w-4"
+                          />
+                          <span className="text-lg font-semibold">
+                            {agentName || "your agent"}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -2207,14 +2218,15 @@ export function ChatPanel({
               {/* Staged attachment previews (above the input row). */}
               <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
               {isNativeTome && <div className="flex items-center gap-2 px-3 text-xs text-muted-foreground">
-                <label htmlFor={`tome-live-choice-${conversationId ?? "new"}`}>Live sources</label>
+                <label className="sr-only" htmlFor={`tome-live-choice-${conversationId ?? "new"}`}>Search sources</label>
                 <Select id={`tome-live-choice-${conversationId ?? "new"}`} className="h-8 w-auto text-xs"
-                  value={verificationChoice} disabled={tomeSettings.tome_live_verification_mode === "off" || isThisConversationStreaming}
+                  value={verificationChoice === "default"
+                    ? tomeSettings.tome_live_verification_mode === "automatic" ? "verify" : "wiki"
+                    : verificationChoice}
+                  disabled={isThisConversationStreaming}
                   onChange={(event) => setVerificationChoice(event.target.value as typeof verificationChoice)}>
-                  <option value="default">{tomeSettings.tome_live_verification_mode === "off" ? "Disabled in settings"
-                    : tomeSettings.tome_live_verification_mode === "automatic" ? "Automatic" : "Wiki only by default"}</option>
-                  <option value="verify">Verify with Confluence</option>
-                  <option value="wiki">Wiki only</option>
+                  <option value="wiki">Tome Only Search</option>
+                  <option value="verify" disabled={tomeSettings.tome_live_verification_mode === "off"}>Tome + Confluence Live Search</option>
                 </Select>
               </div>}
 
@@ -2230,7 +2242,7 @@ export function ChatPanel({
                       ? queuedMessages.length >= 3
                         ? "Queue full (3/3). Send or cancel messages to queue more, or Cmd+Enter to force send..."
                         : `Type to queue message (${queuedMessages.length}/3), or Cmd+Enter to force send...`
-                      : `Ask anything, or type / to see commands, skills, and agents...`
+                      : isNativeTome ? "Ask Tome…" : `Ask anything, or type / to see commands, skills, and agents...`
                   }
                   className="flex-1 bg-transparent resize-none outline-none px-3 py-2.5 text-sm"
                   minRows={1}

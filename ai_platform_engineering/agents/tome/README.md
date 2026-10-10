@@ -414,11 +414,14 @@ set its `TOME_AGENT_TOKEN` to the same value.
 - **TOME Settings → Assistant → Live Confluence verification** stores
   `platform_config.tome_live_verification_mode`: `off` (default), `on_demand`,
   or `automatic`. It is independent of popup visibility.
-- On demand: select **Verify with Confluence** in native chat's **Live sources**
+- The popup uses **Ask Tome** for its header and welcome title, without context
+  notices or font/appearance controls.
+- On demand: select **Tome + Confluence Live Search** in native chat's search
   control. Automatic: check questions containing time-sensitive terms (such as
   yesterday, current, status or progress), or answers describing evidence as
   stale. This is a heuristic, not a fixed two-day ingestion threshold.
-  **Wiki only** overrides Automatic for a question.
+  **Tome Only Search** overrides Automatic for a question. The initial selection
+  follows the runtime policy; an explicit choice overrides it for that question.
 - Browser `/api/tome/chat` and MCP `tome_agent_search` / `tome_ask_global` accept
   optional `verify_sources`: `true` requests comparison, `false` skips it,
   omission uses the runtime policy. Requesting `true` while Off returns 409.

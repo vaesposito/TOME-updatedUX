@@ -87,7 +87,7 @@ function EnabledTomeAssistantBubble({ slug, projectTitle, pagePath, requestedAge
         appId="tome"
         appName="TOME"
         assistantLabel="Ask Tome"
-        assistantAgentName="Tome Assistant"
+        assistantAgentName="Ask Tome"
         assistantAgentId={agentId}
         assistantRuntime="tome-native"
         activeContext={context?.contextId === clearedContextId ? null : context}
@@ -101,9 +101,9 @@ function EnabledTomeAssistantBubble({ slug, projectTitle, pagePath, requestedAge
   return (
     <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3">
       {open && (
-        <section role="dialog" aria-label="Tome Assistant" className="pointer-events-auto w-96 max-w-full rounded-2xl border bg-background p-4 shadow-2xl">
+        <section role="dialog" aria-label="Ask Tome" className="pointer-events-auto w-96 max-w-full rounded-2xl border bg-background p-4 shadow-2xl">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Tome Assistant</h2>
+            <h2 className="text-sm font-semibold">Ask Tome</h2>
             <Button variant="ghost" size="icon" aria-label="Close Tome Assistant" onClick={() => setOpen(false)}><X className="h-4 w-4" /></Button>
           </div>
           <p role={error ? "alert" : "status"} className="text-sm text-muted-foreground">{error ?? "Connecting to TOME assistant…"}</p>

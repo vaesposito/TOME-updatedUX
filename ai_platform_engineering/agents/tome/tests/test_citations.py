@@ -114,6 +114,17 @@ def test_support_quotes_are_extracted_from_exact_source_lines(ledger: CitationLe
     assert report["bindings"][0]["end_line"] == 13
 
 
+def test_contiguous_excerpt_boundaries_do_not_invalidate_a_source_span(ledger: CitationLedger) -> None:
+    answer = "Milestone is ready but awaiting approval."
+    evidence = [{"source_id": "source-0", "reference": {}, "excerpts": [
+        {"start_line": 1, "text": "# Roadmap"},
+        {"start_line": 2, "text": "Milestone is ready but awaiting approval."},
+    ]}]
+    output, report = ledger.render(answer, answer_blocks(answer), review([supported(0, start=1, end=2)]), evidence)
+    assert WIKI in output
+    assert report["bindings"][0]["quote"] == "# Roadmap\nMilestone is ready but awaiting approval."
+
+
 def test_unsupported_claim_is_disclosed_instead_of_emitted_as_fact(ledger: CitationLedger) -> None:
     output, report = render(ledger, "All milestones shipped.", [{"block_id": 0, "status": "gap", "supports": [],
         "reason": "No launch evidence was available."}])
@@ -172,6 +183,22 @@ async def test_failed_review_withholds_draft(ledger: CitationLedger) -> None:
     assert "Milestone launched" not in output
     assert "withheld" in output and report["status"] == "incomplete"
     assert not report["supporting_urls"]
+
+
+@pytest.mark.asyncio
+async def test_failed_span_repair_withholds_only_the_affected_detail(ledger: CitationLedger) -> None:
+    client = AsyncMock()
+    client.post.return_value = httpx.Response(200, request=httpx.Request("POST", "https://example.test/v1/messages"), json={
+        "stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({
+            "blocks": [supported(0, start=999), supported(1)]})}],
+    })
+    output, report = await ledger.cite(client, "https://example.test", {}, "example-model", "milestone",
+        "An unsupported launch claim.\n\nMilestone is ready but awaiting approval.", set())
+    assert client.post.await_count == 2
+    assert "An unsupported launch claim" not in output
+    assert "Evidence gap" in output and WIKI in output
+    assert report["status"] == "completed" and report["missing_evidence"]
+    assert [binding["block_id"] for binding in report["bindings"]] == [1]
 
 
 @pytest.mark.asyncio

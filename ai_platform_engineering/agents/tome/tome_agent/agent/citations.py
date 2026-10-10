@@ -211,9 +211,43 @@ class CitationLedger:
             characters += len(part["text"])
         return list(selected.values())
 
+    def _bindings(self, block: AnswerBlock, check: BlockCheck, available: dict[str, Any]) -> tuple[list[str], list[dict[str, Any]]]:
+        block_bindings: list[dict[str, Any]] = []
+        if check.status == "supported" and not check.supports or check.status != "supported" and check.supports:
+            raise ValueError("Citation verdict has inconsistent support")
+        urls: list[str] = []
+        for support in check.supports:
+            entry = available.get(support.source_id)
+            if not entry:
+                raise ValueError("Citation is outside this turn's evidence")
+            if support.end_line < support.start_line or support.end_line - support.start_line >= 200:
+                raise ValueError("Citation line range is invalid")
+            available_lines: dict[int, str] = {}
+            for part in entry["excerpts"]:
+                for index, line in enumerate(part["text"].splitlines(), part["start_line"]):
+                    previous = available_lines.get(index)
+                    if previous is None or previous in line:
+                        available_lines[index] = line
+            if any(line not in available_lines for line in range(support.start_line, support.end_line + 1)):
+                raise ValueError("Citation line range is outside the supplied evidence")
+            quote = "\n".join(available_lines[line] for line in range(support.start_line, support.end_line + 1))
+            if not quote.strip():
+                raise ValueError("Citation selected empty source lines")
+            source = self.sources[support.source_id]
+            url = source.reference["citation"]
+            if url not in urls:
+                urls.append(url)
+            block_bindings.append({"block_id": block.id, "citation": url,
+                "quote": quote[:1800], "quote_truncated": len(quote) > 1800,
+                "start_line": support.start_line,
+                "end_line": support.end_line,
+                "line_basis": "live_plain_text" if "url" in source.reference else "published_markdown",
+                "revision_id": source.reference.get("revision_id", source.reference.get("content_revision"))})
+        return urls, block_bindings
+
     def render(
         self, answer: str, blocks: list[AnswerBlock], review: CitationReview,
-        evidence: list[dict[str, Any]],
+        evidence: list[dict[str, Any]], *, strict: bool = True,
     ) -> tuple[str, dict[str, Any]]:
         checks = {check.block_id: check for check in review.blocks}
         if len(checks) != len(review.blocks) or set(checks) != {block.id for block in blocks}:
@@ -225,33 +259,15 @@ class CitationLedger:
         replacements = []
         for block in blocks:
             check = checks[block.id]
-            if check.status == "supported" and not check.supports or check.status != "supported" and check.supports:
-                raise ValueError("Citation verdict has inconsistent support")
-            urls: list[str] = []
-            for support in check.supports:
-                entry = available.get(support.source_id)
-                if not entry:
-                    raise ValueError("Citation is outside this turn's evidence")
-                if support.end_line < support.start_line or support.end_line - support.start_line > 20:
-                    raise ValueError("Citation line range is invalid")
-                part = next((part for part in entry["excerpts"] if part["start_line"] <= support.start_line
-                    and support.end_line < part["start_line"] + len(part["text"].splitlines())), None)
-                if not part:
-                    raise ValueError("Citation line range is outside the supplied evidence")
-                lines = part["text"].splitlines()
-                quote = "\n".join(lines[support.start_line - part["start_line"]:support.end_line - part["start_line"] + 1])
-                if not quote.strip():
-                    raise ValueError("Citation selected empty source lines")
-                source = self.sources[support.source_id]
-                url = source.reference["citation"]
-                if url not in urls:
-                    urls.append(url)
-                bindings.append({"block_id": block.id, "citation": url,
-                    "quote": quote[:1800], "quote_truncated": len(quote) > 1800,
-                    "start_line": support.start_line,
-                    "end_line": support.end_line,
-                    "line_basis": "live_plain_text" if "url" in source.reference else "published_markdown",
-                    "revision_id": source.reference.get("revision_id", source.reference.get("content_revision"))})
+            try:
+                urls, block_bindings = self._bindings(block, check, available)
+            except ValueError as exc:
+                if strict:
+                    raise ValueError(f"Block {block.id}: {exc}") from exc
+                urls, block_bindings = [], []
+                check = BlockCheck(block_id=block.id, status="gap", supports=[],
+                    reason="The supporting source span could not be validated; this detail was withheld.")
+            bindings.extend(block_bindings)
             # Existing links are replaced by server-owned links from checked bindings.
             text = LINK.sub(lambda match: match[1], block.markdown)
             text = re.sub(r"https?://[^\s<>\)]+", "[source link]", text)
@@ -302,7 +318,8 @@ class CitationLedger:
                                 "A wiki source proves what its snapshot says, not current upstream status. Never override corrections or verification gaps in the draft. "
                                 "Pure headings and runtime comparison counts/coverage warnings are non_factual metadata. "
                                 "Cover every supplied block exactly once; preserve its block_id. Do not add other blocks. "
-                                "Choose short ranges (usually one to five lines, at most 21). Use an empty reason for supported/non_factual blocks. "
+                                "Choose the smallest supporting ranges (usually one to five lines, at most 200 for tables with blank lines). "
+                                "Use an empty reason for supported/non_factual blocks. "
                                 "Schema: " + json.dumps(CitationReview.model_json_schema()),
                             "messages": [{"role": "user", "content": json.dumps({"question": question,
                                 "blocks": [{"block_id": block.id, "markdown": block.markdown} for block in batch],
@@ -319,7 +336,7 @@ class CitationLedger:
                         text = "".join(block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text")
                         fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", text, re.DOTALL)
                         review = CitationReview.model_validate_json(fenced.group(1) if fenced else text)
-                        self.render(answer, batch, review, evidence)
+                        self.render(answer, batch, review, evidence, strict=attempt == 0)
                         return review
                     except ValueError as exc:
                         # Fixed runtime validation messages can help repair a
@@ -341,7 +358,7 @@ class CitationLedger:
                             task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
                 review = CitationReview(blocks=[check for batch in reviews for check in batch.blocks])
-                return self.render(answer, blocks, review, evidence)
+                return self.render(answer, blocks, review, evidence, strict=False)
         except (httpx.HTTPError, ValueError, KeyError, TypeError, TimeoutError) as exc:
             # Only our fixed validation messages may enter logs, never a model
             # schema exception which can include source text or the answer.

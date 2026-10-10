@@ -46,7 +46,8 @@ the passive `/metrics` scrape endpoint are unauthenticated.
   `live_verification.live_sources` with `cited_in_answer` flags.
 - Review uses at most 60,000 evidence characters and 90 seconds. Batches contain
   at most ten answer blocks, with three concurrent requests and one mapping
-  repair per batch. Missing support is disclosed; a failed review withholds the
+  repair per batch. Invalid spans withhold the affected detail as an evidence
+  gap; an unavailable overall review withholds the
   draft. Permission validity is rechecked before final emission.
 - Semantic support remains model judgment. Valid links and existing source spans
   do not prove completeness or guarantee that every conclusion is correct.

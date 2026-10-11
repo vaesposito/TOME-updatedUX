@@ -188,12 +188,14 @@ export function DraftReviewView({
   const finishMessage = pages === null
     ? "Loading the changed files…"
     : pendingCount > 0
-      ? `Choose Accept or Reject for ${pendingCount} remaining file${pendingCount === 1 ? "" : "s"}, or use Accept all / Reject all to finish now.`
+      ? interrupted
+        ? `Choose Accept or Reject for ${pendingCount} remaining file${pendingCount === 1 ? "" : "s"}, then select Finish review.`
+        : `Choose Accept or Reject for ${pendingCount} remaining file${pendingCount === 1 ? "" : "s"}, or use Accept all / Reject all to finish now.`
       : qualityBlocksDone
         ? "Resolve the quality gate below before finishing."
         : decisionPages.length === 0
           ? "This ingest has no files awaiting a decision."
-          : "All required decisions are complete. Finish to publish accepted files.";
+          : "All required decisions are complete. Select Finish review to publish accepted files.";
   const reviewModeLabel = reviewMode === "all"
     ? "Review everything"
     : reviewMode === "none"
@@ -205,7 +207,7 @@ export function DraftReviewView({
       <div className="border-b bg-background px-5 py-4">
         {reviewable && interrupted && (
           <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-            This run stopped before completion. Check each changed file before accepting; the partial draft will not auto-promote.
+            This run stopped before completion. Accept all is unavailable. Review each draft file, then select Finish review to publish accepted files.
           </p>
         )}
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -282,7 +284,7 @@ export function DraftReviewView({
             <span className="font-medium">{finishMessage}</span>
             {publishedCount > 0 && (
               <span className="ml-1">
-                {publishedCount} other changed file{publishedCount === 1 ? " was" : "s were"} already published by the “{reviewModeLabel}” policy and remain visible below. Accept all / Reject all only affects draft files; published files stay unchanged.{" "}
+                {publishedCount} other changed file{publishedCount === 1 ? " was" : "s were"} already published by the “{reviewModeLabel}” policy and remain visible below. Review actions only affect draft files; published files stay unchanged.{" "}
                 <a
                   href={`/projects/${slug}/tome/settings?tab=review`}
                   className="font-semibold underline underline-offset-2"
@@ -291,7 +293,11 @@ export function DraftReviewView({
                 </a>
               </span>
             )}
-            <p className="mt-1">Accept all / Reject all finishes immediately and replaces any individual file choices.</p>
+            <p className="mt-1">
+              {interrupted
+                ? "Reject all discards every draft file and finishes immediately, replacing individual choices."
+                : "Accept all / Reject all finishes immediately and replaces any individual file choices."}
+            </p>
           </div>
         )}
       </div>
@@ -450,11 +456,11 @@ export function DraftReviewView({
                     <p className="truncate text-sm font-medium" title={selected.path}>
                       {selected.path}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p role="status" className="text-xs text-muted-foreground">
                       {selected.decision === "accept"
-                        ? "Accepted — this file will be published when you finish the review."
+                        ? "Acceptance saved. Select Finish review after reviewing all draft files to publish this file."
                         : selected.decision === "reject"
-                          ? "Rejected — this file will be discarded when you finish the review."
+                          ? "Rejection saved. Select Finish review after reviewing all draft files to discard this draft."
                           : "Decision required: accept or reject this file."}
                     </p>
                   </div>
@@ -462,7 +468,7 @@ export function DraftReviewView({
                     <button
                       type="button"
                       onClick={() => void decide(selected.path, "reject")}
-                      disabled={savingPath !== null || finalizing}
+                      disabled={savingPath !== null || finalizing || selected.decision === "reject"}
                       className={cn(
                         "flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50",
                         selected.decision === "reject"
@@ -471,12 +477,12 @@ export function DraftReviewView({
                       )}
                     >
                       {savingPath === selected.path ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
-                      Reject file
+                      {selected.decision === "reject" ? "Rejected" : "Reject file"}
                     </button>
                     <button
                       type="button"
                       onClick={() => void decide(selected.path, "accept")}
-                      disabled={savingPath !== null || finalizing}
+                      disabled={savingPath !== null || finalizing || selected.decision === "accept"}
                       className={cn(
                         "flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50",
                         selected.decision === "accept"
@@ -485,7 +491,7 @@ export function DraftReviewView({
                       )}
                     >
                       {savingPath === selected.path ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                      Accept file
+                      {selected.decision === "accept" ? "Accepted" : "Accept file"}
                     </button>
                   </div>
                 </div>

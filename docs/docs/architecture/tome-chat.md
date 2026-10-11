@@ -23,6 +23,9 @@ Ask Tome with direct Messages reasoning. No agent instance per project is needed
 - TOME Settings → Assistant controls `platform_config.tome_assistant_popup_enabled`.
   It defaults off, affects Projects and wiki popups, and refreshes on visible
   clients every 30 seconds. Regular chat with the bound agent stays available.
+- Project settings reserve the measured Save bar space beneath Ask Tome. The
+  launcher, connection message and expanded chat stay above those actions as
+  the footer or viewport changes size.
 - Conversation write and registered-agent use checks apply to both entry points;
   runtime metadata cannot substitute for the configured identity.
 

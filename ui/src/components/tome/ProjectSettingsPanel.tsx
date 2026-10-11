@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowUpRight,
@@ -202,15 +202,38 @@ export function ProjectSettingsPanel({
   slug,
   onSaved,
   onOpenIngest,
+  onSaveBarInsetChange,
 }: {
   slug: string;
   onSaved?: (project: ProjectDocument) => void;
+  onSaveBarInsetChange?: (inset: number) => void;
   onOpenIngest?: () => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { kinds: sourceKinds, loading: sourceKindsLoading } = useProjectSourceKinds();
   const [loading, setLoading] = useState(true);
+  const saveBarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!onSaveBarInsetChange) return;
+    const bar = saveBarRef.current;
+    if (!bar) return;
+    // Keep floating assistants above the entire action bar, including wrapped errors.
+    const measure = () => onSaveBarInsetChange(
+      Math.max(24, Math.ceil(window.innerHeight - bar.getBoundingClientRect().top) + 16),
+    );
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(bar);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [loading, onSaveBarInsetChange]);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1613,7 +1636,7 @@ export function ProjectSettingsPanel({
       </ScrollArea>
 
       {/* Sticky save bar */}
-      <div className="flex items-center justify-end gap-3 border-t bg-background px-6 py-3">
+      <div ref={saveBarRef} className="flex shrink-0 items-center justify-end gap-3 border-t bg-background px-6 py-3">
         {error && <span className="text-sm text-destructive">{error}</span>}
         {savedAt && !saving && (
           <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">

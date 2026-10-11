@@ -13,6 +13,7 @@ interface Props {
   slug?: string;
   projectTitle?: string;
   pagePath?: string;
+  bottomInset?: number;
 }
 
 /** TOME uses GRID conversations; project and page are optional viewing context. */
@@ -22,7 +23,7 @@ export function TomeAssistantBubble(props: Props) {
   return <EnabledTomeAssistantBubble key={settings.agent_id} {...props} requestedAgentId={settings.agent_id} />;
 }
 
-function EnabledTomeAssistantBubble({ slug, projectTitle, pagePath, requestedAgentId }: Props & { requestedAgentId: string | null }) {
+function EnabledTomeAssistantBubble({ slug, projectTitle, pagePath, bottomInset, requestedAgentId }: Props & { requestedAgentId: string | null }) {
   const [open, setOpen] = useState(false);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +91,7 @@ function EnabledTomeAssistantBubble({ slug, projectTitle, pagePath, requestedAge
         assistantAgentName="Ask Tome"
         assistantAgentId={agentId}
         assistantRuntime="tome-native"
+        bottomInset={bottomInset}
         activeContext={context?.contextId === clearedContextId ? null : context}
         onClearContext={() => setClearedContextId(context?.contextId ?? null)}
         open={open}
@@ -99,7 +101,7 @@ function EnabledTomeAssistantBubble({ slug, projectTitle, pagePath, requestedAge
   }
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3">
+    <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3" style={{ bottom: bottomInset }}>
       {open && (
         <section role="dialog" aria-label="Ask Tome" className="pointer-events-auto w-96 max-w-full rounded-2xl border bg-background p-4 shadow-2xl">
           <div className="mb-3 flex items-center justify-between">

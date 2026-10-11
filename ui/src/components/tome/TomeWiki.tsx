@@ -294,6 +294,7 @@ export function TomeWiki({ slug }: { slug: string }) {
   // main pane while the sidebar, breadcrumb, and loaded page tree persist. Next
   // syncs pushState into `usePathname`, so direct loads and popstate still work.
   const pathname = usePathname();
+  const [assistantBottomInset, setAssistantBottomInset] = useState(24);
   const base = `/projects/${slug}/tome`;
   const {
     open: projectSidebarOpen,
@@ -2315,6 +2316,7 @@ export function TomeWiki({ slug }: { slug: string }) {
               <div className="min-h-0 min-w-0 flex-1">
                 <ProjectSettingsPanel
                   slug={slug}
+                  onSaveBarInsetChange={setAssistantBottomInset}
                   onSaved={applyProjectMeta}
                   onOpenIngest={() => navigate({ kind: "ingest" })}
                 />
@@ -2485,6 +2487,7 @@ export function TomeWiki({ slug }: { slug: string }) {
             slug={slug}
             projectTitle={projectTitle ?? undefined}
             pagePath={trackedPagePath}
+            bottomInset={view.kind === "settings" ? assistantBottomInset : undefined}
           />
         )}
       </div>

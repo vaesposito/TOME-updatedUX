@@ -484,6 +484,15 @@ async def fetch_retrieval(
         return response.json()
 
 
+def _decode_published_snapshot_frame(line: bytes | bytearray) -> dict[str, Any]:
+    if len(line) > 56 * 1024 * 1024:
+        raise ValueError("Published snapshot frame exceeds its limit")
+    frame = json.loads(line)
+    if not isinstance(frame, dict):
+        raise TypeError("Invalid published snapshot frame")
+    return frame
+
+
 async def stream_retrieval_snapshot(
     actor_sub: str, scope_hash: str, project_ids: list[str] | None = None
 ) -> AsyncIterator[dict[str, Any]]:
@@ -502,13 +511,19 @@ async def stream_retrieval_snapshot(
         response.raise_for_status()
         if "application/x-ndjson" not in response.headers.get("content-type", ""):
             raise ValueError("Invalid published snapshot response")
-        async for line in response.aiter_lines():
-            if len(line.encode("utf-8")) > 56 * 1024 * 1024:
+        # NDJSON uses LF as its record delimiter. Unicode line separators in
+        # Markdown remain JSON string content, so do not use aiter_lines(),
+        # whose splitlines() handling also separates U+2028 and U+2029.
+        pending = bytearray()
+        async for chunk in response.aiter_bytes():
+            pending.extend(chunk)
+            while b"\n" in pending:
+                line, _, pending = pending.partition(b"\n")
+                yield _decode_published_snapshot_frame(line)
+            if len(pending) > 56 * 1024 * 1024:
                 raise ValueError("Published snapshot frame exceeds its limit")
-            frame = json.loads(line)
-            if not isinstance(frame, dict):
-                raise TypeError("Invalid published snapshot frame")
-            yield frame
+        if pending:
+            yield _decode_published_snapshot_frame(pending)
 
 
 def fetch_all_pages_sync(

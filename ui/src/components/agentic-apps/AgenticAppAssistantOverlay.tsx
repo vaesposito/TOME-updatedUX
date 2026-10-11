@@ -53,6 +53,8 @@ export interface AgenticAppAssistantOverlayProps {
   onClearContext: () => void;
   assistantAgentId: string;
   assistantRuntime?: "tome-native";
+  /** Distance from the viewport bottom reserved for the host's action bar. */
+  bottomInset?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -66,6 +68,7 @@ export function AgenticAppAssistantOverlay({
   onClearContext,
   assistantAgentId,
   assistantRuntime,
+  bottomInset,
   open,
   onOpenChange,
 }: AgenticAppAssistantOverlayProps) {
@@ -317,7 +320,7 @@ export function AgenticAppAssistantOverlay({
 
   return (
     // Reserve the app header and keep the launcher inside the available height.
-    <div className="pointer-events-none fixed inset-x-4 bottom-4 top-18 z-40 flex flex-col items-end justify-end gap-3 sm:inset-x-6 sm:bottom-6">
+    <div className="pointer-events-none fixed inset-x-4 bottom-4 top-18 z-40 flex flex-col items-end justify-end gap-3 sm:inset-x-6 sm:bottom-6" style={{ bottom: bottomInset }}>
       {open ? (
         <section
           aria-label={headerTitle}

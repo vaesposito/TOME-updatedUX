@@ -173,33 +173,30 @@ function SummaryRow({
         />
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <p className="min-w-0 flex-1 truncate text-xs">
-              {/* Which product the row came from, said plainly, exactly as
-                  the inbox says it. */}
-              <span className="mr-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground/70">
-                {origin}
+          <p className="min-w-0 truncate text-xs">
+            {/* Which product the row came from, said plainly, exactly as
+                the inbox says it. */}
+            <span className="mr-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground/70">
+              {origin}
+            </span>
+            <span className={cn("font-medium", notificationAccent(item))}>
+              {type}
+            </span>
+            {showEntity && item.entity_title && (
+              <span className="text-foreground/70">
+                {" · "}
+                {item.entity_title}
               </span>
-              <span className={cn("font-medium", notificationAccent(item))}>
-                {type}
-              </span>
-              {showEntity && item.entity_title && (
-                <span className="text-foreground/70">
-                  {" · "}
-                  {item.entity_title}
-                </span>
-              )}
-              {/* Why this row reached the reader at all — the one thing a
-                  summary says that an inbox row does not. */}
-              {reason && <span className="text-foreground/70">{" · "}{reason}</span>}
-              {/* The reference joins the breadcrumb, as it does in the
-                  inbox: it names which release or issue this concerns. */}
-              {item.reference && (
-                <span className="text-foreground/70">{" · "}{item.reference}</span>
-              )}
-            </p>
-            <AttentionMark notification={{ ...item, mentioned }} />
-          </div>
+            )}
+            {/* Why this row reached the reader at all — the one thing a
+                summary says that an inbox row does not. */}
+            {reason && <span className="text-foreground/70">{" · "}{reason}</span>}
+            {/* The reference joins the breadcrumb, as it does in the
+                inbox: it names which release or issue this concerns. */}
+            {item.reference && (
+              <span className="text-foreground/70">{" · "}{item.reference}</span>
+            )}
+          </p>
 
           <p
             className={cn(
@@ -271,6 +268,12 @@ function SummaryRow({
             open". */}
         <span className="w-[5.5rem] shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-foreground/70">
           {item.resolved ? "Resolved" : openFor(item.open_days)}
+        </span>
+
+        {/* Outermost, on the age's own line, as in the inbox — and the slot
+            stays open on rows without a mark so the ages stay in line. */}
+        <span className="flex w-3.5 shrink-0 justify-end">
+          <AttentionMark notification={{ ...item, mentioned }} />
         </span>
       </div>
     </li>

@@ -80,33 +80,30 @@ export function NotificationRow({
         <UnreadDot unread={!notification.read} className="mt-[0.4375rem]" />
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <p className="min-w-0 flex-1 truncate text-xs">
-              {/* Which product the row came from, said plainly: the list
-                  mixes TOME with the rest of the platform and the wording
-                  alone does not always give it away. */}
-              <span className="mr-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground/70">
-                {origin}
+          <p className="min-w-0 truncate text-xs">
+            {/* Which product the row came from, said plainly: the list
+                mixes TOME with the rest of the platform and the wording
+                alone does not always give it away. */}
+            <span className="mr-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground/70">
+              {origin}
+            </span>
+            <span className={cn("font-medium", accent)}>{type}</span>
+            {notification.entity_title && (
+              <span className="text-foreground/70">
+                {" · "}
+                {notification.entity_title}
               </span>
-              <span className={cn("font-medium", accent)}>{type}</span>
-              {notification.entity_title && (
-                <span className="text-foreground/70">
-                  {" · "}
-                  {notification.entity_title}
-                </span>
-              )}
-              {/* With the date gone to the right edge, the reference joins
-                  the breadcrumb it belongs to: it names which release or
-                  issue this concerns, not when it arrived. */}
-              {notification.reference && (
-                <span className="text-foreground/70">
-                  {" · "}
-                  {notification.reference}
-                </span>
-              )}
-            </p>
-            <AttentionMark notification={notification} />
-          </div>
+            )}
+            {/* With the date gone to the right edge, the reference joins
+                the breadcrumb it belongs to: it names which release or
+                issue this concerns, not when it arrived. */}
+            {notification.reference && (
+              <span className="text-foreground/70">
+                {" · "}
+                {notification.reference}
+              </span>
+            )}
+          </p>
 
           <p
             className={cn(
@@ -188,6 +185,15 @@ export function NotificationRow({
             agreed on where "when" was. */}
         <span className="w-16 shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums text-foreground/70">
           {notificationTimestamp(notification.created_at)}
+        </span>
+
+        {/* Outermost, beside the date rather than up in the breadcrumb: the
+            mark is the one thing worth catching from across the list, and at
+            the end of the row the eye finds it against a straight edge. The
+            slot is held open on rows without one, so a row that needs
+            attention does not push its own date out of line. */}
+        <span className="flex w-3.5 shrink-0 justify-end">
+          <AttentionMark notification={notification} />
         </span>
       </div>
     </li>

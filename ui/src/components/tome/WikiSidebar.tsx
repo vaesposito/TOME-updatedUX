@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { KindBadge } from "@/components/tome/KindBadge";
 import type { PageKind, PageTreeNode } from "@/types/tome";
@@ -28,6 +29,30 @@ interface Props {
   onEditFolder?: (node: PageTreeNode) => void;
   onDeleteFolder?: (folderId: string) => void;
   onMoveItem?: (item: WikiNavigationItem, target: WikiNavigationTarget) => void;
+  /**
+   * Pages with activity the reader has not opened, by path.
+   *
+   * Dotted in place so that catching up does not require going to the inbox
+   * first: the tree is where someone already is when they wonder what moved.
+   */
+  unreadPaths?: ReadonlySet<string>;
+}
+
+/**
+ * Whether anything beneath this node is unread.
+ *
+ * Only asked of a closed folder, so that a collapsed branch still admits it
+ * is hiding something new rather than looking settled.
+ */
+function hasUnreadBelow(
+  node: PageTreeNode,
+  unreadPaths: ReadonlySet<string>,
+): boolean {
+  return node.children.some(
+    (child) =>
+      (child.kind !== "folder" && unreadPaths.has(child.path)) ||
+      hasUnreadBelow(child, unreadPaths),
+  );
 }
 
 export type WikiNavigationItem = { kind: "page" | "folder"; id: string };
@@ -108,6 +133,7 @@ function NodeList({
   onEditFolder,
   onDeleteFolder,
   onMoveItem,
+  unreadPaths,
   onDraggingChange,
 }: {
   nodes: PageTreeNode[];
@@ -134,6 +160,7 @@ function NodeList({
               onEditFolder={onEditFolder}
               onDeleteFolder={onDeleteFolder}
               onMoveItem={onMoveItem}
+              unreadPaths={unreadPaths}
               onDraggingChange={onDraggingChange}
             />
           </li>
@@ -157,6 +184,7 @@ function TreeNode({
   onEditFolder,
   onDeleteFolder,
   onMoveItem,
+  unreadPaths,
   onDraggingChange,
 }: {
   node: PageTreeNode;
@@ -211,6 +239,7 @@ function TreeNode({
       onEditFolder={onEditFolder}
       onDeleteFolder={onDeleteFolder}
       onMoveItem={onMoveItem}
+      unreadPaths={unreadPaths}
       onDraggingChange={onDraggingChange}
     />
   );
@@ -259,6 +288,14 @@ function TreeNode({
               <ProviderLogo provider={provider} className="h-3 w-3 shrink-0 object-contain" />
             )}
             <span className="truncate">{node.title}</span>
+            {/* Only while closed: open, the dots on the pages themselves say
+                it, and saying it twice would make a branch look busier than
+                it is. */}
+            {!open && unreadPaths && hasUnreadBelow(node, unreadPaths) && (
+              // The label does not name the folder: it is inside the folder's
+              // own button, so a screen reader already said which one.
+              <UnreadDot unread label="New activity" />
+            )}
             {hasChildren && (
               <span className="ml-auto shrink-0 pl-2 text-[10px] font-normal tabular-nums text-muted-foreground/70 group-hover:hidden">
                 {node.children.length}
@@ -303,6 +340,7 @@ function TreeNode({
   }
 
   const selected = node.path === selectedPath;
+  const unread = unreadPaths?.has(node.path) ?? false;
   return (
     <>
       {/* `group` row: title button, then the (always-visible) kind badge, then
@@ -329,7 +367,13 @@ function TreeNode({
           {/* Empty caret slot keeps page labels aligned with folder labels at
               the same depth. */}
           <span className="h-3 w-3 shrink-0" aria-hidden />
-          <span className="truncate">{node.title}</span>
+          <span className={cn("truncate", unread && "font-medium text-foreground")}>
+            {node.title}
+          </span>
+          {/* Next to the title rather than at the row's end, where the kind
+              badge already lives: the dot is about this page's content, not
+              about what sort of page it is. */}
+          <UnreadDot unread={unread} label="New activity" />
         </button>
         <span className="flex shrink-0 items-center">
           <KindBadge kind={node.kind as PageKind} iconOnly />

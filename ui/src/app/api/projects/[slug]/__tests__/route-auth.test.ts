@@ -6,6 +6,8 @@ import { NextRequest } from "next/server";
 
 const mockDeleteOne = jest.fn(async () => ({ deletedCount: 1 }));
 const mockUpdateOne = jest.fn(async () => ({ modifiedCount: 1 }));
+// Deleting an entity also clears its watchers.
+const mockDeleteMany = jest.fn(async () => ({ deletedCount: 0 }));
 const mockFindOne = jest.fn();
 const mockFindBySlug = jest.fn();
 const mockGetTomeProjectPermissions = jest.fn();
@@ -72,6 +74,7 @@ jest.mock("@/lib/mongodb", () => ({
           findOne: mockFindOne,
           find: mockFindBySlug,
           deleteOne: mockDeleteOne,
+          deleteMany: mockDeleteMany,
           updateOne: mockUpdateOne,
         },
   ),

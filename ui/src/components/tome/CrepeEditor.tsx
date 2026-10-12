@@ -80,6 +80,12 @@ export type CrepeEditorHandle = {
   restoreSelection: () => void;
   /** Replace the current selection, or insert at the cursor when it is empty. */
   replaceSelection: (md: string) => void;
+  /**
+   * Swap the `@…` being typed for finished markdown. The range is re-derived
+   * here rather than passed in, so the picker never has to hold document
+   * positions that an edit could invalidate while it is open.
+   */
+  completeMention: (md: string) => void;
 };
 
 type Props = {
@@ -122,6 +128,11 @@ type Props = {
   onInsertMedia?: () => void;
   /** Open the host AI Assist flow for the current non-empty selection. */
   onEnhanceSelection?: () => void;
+  /**
+   * Called as an `@…` is typed and again with null once it ends, so the host
+   * can offer a people picker over the editor.
+   */
+  onMentionQuery?: (query: MentionQuery | null) => void;
   /** Offer responsive two- and three-column page sections. */
   enableColumns?: boolean;
 };
@@ -210,6 +221,60 @@ const pendingAiSelectionPlugin = $prose(
       },
     }),
 );
+
+/** An in-progress `@…` at the cursor, handed to React to draw a picker. */
+export interface MentionQuery {
+  /** What has been typed after the `@`, which may be empty. */
+  query: string;
+  /** Viewport coordinates of the `@`, for anchoring the picker. */
+  left: number;
+  bottom: number;
+}
+
+/**
+ * `@` only starts a mention at a word boundary, so an email address in prose
+ * does not open the picker. One space is allowed inside the query because
+ * people search by full name; a second ends it, which is how the picker
+ * closes when someone simply carries on typing.
+ */
+const MENTION_TRIGGER = /(?:^|\s)@([^\s@]{0,32}(?: [^\s@]{0,32})?)$/;
+
+/** The document range of the `@…` being typed, or null when there isn't one. */
+function mentionRange(
+  view: EditorView,
+): { from: number; to: number; query: string } | null {
+  const { selection } = view.state;
+  if (!selection.empty || !selection.$from.parent.isTextblock) return null;
+  const cursor = selection.$from.pos;
+  const before = view.state.doc.textBetween(selection.$from.start(), cursor, "\n", "\n");
+  const match = MENTION_TRIGGER.exec(before);
+  if (!match) return null;
+  const from = cursor - match[1].length - 1;
+  // A finished mention is a link, and the cursor lands just after it. Without
+  // this the picker would reopen on the name it had only just inserted.
+  if (view.state.doc.nodeAt(from)?.marks.some((mark) => mark.type.name === "link")) {
+    return null;
+  }
+  return { from, to: cursor, query: match[1] };
+}
+
+function readMentionQuery(view: EditorView): MentionQuery | null {
+  const range = mentionRange(view);
+  if (!range) return null;
+  const coords = view.coordsAtPos(range.from);
+  return { query: range.query, left: coords.left, bottom: coords.bottom };
+}
+
+const mentionTriggerPlugin = (report: (query: MentionQuery | null) => void) =>
+  $prose(
+    () =>
+      new Plugin({
+        view: () => ({
+          update: (view) => report(readMentionQuery(view)),
+          destroy: () => report(null),
+        }),
+      }),
+  );
 
 function isTomeColumnNode(node: ProseMirrorNode): boolean {
   const first = node.firstChild;
@@ -725,6 +790,7 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     showToolbar,
     onInsertMedia,
     onEnhanceSelection,
+    onMentionQuery,
     enableColumns = false,
   },
   ref,
@@ -762,6 +828,10 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
   useEffect(() => {
     onEnhanceSelectionRef.current = onEnhanceSelection;
   }, [onEnhanceSelection]);
+  const onMentionQueryRef = useRef(onMentionQuery);
+  useEffect(() => {
+    onMentionQueryRef.current = onMentionQuery;
+  }, [onMentionQuery]);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -852,6 +922,9 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     crepeRef.current = crepe;
     readyRef.current = false;
     crepe.editor.use(pendingAiSelectionPlugin);
+    crepe.editor.use(
+      mentionTriggerPlugin((query) => onMentionQueryRef.current?.(query)),
+    );
     if (enableColumns) crepe.editor.use(tomeColumnsPlugin);
 
     // Tag citation-shaped link hrefs with a chip class. This is the proper
@@ -1711,6 +1784,35 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
         if (!crepe || !readyRef.current) return;
         crepe.editor.action((ctx) => {
           restorePendingAiSelection(ctx.get(editorViewCtx));
+        });
+      },
+      completeMention: (md: string) => {
+        const crepe = crepeRef.current;
+        if (!crepe || !readyRef.current) return;
+        crepe.editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          const range = mentionRange(view);
+          if (!range) return;
+          const transaction = view.state.tr.replace(
+            range.from,
+            range.to,
+            markdownToSlice(md)(ctx),
+          );
+          // An unmarked space after the mention, so what gets typed next is
+          // ordinary prose rather than more link text. It has to be its own
+          // node: a trailing space in the markdown is parsed away.
+          const end = Math.min(
+            transaction.mapping.map(range.to),
+            transaction.doc.content.size,
+          );
+          transaction.insert(end, view.state.schema.text(" "));
+          const cursor = Math.min(end + 1, transaction.doc.content.size);
+          view.dispatch(
+            transaction
+              .setSelection(TextSelection.near(transaction.doc.resolve(cursor), 1))
+              .scrollIntoView(),
+          );
+          view.focus();
         });
       },
       replaceSelection: (md: string) => {

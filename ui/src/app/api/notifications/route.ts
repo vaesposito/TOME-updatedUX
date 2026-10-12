@@ -6,7 +6,10 @@ import {
   successResponse,
   withErrorHandler,
 } from "@/lib/api-middleware";
-import { listInAppNotifications } from "@/lib/in-app-notifications.server";
+import {
+  listGroupedInAppNotifications,
+  listInAppNotifications,
+} from "@/lib/in-app-notifications.server";
 import { platformHealthNotificationsEnabled } from "@/lib/notification-preferences.server";
 import { runPlatformHealthNotificationAudit } from "@/lib/platform-health-notifications.server";
 
@@ -21,11 +24,20 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   if (!subject) throw new ApiError("Your session has expired. Please sign in again.", 401);
   const params = request.nextUrl.searchParams;
   const includePlatformNotifications = await platformHealthNotificationsEnabled(user.email);
-  const page = await listInAppNotifications(subject, {
-    page: positiveInteger(params.get("page"), 1),
-    pageSize: positiveInteger(params.get("page_size"), 10),
-    includePlatformNotifications,
-  });
+  // `grouped` splits the response into Tome and platform sections for the
+  // bell. Callers that just want a flat page are unaffected.
+  const page = params.get("grouped") === "1"
+    ? await listGroupedInAppNotifications(subject, {
+        perGroup: positiveInteger(params.get("per_group"), 6),
+        includePlatformNotifications,
+        email: user.email,
+      })
+    : await listInAppNotifications(subject, {
+        page: positiveInteger(params.get("page"), 1),
+        pageSize: positiveInteger(params.get("page_size"), 10),
+        includePlatformNotifications,
+        email: user.email,
+      });
   after(() => runPlatformHealthNotificationAudit(request.nextUrl.origin));
   return successResponse(page);
 });

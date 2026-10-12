@@ -105,6 +105,19 @@ export async function register() {
     console.warn("[instrumentation] Tome authorization auto-repair not started:", err);
   }
 
+  // Send the Webex digests readers have scheduled for the spaces they
+  // follow. On by default — a reader who set one has already opted in —
+  // and switched off with TOME_WEBEX_DIGEST_ENABLED=false. Replica-safe:
+  // each due digest is claimed in Mongo before it is sent.
+  try {
+    const { startWebexDigestScheduler } = await import(
+      "./lib/tome/webex-digest.server"
+    );
+    startWebexDigestScheduler();
+  } catch (err) {
+    console.warn("[instrumentation] Webex digest scheduler not started:", err);
+  }
+
   // Drain durable provider events to TOME and future autonomous-agent
   // subscribers. The Mongo lease makes this safe across UI replicas.
   try {

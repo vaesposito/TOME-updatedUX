@@ -4,6 +4,11 @@
 
 import { Collection,Db,Document,MongoClient } from 'mongodb';
 
+import {
+  notificationAction,
+  type InAppNotificationDocument,
+} from '@/types/in-app-notification';
+
 // MongoDB is optional - check if it's configured
 const uri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DATABASE;
@@ -234,6 +239,26 @@ async function createIndexes(db: Db) {
     safeCreateIndex(db, 'tome_usage_events', { occurred_at: -1 }),
     safeCreateIndex(db, 'tome_usage_events', { project_id: 1, view_kind: 1, page_path: 1, occurred_at: -1 }),
     safeCreateIndex(db, 'tome_usage_events', { subject_hash: 1, occurred_at: -1 }),
+    // Watch subscriptions — one row per (entity, page, watcher); the unique
+    // index keeps repeated watch clicks idempotent, and the slug index backs
+    // the recipient fan-out when a watched entity changes. `page_path` is part
+    // of the key because a subscription to one wiki page is a separate row
+    // from one to the whole entity; it indexes as null when absent, so an
+    // entity is still watchable only once per person.
+    safeCreateIndex(
+      db,
+      'tome_watchers',
+      { entity_slug: 1, page_path: 1, subject: 1 },
+      { unique: true },
+    ),
+    safeCreateIndex(db, 'tome_watchers', { subject: 1 }),
+    // Notification inbox. Every read is "my notifications, newest first", then
+    // narrowed by one facet; these cover the audience match and each facet.
+    safeCreateIndex(db, 'in_app_notifications', { recipient_user_subjects: 1, created_at: -1 }),
+    safeCreateIndex(db, 'in_app_notifications', { recipient_team_slugs: 1, created_at: -1 }),
+    safeCreateIndex(db, 'in_app_notifications', { entity_slug: 1, created_at: -1 }),
+    safeCreateIndex(db, 'in_app_notifications', { category: 1, created_at: -1 }),
+    safeCreateIndex(db, 'in_app_notifications', { mention_subjects: 1, created_at: -1 }),
     // Organization-wide budget and prompt-based adoption windows.
     safeCreateIndex(db, 'tome_ingest_runs', { started_at: -1 }),
     safeCreateIndex(db, 'tome_chat_messages', { project_id: 1, role: 1, created_at: -1 }),
@@ -390,6 +415,8 @@ async function createIndexes(db: Db) {
     safeCreateIndex(db, 'in_app_notifications', { recipient_organization_admins: 1, created_at: -1 }),
     safeCreateIndex(db, 'in_app_notifications', { recipient_platform_users: 1, created_at: -1 }),
     safeCreateIndex(db, 'in_app_notifications', { archived_at: 1, created_at: -1 }),
+    // Backs the inbox's New / Updated facet counts.
+    safeCreateIndex(db, 'in_app_notifications', { action: 1, created_at: -1 }),
     safeCreateIndex(db, 'platform_health_notification_states', { active_incident_id: 1 }),
     safeCreateIndex(db, 'platform_health_notification_states', { current_status: 1, updated_at: -1 }),
   ]);
@@ -405,6 +432,10 @@ async function createIndexes(db: Db) {
     { collection: 'workflow_runs', index: 'owner_id_1' },
     { collection: 'workflow_runs', index: 'owner_id_1_workflow_id_1' },
     { collection: 'workflow_runs', index: 'owner_id_1_started_at_-1' },
+    // Superseded by { entity_slug, page_path, subject }: the old key allowed
+    // only one row per entity and watcher, which rejects a page subscription
+    // alongside an entity one.
+    { collection: 'tome_watchers', index: 'entity_slug_1_subject_1' },
   ];
   for (const { collection, index } of staleIndexes) {
     try {
@@ -414,6 +445,41 @@ async function createIndexes(db: Db) {
       // Index doesn't exist — nothing to do
     }
   }
+
+  await backfillNotificationActions(db);
+}
+
+/**
+ * Give older notifications the `action` the inbox now filters on.
+ *
+ * Senders record it themselves, so this only ever touches rows written before
+ * the field existed. Done once at startup rather than inferred on every read:
+ * the alternative is expressing the inference as a Mongo query on every
+ * faceted count, where it would be both slow and unindexable.
+ */
+async function backfillNotificationActions(db: Db): Promise<void> {
+  const collection = db.collection<InAppNotificationDocument>('in_app_notifications');
+  const pending = await collection
+    .find({ action: { $exists: false } })
+    .project<Pick<InAppNotificationDocument,
+      '_id' | 'category' | 'event_label' | 'lifecycle_status'>>({
+      category: 1,
+      event_label: 1,
+      lifecycle_status: 1,
+    })
+    .toArray();
+  if (pending.length === 0) return;
+
+  await collection.bulkWrite(
+    pending.map((row) => ({
+      updateOne: {
+        filter: { _id: row._id },
+        update: { $set: { action: notificationAction(row) } },
+      },
+    })),
+    { ordered: false },
+  );
+  console.log(`✅ Backfilled action on ${pending.length} notifications`);
 }
 
 /**

@@ -19,6 +19,11 @@ import { auditTome, tomeActorFromAuth } from "@/lib/tome/audit";
 import { getPageStore } from "@/lib/tome/page-store";
 import { PageNotFoundError } from "@/lib/tome/mongo-page-store";
 import { AGENT_IDENTITIES } from "@/lib/tome/agent-identities";
+import { sessionSub } from "@/lib/tome/agent-proxy";
+import {
+  notifyPageSaved,
+  parsePageNotifySelection,
+} from "@/lib/tome/page-notifications";
 import { parseFrontmatter } from "@/lib/tome/schema";
 import { SPEC_BY_PATH } from "@/lib/tome/schema";
 import type { PageKind, PageResponse } from "@/types/tome";
@@ -70,6 +75,7 @@ export const PUT = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     message?: string;
     base_revision_id?: string | null;
     force?: boolean;
+    notify?: unknown;
   };
   if (typeof body.markdown !== "string") {
     throw new ApiError("`markdown` (string) is required", 400, "BAD_REQUEST");
@@ -81,6 +87,15 @@ export const PUT = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     message: body.message || `edit ${pagePath}`,
     author: tctx.user.email ?? AGENT_IDENTITIES.default,
   };
+  // Whether this save changes a page or creates one, read before the write
+  // since afterwards it always exists. Anything other than a clean "not
+  // found" is treated as an edit: that is the common case, and a label is
+  // not worth failing a save over.
+  const existed = await store
+    .readPage(tctx.projectId, pagePath)
+    .then(() => true)
+    .catch((error) => !(error instanceof PageNotFoundError));
+
   let written = false;
   if (body.base_revision_id !== undefined && !body.force) {
     if (body.base_revision_id !== null && typeof body.base_revision_id !== "string") {
@@ -141,7 +156,26 @@ export const PUT = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     page: pagePath,
   });
 
-  return successResponse(toResponse(pagePath, body.markdown));
+  const page = toResponse(pagePath, body.markdown);
+  // The page is already written; a notification problem must not turn a
+  // successful save into a failed one.
+  const notify = await notifyPageSaved({
+    entitySlug: tctx.project.slug,
+    entityTitle: tctx.project.title,
+    teamSlug: tctx.project.team_slug,
+    pagePath,
+    pageTitle: page.title,
+    editorName: tctx.user.email || "someone",
+    existed,
+    markdown: body.markdown,
+    selection: parsePageNotifySelection(body.notify),
+    excludeSubject: sessionSub(tctx.session) || undefined,
+  }).catch((error) => {
+    console.error("[tome] failed to notify about page save", error);
+    return null;
+  });
+
+  return successResponse({ ...page, notify });
 });
 
 export const DELETE = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {

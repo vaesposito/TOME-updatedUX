@@ -259,6 +259,7 @@ export async function tickAutoIngestScheduler(now: Date): Promise<void> {
         (err instanceof Error ? err.message : String(err)),
     );
   }
+
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;

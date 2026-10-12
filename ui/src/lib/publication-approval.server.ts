@@ -56,6 +56,7 @@ async function notifyPublicationRequestCreated(
       recipientTeamSlugs: request.approver_team_slugs,
       recipientOrganizationAdmins: true,
       title: "Approval needed",
+      action: "new",
       message: `${actorDisplayName(request.requester)} submitted a publication request.`,
       href: `/admin/security/approvals?request=${encodeURIComponent(request._id)}`,
       severity: "warning",
@@ -78,6 +79,8 @@ async function notifyPublicationRequestDecision(
       eventKey: publicationNotificationKey(request._id, decision),
       recipientUserSubjects: [request.requester.subject],
       title: decision === "approved" ? "Request approved" : "Request rejected",
+      // The decision changes a request the approver has already seen.
+      action: "updated",
       message: decision === "rejected" && request.decision_note?.trim()
         ? `${request.resource.label} was rejected by ${actorDisplayName(actor)}. Reason: ${request.decision_note.trim()}`
         : `${request.resource.label} was ${decision} by ${actorDisplayName(actor)}.`,

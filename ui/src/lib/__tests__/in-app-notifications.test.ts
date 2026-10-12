@@ -30,6 +30,23 @@ beforeEach(() => {
   mockCheckOpenFgaTuple.mockResolvedValue({ allowed: true });
 });
 
+/**
+ * The listing query nests the audience inside an `$and` alongside the
+ * viewer's preferences and their dismissals, so these tests dig the audience
+ * clause out rather than asserting on the top level.
+ */
+type Clause = Record<string, unknown>;
+
+function audienceClause(query: Clause): Clause {
+  const flatten = (clause: Clause): Clause[] =>
+    Array.isArray(clause.$and)
+      ? (clause.$and as Clause[]).flatMap(flatten)
+      : [clause];
+  const found = flatten(query).find((clause) => Array.isArray(clause.$or));
+  if (!found) throw new Error(`no audience clause in ${JSON.stringify(query)}`);
+  return found;
+}
+
 it("creates one durable notification per event", async () => {
   const updateOne = jest.fn().mockResolvedValue({ matchedCount: 1 });
   mockGetCollection.mockResolvedValue({ updateOne });
@@ -91,14 +108,16 @@ it("paginates direct, team, and organization-admin notifications", async () => {
     pageSize: 20,
   });
 
-  expect(collection.countDocuments).toHaveBeenCalledWith(expect.objectContaining({
-    $or: expect.arrayContaining([
-      { recipient_user_subjects: "requester-subject" },
-      { recipient_team_slugs: { $in: ["reviewers"] } },
-      { recipient_organization_admins: true },
-      { recipient_platform_users: true },
-    ]),
-  }));
+  expect(audienceClause(collection.countDocuments.mock.calls[0][0])).toEqual(
+    expect.objectContaining({
+      $or: expect.arrayContaining([
+        { recipient_user_subjects: "requester-subject" },
+        { recipient_team_slugs: { $in: ["reviewers"] } },
+        { recipient_organization_admins: true },
+        { recipient_platform_users: true },
+      ]),
+    }),
+  );
   expect(cursor.skip).toHaveBeenCalledWith(20);
   expect(cursor.limit).toHaveBeenCalledWith(20);
   expect(result).toMatchObject({
@@ -156,7 +175,7 @@ it("excludes Platform health notifications when an admin viewer opted out",async
     includePlatformNotifications: false,
   });
 
-  const audience = collection.countDocuments.mock.calls[0][0];
+  const audience = audienceClause(collection.countDocuments.mock.calls[0][0]);
   expect(audience.category).toEqual({ $ne: "platform_health" });
   expect(audience.$or).toEqual(expect.arrayContaining([
     { recipient_user_subjects: "requester-subject" },

@@ -171,6 +171,31 @@ jest.mock("@/components/tome/CrepeEditor", () => {
 });
 
 describe("WikiPageView", () => {
+  /**
+   * Answer the page's history request with a single revision.
+   *
+   * Matched on the URL rather than queued by call order: the header's own
+   * controls fetch on mount too, so the history request is not reliably the
+   * first one the page makes.
+   */
+  const mockRevision = (revision: {
+    id: string;
+    author: string;
+    created_at: string;
+  }) => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () =>
+          String(url).includes("/history/")
+            ? { data: { revisions: [revision] } }
+            : {},
+        text: async () => "",
+      }),
+    );
+  };
+
   const openEditor = async () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Edit" }));
@@ -185,6 +210,16 @@ describe("WikiPageView", () => {
     mockMarkdownRenderer.mockClear();
     mockUseRealMarkdownRenderer = false;
     window.localStorage.clear();
+    // mockRevision replaces the implementation rather than queuing one call,
+    // so put the empty default back for the tests that expect no revision.
+    (global.fetch as jest.Mock).mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+        text: async () => "",
+      }),
+    );
   });
 
   it("renders Mermaid in the wiki read view through the real shared renderer", async () => {
@@ -273,21 +308,11 @@ describe("WikiPageView", () => {
   });
 
   it("contains long revision metadata and labels the reading-width control", async () => {
-    (global.fetch as jest.Mock).mockImplementationOnce(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          data: {
-            revisions: [{
-              id: "revision-header-layout",
-              author: "test-user@example.com",
-              created_at: "2026-09-15T18:18:54.000Z",
-            }],
-          },
-        }),
-      }),
-    );
+    mockRevision({
+      id: "revision-header-layout",
+      author: "test-user@example.com",
+      created_at: "2026-09-15T18:18:54.000Z",
+    });
 
     render(
       <WikiPageView
@@ -424,21 +449,11 @@ describe("WikiPageView", () => {
 
   it("captures the current revision before saving an auto-opened page", async () => {
     const onWrite = jest.fn().mockResolvedValue(undefined);
-    (global.fetch as jest.Mock).mockImplementationOnce(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          data: {
-            revisions: [{
-              id: "revision-created",
-              author: "test-user@example.com",
-              created_at: "2026-09-15T18:18:54.000Z",
-            }],
-          },
-        }),
-      }),
-    );
+    mockRevision({
+      id: "revision-created",
+      author: "test-user@example.com",
+      created_at: "2026-09-15T18:18:54.000Z",
+    });
 
     render(
       <WikiPageView
@@ -460,7 +475,12 @@ describe("WikiPageView", () => {
       "notes.md",
       expect.stringContaining("Updated notes"),
       "edit notes.md",
-      { baseRevisionId: "revision-created" },
+      {
+        baseRevisionId: "revision-created",
+        // The notify menu's untouched default: the team hears about it, the
+        // edit is not marked important, and nobody is tagged by default.
+        notify: { team: true, important: false, users: [] },
+      },
     );
   });
 
@@ -564,7 +584,10 @@ describe("WikiPageView", () => {
       "charter.md",
       expect.stringContaining("Updated markdown"),
       "edit charter.md",
-      { baseRevisionId: null },
+      {
+        baseRevisionId: null,
+        notify: { team: true, important: false, users: [] },
+      },
     );
   });
 

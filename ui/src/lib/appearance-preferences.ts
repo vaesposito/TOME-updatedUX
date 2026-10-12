@@ -74,6 +74,46 @@ function hslComponents(color: string): string | null {
   return match ? `${match[1]} ${match[2]}% ${match[3]}%` : null;
 }
 
+/**
+ * Whatever reads on the accent: near-black or white, whichever is further from
+ * it.
+ *
+ * The accent is a user choice, so the colour that sits on top of it cannot be
+ * fixed per theme. White fails WCAG 1.4.3 on most of the presets — 2.5:1 on
+ * Teal, 1.7:1 on Matrix — and near-black fails on the two darkest, Minimal and
+ * Ember. Picking per accent keeps every preset at 4.9:1 or better.
+ */
+function readableOn(components: string): string {
+  const [h, s, l] = components
+    .split(" ")
+    .map((part) => Number.parseFloat(part));
+  if ([h, s, l].some(Number.isNaN)) return "0 0% 100%";
+
+  // HSL to relative luminance, per WCAG's definition.
+  const c = (1 - Math.abs((2 * l) / 100 - 1)) * (s / 100);
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l / 100 - c / 2;
+  const sector = Math.floor((((h % 360) + 360) % 360) / 60);
+  const [r, g, b] = (
+    [
+      [c, x, 0],
+      [x, c, 0],
+      [0, c, x],
+      [0, x, c],
+      [x, 0, c],
+      [c, 0, x],
+    ] as const
+  )[sector].map((v) => v + m);
+  const linear = (v: number) =>
+    v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  const luminance =
+    0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+
+  const onWhite = 1.05 / (luminance + 0.05);
+  const onBlack = (luminance + 0.05) / 0.05;
+  return onBlack >= onWhite ? "0 0% 4%" : "0 0% 100%";
+}
+
 export function getDefaultAppearancePreferences(): AppearancePreferences {
   const configuredTheme = getConfig("defaultTheme");
   return {
@@ -176,6 +216,9 @@ export function applyGradientTheme(value: GradientTheme): void {
   const to = hslComponents(selected.to);
   if (from) {
     root.style.setProperty("--primary",from);
+    // Set alongside --primary, never separately: anything drawn on the accent
+    // reads it, so the two have to move together.
+    root.style.setProperty("--primary-foreground",readableOn(from));
     root.style.setProperty("--ring",from);
     root.style.setProperty("--gradient-start",from);
     root.style.setProperty("--gradient-mid",from);

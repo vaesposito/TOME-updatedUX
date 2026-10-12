@@ -8,6 +8,7 @@ import {
 import { ApplicationNavigationProvider } from "@/components/layout/ApplicationNavigationContext";
 import { HeaderBreadcrumbSlotProvider } from "@/components/layout/HeaderBreadcrumbSlot";
 import { LiveStreamBanner } from "@/components/layout/LiveStreamBanner";
+import { NotificationTour } from "@/components/tour/NotificationTour";
 import { useUserInit } from "@/hooks/use-user-init";
 import { finishNavigationProgress } from "@/lib/navigation-progress";
 import { usePathname } from "next/navigation";
@@ -44,6 +45,10 @@ export function AppLayoutClient({
             </div>
           </div>
           <ApplicationNavigationDrawer />
+          {/* App-wide because the walkthrough crosses routes: its steps run
+              from the header's bell to a project's own pages, and only
+              something mounted above the router survives the journey. */}
+          <NotificationTour />
         </div>
       </HeaderBreadcrumbSlotProvider>
     </ApplicationNavigationProvider>

@@ -284,6 +284,16 @@ export interface UserSettings {
     // Per-user visibility for globally owned platform health events. Turning
     // this off never changes or resolves the underlying platform incident.
     platform_health: boolean;
+    /**
+     * Written by a switch the notification page no longer has: the inbox's
+     * TOME / Platform filter does the same job per visit, and visibly. Read
+     * by nothing, kept only so existing documents still typecheck.
+     *
+     * @deprecated
+     */
+    tome_enabled?: boolean;
+    /** Tome entity slugs this user has muted from the notification page. */
+    tome_muted_entity_slugs?: string[];
   };
   defaults: {
     default_model: string;

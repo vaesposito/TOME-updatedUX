@@ -1,15 +1,24 @@
 import { randomUUID } from "node:crypto";
 
 import { getCollection } from "@/lib/mongodb";
+import {
+  getNotificationPreferences,
+  preferenceClauses,
+} from "@/lib/notification-preferences.server";
 import { checkOpenFgaTuple, listOpenFgaObjects } from "@/lib/rbac/openfga";
 import { organizationObjectId } from "@/lib/rbac/organization";
-import type {
-  InAppNotificationDocument,
-  InAppNotificationPage,
-  InAppNotificationCategory,
-  InAppNotificationLifecycleStatus,
-  InAppNotificationResolutionType,
-  InAppNotificationSeverity,
+import {
+  TOME_NOTIFICATION_CATEGORIES,
+  type GroupedInAppNotificationPage,
+  type InAppNotificationDocument,
+  type InAppNotificationPage,
+  type InAppNotificationCategory,
+  type NotificationAction,
+  type InAppNotificationLifecycleStatus,
+  type InAppNotificationResolutionType,
+  type InAppNotificationSeverity,
+  type InAppNotificationView,
+  type NotificationGroupKey,
 } from "@/types/in-app-notification";
 
 const NOTIFICATION_COLLECTION = "in_app_notifications";
@@ -23,7 +32,12 @@ function teamSlugFromObject(value: string): string | null {
   return match?.[1]?.trim() || null;
 }
 
-async function notificationAudienceQuery(
+/**
+ * Every notification `subject` is allowed to see: addressed to them directly,
+ * to a team they belong to, to organization admins when they are one, or to
+ * all platform users. Archived rows never appear.
+ */
+export async function notificationAudienceQuery(
   subject: string,
   options: { includePlatformNotifications?: boolean } = {},
 ): Promise<Record<string, unknown>> {
@@ -87,9 +101,23 @@ export async function createInAppNotification(input: {
   href?: string;
   severity?: InAppNotificationSeverity;
   category?: InAppNotificationCategory;
+  /** Whether this announces something new or a change to something existing. */
+  action?: NotificationAction;
   sourceLabel?: string;
   correlationKey?: string;
   lifecycleStatus?: InAppNotificationLifecycleStatus;
+  /** Tome entity this is about — drives the inbox's per-project facet. */
+  entitySlug?: string;
+  entityTitle?: string;
+  parentEntitySlug?: string;
+  /** Meta-line phrasing, e.g. "Due in 2 days". Defaults to the category label. */
+  eventLabel?: string;
+  reference?: string;
+  /** Who made the change, shown on the row instead of a hand-written line. */
+  actorName?: string;
+  needsAttention?: boolean;
+  /** Recipients explicitly mentioned or assigned; must be inside the audience. */
+  mentionSubjects?: string[];
 }): Promise<void> {
   const recipientUserSubjects = normalizedStrings(input.recipientUserSubjects ?? []);
   const recipientTeamSlugs = normalizedStrings(input.recipientTeamSlugs ?? []);
@@ -121,12 +149,26 @@ export async function createInAppNotification(input: {
         ...(input.href ? { href: input.href } : {}),
         severity: input.severity ?? "info",
         category: input.category ?? "general",
+        ...(input.action ? { action: input.action } : {}),
         ...(input.sourceLabel ? { source_label: input.sourceLabel } : {}),
         ...(input.correlationKey ? { correlation_key: input.correlationKey } : {}),
         ...(input.lifecycleStatus ? { lifecycle_status: input.lifecycleStatus } : {}),
+        ...(input.entitySlug ? { entity_slug: input.entitySlug } : {}),
+        ...(input.entityTitle ? { entity_title: input.entityTitle } : {}),
+        ...(input.parentEntitySlug
+          ? { parent_entity_slug: input.parentEntitySlug }
+          : {}),
+        ...(input.eventLabel ? { event_label: input.eventLabel } : {}),
+        ...(input.reference ? { reference: input.reference } : {}),
+        ...(input.actorName ? { actor_name: input.actorName } : {}),
+        ...(input.needsAttention ? { needs_attention: true } : {}),
+        ...(input.mentionSubjects?.length
+          ? { mention_subjects: normalizedStrings(input.mentionSubjects) }
+          : {}),
         created_at: now,
         updated_at: now,
         read_by_subjects: [],
+        dismissed_by_subjects: [],
       },
     } as never,
     { upsert: true },
@@ -176,18 +218,63 @@ export async function archiveInAppNotifications(
   );
 }
 
+function toView(
+  row: InAppNotificationDocument,
+  subject: string,
+): InAppNotificationView {
+  return {
+    id: row._id,
+    title: row.title,
+    message: row.message,
+    ...(row.href ? { href: row.href } : {}),
+    severity: row.severity,
+    category: row.category ?? "general",
+    ...(row.source_label ? { source_label: row.source_label } : {}),
+    ...(row.lifecycle_status ? { lifecycle_status: row.lifecycle_status } : {}),
+    ...(row.resolved_at ? { resolved_at: row.resolved_at } : {}),
+    ...(row.entity_slug ? { entity_slug: row.entity_slug } : {}),
+    ...(row.entity_title ? { entity_title: row.entity_title } : {}),
+    ...(row.event_label ? { event_label: row.event_label } : {}),
+    // Carried through so the dropdown calls a row what the inbox calls it.
+    // Derived from the event label when absent, which guesses "Updated" for
+    // labels like "Summary digest" that the stored action records as new.
+    ...(row.action ? { action: row.action } : {}),
+    ...(row.reference ? { reference: row.reference } : {}),
+    ...(row.actor_name ? { actor_name: row.actor_name } : {}),
+    created_at: row.created_at,
+    read: row.read_by_subjects.includes(subject),
+    needs_attention: row.needs_attention === true,
+    mentioned: (row.mention_subjects ?? []).includes(subject),
+    dismissed: (row.dismissed_by_subjects ?? []).includes(subject),
+    // The dropdown has no Follow affordance; the full inbox resolves this.
+    following: false,
+  };
+}
+
 export async function listInAppNotifications(
   subject: string,
   options: {
     page?: number;
     pageSize?: number;
     includePlatformNotifications?: boolean;
+    /** Needed to read preferences, which `user_settings` keys by email. */
+    email?: string;
   } = {},
 ): Promise<InAppNotificationPage> {
   const collection = await getCollection<InAppNotificationDocument>(
     NOTIFICATION_COLLECTION,
   );
-  const audience = await notificationAudienceQuery(subject, options);
+  // The dropdown shows the same universe as the inbox: muted entities and a
+  // disabled Tome switch are honoured here too, and anything the reader has
+  // dismissed stays gone rather than reappearing in the bell.
+  const prefs = await getNotificationPreferences(options.email ?? "");
+  const audience = {
+    $and: [
+      await notificationAudienceQuery(subject, options),
+      ...preferenceClauses(prefs),
+      { dismissed_by_subjects: { $ne: subject } },
+    ],
+  };
   const requestedPage = Math.max(1, Math.floor(options.page ?? 1));
   const pageSize = Math.min(50, Math.max(1, Math.floor(options.pageSize ?? 10)));
   const [total, unreadCount] = await Promise.all([
@@ -206,21 +293,7 @@ export async function listInAppNotifications(
     .toArray();
 
   return {
-    notifications: rows.map((row) => ({
-      id: row._id,
-      title: row.title,
-      message: row.message,
-      ...(row.href ? { href: row.href } : {}),
-      severity: row.severity,
-      category: row.category ?? "general",
-      ...(row.source_label ? { source_label: row.source_label } : {}),
-      ...(row.lifecycle_status
-        ? { lifecycle_status: row.lifecycle_status }
-        : {}),
-      ...(row.resolved_at ? { resolved_at: row.resolved_at } : {}),
-      created_at: row.created_at,
-      read: row.read_by_subjects.includes(subject),
-    })),
+    notifications: rows.map((row) => toView(row, subject)),
     unread_count: unreadCount,
     pagination: {
       page,
@@ -228,6 +301,84 @@ export async function listInAppNotifications(
       total,
       total_pages: totalPages,
     },
+  };
+}
+
+/**
+ * The bell's two groups, each queried on its own.
+ *
+ * Fetching one flat page and splitting it in the browser would let a burst in
+ * one group push the other out of the top rows entirely, and the dropdown
+ * would then look as though there were no Tome activity at all. Querying per
+ * group guarantees each section shows its own newest, and reports its own
+ * totals so a header can be honest about what is not being shown.
+ */
+export async function listGroupedInAppNotifications(
+  subject: string,
+  options: {
+    /** Rows returned per group; both groups get the same allowance. */
+    perGroup?: number;
+    includePlatformNotifications?: boolean;
+    email?: string;
+  } = {},
+): Promise<GroupedInAppNotificationPage> {
+  const collection = await getCollection<InAppNotificationDocument>(
+    NOTIFICATION_COLLECTION,
+  );
+  const prefs = await getNotificationPreferences(options.email ?? "");
+  const audience = {
+    $and: [
+      await notificationAudienceQuery(subject, options),
+      ...preferenceClauses(prefs),
+      { dismissed_by_subjects: { $ne: subject } },
+    ],
+  };
+  const perGroup = Math.min(25, Math.max(1, Math.floor(options.perGroup ?? 6)));
+  const tomeCategories = [...TOME_NOTIFICATION_CATEGORIES];
+
+  const groups = await Promise.all(
+    (["tome", "platform"] as const).map(async (key: NotificationGroupKey) => {
+      // `$nin` also matches documents with no category at all, so rows
+      // written before categories existed stay visible under Platform
+      // rather than falling out of the bell entirely.
+      const scoped = {
+        $and: [
+          audience,
+          key === "tome"
+            ? { category: { $in: tomeCategories } }
+            : { category: { $nin: tomeCategories } },
+        ],
+      };
+      const [rows, total, unread] = await Promise.all([
+        collection
+          .find(scoped as never)
+          .sort({ created_at: -1, _id: -1 })
+          .limit(perGroup)
+          .toArray(),
+        collection.countDocuments(scoped as never),
+        collection.countDocuments({
+          $and: [scoped, { read_by_subjects: { $ne: subject } }],
+        } as never),
+      ]);
+      return {
+        key,
+        notifications: rows.map((row) => toView(row, subject)),
+        unread_count: unread,
+        total,
+      };
+    }),
+  );
+
+  return {
+    notifications: groups.flatMap((group) => group.notifications),
+    unread_count: groups.reduce((sum, group) => sum + group.unread_count, 0),
+    pagination: {
+      page: 1,
+      page_size: perGroup,
+      total: groups.reduce((sum, group) => sum + group.total, 0),
+      total_pages: 1,
+    },
+    groups,
   };
 }
 

@@ -97,7 +97,10 @@ import { EngagementPanel } from "@/components/tome/EngagementPanel";
 import { PageHistoryView } from "@/components/tome/PageHistoryView";
 import { Breadcrumb, type Crumb } from "@/components/tome/Breadcrumb";
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
+import { WatchToggle } from "@/components/tome/WatchToggle";
+import { isTourRunning } from "@/components/tour/notification-tour";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
+import { TomeSummaryView } from "@/components/tome/TomeSummaryView";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import {
   DeleteFolderDialog,
@@ -124,8 +127,14 @@ import {
   DEFAULT_TOME_REPORT_VISIBILITY,
   resolveTomeReportVisibility,
 } from "@/lib/tome/report-visibility";
+import { useWikiUnread } from "@/hooks/use-wiki-unread";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
-import type { PageTreeNode, TomeFolder } from "@/types/tome";
+import type {
+  PageNotifyOutcome,
+  PageNotifySelection,
+  PageTreeNode,
+  TomeFolder,
+} from "@/types/tome";
 import {
   dataStewardLabel,
   isSynthesizedType,
@@ -165,6 +174,7 @@ interface IncomingEdge {
 const ONBOARDING_SEEN_KEY = "tome.onboarding.seen";
 
 type MainView =
+  | { kind: "summary" }
   | { kind: "agent" }
   | { kind: "standup" }
   | { kind: "issues"; label?: string }
@@ -192,8 +202,10 @@ type MainView =
 function viewToPath(slug: string, view: MainView): string {
   const base = `/projects/${slug}/tome`;
   switch (view.kind) {
-    case "agent":
+    case "summary":
       return base;
+    case "agent":
+      return `${base}/agent`;
     case "standup":
       return `${base}/standup`;
     case "issues":
@@ -229,11 +241,13 @@ function viewToPath(slug: string, view: MainView): string {
   }
 }
 
-/** Parse the catch-all segments back into a view. Unknown shapes fall to agent. */
+/** Parse the catch-all segments back into a view. Unknown shapes fall to the summary. */
 function pathToView(segments: string[]): MainView {
   const [head, ...rest] = segments;
   switch (head) {
     case undefined:
+      return { kind: "summary" };
+    case "agent":
       return { kind: "agent" };
     case "standup":
       return { kind: "standup" };
@@ -260,7 +274,7 @@ function pathToView(segments: string[]): MainView {
     case "insights":
       return { kind: "insights" };
     case "folders":
-      return rest[0] ? { kind: "folder", id: rest[0] } : { kind: "agent" };
+      return rest[0] ? { kind: "folder", id: rest[0] } : { kind: "summary" };
     case "ingest":
       return rest[0]
         ? rest[1] === "review"
@@ -270,13 +284,13 @@ function pathToView(segments: string[]): MainView {
     case "wiki":
       return rest.length
         ? { kind: "page", path: rest.join("/") }
-        : { kind: "agent" };
+        : { kind: "summary" };
     case "history":
       return rest.length
         ? { kind: "pageHistory", path: rest.join("/") }
-        : { kind: "agent" };
+        : { kind: "summary" };
     default:
-      return { kind: "agent" };
+      return { kind: "summary" };
   }
 }
 
@@ -348,6 +362,8 @@ export function TomeWiki({ slug }: { slug: string }) {
   const [artifactPath, setArtifactPath] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [wikiQuery, setWikiQuery] = useState("");
+  // Dots in the rail for pages the reader has not caught up on.
+  const { unreadPaths, markPageRead } = useWikiUnread(slug);
   // First-run onboarding: project title (for the modal copy) + open state.
   const [projectTitle, setProjectTitle] = useState<string | null>(null);
   const [projectMeta, setProjectMeta] = useState<{
@@ -632,7 +648,7 @@ export function TomeWiki({ slug }: { slug: string }) {
       (view.kind === "standup" && !showStandupReport)
       || (view.kind === "issues" && !showIssuesReport)
     ) {
-      navigate({ kind: "agent" });
+      navigate({ kind: "summary" });
     }
   }, [navigate, projectMetaLoading, showIssuesReport, showStandupReport, view.kind]);
 
@@ -825,6 +841,9 @@ export function TomeWiki({ slug }: { slug: string }) {
   // Show the first-run walkthrough once per browser. The TOME home help button reopens it.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Not over a walkthrough in progress: it brings the reader here itself,
+    // and a dialog on arrival would cover the step they are reading.
+    if (isTourRunning()) return;
     if (!window.localStorage.getItem(ONBOARDING_SEEN_KEY)) {
       setOnboardingOpen(true);
     }
@@ -838,8 +857,13 @@ export function TomeWiki({ slug }: { slug: string }) {
   }, []);
 
   const openPage = useCallback(
-    (path: string) => navigate({ kind: "page", path }),
-    [navigate],
+    (path: string) => {
+      // Opening the page is what "I have seen this" means here, so the dot
+      // clears on navigation rather than waiting for the inbox.
+      markPageRead(path);
+      navigate({ kind: "page", path });
+    },
+    [markPageRead, navigate],
   );
   const openFolder = useCallback(
     (id: string) => navigate({ kind: "folder", id }),
@@ -960,7 +984,11 @@ export function TomeWiki({ slug }: { slug: string }) {
       path: string,
       markdown: string,
       message: string,
-      options?: { baseRevisionId?: string | null; force?: boolean },
+      options?: {
+        baseRevisionId?: string | null;
+        force?: boolean;
+        notify?: PageNotifySelection;
+      },
     ) => {
       const res = await fetch(`/api/tome/projects/${slug}/pages/${path}`, {
         method: "PUT",
@@ -970,6 +998,7 @@ export function TomeWiki({ slug }: { slug: string }) {
           message,
           base_revision_id: options?.baseRevisionId,
           force: options?.force,
+          notify: options?.notify,
         }),
       });
       if (!res.ok) {
@@ -998,6 +1027,8 @@ export function TomeWiki({ slug }: { slug: string }) {
       setData((prev) =>
         prev ? { ...prev, pages: { ...prev.pages, [path]: markdown } } : prev,
       );
+      const payload = await res.json().catch(() => null);
+      return (payload?.data?.notify ?? null) as PageNotifyOutcome | null;
     },
     [slug],
   );
@@ -1123,7 +1154,7 @@ export function TomeWiki({ slug }: { slug: string }) {
         (view.kind === "page" || view.kind === "pageHistory") &&
         view.path === path
       ) {
-        navigate({ kind: "agent" });
+        navigate({ kind: "summary" });
       }
       setArtifactPath((currentPath) => (currentPath === path ? null : currentPath));
       setPagePendingDelete(null);
@@ -1196,7 +1227,7 @@ export function TomeWiki({ slug }: { slug: string }) {
       );
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error ?? `Folder delete failed (${response.status})`);
-      if (view.kind === "folder" && view.id === folder.id) navigate({ kind: "agent" });
+      if (view.kind === "folder" && view.id === folder.id) navigate({ kind: "summary" });
       setFolderPendingDelete(null);
       await load();
     } catch (deleteError) {
@@ -1306,6 +1337,10 @@ export function TomeWiki({ slug }: { slug: string }) {
 
   const crumbs = useMemo<Crumb[]>(() => {
     switch (view.kind) {
+      // The summary is the entity's landing view, so the entity crumb already
+      // names it — a crumb for the summary would just repeat the position.
+      case "summary":
+        return [];
       case "agent":
         return [{ label: "Agent" }];
       case "standup":
@@ -1489,6 +1524,7 @@ export function TomeWiki({ slug }: { slug: string }) {
   }, [isArea, isBhag, initiatives, bhagByInitiative, transitiveBhags, areaTags, areaByLabel]);
 
   const navActive = {
+    summary: view.kind === "summary",
     agent: view.kind === "agent",
     standup: view.kind === "standup",
     issues: view.kind === "issues" && !view.label,
@@ -1530,7 +1566,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 ...hierarchyCrumbs,
                 {
                   label: projectTitle ?? slug,
-                  onClick: () => navigate({ kind: "agent" }),
+                  onClick: () => navigate({ kind: "summary" }),
                   icon: isBhag ? (
                     <Target className="h-3.5 w-3.5 shrink-0 text-primary" />
                   ) : isArea ? (
@@ -1589,6 +1625,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 <TooltipContent side="bottom">What is TOME?</TooltipContent>
               </Tooltip>
             )}
+            <WatchToggle slug={slug} />
             <McpConnectDialog />
             <Button
               variant="outline"
@@ -1678,6 +1715,14 @@ export function TomeWiki({ slug }: { slug: string }) {
             <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col p-3">
                 <div className="flex flex-col gap-1">
+                  <NavItem
+                    icon={<Newspaper className="h-4 w-4" />}
+                    label="What's new"
+                    active={navActive.summary}
+                    onClick={() => navigate({ kind: "summary" })}
+                    tipTitle="What's new"
+                    tipDescription="What has happened here lately: what needs attention, what was decided, and what the teams below have shipped."
+                  />
                   <NavItem
                     icon={<MessageSquare className="h-4 w-4" />}
                     label="Agent"
@@ -2100,6 +2145,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                       onEditFolder={canEdit ? openEditFolder : undefined}
                       onDeleteFolder={canEdit ? deleteWikiFolder : undefined}
                       onMoveItem={canEdit ? moveWikiItem : undefined}
+                      unreadPaths={unreadPaths}
                     />
                   )
                 )}
@@ -2215,7 +2261,14 @@ export function TomeWiki({ slug }: { slug: string }) {
 
           {/* Main pane: replaced wholesale by the active view. */}
           <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            {view.kind === "agent" ? (
+            {view.kind === "summary" ? (
+              <ScrollArea className="min-h-0 min-w-0 flex-1">
+                <TomeSummaryView
+                  slug={slug}
+                  onOpenAgent={() => navigate({ kind: "agent" })}
+                />
+              </ScrollArea>
+            ) : view.kind === "agent" ? (
               <>
                 <div className="min-h-0 min-w-0 flex-1">
                   <ChatPanel
@@ -2245,6 +2298,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                         onRename={canEdit ? renamePage : undefined}
                         canEdit={canEdit}
                         knownPaths={knownPagePaths}
+                        teamName={projectMeta.teamName}
                       />
                     ) : (
                       <TomeLoading />
@@ -2471,6 +2525,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                     onRename={canEdit ? renamePage : undefined}
                     canEdit={canEdit}
                     knownPaths={knownPagePaths}
+                    teamName={projectMeta.teamName}
                     autoStartEditing={autoEditPath === view.path}
                     onAutoStartEditing={() => setAutoEditPath(null)}
                   />

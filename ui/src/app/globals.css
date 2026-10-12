@@ -211,7 +211,9 @@ html[data-navigation-pending="true"] * {
   --popover: 230 25% 8%;
   --popover-foreground: 210 40% 98%;
   --primary: 173 80% 40%;
-  --primary-foreground: 0 0% 100%;
+  /* Readable on this theme's own accent. Only applies before
+     applyGradientTheme() writes the pair for the chosen accent. */
+  --primary-foreground: 190 40% 6%;
   --secondary: 230 20% 12%;
   --secondary-foreground: 210 40% 98%;
   --muted: 230 20% 15%;
@@ -238,7 +240,9 @@ html[data-navigation-pending="true"] * {
   --popover: 0 0% 100%;
   --popover-foreground: 224 71% 4%;
   --primary: 173 80% 35%;
-  --primary-foreground: 0 0% 100%;
+  /* Readable on this theme's own accent. Only applies before
+     applyGradientTheme() writes the pair for the chosen accent. */
+  --primary-foreground: 173 70% 8%;
   --secondary: 220 14% 96%;
   --secondary-foreground: 224 71% 4%;
   --muted: 220 14% 96%;
@@ -264,7 +268,9 @@ html[data-navigation-pending="true"] * {
   --popover: 0 0% 100%;
   --popover-foreground: 224 71% 4%;
   --primary: 173 80% 35%;
-  --primary-foreground: 0 0% 100%;
+  /* Readable on this theme's own accent. Only applies before
+     applyGradientTheme() writes the pair for the chosen accent. */
+  --primary-foreground: 173 70% 8%;
   --secondary: 220 14% 96%;
   --secondary-foreground: 224 71% 4%;
   --muted: 220 14% 96%;
@@ -290,7 +296,9 @@ html[data-navigation-pending="true"] * {
   --popover: 0 0% 5%;
   --popover-foreground: 0 0% 95%;
   --primary: 173 80% 45%;
-  --primary-foreground: 0 0% 100%;
+  /* Readable on this theme's own accent. Only applies before
+     applyGradientTheme() writes the pair for the chosen accent. */
+  --primary-foreground: 0 0% 0%;
   --secondary: 0 0% 8%;
   --secondary-foreground: 0 0% 95%;
   --muted: 0 0% 10%;

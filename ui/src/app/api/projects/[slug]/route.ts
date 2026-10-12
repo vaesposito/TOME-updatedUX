@@ -52,6 +52,12 @@ import {
   tomeSessionSubject,
 } from "@/lib/tome/data-steward";
 import { sessionSub } from "@/lib/tome/agent-proxy";
+import {
+  notifyEntityWatchers,
+  removeAllEntityWatchers,
+  summarizeTomeEntityChange,
+  watchEventStamp,
+} from "@/lib/tome/watchers";
 import type {
   DataStewardInput,
   ProjectDocument,
@@ -251,6 +257,7 @@ export const DELETE = withErrorHandler(
     await Promise.all([
       removeTomeReadAccess(project),
       reconcileDataSteward(project, null),
+      removeAllEntityWatchers(project.slug),
     ]);
     await projects.deleteOne({ _id: project._id });
     await (
@@ -705,6 +712,26 @@ export const PATCH = withErrorHandler(
           metadata: { from: previousMode, to: updatedMode },
         });
       }
+    }
+
+    // Watchers hear about the change; the editor does not hear about their own.
+    // Never let a notification failure fail an edit that already committed.
+    const watchSummary = summarizeTomeEntityChange([
+      ...Object.keys($set),
+      ...Object.keys($unset),
+    ]);
+    if (watchSummary) {
+      await notifyEntityWatchers({
+        entitySlug: updated.slug,
+        entityTitle: updated.title,
+        summary: watchSummary,
+        actorLabel: user.email ?? undefined,
+        eventKey: `tome.watch.${updated.slug}.${watchEventStamp(updated.updated_at)}`,
+        href: `/projects/${encodeURIComponent(updated.slug)}/tome`,
+        excludeSubject: sessionSub(session),
+      }).catch((error) => {
+        console.error("[tome] failed to notify watchers", error);
+      });
     }
 
     const updatedReadConfiguration = await getTomeReadConfiguration(updated);

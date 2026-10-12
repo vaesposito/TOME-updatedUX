@@ -564,6 +564,7 @@ export interface ChatMessage {
 }
 
 export const TOME_USAGE_VIEW_KINDS = [
+  "summary",
   "agent",
   "standup",
   "issues",
@@ -698,4 +699,59 @@ export interface PageResponse {
   markdown: string;
   title: string;
   kind: PageKind;
+}
+
+/** A person tagged on a page save, as picked from the directory. */
+export interface PageNotifyRecipient {
+  email: string;
+  name?: string;
+  /** Keycloak subject. Absent for someone who has never signed in. */
+  subject?: string;
+  /**
+   * A line meant for this person alone, left when they were tagged in the
+   * page body. Someone carrying one is notified separately from the rest, so
+   * their message is not read by every watcher.
+   */
+  note?: string;
+}
+
+/**
+ * Longest note that still reads in the inbox, where the message gets one
+ * truncated line.
+ */
+export const PAGE_NOTIFY_NOTE_MAX = 240;
+
+/**
+ * Who the editor chose to tell about a page save, sent with the page PUT.
+ * Watchers of the entity are notified regardless of this choice; these are the
+ * extra recipients the editor picked for this one edit.
+ */
+export interface PageNotifySelection {
+  /**
+   * Tell the entity's owning team about this save. On by default: a page
+   * edited inside a team's space is normally the team's business, and the
+   * editor who wants to slip one in quietly can say so.
+   */
+  team: boolean;
+  /**
+   * Mark what goes out as needing attention. Off by default, because a save
+   * that matters more than the rest is the exception; if it were the norm
+   * the mark would stop meaning anything.
+   */
+  important: boolean;
+  users: PageNotifyRecipient[];
+  /**
+   * A line from the editor saying why they are passing this on. One
+   * notification serves every recipient, so the note reaches watchers too,
+   * not only the people tagged.
+   */
+  note?: string;
+}
+
+/** What a page save actually delivered, echoed back so the editor can be told. */
+export interface PageNotifyOutcome {
+  notified: number;
+  team: string | null;
+  /** Tagged emails with no CAIPE identity — they could not be reached. */
+  unresolved: string[];
 }

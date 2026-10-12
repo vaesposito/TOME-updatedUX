@@ -301,12 +301,28 @@ class WebexBotAdminService:
         self._resolver.invalidate_all()
         return {"reloaded": "all"}
 
-    def send_notification(self, *, space_id: str, markdown: str) -> dict[str, str]:
-        """Send an operator-configured publication approval notification."""
-        normalized_space_id = space_id.strip()
+    def send_notification(
+        self,
+        *,
+        markdown: str,
+        space_id: str | None = None,
+        person_email: str | None = None,
+    ) -> dict[str, str]:
+        """Send an operator-configured notification to a space or to one person.
+
+        Exactly one recipient. Readers choose per watched project whether
+        updates land in a team space or in their own direct messages, and the
+        two are mutually exclusive rather than a fallback chain: silently
+        posting to a space because a direct address was missing would put
+        someone's private digest in front of a team.
+        """
+        normalized_space_id = (space_id or "").strip()
+        normalized_person_email = (person_email or "").strip()
         normalized_markdown = markdown.strip()
-        if not normalized_space_id:
-            raise ValueError("space_id is required")
+        if bool(normalized_space_id) == bool(normalized_person_email):
+            raise ValueError("Provide exactly one of space_id or person_email")
+        if normalized_person_email and "@" not in normalized_person_email:
+            raise ValueError("person_email must be an email address")
         if not normalized_markdown:
             raise ValueError("markdown is required")
         if len(normalized_markdown) > 4000:
@@ -336,14 +352,27 @@ class WebexBotAdminService:
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
             },
-            json={"roomId": normalized_space_id, "markdown": normalized_markdown},
+            json={
+                **(
+                    {"roomId": normalized_space_id}
+                    if normalized_space_id
+                    else {"toPersonEmail": normalized_person_email}
+                ),
+                "markdown": normalized_markdown,
+            },
             timeout=10,
         )
         response.raise_for_status()
         payload = response.json()
         return {
             "message_id": str(payload.get("id") or ""),
-            "space_id": normalized_space_id,
+            # Only the recipient that was actually used, so a caller cannot
+            # mistake an echoed empty string for a second delivery.
+            **(
+                {"space_id": normalized_space_id}
+                if normalized_space_id
+                else {"person_email": normalized_person_email}
+            ),
             "bot_id": selected.id if selected is not None else "default",
         }
 
@@ -620,8 +649,11 @@ class _WebexAdminRequestHandler(BaseHTTPRequestHandler):
             try:
                 self._write_json(
                     self.service.send_notification(
-                        space_id=_required_string(body.get("space_id"), "space_id"),
                         markdown=_required_string(body.get("markdown"), "markdown"),
+                        # Neither is required on its own; the service rejects
+                        # a body that names both recipients or neither.
+                        space_id=_optional_string(body.get("space_id")),
+                        person_email=_optional_string(body.get("person_email")),
                     )
                 )
             except ValueError as exc:

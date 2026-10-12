@@ -35,7 +35,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CrepeEditor, type CrepeEditorHandle } from "@/components/tome/CrepeEditor";
+import { useToast } from "@/components/ui/toast";
+import {
+  CrepeEditor,
+  type CrepeEditorHandle,
+  type MentionQuery,
+} from "@/components/tome/CrepeEditor";
 import { TomeMediaInsertDialog } from "@/components/tome/TomeMediaInsertDialog";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import { GlossaryFields } from "@/components/tome/GlossaryFields";
@@ -45,6 +50,10 @@ import {
   KindBadge,
   PAGE_KIND_DESCRIPTIONS,
 } from "@/components/tome/KindBadge";
+import { MentionPicker } from "@/components/tome/MentionPicker";
+import { PageNotifyMenu } from "@/components/tome/PageNotifyMenu";
+import { mentionMarkdown } from "@/lib/tome/mentions";
+import { WatchToggle } from "@/components/tome/WatchToggle";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
 import {
@@ -75,7 +84,11 @@ import {
 } from "@/lib/tome/schema";
 import { cn } from "@/lib/utils";
 import { diagnoseTomeMarkdown } from "@/lib/tome/markdown-diagnostics";
-import type { PageKind } from "@/types/tome";
+import type {
+  PageKind,
+  PageNotifyOutcome,
+  PageNotifySelection,
+} from "@/types/tome";
 
 /** User-flippable kinds (report is system-managed via path). */
 const FLIPPABLE_KINDS: { key: PageKind; label: string }[] = [
@@ -83,6 +96,53 @@ const FLIPPABLE_KINDS: { key: PageKind; label: string }[] = [
   { key: "dynamic", label: "Dynamic" },
   { key: "hidden", label: "Hidden" },
 ];
+
+/** Notify nobody beyond the entity's watchers, who are always told. */
+/**
+ * What the notify menu starts at for every save.
+ *
+ * Telling the team is on: a page edited in a team's space is normally the
+ * team's business. Importance is off, so the mark keeps its meaning. Tagging
+ * is empty, because it names particular people and nobody can be volunteered
+ * by a default.
+ */
+const DEFAULT_NOTIFY: PageNotifySelection = {
+  team: true,
+  important: false,
+  users: [],
+};
+
+/**
+ * Phrase a save's notification outcome for the editor, or null when there is
+ * nothing worth saying (a quiet save with no watchers).
+ *
+ * Someone tagged who has never signed in cannot be reached, and silently
+ * dropping them would leave the editor believing a message was delivered — so
+ * that case is reported as an error even when others were notified.
+ */
+function describeNotifyOutcome(
+  outcome: PageNotifyOutcome,
+  teamName?: string | null,
+): { message: string; type: "success" | "error" } | null {
+  const reached: string[] = [];
+  if (outcome.notified > 0) {
+    reached.push(`${outcome.notified} ${outcome.notified === 1 ? "person" : "people"}`);
+  }
+  // The server reports the team it addressed by slug; show the display name the
+  // editor saw in the menu when we have it.
+  if (outcome.team) reached.push(`the ${teamName || outcome.team} team`);
+  const notified = reached.length > 0 ? `Notified ${reached.join(" and ")}.` : "";
+
+  if (outcome.unresolved.length === 0) {
+    return notified ? { message: notified, type: "success" } : null;
+  }
+  const names = outcome.unresolved.join(", ");
+  const haveNot = outcome.unresolved.length === 1 ? "hasn't" : "haven't";
+  return {
+    type: "error",
+    message: `${notified} ${names} ${haveNot} signed in to CAIPE yet, so they weren't notified.`.trim(),
+  };
+}
 
 interface Props {
   slug: string;
@@ -93,8 +153,12 @@ interface Props {
     path: string,
     markdown: string,
     message: string,
-    options?: { baseRevisionId?: string | null; force?: boolean },
-  ) => Promise<void>;
+    options?: {
+      baseRevisionId?: string | null;
+      force?: boolean;
+      notify?: PageNotifySelection;
+    },
+  ) => Promise<PageNotifyOutcome | null | void>;
   onReload: () => void | Promise<void>;
   /** When provided, renders a close (×) button — used by the artifact pane. */
   onClose?: () => void;
@@ -115,6 +179,8 @@ interface Props {
   canEdit?: boolean;
   /** Current project paths used to flag broken wiki links in source mode. */
   knownPaths?: ReadonlySet<string>;
+  /** Owning team, shown in the Notifications menu so "Notify team" names a team. */
+  teamName?: string | null;
   /** Open a just-created page directly in editing mode. */
   autoStartEditing?: boolean;
   onAutoStartEditing?: () => void;
@@ -143,6 +209,7 @@ export function WikiPageView({
   onRename,
   canEdit = true,
   knownPaths,
+  teamName,
   autoStartEditing = false,
   onAutoStartEditing,
 }: Props) {
@@ -169,6 +236,11 @@ export function WikiPageView({
   } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [pathDraft, setPathDraft] = useState(path);
+  // Who to tell about this edit. Reset after each save so the next edit starts
+  // from a deliberate choice rather than inheriting the last one.
+  const [notify, setNotify] = useState<PageNotifySelection>(DEFAULT_NOTIFY);
+  const [mentionQuery, setMentionQuery] = useState<MentionQuery | null>(null);
+  const { toast } = useToast();
   const editorRef = useRef<CrepeEditorHandle>(null);
   const sourceEditorRef = useRef<ReactCodeMirrorRef | null>(null);
   const sourceAiSelectionRef = useRef<{ from: number; to: number } | null>(null);
@@ -392,7 +464,10 @@ export function WikiPageView({
         ? editorRef.current?.getMarkdown() ?? draftBody
         : draftBody;
       const md = serializeFrontmatter(fmToWrite, bodyContent);
-      await onWrite(path, md, `edit ${path}`, { baseRevisionId });
+      const outcome = await onWrite(path, md, `edit ${path}`, {
+        baseRevisionId,
+        notify,
+      });
       // Refresh before closing the editor so the next edit starts from the
       // revision just written, rather than the previous in-memory snapshot.
       await refreshLastRevision().catch(() => undefined);
@@ -401,7 +476,13 @@ export function WikiPageView({
       setEditorMode("rich");
       setDraftStatus(null);
       setDraftSavedAt(null);
+      setNotify(DEFAULT_NOTIFY);
       setEditorEpoch((n) => n + 1);
+      // Recipients who are looking at the app should see the bell update now
+      // rather than on its next poll.
+      window.dispatchEvent(new Event("in-app-notifications:refresh"));
+      const told = outcome ? describeNotifyOutcome(outcome, teamName) : null;
+      if (told) toast(told.message, told.type);
     } catch (e) {
       const saveError = e as Error & {
         code?: string;
@@ -423,7 +504,7 @@ export function WikiPageView({
     } finally {
       setSaving(false);
     }
-  }, [baseRevisionId, draftBody, draftStorageKey, editorMode, isGlossary, isEdgeEntry, isTrackedEntry, fmDraft, onWrite, path, refreshLastRevision]);
+  }, [baseRevisionId, draftBody, draftStorageKey, editorMode, isGlossary, isEdgeEntry, isTrackedEntry, fmDraft, notify, onWrite, path, refreshLastRevision, teamName, toast]);
 
   const handleCancel = useCallback(() => {
     setIsEditing(false);
@@ -431,6 +512,7 @@ export function WikiPageView({
     window.localStorage.removeItem(draftStorageKey);
     setDraftStatus(null);
     setDraftSavedAt(null);
+    setNotify(DEFAULT_NOTIFY);
     setEditorEpoch((n) => n + 1);
   }, [draftStorageKey]);
 
@@ -819,6 +901,9 @@ export function WikiPageView({
                   {wideReading ? "Narrow reading width" : "Wide reading width"}
                 </TooltipContent>
               </Tooltip>
+              {/* Watching one page, rather than the whole space, for people
+                  who care about a single document. */}
+              <WatchToggle slug={slug} pagePath={path} className="h-7 text-xs" />
               <WikiExportMenu
                 slug={slug}
                 path={path}
@@ -867,6 +952,10 @@ export function WikiPageView({
                   Media
                 </Button>
               )}
+              {/* Beside Save, because that is what it qualifies: who hears
+                  about this edit is part of saving it, not a property of the
+                  page sitting among the badges at the other end of the bar. */}
+              <PageNotifyMenu value={notify} onChange={setNotify} disabled={saving} />
               <button
                 type="button"
                 onClick={handleCancel}
@@ -888,6 +977,7 @@ export function WikiPageView({
             <ViewOnlyTooltip viewOnly={!canEdit}>
               <button
                 type="button"
+                data-tour="page-edit"
                 onClick={startEditing}
                 disabled={locked || !canEdit || isMirror}
                 title={
@@ -1029,11 +1119,30 @@ export function WikiPageView({
               hideHtmlComments
               onInsertMedia={() => setMediaOpen(true)}
               onEnhanceSelection={() => handleInlineAiOpenChange(true)}
+              onMentionQuery={setMentionQuery}
               enableColumns
             />
           )}
         </div>
       </ScrollArea>
+      <MentionPicker
+        query={mentionQuery}
+        onCancel={() => setMentionQuery(null)}
+        onPick={(person, note) => {
+          setMentionQuery(null);
+          editorRef.current?.completeMention(mentionMarkdown(person));
+          // Tagging someone in the body is itself the request to tell them, so
+          // the save carries them whether or not the toolbar menu was opened.
+          // Re-tagging replaces the earlier entry rather than duplicating it.
+          setNotify((current) => ({
+            ...current,
+            users: [
+              ...current.users.filter((picked) => picked.email !== person.email),
+              { ...person, ...(note ? { note } : {}) },
+            ],
+          }));
+        }}
+      />
       <TomeMediaInsertDialog
         open={mediaOpen}
         onOpenChange={setMediaOpen}

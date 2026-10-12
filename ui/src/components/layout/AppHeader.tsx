@@ -504,7 +504,7 @@ export function AppHeader() {
               </a>
             </Button>
           )}
-          <NotificationBell enabled={Boolean(session)} />
+          <NotificationBell enabled={Boolean(session) || noAuthConfigured} />
           <UserMenu />
         </div>
       </div>

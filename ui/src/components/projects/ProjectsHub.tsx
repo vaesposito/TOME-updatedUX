@@ -48,6 +48,7 @@ import {
   applyBhagOrder,
   moveBhagAround,
 } from "@/lib/tome/bhag-order";
+import { isTourRunning } from "@/components/tour/notification-tour";
 import { cn } from "@/lib/utils";
 import { dataStewardLabel, type ProjectDocument } from "@/types/projects";
 import type { ActiveIngestRun } from "@/types/tome";
@@ -771,6 +772,7 @@ export function ProjectsHub() {
   // Help button reopens it any time.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isTourRunning()) return;
     if (!window.localStorage.getItem(ONBOARDING_SEEN_KEY)) setOnboardingOpen(true);
   }, []);
 

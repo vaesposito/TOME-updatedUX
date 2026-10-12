@@ -169,6 +169,9 @@ async function openIncident(
     title: incidentTitle(capability),
     message: capability.detail,
     href: "/admin/operations/health",
+    // The alert itself is the new thing, even though what it reports is a
+    // change in a service that was already there.
+    action: "new",
     severity: incidentSeverity(capability),
     category: "platform_health",
     sourceLabel: PLATFORM_SOURCE_LABEL,
@@ -223,6 +226,8 @@ async function closeIncident(input: {
     title,
     message,
     href: "/admin/operations/health",
+    // Recovery is a change to the incident already announced.
+    action: "updated",
     severity: automatic && !monitoringDisabled ? "success" : "info",
     category: "platform_health",
     sourceLabel: PLATFORM_SOURCE_LABEL,

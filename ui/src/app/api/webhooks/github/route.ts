@@ -66,24 +66,27 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 },
     );
   }
+  // Direct repository hooks and the shared SNS gateway have independent keys.
+  // Verify the original signed bytes before acknowledging filtered deliveries.
+  const verification = [
+    process.env.GITHUB_WEBHOOK_SECRET,
+    process.env.GITHUB_WEBHOOK_GATEWAY_SECRET,
+  ].some(
+    (secret) =>
+      verifyGitHubWebhook(rawBody, signature, deliveryId, secret).valid,
+  );
+  if (!verification) {
+    return new Response(null, { status: 401 });
+  }
+
+  // A shared topic includes repositories that are not attached in this UI.
+  // They are valid deliveries to ignore, so acknowledge them without persisting.
   if (
     !isProjectV2ItemEvent &&
     repository &&
-    (!repository.id ||
-      !repository.full_name ||
-      !(await isRepositoryAttachedToTome(repository.id, repository.full_name)))
+    !(await isRepositoryAttachedToTome(repository.id!, repository.full_name!))
   ) {
-    return new Response(null, { status: 404 });
-  }
-
-  const verification = verifyGitHubWebhook(
-    rawBody,
-    signature,
-    deliveryId,
-    process.env.GITHUB_WEBHOOK_SECRET,
-  );
-  if (!verification.valid) {
-    return new Response(null, { status: 401 });
+    return new Response(null, { status: 204 });
   }
 
   if (eventType === "ping") {

@@ -273,12 +273,12 @@ describe("shared GitHub webhook ingress", () => {
     expect(mockPublishEvent).not.toHaveBeenCalled();
   });
 
-  it("rejects a repository that is not attached to TOME", async () => {
+  it("acknowledges a verified repository that is not attached to TOME", async () => {
     mockIsAttachedToTome.mockResolvedValue(false);
 
     const response = await POST(request());
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(204);
     expect(mockVerifyWebhook).not.toHaveBeenCalled();
     expect(mockPublishEvent).not.toHaveBeenCalled();
   });

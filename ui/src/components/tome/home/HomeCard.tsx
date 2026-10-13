@@ -89,12 +89,20 @@ function HeaderAction({ action }: { action: HomeAction }) {
       <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
     </>
   );
+  // Marked so the frame can take the corner back while the page is being
+  // arranged, where this link and the controls that move the card would
+  // otherwise be drawn on top of each other.
   return "href" in action ? (
-    <Link href={action.href} className={style}>
+    <Link href={action.href} className={style} data-card-action="">
       {inner}
     </Link>
   ) : (
-    <button type="button" onClick={action.onClick} className={style}>
+    <button
+      type="button"
+      onClick={action.onClick}
+      className={style}
+      data-card-action=""
+    >
       {inner}
     </button>
   );

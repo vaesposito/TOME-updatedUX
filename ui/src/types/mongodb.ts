@@ -269,6 +269,14 @@ export interface UserSettings {
     home_widgets_version?: number;
     /** Which Home page layout the user sees — the new default, or the previous fixed layout. */
     home_experience?: "new" | "classic";
+    /**
+     * How the user has arranged a project's home page in Tome, for every space.
+     *
+     * The order they chose and the cards they put away are kept apart so that
+     * a card added in a later release is new rather than unwanted, and so a
+     * card brought back returns to where it was.
+     */
+    tome_home_widgets?: { order: string[]; hidden: string[] };
     favorite_agentic_apps?: string[];
     agentic_app_preferences?: Record<string, Record<string, boolean | number | string>>;
   };

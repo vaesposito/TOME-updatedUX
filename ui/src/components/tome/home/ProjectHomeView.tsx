@@ -1,9 +1,24 @@
 "use client";
 
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
 import { AtSign, CircleAlert, Newspaper, WifiOff } from "lucide-react";
 import * as React from "react";
 
 import { HomeAskAgent } from "@/components/tome/home/HomeAskAgent";
+import { HomeCustomizeBar } from "@/components/tome/home/HomeCustomizeBar";
 import {
   HomeCard,
   HomeEmpty,
@@ -15,8 +30,17 @@ import { HomeMilestones } from "@/components/tome/home/HomeMilestones";
 import { HomeNotificationList } from "@/components/tome/home/HomeNotificationRow";
 import { HomeSources } from "@/components/tome/home/HomeSources";
 import { HomeTeam } from "@/components/tome/home/HomeTeam";
+import { HomeWidgetFrame } from "@/components/tome/home/HomeWidgetFrame";
 import { splitHomeFeeds } from "@/components/tome/home/home-feeds";
+import { computeReorder } from "@/lib/reorder";
+import {
+  TOME_HOME_WIDGETS,
+  isCustomized,
+  visibleWidgets,
+  type TomeHomeWidgetId,
+} from "@/lib/tome/home-widgets";
 import { wikiPageHref } from "@/lib/tome/wiki-page-href";
+import { useTomeHomeWidgetsStore } from "@/store/tome-home-widgets-store";
 import type { TomeSummary, TomeSummaryItem } from "@/types/tome-summary";
 
 /**
@@ -34,6 +58,9 @@ import type { TomeSummary, TomeSummaryItem } from "@/types/tome-summary";
  * second. The roster, the sources and the KPIs come last: all three are worth
  * one read and then rarely another, so they sit where a reader can find them
  * on purpose without passing them every time.
+ *
+ * That is the order it ships in; a reader can arrange it otherwise, and what
+ * they choose follows them into every space.
  *
  * Most of it costs nothing to show: the curated pages are already loaded for
  * the wiki beside it, and the notification cards all come out of the one
@@ -147,6 +174,37 @@ export function ProjectHomeView({
    * a reader nothing needs their attention, a moment before finding out that
    * something does, is worse than telling them nothing at all yet.
    */
+  const layout = useTomeHomeWidgetsStore((state) => state.layout);
+  const initialize = useTomeHomeWidgetsStore((state) => state.initialize);
+  const hideWidget = useTomeHomeWidgetsStore((state) => state.hideWidget);
+  const showWidget = useTomeHomeWidgetsStore((state) => state.showWidget);
+  const reorderWidgets = useTomeHomeWidgetsStore((state) => state.reorderWidgets);
+  const resetLayout = useTomeHomeWidgetsStore((state) => state.resetLayout);
+  /** Arranging is a mood, not a setting: it is never saved or restored. */
+  const [editing, setEditing] = React.useState(false);
+
+  React.useEffect(() => initialize(), [initialize]);
+
+  const shown = React.useMemo(() => visibleWidgets(layout), [layout]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const onDragEnd = React.useCallback(
+    (event: DragEndEvent) => {
+      if (!event.over) return;
+      const next = computeReorder(
+        [...shown],
+        String(event.active.id),
+        String(event.over.id),
+      );
+      if (next) reorderWidgets(next as TomeHomeWidgetId[]);
+    },
+    [reorderWidgets, shown],
+  );
+
   const pending = !summary && !failed ? <HomeSkeleton /> : null;
   const unreachable = failed ? (
     <HomeEmpty
@@ -158,127 +216,178 @@ export function ProjectHomeView({
   ) : null;
   const before = pending ?? unreachable;
 
+  /**
+   * Every card, built whether or not it is on show.
+   *
+   * Building a hidden card costs a little render and buys a lot: nothing here
+   * fetches on its own except the roster, and keeping one record of the lot
+   * means the arrangement decides the order in one place rather than the JSX
+   * deciding it in nine.
+   */
+  const cards: Record<TomeHomeWidgetId, React.ReactNode> = {
+    ask: <HomeAskAgent title={title} onAsk={onAsk} />,
+
+    attention: (
+      <HomeCard
+        title="Needs attention"
+        icon={<CircleAlert className="h-4 w-4" />}
+        count={feeds.attention.length}
+        action={{ label: "All", href: inboxHref }}
+      >
+        <HomeNotificationList
+          items={feeds.attention}
+          viewing={slug}
+          limit={FEED_LIMIT}
+          onOpen={markRead}
+          empty={
+            before ?? (
+              <HomeEmpty
+                icon={<CircleAlert />}
+                headline="Nothing needs attention"
+                hint="Unresolved problems and decisions still to be made collect here."
+                action={{ label: "Open the inbox", href: inboxHref }}
+              />
+            )
+          }
+        />
+      </HomeCard>
+    ),
+
+    tagged: (
+      <HomeCard
+        title="Tagged for you"
+        icon={<AtSign className="h-4 w-4" />}
+        count={feeds.tagged.length}
+        action={{ label: "All", href: inboxHref }}
+      >
+        <HomeNotificationList
+          items={feeds.tagged}
+          viewing={slug}
+          limit={FEED_LIMIT}
+          onOpen={markRead}
+          empty={
+            before ?? (
+              <HomeEmpty
+                icon={<AtSign />}
+                headline="Nothing tagged you"
+                hint="A page or a decision that names you with an @ mention lands here."
+                action={{ label: "Open the inbox", href: inboxHref }}
+              />
+            )
+          }
+        />
+      </HomeCard>
+    ),
+
+    updates: (
+      <HomeCard
+        title="Latest updates"
+        icon={<Newspaper className="h-4 w-4" />}
+        count={feeds.updates.length}
+        action={{ label: "All", href: inboxHref }}
+      >
+        <HomeNotificationList
+          items={feeds.updates}
+          viewing={slug}
+          limit={FEED_LIMIT}
+          onOpen={markRead}
+          empty={
+            before ?? (
+              <HomeEmpty
+                icon={<Newspaper />}
+                headline="Nothing has happened yet"
+                hint="Page edits, decisions and status updates appear here as they land."
+                action={{ label: "Connect a source", href: ingestHref }}
+              />
+            )
+          }
+        />
+      </HomeCard>
+    ),
+
+    glance: (
+      <HomeGlance
+        markdown={page(STANDUP_PAGE)}
+        standupHref={wikiPageHref(slug, STANDUP_PAGE)}
+        ingestHref={ingestHref}
+        onOpenStandup={onOpenStandup}
+        onOpenIngest={onOpenIngest}
+        onNavigate={onNavigate}
+      />
+    ),
+
+    milestones: (
+      <HomeMilestones
+        markdown={page(ROADMAP_PAGE)}
+        roadmapHref={wikiPageHref(slug, ROADMAP_PAGE)}
+        onOpenRoadmap={openPage(ROADMAP_PAGE)}
+      />
+    ),
+
+    team: (
+      <HomeTeam
+        slug={slug}
+        settingsHref={settingsHref}
+        onOpenSettings={onOpenSettings}
+      />
+    ),
+
+    sources: (
+      <HomeSources
+        sources={sources}
+        ingestHref={ingestHref}
+        onOpenIngest={onOpenIngest}
+      />
+    ),
+
+    kpis: (
+      <HomeKpis
+        markdown={page(CHARTER_PAGE)}
+        charterHref={wikiPageHref(slug, CHARTER_PAGE)}
+        onOpenCharter={openPage(CHARTER_PAGE)}
+      />
+    ),
+  };
+
   return (
-    <div className="flex flex-col gap-4 p-5" data-tour="project-home">
-      <HomeAskAgent title={title} onAsk={onAsk} />
+    <div className="flex flex-col gap-3 p-5" data-tour="project-home">
+      <HomeCustomizeBar
+        editing={editing}
+        hidden={layout.hidden}
+        customized={isCustomized(layout)}
+        onEdit={() => setEditing(true)}
+        onDone={() => setEditing(false)}
+        onShow={showWidget}
+        onReset={resetLayout}
+      />
 
-      {/* In the order a reader needs it: what has just happened, then how
-          the work is going, then the reference material that is the same
-          this week as last. Three columns on a wide window and one on a
-          narrow one, where the same order becomes a single column. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <HomeCard
-          title="Needs attention"
-          icon={<CircleAlert className="h-4 w-4" />}
-          count={feeds.attention.length}
-          action={{ label: "All", href: inboxHref }}
-          className="lg:col-span-2"
-        >
-          <HomeNotificationList
-            items={feeds.attention}
-            viewing={slug}
-            limit={FEED_LIMIT}
-            onOpen={markRead}
-            empty={
-              before ?? (
-                <HomeEmpty
-                  icon={<CircleAlert />}
-                  headline="Nothing needs attention"
-                  hint="Unresolved problems and decisions still to be made collect here."
-                  action={{ label: "Open the inbox", href: inboxHref }}
-                />
-              )
-            }
-          />
-        </HomeCard>
-
-        <HomeCard
-          title="Tagged for you"
-          icon={<AtSign className="h-4 w-4" />}
-          count={feeds.tagged.length}
-          action={{ label: "All", href: inboxHref }}
-        >
-          <HomeNotificationList
-            items={feeds.tagged}
-            viewing={slug}
-            limit={FEED_LIMIT}
-            onOpen={markRead}
-            empty={
-              before ?? (
-                <HomeEmpty
-                  icon={<AtSign />}
-                  headline="Nothing tagged you"
-                  hint="A page or a decision that names you with an @ mention lands here."
-                  action={{ label: "Open the inbox", href: inboxHref }}
-                />
-              )
-            }
-          />
-        </HomeCard>
-
-        {/* The width of the page, closing the band: nothing is asking for
-            this one, so it is read across rather than worked down. */}
-        <HomeCard
-          title="Latest updates"
-          icon={<Newspaper className="h-4 w-4" />}
-          count={feeds.updates.length}
-          action={{ label: "All", href: inboxHref }}
-          className="lg:col-span-3"
-        >
-          <HomeNotificationList
-            items={feeds.updates}
-            viewing={slug}
-            limit={FEED_LIMIT}
-            onOpen={markRead}
-            empty={
-              before ?? (
-                <HomeEmpty
-                  icon={<Newspaper />}
-                  headline="Nothing has happened yet"
-                  hint="Page edits, decisions and status updates appear here as they land."
-                  action={{ label: "Connect a source", href: ingestHref }}
-                />
-              )
-            }
-          />
-        </HomeCard>
-
-        <HomeGlance
-          markdown={page(STANDUP_PAGE)}
-          standupHref={wikiPageHref(slug, STANDUP_PAGE)}
-          ingestHref={ingestHref}
-          onOpenStandup={onOpenStandup}
-          onOpenIngest={onOpenIngest}
-          onNavigate={onNavigate}
-          className="lg:col-span-2"
-        />
-
-        <HomeMilestones
-          markdown={page(ROADMAP_PAGE)}
-          roadmapHref={wikiPageHref(slug, ROADMAP_PAGE)}
-          onOpenRoadmap={openPage(ROADMAP_PAGE)}
-        />
-
-        {/* Three of a width, so the shelf of things that do not change reads
-            as one row rather than as three more cards to get through. */}
-        <HomeTeam
-          slug={slug}
-          settingsHref={settingsHref}
-          onOpenSettings={onOpenSettings}
-        />
-
-        <HomeSources
-          sources={sources}
-          ingestHref={ingestHref}
-          onOpenIngest={onOpenIngest}
-        />
-
-        <HomeKpis
-          markdown={page(CHARTER_PAGE)}
-          charterHref={wikiPageHref(slug, CHARTER_PAGE)}
-          onOpenCharter={openPage(CHARTER_PAGE)}
-        />
-      </div>
+      {/* Three columns on a wide window, one on a narrow one, where the same
+          order becomes a single column. The cards carry their own widths, so
+          a card keeps its share of the page wherever it is moved to. */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={onDragEnd}
+      >
+        <SortableContext items={shown} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {shown.map((id) => {
+              const widget = TOME_HOME_WIDGETS.find((entry) => entry.id === id);
+              if (!widget) return null;
+              return (
+                <HomeWidgetFrame
+                  key={id}
+                  widget={widget}
+                  editing={editing}
+                  onHide={hideWidget}
+                >
+                  {cards[id]}
+                </HomeWidgetFrame>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }

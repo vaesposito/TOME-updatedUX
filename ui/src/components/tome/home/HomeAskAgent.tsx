@@ -44,7 +44,9 @@ export function HomeAskAgent({
   };
 
   return (
-    <section className="rounded-lg border bg-card p-4">
+    // Tinted, and the only thing on the page that is: a reader arriving with
+    // a question should find the box before they find the cards.
+    <section className="rounded-lg border bg-gradient-to-br from-primary/10 via-card to-card p-4 shadow-sm">
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -54,9 +56,11 @@ export function HomeAskAgent({
       >
         <label
           htmlFor="home-ask-agent"
-          className="flex items-center gap-2 text-sm font-semibold"
+          className="flex items-center gap-2.5 text-sm font-semibold tracking-tight"
         >
-          <Sparkles className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <span className="flex h-7 w-7 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary">
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
           Ask the agent
         </label>
         <div className="flex items-end gap-2">
@@ -99,7 +103,7 @@ export function HomeAskAgent({
                 setQuestion(opener);
                 field.current?.focus();
               }}
-              className="rounded-full border border-dashed border-border/70 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground"
+              className="rounded-full border bg-background/60 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground"
             >
               {opener}
             </button>

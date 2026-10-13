@@ -1,10 +1,14 @@
 "use client";
 
-import { AtSign, CircleAlert, Newspaper } from "lucide-react";
+import { AtSign, CircleAlert, Newspaper, WifiOff } from "lucide-react";
 import * as React from "react";
 
 import { HomeAskAgent } from "@/components/tome/home/HomeAskAgent";
-import { HomeCard, HomeEmpty } from "@/components/tome/home/HomeCard";
+import {
+  HomeCard,
+  HomeEmpty,
+  HomeSkeleton,
+} from "@/components/tome/home/HomeCard";
 import { HomeGlance } from "@/components/tome/home/HomeGlance";
 import { HomeKpis } from "@/components/tome/home/HomeKpis";
 import { HomeMilestones } from "@/components/tome/home/HomeMilestones";
@@ -63,9 +67,12 @@ export function ProjectHomeView({
 }) {
   const [summary, setSummary] = React.useState<TomeSummary | null>(null);
   const [failed, setFailed] = React.useState(false);
+  /** Bumped by Try again, which is the whole of the retry. */
+  const [attempt, setAttempt] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
+    setFailed(false);
     // The whole space, as the digest read it: the cards below divide it up
     // themselves, and narrowing it here would only cost another request when
     // a reader wanted the rest.
@@ -82,7 +89,7 @@ export function ProjectHomeView({
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, attempt]);
 
   const feeds = React.useMemo(() => splitHomeFeeds(summary), [summary]);
 
@@ -123,10 +130,26 @@ export function ProjectHomeView({
    * the rest" has often read the rest already.
    */
   const inboxHref = `/notifications?entity=${encodeURIComponent(slug)}&tab=all`;
+  const ingestHref = `/projects/${encodeURIComponent(slug)}/tome/ingest`;
+  const settingsHref = `/projects/${encodeURIComponent(slug)}/tome/settings`;
 
+  /**
+   * What the three notification cards show before their own answer is in.
+   *
+   * Waiting and empty are different states and must not look alike: telling
+   * a reader nothing needs their attention, a moment before finding out that
+   * something does, is worse than telling them nothing at all yet.
+   */
+  const pending = !summary && !failed ? <HomeSkeleton /> : null;
   const unreachable = failed ? (
-    <HomeEmpty>Could not load recent activity.</HomeEmpty>
+    <HomeEmpty
+      icon={<WifiOff />}
+      headline="Could not load activity"
+      hint="The notification request did not come back. The rest of this page is unaffected."
+      action={{ label: "Try again", onClick: () => setAttempt((n) => n + 1) }}
+    />
   ) : null;
+  const before = pending ?? unreachable;
 
   return (
     <div className="flex flex-col gap-4 p-5" data-tour="project-home">
@@ -140,12 +163,18 @@ export function ProjectHomeView({
         <HomeGlance
           markdown={page(STANDUP_PAGE)}
           standupHref={wikiPageHref(slug, STANDUP_PAGE)}
+          ingestHref={ingestHref}
           onOpenStandup={onOpenStandup}
+          onOpenIngest={onOpenIngest}
           onNavigate={onNavigate}
           className="lg:col-span-2"
         />
 
-        <HomeTeam slug={slug} onOpenSettings={onOpenSettings} />
+        <HomeTeam
+          slug={slug}
+          settingsHref={settingsHref}
+          onOpenSettings={onOpenSettings}
+        />
 
         <HomeCard
           title="Needs attention"
@@ -160,11 +189,13 @@ export function ProjectHomeView({
             limit={FEED_LIMIT}
             onOpen={markRead}
             empty={
-              unreachable ?? (
-                <HomeEmpty>
-                  Nothing is waiting on anyone. Unresolved problems and
-                  decisions still to be made show up here.
-                </HomeEmpty>
+              before ?? (
+                <HomeEmpty
+                  icon={<CircleAlert />}
+                  headline="Nothing needs attention"
+                  hint="Unresolved problems and decisions still to be made collect here."
+                  action={{ label: "Open the inbox", href: inboxHref }}
+                />
               )
             }
           />
@@ -182,11 +213,13 @@ export function ProjectHomeView({
             limit={FEED_LIMIT}
             onOpen={markRead}
             empty={
-              unreachable ?? (
-                <HomeEmpty>
-                  Nobody has tagged you here. A page that names you with an @
-                  mention lands in this card.
-                </HomeEmpty>
+              before ?? (
+                <HomeEmpty
+                  icon={<AtSign />}
+                  headline="Nothing tagged you"
+                  hint="A page or a decision that names you with an @ mention lands here."
+                  action={{ label: "Open the inbox", href: inboxHref }}
+                />
               )
             }
           />
@@ -204,11 +237,24 @@ export function ProjectHomeView({
             viewing={slug}
             limit={FEED_LIMIT}
             onOpen={markRead}
-            empty={unreachable ?? <HomeEmpty>Nothing has happened here yet.</HomeEmpty>}
+            empty={
+              before ?? (
+                <HomeEmpty
+                  icon={<Newspaper />}
+                  headline="Nothing has happened yet"
+                  hint="Page edits, decisions and status updates appear here as they land."
+                  action={{ label: "Connect a source", href: ingestHref }}
+                />
+              )
+            }
           />
         </HomeCard>
 
-        <HomeSources sources={sources} onOpenIngest={onOpenIngest} />
+        <HomeSources
+          sources={sources}
+          ingestHref={ingestHref}
+          onOpenIngest={onOpenIngest}
+        />
 
         <HomeMilestones
           markdown={page(ROADMAP_PAGE)}

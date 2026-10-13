@@ -4,7 +4,11 @@ import { ArrowUpRight, Database } from "lucide-react";
 import * as React from "react";
 
 import { sourcesFromProject } from "@/components/tome/IngestPanel";
-import { HomeCard, HomeEmpty } from "@/components/tome/home/HomeCard";
+import {
+  HomeCard,
+  HomeEmpty,
+  homeAction,
+} from "@/components/tome/home/HomeCard";
 
 /**
  * Where this project's knowledge comes from.
@@ -23,10 +27,12 @@ const SHOWN_PER_PROVIDER = 3;
 
 export function HomeSources({
   sources,
+  ingestHref,
   onOpenIngest,
 }: {
   /** The project's `sources`, in whatever shape it was stored. */
   sources: Record<string, unknown> | null;
+  ingestHref: string;
   onOpenIngest?: () => void;
 }) {
   const rows: SourceRow[] = React.useMemo(() => {
@@ -47,13 +53,15 @@ export function HomeSources({
       title="Sources"
       icon={<Database className="h-4 w-4" />}
       count={total}
-      action={onOpenIngest ? { label: "Ingest", onClick: onOpenIngest } : undefined}
+      action={homeAction("Ingest", ingestHref, onOpenIngest)}
     >
       {rows.length === 0 ? (
-        <HomeEmpty>
-          Nothing is connected yet. Attaching a repository, a Confluence space
-          or a Webex room is what gives the agent something to read.
-        </HomeEmpty>
+        <HomeEmpty
+          icon={<Database />}
+          headline="Nothing connected yet"
+          hint="A repository, a Confluence space or a Webex room is what gives the agent something to read."
+          action={homeAction("Connect a source", ingestHref, onOpenIngest)}
+        />
       ) : (
         <ul className="flex flex-col gap-2.5">
           {rows.map((row) => (

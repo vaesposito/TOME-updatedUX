@@ -4,15 +4,36 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/** Somewhere to go: a route, or a view the surrounding page can open itself. */
+export type HomeAction =
+  | { label: string; href: string }
+  | { label: string; onClick: () => void };
+
+/**
+ * The route, unless the page can show the same thing without leaving.
+ *
+ * Every card has both: a link that works on its own, and a handler that keeps
+ * the reader inside the wiki shell when one was passed down.
+ */
+export function homeAction(
+  label: string,
+  href: string,
+  onClick?: () => void,
+): HomeAction {
+  return onClick ? { label, onClick } : { label, href };
+}
 
 /**
  * One panel of a project's home page.
  *
  * Every card reads the same way: what it is, how many, and the way through to
- * the full thing — so a reader scanning the page learns the shape once. The
- * count sits in the heading rather than on a badge beside it, because on a
- * page this dense a row of badges becomes its own thing to read.
+ * the full thing — so a reader scanning the page learns the shape once and
+ * then only reads the parts. The count is set in a low-contrast pill rather
+ * than coloured like a badge, because on a page of eight cards a row of
+ * badges becomes its own thing to read.
  */
 export function HomeCard({
   title,
@@ -27,78 +48,167 @@ export function HomeCard({
   /** Shown beside the title when there is more than the card can hold. */
   count?: number;
   /** The way through to everything this card is a window onto. */
-  action?: { label: string; href: string } | { label: string; onClick: () => void };
+  action?: HomeAction;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
     <section
-      className={cn("flex min-w-0 flex-col rounded-lg border bg-card", className)}
+      className={cn(
+        "flex min-w-0 flex-col rounded-lg border bg-card shadow-sm",
+        className,
+      )}
     >
-      <header className="flex items-center gap-2 border-b px-4 py-2.5">
-        <span className="shrink-0 text-muted-foreground">{icon}</span>
-        <h3 className="min-w-0 truncate text-sm font-semibold">{title}</h3>
+      <header className="flex items-center gap-2.5 border-b px-3.5 py-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/40 text-muted-foreground [&>svg]:h-3.5 [&>svg]:w-3.5">
+          {icon}
+        </span>
+        <h3 className="min-w-0 truncate text-sm font-semibold tracking-tight">
+          {title}
+        </h3>
         {count !== undefined && count > 0 && (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
             {count}
           </span>
         )}
-        {action && (
-          <span className="ml-auto shrink-0">
-            {"href" in action ? (
-              <Link
-                href={action.href}
-                className="flex items-center gap-0.5 rounded text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {action.label}
-                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </Link>
-            ) : (
-              <button
-                type="button"
-                onClick={action.onClick}
-                className="flex items-center gap-0.5 rounded text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {action.label}
-                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            )}
-          </span>
-        )}
+        {action && <HeaderAction action={action} />}
       </header>
-      <div className="min-w-0 flex-1 px-4 py-3">{children}</div>
+      {/* A column, so a card left standing taller than its contents by the
+          card beside it can centre a placeholder in the space. */}
+      <div className="flex min-w-0 flex-1 flex-col px-3.5 py-3">{children}</div>
     </section>
+  );
+}
+
+function HeaderAction({ action }: { action: HomeAction }) {
+  const style =
+    "-mr-1 ml-auto flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
+  const inner = (
+    <>
+      {action.label}
+      <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+    </>
+  );
+  return "href" in action ? (
+    <Link href={action.href} className={style}>
+      {inner}
+    </Link>
+  ) : (
+    <button type="button" onClick={action.onClick} className={style}>
+      {inner}
+    </button>
   );
 }
 
 /**
  * What a card says when it has nothing to show.
  *
- * Phrased as the state of the project rather than as a fault of the page:
- * most of these cards are empty because nobody has written the thing yet, and
- * saying which thing is the only way a reader could go and fix it.
+ * Shaped so it cannot be mistaken for the content it stands in for: a card
+ * with something in it is a left-aligned list, and this is a centred column
+ * under a drawn placeholder, so an empty card is recognised before a word of
+ * it is read. Every one says the same three things in the same order — what
+ * is missing, what would put it there, and the one way to go and do that —
+ * which is why the two lines are plain strings rather than nodes, and why
+ * the way out is required rather than optional. A card with nothing in it
+ * and nowhere to go is a dead end, and there is always something a reader
+ * could do about an empty project.
  */
 export function HomeEmpty({
-  children,
+  icon,
+  headline,
+  hint,
   action,
 }: {
-  children: React.ReactNode;
-  action?: { label: string; href: string };
+  /** The card's own subject, drawn inside the placeholder. */
+  icon: React.ReactNode;
+  /** What is missing, in a few words: "No standup yet". */
+  headline: string;
+  /** One sentence on what appears here, and what writes it. */
+  hint: string;
+  action: HomeAction;
 }) {
   return (
-    <p className="text-xs leading-relaxed text-muted-foreground">
-      {children}
-      {action && (
-        <>
-          {" "}
-          <Link
-            href={action.href}
-            className="font-medium text-foreground/80 underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
-          >
-            {action.label}
-          </Link>
-        </>
-      )}
-    </p>
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 py-6 text-center">
+      <EmptyArt>{icon}</EmptyArt>
+      <p className="text-xs font-medium text-foreground/80">{headline}</p>
+      <p className="max-w-[38ch] text-[11px] leading-relaxed text-muted-foreground">
+        {hint}
+      </p>
+      <EmptyAction action={action} />
+    </div>
+  );
+}
+
+/** Widths that stop the waiting rows looking like a bar chart. */
+const SKELETON_WIDTHS = ["w-4/5", "w-3/5", "w-11/12", "w-2/3"];
+
+/**
+ * Rows that are still on their way.
+ *
+ * Shaped like the list it stands in for, so the card does not jump when the
+ * answer lands, and plainly unreadable so nobody waits for it to resolve into
+ * words. It matters that this is distinct from the empty state: a card that
+ * has not loaded has not yet earned the right to tell a reader their project
+ * is empty.
+ */
+export function HomeSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="flex flex-col gap-3 py-1">
+      <span className="sr-only">Loading…</span>
+      {Array.from({ length: rows }, (_, index) => (
+        <span key={index} className="flex items-center gap-2" aria-hidden="true">
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted" />
+          <span
+            className={cn(
+              "h-2.5 animate-pulse rounded-full bg-muted",
+              SKELETON_WIDTHS[index % SKELETON_WIDTHS.length],
+            )}
+          />
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The illustration every empty card is drawn under.
+ *
+ * A dashed ring around a soft disc, holding the card's own icon: the ring
+ * means "not filled in yet" the way a dashed outline does everywhere else,
+ * and the icon says which thing is not filled in. Hidden from assistive
+ * technology, where the headline underneath already carries the whole
+ * message and a second rendering of the icon would only repeat it.
+ */
+function EmptyArt({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="relative mb-0.5 flex h-11 w-11 items-center justify-center"
+    >
+      <span className="absolute inset-0 rounded-full border border-dashed border-border" />
+      <span className="absolute inset-[5px] rounded-full bg-gradient-to-b from-muted to-muted/30" />
+      <span className="relative text-muted-foreground/70 [&>svg]:h-[1.125rem] [&>svg]:w-[1.125rem]">
+        {children}
+      </span>
+    </span>
+  );
+}
+
+function EmptyAction({ action }: { action: HomeAction }) {
+  const style = "mt-1 h-7 px-2.5 text-xs";
+  return "href" in action ? (
+    <Button asChild variant="outline" size="sm" className={style}>
+      <Link href={action.href}>{action.label}</Link>
+    </Button>
+  ) : (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={action.onClick}
+      className={style}
+    >
+      {action.label}
+    </Button>
   );
 }

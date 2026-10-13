@@ -1,9 +1,14 @@
 "use client";
 
-import { Eye, ShieldCheck, Users } from "lucide-react";
+import { Eye, ShieldCheck, Users, WifiOff } from "lucide-react";
 import * as React from "react";
 
-import { HomeCard, HomeEmpty } from "@/components/tome/home/HomeCard";
+import {
+  HomeCard,
+  HomeEmpty,
+  HomeSkeleton,
+  homeAction,
+} from "@/components/tome/home/HomeCard";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,16 +53,22 @@ function initials(member: Member): string {
 
 export function HomeTeam({
   slug,
+  settingsHref,
   onOpenSettings,
 }: {
   slug: string;
+  /** Where a team is assigned and the steward is set. */
+  settingsHref: string;
   onOpenSettings?: () => void;
 }) {
   const [roster, setRoster] = React.useState<Roster | null>(null);
   const [failed, setFailed] = React.useState(false);
+  /** Bumped by Try again, which is the whole of the retry. */
+  const [attempt, setAttempt] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
+    setFailed(false);
     fetch(`/api/tome/projects/${encodeURIComponent(slug)}/team`, {
       cache: "no-store",
     })
@@ -71,22 +82,28 @@ export function HomeTeam({
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, attempt]);
 
   const members = roster?.members ?? [];
   const hidden = Math.max(0, (roster?.total ?? 0) - members.length);
+  const settings = homeAction("Settings", settingsHref, onOpenSettings);
 
   return (
     <HomeCard
       title="Team"
       icon={<Users className="h-4 w-4" />}
       count={roster?.total}
-      action={onOpenSettings ? { label: "Settings", onClick: onOpenSettings } : undefined}
+      action={settings}
     >
       {failed ? (
-        <HomeEmpty>Could not load the team.</HomeEmpty>
+        <HomeEmpty
+          icon={<WifiOff />}
+          headline="Could not load the team"
+          hint="The roster request did not come back. Nothing else on this page depends on it."
+          action={{ label: "Try again", onClick: () => setAttempt((n) => n + 1) }}
+        />
       ) : !roster ? (
-        <p className="text-xs text-muted-foreground">Loading…</p>
+        <HomeSkeleton rows={4} />
       ) : (
         <div className="flex flex-col gap-3">
           {roster.team && (
@@ -94,11 +111,20 @@ export function HomeTeam({
           )}
 
           {members.length === 0 ? (
-            <HomeEmpty>
-              {roster.team
-                ? "This team has no members on record yet."
-                : "No team owns this space yet."}
-            </HomeEmpty>
+            <HomeEmpty
+              icon={<Users />}
+              headline={
+                roster.team
+                  ? "No members on record yet"
+                  : "No team owns this space yet"
+              }
+              hint={
+                roster.team
+                  ? "The owning team's roster appears here, with each person's role."
+                  : "Assigning a team gives the project its roster and decides who can read it."
+              }
+              action={settings}
+            />
           ) : (
             <ul className="flex flex-col gap-1.5">
               {members.slice(0, SHOWN).map((member) => (

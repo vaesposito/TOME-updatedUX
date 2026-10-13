@@ -4,7 +4,11 @@ import { Activity, CircleAlert, CornerDownRight } from "lucide-react";
 import * as React from "react";
 
 import { MarkdownRenderer } from "@/components/shared/timeline/MarkdownRenderer";
-import { HomeCard, HomeEmpty } from "@/components/tome/home/HomeCard";
+import {
+  HomeCard,
+  HomeEmpty,
+  homeAction,
+} from "@/components/tome/home/HomeCard";
 import {
   parseStandup,
   summarizeStandupHeadline,
@@ -22,14 +26,19 @@ import {
 export function HomeGlance({
   markdown,
   standupHref,
+  ingestHref,
   onOpenStandup,
+  onOpenIngest,
   onNavigate,
   className,
 }: {
   /** The standup page, or null when the project has none. */
   markdown: string | null;
   standupHref: string;
+  /** Where an ingest is started, which is what writes the standup. */
+  ingestHref: string;
   onOpenStandup?: () => void;
+  onOpenIngest?: () => void;
   onNavigate?: (href: string) => void;
   className?: string;
 }) {
@@ -47,17 +56,15 @@ export function HomeGlance({
       title="At a glance"
       icon={<Activity className="h-4 w-4" />}
       className={className}
-      action={
-        onOpenStandup
-          ? { label: "Standup", onClick: onOpenStandup }
-          : { label: "Standup", href: standupHref }
-      }
+      action={homeAction("Standup", standupHref, onOpenStandup)}
     >
       {!anything ? (
-        <HomeEmpty>
-          No standup has been written yet. The agent writes one on every
-          ingest, summarising where the work stands.
-        </HomeEmpty>
+        <HomeEmpty
+          icon={<Activity />}
+          headline="No standup yet"
+          hint="The agent writes one on every ingest, summarising where the work stands."
+          action={homeAction("Run an ingest", ingestHref, onOpenIngest)}
+        />
       ) : (
         <div className="flex flex-col gap-3">
           {headline ? (

@@ -3,7 +3,11 @@
 import { Target } from "lucide-react";
 import * as React from "react";
 
-import { HomeCard, HomeEmpty } from "@/components/tome/home/HomeCard";
+import {
+  HomeCard,
+  HomeEmpty,
+  homeAction,
+} from "@/components/tome/home/HomeCard";
 import { parseCharterKpis } from "@/lib/tome/curated-facts";
 
 /**
@@ -40,18 +44,15 @@ export function HomeKpis({
       icon={<Target className="h-4 w-4" />}
       count={kpis.length}
       className={className}
-      action={
-        onOpenCharter
-          ? { label: "Charter", onClick: onOpenCharter }
-          : { label: "Charter", href: charterHref }
-      }
+      action={homeAction("Charter", charterHref, onOpenCharter)}
     >
       {kpis.length === 0 ? (
-        <HomeEmpty action={{ label: "Open the charter", href: charterHref }}>
-          {markdown
-            ? "The charter has no KPIs filled in yet."
-            : "This space has no charter page yet."}
-        </HomeEmpty>
+        <HomeEmpty
+          icon={<Target />}
+          headline={markdown ? "No KPIs filled in yet" : "No charter page yet"}
+          hint="The charter's KPI table holds the baseline and the target this project measures itself against."
+          action={homeAction("Open the charter", charterHref, onOpenCharter)}
+        />
       ) : (
         <ul className="flex flex-col gap-2.5">
           {kpis.slice(0, SHOWN).map((kpi) => (

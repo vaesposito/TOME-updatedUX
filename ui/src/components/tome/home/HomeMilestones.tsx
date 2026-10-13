@@ -3,7 +3,11 @@
 import { Flag } from "lucide-react";
 import * as React from "react";
 
-import { HomeCard, HomeEmpty } from "@/components/tome/home/HomeCard";
+import {
+  HomeCard,
+  HomeEmpty,
+  homeAction,
+} from "@/components/tome/home/HomeCard";
 import {
   parseRoadmapMilestones,
   upcomingMilestones,
@@ -60,18 +64,17 @@ export function HomeMilestones({
       icon={<Flag className="h-4 w-4" />}
       count={milestones.length}
       className={className}
-      action={
-        onOpenRoadmap
-          ? { label: "Roadmap", onClick: onOpenRoadmap }
-          : { label: "Roadmap", href: roadmapHref }
-      }
+      action={homeAction("Roadmap", roadmapHref, onOpenRoadmap)}
     >
       {shown.length === 0 ? (
-        <HomeEmpty action={{ label: "Open the roadmap", href: roadmapHref }}>
-          {markdown
-            ? "The roadmap has no milestones filled in yet."
-            : "This space has no roadmap page yet."}
-        </HomeEmpty>
+        <HomeEmpty
+          icon={<Flag />}
+          headline={
+            markdown ? "No milestones filled in yet" : "No roadmap page yet"
+          }
+          hint="Milestones live in the roadmap's own table, each with the target it was agreed for and who owns it."
+          action={homeAction("Open the roadmap", roadmapHref, onOpenRoadmap)}
+        />
       ) : (
         <ul className="flex flex-col gap-2.5">
           {shown.map((milestone) => (

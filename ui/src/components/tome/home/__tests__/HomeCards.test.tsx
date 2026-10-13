@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { HomeAskAgent } from "../HomeAskAgent";
+import { HomeEmpty } from "../HomeCard";
 import { HomeKpis } from "../HomeKpis";
 import { HomeMilestones } from "../HomeMilestones";
 import { HomeNotificationList } from "../HomeNotificationRow";
@@ -30,6 +31,56 @@ function item(overrides: Partial<TomeSummaryItem> = {}): TomeSummaryItem {
     ...overrides,
   };
 }
+
+describe("HomeEmpty", () => {
+  it("says what is missing, what fills it, and one way to go and do that", () => {
+    render(
+      <HomeEmpty
+        icon={<svg />}
+        headline="No roadmap page yet"
+        hint="Milestones live in the roadmap's own table."
+        action={{ label: "Open the roadmap", href: "/roadmap" }}
+      />,
+    );
+    expect(screen.getByText("No roadmap page yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("Milestones live in the roadmap's own table."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open the roadmap" })).toHaveAttribute(
+      "href",
+      "/roadmap",
+    );
+  });
+
+  it("keeps the illustration out of the reading, which the headline carries", () => {
+    const { container } = render(
+      <HomeEmpty
+        icon={<svg data-testid="art" />}
+        headline="Nothing connected yet"
+        hint="A repository gives the agent something to read."
+        action={{ label: "Connect a source", href: "/ingest" }}
+      />,
+    );
+    expect(container.querySelector("[aria-hidden='true']")).toContainElement(
+      screen.getByTestId("art"),
+    );
+  });
+
+  it("offers a view the page can open itself over a route", () => {
+    const onClick = jest.fn();
+    render(
+      <HomeEmpty
+        icon={<svg />}
+        headline="Nothing connected yet"
+        hint="A repository gives the agent something to read."
+        action={{ label: "Connect a source", onClick }}
+      />,
+    );
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Connect a source" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("HomeAskAgent", () => {
   it("sends the typed question on", () => {
@@ -169,11 +220,18 @@ describe("HomeMilestones", () => {
     const { unmount } = render(
       <HomeMilestones markdown={null} roadmapHref="/roadmap" />,
     );
-    expect(screen.getByText(/no roadmap page yet/)).toBeInTheDocument();
+    expect(screen.getByText("No roadmap page yet")).toBeInTheDocument();
     unmount();
 
     render(<HomeMilestones markdown="## Milestones" roadmapHref="/roadmap" />);
-    expect(screen.getByText(/no milestones filled in yet/)).toBeInTheDocument();
+    expect(screen.getByText("No milestones filled in yet")).toBeInTheDocument();
+  });
+
+  it("offers the page that would fill it", () => {
+    render(<HomeMilestones markdown={null} roadmapHref="/roadmap" />);
+    expect(
+      screen.getByRole("link", { name: "Open the roadmap" }),
+    ).toHaveAttribute("href", "/roadmap");
   });
 });
 
@@ -193,11 +251,18 @@ describe("HomeKpis", () => {
 
   it("distinguishes a page that is missing from one that is unfilled", () => {
     const { unmount } = render(<HomeKpis markdown={null} charterHref="/charter" />);
-    expect(screen.getByText(/no charter page yet/)).toBeInTheDocument();
+    expect(screen.getByText("No charter page yet")).toBeInTheDocument();
     unmount();
 
     render(<HomeKpis markdown="## KPIs" charterHref="/charter" />);
-    expect(screen.getByText(/no KPIs filled in yet/)).toBeInTheDocument();
+    expect(screen.getByText("No KPIs filled in yet")).toBeInTheDocument();
+  });
+
+  it("offers the page that would fill it", () => {
+    render(<HomeKpis markdown={null} charterHref="/charter" />);
+    expect(
+      screen.getByRole("link", { name: "Open the charter" }),
+    ).toHaveAttribute("href", "/charter");
   });
 });
 
@@ -225,7 +290,7 @@ describe("HomeTeam", () => {
 
   it("lists the team and counts the members it did not show", async () => {
     answer(roster);
-    render(<HomeTeam slug="example-project" />);
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
     expect(await screen.findByText("Platform Guild")).toBeInTheDocument();
     expect(screen.getByText("Dana Okafor")).toBeInTheDocument();
     expect(screen.getByText("and 7 others")).toBeInTheDocument();
@@ -233,34 +298,53 @@ describe("HomeTeam", () => {
 
   it("calls out the one role that is not simply a member", async () => {
     answer(roster);
-    render(<HomeTeam slug="example-project" />);
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
     expect(await screen.findByText("owner")).toBeInTheDocument();
     expect(screen.queryByText("member")).not.toBeInTheDocument();
   });
 
   it("says who can edit and how many are listening", async () => {
     answer(roster);
-    render(<HomeTeam slug="example-project" />);
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
     expect(await screen.findByText("Platform Guild can edit")).toBeInTheDocument();
     expect(screen.getByText("1 person is watching")).toBeInTheDocument();
   });
 
   it("reports an unowned space rather than an empty list", async () => {
     answer({ team: null, members: [], total: 0, steward: null, watchers: 0 });
-    render(<HomeTeam slug="example-project" />);
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
     expect(await screen.findByText(/No team owns this space yet/)).toBeInTheDocument();
     expect(screen.getByText("No data steward assigned")).toBeInTheDocument();
   });
 
   it("says so when the roster cannot be read", async () => {
     answer(null, false);
-    render(<HomeTeam slug="example-project" />);
-    expect(await screen.findByText("Could not load the team.")).toBeInTheDocument();
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
+    expect(await screen.findByText("Could not load the team")).toBeInTheDocument();
+  });
+
+  it("waits rather than reporting an empty team it has not read yet", () => {
+    (global.fetch as jest.Mock).mockImplementation(() => new Promise(() => {}));
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByText(/No members on record/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No team owns/)).not.toBeInTheDocument();
+  });
+
+  it("reads the roster again when asked to try again", async () => {
+    (global.fetch as jest.Mock)
+      .mockImplementationOnce(() => Promise.reject(new Error("offline")))
+      .mockImplementation(() =>
+        Promise.resolve({ ok: true, status: 200, json: async () => ({ data: roster }) }),
+      );
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Dana Okafor")).toBeInTheDocument();
   });
 
   it("asks only for the project it was given", async () => {
     answer(roster);
-    render(<HomeTeam slug="example-project" />);
+    render(<HomeTeam slug="example-project" settingsHref="/settings" />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
       "/api/tome/projects/example-project/team",

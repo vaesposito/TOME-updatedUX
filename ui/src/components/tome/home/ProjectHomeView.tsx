@@ -18,6 +18,7 @@ import { AtSign, CircleAlert, Newspaper, WifiOff } from "lucide-react";
 import * as React from "react";
 
 import { HomeAskAgent } from "@/components/tome/home/HomeAskAgent";
+import { HomeChildren } from "@/components/tome/home/HomeChildren";
 import { HomeCustomizeBar } from "@/components/tome/home/HomeCustomizeBar";
 import {
   HomeCard,
@@ -37,10 +38,12 @@ import {
   TOME_HOME_WIDGETS,
   isCustomized,
   visibleWidgets,
+  widgetAppliesTo,
   type TomeHomeWidgetId,
 } from "@/lib/tome/home-widgets";
 import { wikiPageHref } from "@/lib/tome/wiki-page-href";
 import { useTomeHomeWidgetsStore } from "@/store/tome-home-widgets-store";
+import type { ProjectType } from "@/types/projects";
 import type { TomeSummary, TomeSummaryItem } from "@/types/tome-summary";
 
 /**
@@ -70,6 +73,17 @@ import type { TomeSummary, TomeSummaryItem } from "@/types/tome-summary";
 /** Rows per notification card. Enough to be useful, short enough to scan. */
 const FEED_LIMIT = 5;
 
+/**
+ * Rows the digest is asked for, as opposed to the rows a card shows.
+ *
+ * A card shows five and then says how many there are, and that second number
+ * has to be the entity's rather than the page size's. At BHAG level, where
+ * the rows arrive from a dozen places at once, the difference between "5" and
+ * "5 of 23 across 7 spaces" is the difference between a card that understates
+ * the portfolio and one that describes it.
+ */
+const FEED_FETCH = 50;
+
 const STANDUP_PAGE = "standup.md";
 const ROADMAP_PAGE = "roadmap.md";
 const CHARTER_PAGE = "charter.md";
@@ -77,6 +91,7 @@ const CHARTER_PAGE = "charter.md";
 export function ProjectHomeView({
   slug,
   title,
+  kind,
   pages,
   sources,
   onAsk,
@@ -89,6 +104,18 @@ export function ProjectHomeView({
   slug: string;
   /** The space's own name, used where the page addresses the reader. */
   title: string;
+  /**
+   * What kind of space this is.
+   *
+   * It decides which cards exist — only a BHAG or an Area has anything below
+   * it to list — and the wording wherever a card would otherwise tell the
+   * reader of a container to go and do a project's job.
+   *
+   * Undefined while the entity's own record is still loading, which is not
+   * the same as a project: the cards that would word themselves differently
+   * wait for it rather than guess.
+   */
+  kind?: ProjectType;
   /** Every page's markdown, as the wiki beside this already holds it. */
   pages?: Record<string, string>;
   sources: Record<string, unknown> | null;
@@ -110,9 +137,10 @@ export function ProjectHomeView({
     // The whole space, as the digest read it: the cards below divide it up
     // themselves, and narrowing it here would only cost another request when
     // a reader wanted the rest.
-    fetch(`/api/projects/${encodeURIComponent(slug)}/summary?scope=all`, {
-      cache: "no-store",
-    })
+    fetch(
+      `/api/projects/${encodeURIComponent(slug)}/summary?scope=all&rows=${FEED_FETCH}`,
+      { cache: "no-store" },
+    )
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((body) => {
         if (!cancelled) setSummary((body?.data ?? body) as TomeSummary);
@@ -185,7 +213,15 @@ export function ProjectHomeView({
 
   React.useEffect(() => initialize(), [initialize]);
 
-  const shown = React.useMemo(() => visibleWidgets(layout), [layout]);
+  const container = kind === "bhag" || kind === "area";
+  /** The entity's own record, which decides which cards exist and how they read. */
+  const metaLoading = kind === undefined;
+  /** The wiki's pages, which three of the cards are entirely made of. */
+  const pagesLoading = pages === undefined;
+  const shown = React.useMemo(
+    () => visibleWidgets(layout, kind ?? "project"),
+    [layout, kind],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -250,6 +286,7 @@ export function ProjectHomeView({
             )
           }
         />
+        <FeedScale items={feeds.attention} container={container} />
       </HomeCard>
     ),
 
@@ -276,6 +313,7 @@ export function ProjectHomeView({
             )
           }
         />
+        <FeedScale items={feeds.tagged} container={container} />
       </HomeCard>
     ),
 
@@ -296,19 +334,38 @@ export function ProjectHomeView({
               <HomeEmpty
                 icon={<Newspaper />}
                 headline="Nothing has happened yet"
-                hint="Page edits, decisions and status updates appear here as they land."
-                action={{ label: "Connect a source", href: ingestHref }}
+                hint={
+                  container
+                    ? "Page edits, decisions and status updates from everything below appear here as they land."
+                    : "Page edits, decisions and status updates appear here as they land."
+                }
+                action={{
+                  label: container ? "Ingest & synthesize" : "Connect a source",
+                  href: ingestHref,
+                }}
               />
             )
           }
         />
+        <FeedScale items={feeds.updates} container={container} />
       </HomeCard>
     ),
+
+    children: container ? (
+      <HomeChildren
+        slug={slug}
+        kind={kind === "bhag" ? "bhag" : "area"}
+        entities={summary?.scope_entities}
+        settingsHref={settingsHref}
+      />
+    ) : null,
 
     glance: (
       <HomeGlance
         markdown={page(STANDUP_PAGE)}
         standupHref={wikiPageHref(slug, STANDUP_PAGE)}
+        loading={pagesLoading || metaLoading}
+        container={container}
         ingestHref={ingestHref}
         onOpenStandup={onOpenStandup}
         onOpenIngest={onOpenIngest}
@@ -319,6 +376,7 @@ export function ProjectHomeView({
     milestones: (
       <HomeMilestones
         markdown={page(ROADMAP_PAGE)}
+        loading={pagesLoading}
         roadmapHref={wikiPageHref(slug, ROADMAP_PAGE)}
         onOpenRoadmap={openPage(ROADMAP_PAGE)}
       />
@@ -335,6 +393,8 @@ export function ProjectHomeView({
     sources: (
       <HomeSources
         sources={sources}
+        loading={metaLoading}
+        container={container}
         ingestHref={ingestHref}
         onOpenIngest={onOpenIngest}
       />
@@ -343,6 +403,7 @@ export function ProjectHomeView({
     kpis: (
       <HomeKpis
         markdown={page(CHARTER_PAGE)}
+        loading={pagesLoading}
         charterHref={wikiPageHref(slug, CHARTER_PAGE)}
         onOpenCharter={openPage(CHARTER_PAGE)}
       />
@@ -353,7 +414,9 @@ export function ProjectHomeView({
     <div className="flex flex-col gap-3 p-5" data-tour="project-home">
       <HomeCustomizeBar
         editing={editing}
-        hidden={layout.hidden}
+        hidden={layout.hidden.filter((id) =>
+          widgetAppliesTo(id as TomeHomeWidgetId, kind ?? "project"),
+        )}
         customized={isCustomized(layout)}
         onEdit={() => setEditing(true)}
         onDone={() => setEditing(false)}
@@ -389,5 +452,31 @@ export function ProjectHomeView({
         </SortableContext>
       </DndContext>
     </div>
+  );
+}
+
+/**
+ * How much of a feed is on screen, and how far it reaches.
+ *
+ * Only shown once there is more than fits, and the reach only at container
+ * level: on a project every row comes from the project, so saying so would be
+ * noise. The count of places is taken from the rows that were loaded, which
+ * is what the sentence is about — it describes this card's contents, not a
+ * census of the portfolio.
+ */
+function FeedScale({
+  items,
+  container,
+}: {
+  items: readonly TomeSummaryItem[];
+  container: boolean;
+}) {
+  if (items.length <= FEED_LIMIT) return null;
+  const places = new Set(items.map((item) => item.entity_slug)).size;
+  return (
+    <p className="mt-2 shrink-0 text-[11px] text-muted-foreground">
+      Showing {FEED_LIMIT} of {items.length}
+      {container && places > 1 ? ` across ${places} spaces` : ""}.
+    </p>
   );
 }

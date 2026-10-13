@@ -6,6 +6,7 @@ import * as React from "react";
 import {
   HomeCard,
   HomeEmpty,
+  HomeSkeleton,
   homeAction,
 } from "@/components/tome/home/HomeCard";
 import { parseCharterKpis } from "@/lib/tome/curated-facts";
@@ -26,12 +27,21 @@ export function HomeKpis({
   charterHref,
   onOpenCharter,
   className,
+  loading = false,
 }: {
   /** The charter page, or null when the project has none. */
   markdown: string | null;
   charterHref: string;
   onOpenCharter?: () => void;
   className?: string;
+  /**
+   * Whether the page this reads is still on its way.
+   *
+   * Waiting and empty must not look alike: telling a reader the space has no
+   * charter, a moment before one arrives, is worse than telling them nothing
+   * yet.
+   */
+  loading?: boolean;
 }) {
   const kpis = React.useMemo(
     () => (markdown ? parseCharterKpis(markdown) : []),
@@ -46,7 +56,9 @@ export function HomeKpis({
       className={className}
       action={homeAction("Charter", charterHref, onOpenCharter)}
     >
-      {kpis.length === 0 ? (
+      {loading ? (
+        <HomeSkeleton />
+      ) : kpis.length === 0 ? (
         <HomeEmpty
           icon={<Target />}
           headline={markdown ? "No KPIs filled in yet" : "No charter page yet"}

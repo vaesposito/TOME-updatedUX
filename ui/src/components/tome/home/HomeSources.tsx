@@ -7,6 +7,7 @@ import { sourcesFromProject } from "@/components/tome/IngestPanel";
 import {
   HomeCard,
   HomeEmpty,
+  HomeSkeleton,
   homeAction,
 } from "@/components/tome/home/HomeCard";
 
@@ -29,11 +30,23 @@ export function HomeSources({
   sources,
   ingestHref,
   onOpenIngest,
+  container = false,
+  loading = false,
 }: {
   /** The project's `sources`, in whatever shape it was stored. */
   sources: Record<string, unknown> | null;
   ingestHref: string;
   onOpenIngest?: () => void;
+  /** Whether this space holds other spaces, which changes only the wording. */
+  container?: boolean;
+  /**
+   * Whether the page this reads is still on its way.
+   *
+   * Waiting and empty must not look alike: telling a reader nothing is connected, a moment
+   * before a source arrives, is worse than telling them nothing
+   * yet.
+   */
+  loading?: boolean;
 }) {
   const rows: SourceRow[] = React.useMemo(() => {
     if (!sources) return [];
@@ -55,12 +68,22 @@ export function HomeSources({
       count={total}
       action={homeAction("Ingest", ingestHref, onOpenIngest)}
     >
-      {rows.length === 0 ? (
+      {loading ? (
+        <HomeSkeleton />
+      ) : rows.length === 0 ? (
         <HomeEmpty
           icon={<Database />}
           headline="Nothing connected yet"
-          hint="A repository, a Confluence space or a Webex room is what gives the agent something to read."
-          action={homeAction("Connect a source", ingestHref, onOpenIngest)}
+          hint={
+            container
+              ? "Sources usually sit on the projects below this one. This space can still take its own."
+              : "A repository, a Confluence space or a Webex room is what gives the agent something to read."
+          }
+          action={homeAction(
+            container ? "Ingest & synthesize" : "Connect a source",
+            ingestHref,
+            onOpenIngest,
+          )}
         />
       ) : (
         <ul className="flex flex-col gap-2.5">

@@ -2277,6 +2277,11 @@ export function TomeWiki({ slug }: { slug: string }) {
                 <ProjectHomeView
                   slug={slug}
                   title={projectTitle ?? slug}
+                  // Left undefined until the entity's own record is in, so
+                  // the cards whose wording depends on the kind wait rather
+                  // than telling the reader of a BHAG to connect a
+                  // repository and then changing their mind.
+                  kind={projectMetaLoading ? undefined : projectType}
                   // The wiki beside this has already loaded every page, so
                   // the cards reading the curated ones cost nothing.
                   pages={data?.pages}

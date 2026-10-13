@@ -51,12 +51,17 @@ export const GET = withErrorHandler(
 
     const requested = request.nextUrl.searchParams.get("scope");
     const scope: TomeSummaryScope = requested === "for_me" ? "for_me" : "all";
+    // A caller that divides the rows between cards and then counts them has
+    // to be given more than it shows, or its counts describe the digest's
+    // page size rather than the entity. Bounded in getEntitySummary.
+    const rows = Number(request.nextUrl.searchParams.get("rows"));
 
     return successResponse(
       await getEntitySummary({
         entity: project,
         principal: { subject, email: user.email ?? "" },
         scope,
+        rows,
       }),
     );
   },

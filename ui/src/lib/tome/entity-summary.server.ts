@@ -21,6 +21,9 @@ import {
 /** Rows rendered per section before the reader is pointed at the full inbox. */
 const PER_SECTION = 5;
 
+/** The ceiling on what a caller may ask for, since the query itself is bounded. */
+const MAX_PER_SECTION = 50;
+
 /** How far back the "since" strip and the Decided section look. */
 const WINDOW_DAYS = 30;
 
@@ -201,6 +204,8 @@ export async function getEntitySummary(input: {
   entity: Pick<ProjectDocument, "slug" | "title" | "type" | "labels">;
   principal: SummaryPrincipal;
   scope?: TomeSummaryScope;
+  /** Rows to return per section. Defaults to a digest's worth. */
+  rows?: number;
 }): Promise<TomeSummary> {
   const scope: TomeSummaryScope = input.scope === "for_me" ? "for_me" : "all";
   const scopeEntities = await resolveEntitySubtree(input.entity);
@@ -250,6 +255,30 @@ export async function getEntitySummary(input: {
   let recentlyResolved = 0;
   let unread = 0;
 
+  /**
+   * What each entity in the subtree is asking for, on its own.
+   *
+   * Filled in on the way past: the rows are already here and already judged,
+   * so a BHAG can say which of its Areas and Projects wants something
+   * without a second read of the collection. Counted by the same sections
+   * the digest uses, so a child's number and the Needs attention card can
+   * never drift apart.
+   */
+  const perEntity = new Map<
+    string,
+    { attention: number; unread: number; latest_at?: string }
+  >();
+  const forEntity = (slug: string) => {
+    const existing = perEntity.get(slug);
+    if (existing) return existing;
+    const created: { attention: number; unread: number; latest_at?: string } = {
+      attention: 0,
+      unread: 0,
+    };
+    perEntity.set(slug, created);
+    return created;
+  };
+
   for (const row of rows) {
     const inScope = Boolean(row.entity_slug && scopeSlugs.has(row.entity_slug));
     const reason = reasonFor(row, input.principal, watched, inScope);
@@ -265,6 +294,14 @@ export async function getEntitySummary(input: {
     // older settled items would crowd out everything still in motion.
     const key = sectionFor(row, inScope);
     if (key === "decided" && (row.resolved_at ?? row.created_at) < since) continue;
+
+    if (inScope && row.entity_slug) {
+      const tally = forEntity(row.entity_slug);
+      if (key === "attention" || key === "open_decisions") tally.attention += 1;
+      if (!read) tally.unread += 1;
+      // The rows arrive newest first, so the first one seen is the newest.
+      tally.latest_at ??= row.created_at;
+    }
 
     const known = titleBySlug.get(row.entity_slug ?? "");
     buckets.get(key)?.push({
@@ -319,13 +356,22 @@ export async function getEntitySummary(input: {
     unread,
   };
 
+  // A digest is read a section at a time, so five rows is the right length
+  // for one. A dashboard divides the same rows between cards and then says
+  // how many there are, which only works if it was given them: a caller that
+  // means to count has to be able to ask for more than it shows.
+  // A request for nothing, or for something that is not a number, is a
+  // caller with no opinion rather than one asking for an empty page.
+  const asked = Math.trunc(input.rows ?? 0);
+  const perSection = asked > 0 ? Math.min(asked, MAX_PER_SECTION) : PER_SECTION;
+
   const sections: TomeSummarySection[] = SECTION_ORDER.map((key) => {
     const items = buckets.get(key) ?? [];
     return {
       key,
       title: SECTION_META[key].title,
       description: SECTION_META[key].description,
-      items: items.slice(0, PER_SECTION),
+      items: items.slice(0, perSection),
       total: items.length,
     };
   }).filter((section) => section.total > 0);
@@ -336,7 +382,10 @@ export async function getEntitySummary(input: {
       title: input.entity.title,
       type: input.entity.type ?? "project",
     },
-    scope_entities: scopeEntities,
+    scope_entities: scopeEntities.map((entry) => ({
+      ...entry,
+      ...(perEntity.get(entry.slug) ?? {}),
+    })),
     scope,
     headline: headlineFor(counts, input.entity.title),
     counts,

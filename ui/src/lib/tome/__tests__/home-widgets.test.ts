@@ -4,6 +4,7 @@ import {
   isCustomized,
   parseLayout,
   visibleWidgets,
+  widgetAppliesTo,
   widgetLabel,
   widgetWidthClass,
   withHidden,
@@ -32,6 +33,7 @@ describe("visibleWidgets", () => {
       "attention",
       "tagged",
       "updates",
+      "children",
       "glance",
       "milestones",
       "sources",
@@ -162,8 +164,66 @@ describe("the registry", () => {
     expect(widgetWidthClass(1)).toBe("");
   });
 
-  it("fills whole rows of three, so the default page has no gaps", () => {
-    const total = TOME_HOME_WIDGETS.reduce((sum, w) => sum + w.width, 0);
-    expect(total % 3).toBe(0);
+  it("fills whole rows of three, for every kind of space", () => {
+    for (const kind of ["project", "bhag", "area"] as const) {
+      const total = TOME_HOME_WIDGETS.filter((w) =>
+        widgetAppliesTo(w.id, kind),
+      ).reduce((sum, w) => sum + w.width, 0);
+      expect(total % 3).toBe(0);
+    }
+  });
+});
+
+describe("kinds", () => {
+  it("offers a project nothing about what is below it", () => {
+    expect(visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "project")).not.toContain(
+      "children",
+    );
+    expect(widgetAppliesTo("children", "project")).toBe(false);
+  });
+
+  it("lists what is below a BHAG and an Area", () => {
+    for (const kind of ["bhag", "area"] as const) {
+      expect(visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, kind)).toContain(
+        "children",
+      );
+      expect(widgetAppliesTo("children", kind)).toBe(true);
+    }
+  });
+
+  it("puts it where it was designed to go, closing the recent band", () => {
+    const shown = visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "bhag");
+    expect(shown[shown.indexOf("children") - 1]).toBe("updates");
+  });
+
+  it("keeps a place made on a BHAG through a move made on a project", () => {
+    // Placed first while reading a BHAG, where the card is on show.
+    const placed = withOrder(DEFAULT_TOME_HOME_LAYOUT, [
+      "children",
+      ...visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "bhag").filter(
+        (id) => id !== "children",
+      ),
+    ]);
+    expect(visibleWidgets(placed, "bhag")[0]).toBe("children");
+
+    // Then something moved on a project's home, where it is not on show and
+    // so is not in the dragged list. Its place has to survive that.
+    const later = withOrder(placed, [
+      "team",
+      ...visibleWidgets(placed, "project").filter((id) => id !== "team"),
+    ]);
+    expect(visibleWidgets(later, "project")).not.toContain("children");
+    expect(visibleWidgets(later, "bhag")).toContain("children");
+    expect(visibleWidgets(later, "bhag").indexOf("children")).toBeLessThan(
+      visibleWidgets(later, "bhag").indexOf("ask"),
+    );
+  });
+
+  it("applies every other card to every kind", () => {
+    for (const widget of TOME_HOME_WIDGETS) {
+      if (widget.id === "children") continue;
+      expect(widgetAppliesTo(widget.id, "project")).toBe(true);
+      expect(widgetAppliesTo(widget.id, "bhag")).toBe(true);
+    }
   });
 });

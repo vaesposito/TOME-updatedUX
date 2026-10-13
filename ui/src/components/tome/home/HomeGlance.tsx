@@ -7,6 +7,7 @@ import { MarkdownRenderer } from "@/components/shared/timeline/MarkdownRenderer"
 import {
   HomeCard,
   HomeEmpty,
+  HomeSkeleton,
   homeAction,
 } from "@/components/tome/home/HomeCard";
 import {
@@ -30,6 +31,8 @@ export function HomeGlance({
   onOpenStandup,
   onOpenIngest,
   onNavigate,
+  container = false,
+  loading = false,
   className,
 }: {
   /** The standup page, or null when the project has none. */
@@ -37,6 +40,23 @@ export function HomeGlance({
   standupHref: string;
   /** Where an ingest is started, which is what writes the standup. */
   ingestHref: string;
+  /**
+   * Whether this space holds other spaces rather than work of its own.
+   *
+   * Only the wording changes. A BHAG's standup is still its own standup,
+   * written at its own altitude by the same agent on the same page — what
+   * differs is that nobody connects a repository to a BHAG, so telling its
+   * reader to go and do that would send them to the wrong place.
+   */
+  container?: boolean;
+  /**
+   * Whether the page this reads is still on its way.
+   *
+   * Waiting and empty must not look alike: telling a reader the space has no
+   * standup, a moment before one arrives, is worse than telling them nothing
+   * yet.
+   */
+  loading?: boolean;
   onOpenStandup?: () => void;
   onOpenIngest?: () => void;
   onNavigate?: (href: string) => void;
@@ -58,12 +78,22 @@ export function HomeGlance({
       className={className}
       action={homeAction("Standup", standupHref, onOpenStandup)}
     >
-      {!anything ? (
+      {loading ? (
+        <HomeSkeleton />
+      ) : !anything ? (
         <HomeEmpty
           icon={<Activity />}
           headline="No standup yet"
-          hint="The agent writes one on every ingest, summarising where the work stands."
-          action={homeAction("Run an ingest", ingestHref, onOpenIngest)}
+          hint={
+            container
+              ? "The agent writes one when it synthesizes, drawing on everything below this."
+              : "The agent writes one on every ingest, summarising where the work stands."
+          }
+          action={homeAction(
+            container ? "Ingest & synthesize" : "Run an ingest",
+            ingestHref,
+            onOpenIngest,
+          )}
         />
       ) : (
         <div className="flex flex-col gap-3">

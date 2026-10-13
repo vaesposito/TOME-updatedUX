@@ -12,11 +12,14 @@
  * point; a per-project layout would be a setting nobody finished.
  */
 
+import type { ProjectType } from "@/types/projects";
+
 export type TomeHomeWidgetId =
   | "ask"
   | "attention"
   | "tagged"
   | "updates"
+  | "children"
   | "glance"
   | "milestones"
   | "team"
@@ -29,6 +32,15 @@ export interface TomeHomeWidget {
   label: string;
   /** Columns on a wide window, of three. */
   width: 1 | 2 | 3;
+  /**
+   * The kinds of entity this card says anything about. Omitted means all of
+   * them.
+   *
+   * A Project has nothing below it, so a card listing what is below would be
+   * permanently empty there — and an empty card is worse than an absent one,
+   * because it reads as something broken rather than something inapplicable.
+   */
+  kinds?: readonly ProjectType[];
 }
 
 /**
@@ -43,6 +55,12 @@ export const TOME_HOME_WIDGETS: readonly TomeHomeWidget[] = [
   { id: "attention", label: "Needs attention", width: 2 },
   { id: "tagged", label: "Tagged for you", width: 1 },
   { id: "updates", label: "Latest updates", width: 3 },
+  {
+    id: "children",
+    label: "Areas & projects",
+    width: 3,
+    kinds: ["bhag", "area"],
+  },
   { id: "glance", label: "At a glance", width: 2 },
   { id: "milestones", label: "Milestones", width: 1 },
   { id: "team", label: "Team", width: 1 },
@@ -70,6 +88,15 @@ export const DEFAULT_TOME_HOME_LAYOUT: TomeHomeLayout = {
 
 export function widgetLabel(id: TomeHomeWidgetId): string {
   return TOME_HOME_WIDGETS.find((widget) => widget.id === id)?.label ?? id;
+}
+
+/** Whether this card means anything for an entity of this kind. */
+export function widgetAppliesTo(
+  id: TomeHomeWidgetId,
+  kind: ProjectType,
+): boolean {
+  const widget = TOME_HOME_WIDGETS.find((entry) => entry.id === id);
+  return !widget?.kinds || widget.kinds.includes(kind);
 }
 
 /** Tailwind's share of the three columns, on windows wide enough to have them. */
@@ -113,23 +140,39 @@ function clean(ids: readonly unknown[]): TomeHomeWidgetId[] {
   );
 }
 
-/** The cards to render, in the order to render them. */
-export function visibleWidgets(layout: TomeHomeLayout): TomeHomeWidgetId[] {
+/**
+ * The cards to render, in the order to render them.
+ *
+ * The kind filters the result rather than the arrangement: an order and a
+ * hidden set are the reader's, and they are the same wherever they are, so a
+ * card that does not apply to the entity being read is left out of the answer
+ * without being forgotten.
+ */
+export function visibleWidgets(
+  layout: TomeHomeLayout,
+  kind?: ProjectType,
+): TomeHomeWidgetId[] {
   const hidden = new Set(clean(layout.hidden));
   const shown = clean(layout.order).filter((id) => !hidden.has(id));
   for (const id of DEFAULT_ORDER) {
     if (hidden.has(id) || shown.includes(id)) continue;
     shown.splice(insertionIndex(id, shown, DEFAULT_ORDER), 0, id);
   }
-  return shown;
+  return kind ? shown.filter((id) => widgetAppliesTo(id, kind)) : shown;
 }
 
 /**
  * Record a new order for the cards on show.
  *
- * The cards behind the eye are not in the dragged list, so they are threaded
- * back in beside whoever they used to follow. Without that they would all
- * collect at the front of the order and reappear in the wrong place.
+ * Not every card is in the dragged list: one behind the eye is not, and nor
+ * is one that says nothing about the kind of space being read — a project's
+ * home has no card for what is below it. Those are threaded back in beside
+ * whoever they used to follow, so moving a card here cannot quietly forget
+ * where the reader put a card they can only see somewhere else.
+ *
+ * Only the reader's own order is consulted, never the shipped one. A card
+ * they have never placed has no place to keep, and reading it out of the
+ * shipped order would drag its neighbours along behind it.
  */
 export function withOrder(
   layout: TomeHomeLayout,

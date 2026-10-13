@@ -6,6 +6,7 @@ import * as React from "react";
 import {
   HomeCard,
   HomeEmpty,
+  HomeSkeleton,
   homeAction,
 } from "@/components/tome/home/HomeCard";
 import {
@@ -42,12 +43,21 @@ export function HomeMilestones({
   roadmapHref,
   onOpenRoadmap,
   className,
+  loading = false,
 }: {
   /** The roadmap page, or null when the project has none. */
   markdown: string | null;
   roadmapHref: string;
   onOpenRoadmap?: () => void;
   className?: string;
+  /**
+   * Whether the page this reads is still on its way.
+   *
+   * Waiting and empty must not look alike: telling a reader the space has no
+   * roadmap, a moment before one arrives, is worse than telling them nothing
+   * yet.
+   */
+  loading?: boolean;
 }) {
   const milestones = React.useMemo(
     () => (markdown ? parseRoadmapMilestones(markdown) : []),
@@ -66,7 +76,9 @@ export function HomeMilestones({
       className={className}
       action={homeAction("Roadmap", roadmapHref, onOpenRoadmap)}
     >
-      {shown.length === 0 ? (
+      {loading ? (
+        <HomeSkeleton />
+      ) : shown.length === 0 ? (
         <HomeEmpty
           icon={<Flag />}
           headline={

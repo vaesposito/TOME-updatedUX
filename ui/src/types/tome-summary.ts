@@ -92,6 +92,19 @@ export interface TomeSummaryEntity {
   slug: string;
   title: string;
   type: ProjectType;
+  /** The tier above, so a BHAG's projects can be grouped under their Area. */
+  parent_slug?: string;
+  /**
+   * What this entity alone is asking of the reader.
+   *
+   * Counted while the digest walks its rows, so a container can say which of
+   * its children wants something without a second read. Absent on a Project's
+   * own summary, where the cards below already are the answer.
+   */
+  attention?: number;
+  unread?: number;
+  /** Newest thing seen from it, ISO. Absent when it has sent nothing. */
+  latest_at?: string;
 }
 
 export interface TomeSummaryCounts {

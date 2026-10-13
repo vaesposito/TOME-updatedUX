@@ -63,7 +63,7 @@ describe("the notifications walkthrough", () => {
   });
 
   // A project with no wiki page can still show its Watch button and its
-  // What's new; only the step about saving a page has nothing to open.
+  // Home; only the step about saving a page has nothing to open.
   it("still visits a project that has no pages", () => {
     const empty: TourSubject = { slug: "example-project", pagePath: null };
     expect(step("watch").route?.(empty)).toBe("/projects/example-project/tome");

@@ -8,6 +8,7 @@ import {
   Undo2,
   VolumeX,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import {
@@ -40,6 +41,9 @@ import {
 } from "@/types/in-app-notification";
 
 const EMPTY_FOLLOW_TREE: FollowTreeData = { nodes: [], total_unread: 0 };
+
+/** Guards the tab a link may ask for against the ones that exist. */
+const INBOX_TABS: readonly NotificationInboxTab[] = ["unread", "all", "dismissed"];
 
 /**
  * How the list can be carved up, in the order offered.
@@ -125,11 +129,23 @@ function selectedEntities(
  */
 export function NotificationInbox() {
   const { toast } = useToast();
+  const params = useSearchParams();
   const [view, setView] = React.useState<NotificationPageView>("inbox");
-  const [tab, setTab] = React.useState<NotificationInboxTab>("unread");
-  const [filter, setFilter] = React.useState<NotificationInboxFilter>(
-    EMPTY_NOTIFICATION_FILTER,
+  // Arriving from a space's own page means arriving with a question about
+  // that space, so a link may say which one and which slice to open on. Only
+  // the starting point: the filter bar owns it from here, and changing it
+  // does not rewrite the URL.
+  const [tab, setTab] = React.useState<NotificationInboxTab>(() =>
+    INBOX_TABS.includes(params.get("tab") as NotificationInboxTab)
+      ? (params.get("tab") as NotificationInboxTab)
+      : "unread",
   );
+  const [filter, setFilter] = React.useState<NotificationInboxFilter>(() => {
+    const entity = params.get("entity")?.trim();
+    return entity
+      ? { ...EMPTY_NOTIFICATION_FILTER, entity }
+      : EMPTY_NOTIFICATION_FILTER;
+  });
   const [data, setData] = React.useState<NotificationInboxResponse>(EMPTY);
   const [followTree, setFollowTree] = React.useState<FollowTreeData>(
     EMPTY_FOLLOW_TREE,

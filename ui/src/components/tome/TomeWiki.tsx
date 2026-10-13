@@ -29,6 +29,7 @@ import {
   MessageSquare,
   MessagesSquare,
   Minimize2,
+  House,
   Newspaper,
   PanelLeftClose,
   PanelLeftOpen,
@@ -100,7 +101,7 @@ import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { WatchToggle } from "@/components/tome/WatchToggle";
 import { isTourRunning } from "@/components/tour/notification-tour";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
-import { TomeSummaryView } from "@/components/tome/TomeSummaryView";
+import { ProjectHomeView } from "@/components/tome/home/ProjectHomeView";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import {
   DeleteFolderDialog,
@@ -372,7 +373,16 @@ export function TomeWiki({ slug }: { slug: string }) {
     teamName: string | null;
     tags: string[];
     dataSteward: string | null;
-  }>({ description: null, status: null, teamName: null, tags: [], dataSteward: null });
+    /** Kept whole for Home's Sources card, which reads it as Ingest does. */
+    sources: Record<string, unknown> | null;
+  }>({
+    description: null,
+    status: null,
+    teamName: null,
+    tags: [],
+    dataSteward: null,
+    sources: null,
+  });
   const [projectMetaLoading, setProjectMetaLoading] = useState(true);
   const [reportVisibility, setReportVisibility] = useState<TomeReportVisibility>(
     DEFAULT_TOME_REPORT_VISIBILITY,
@@ -616,6 +626,7 @@ export function TomeWiki({ slug }: { slug: string }) {
       teamName: typeof p.team_name === "string" ? p.team_name : null,
       tags: Array.isArray(p.tags) ? p.tags.filter((t): t is string => typeof t === "string") : [],
       dataSteward: dataStewardLabel(p.data_steward) || null,
+      sources: (p.sources as Record<string, unknown> | undefined) ?? null,
     });
   }, []);
 
@@ -1716,12 +1727,12 @@ export function TomeWiki({ slug }: { slug: string }) {
               <div className="flex flex-col p-3">
                 <div className="flex flex-col gap-1">
                   <NavItem
-                    icon={<Newspaper className="h-4 w-4" />}
-                    label="What's new"
+                    icon={<House className="h-4 w-4" />}
+                    label="Home"
                     active={navActive.summary}
                     onClick={() => navigate({ kind: "summary" })}
-                    tipTitle="What's new"
-                    tipDescription="What has happened here lately: what needs attention, what was decided, and what the teams below have shipped."
+                    tipTitle="Home"
+                    tipDescription="What this space is and how it is going: who works on it, what needs attention, what was agreed, and where its knowledge comes from."
                   />
                   <NavItem
                     icon={<MessageSquare className="h-4 w-4" />}
@@ -2263,9 +2274,24 @@ export function TomeWiki({ slug }: { slug: string }) {
           <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             {view.kind === "summary" ? (
               <ScrollArea className="min-h-0 min-w-0 flex-1">
-                <TomeSummaryView
+                <ProjectHomeView
                   slug={slug}
-                  onOpenAgent={() => navigate({ kind: "agent" })}
+                  title={projectTitle ?? slug}
+                  // The wiki beside this has already loaded every page, so
+                  // the cards reading the curated ones cost nothing.
+                  pages={data?.pages}
+                  sources={projectMeta.sources}
+                  onAsk={(question) => {
+                    setAgentPrefill(question);
+                    navigate({ kind: "agent" });
+                  }}
+                  onOpenPage={openArtifact}
+                  onOpenStandup={
+                    showStandupReport ? () => navigate({ kind: "standup" }) : undefined
+                  }
+                  onOpenSettings={() => navigate({ kind: "settings" })}
+                  onOpenIngest={() => navigate({ kind: "ingest" })}
+                  onNavigate={(path) => navigate({ kind: "page", path })}
                 />
               </ScrollArea>
             ) : view.kind === "agent" ? (

@@ -9,7 +9,7 @@
  * The order runs outwards: first where notifications arrive (the bell, the
  * inbox), then where they are chosen (Watching, a project's own Watch
  * button), then where they are created (saving a page), and finally where
- * they are read in bulk (a project's What's new). Reading it through should
+ * they are read in bulk (a project's Home). Reading it through should
  * answer both "where do I see these" and "why am I getting them".
  */
 
@@ -22,7 +22,7 @@ export type TourAnchor =
   | "watch-toggle"
   | "page-notify"
   | "page-edit"
-  | "project-summary";
+  | "project-home";
 
 /**
  * What the tour had to look up before it could run.
@@ -118,12 +118,12 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
   },
   {
     id: "summary",
-    anchor: "project-summary",
+    anchor: "project-home",
     route: (subject) =>
       subject.slug ? `/projects/${subject.slug}/tome` : null,
-    title: "What's new reads them all at once",
+    title: "A project's Home gathers them",
     body:
-      "A project's front page collects the same notifications into one read: what needs attention, what was decided, and what the teams below have shipped. Dismiss from here and it leaves your inbox too.",
+      "Home divides the same notifications into what is waiting on someone, what named you, and what simply happened — alongside who works here, what was committed to, and where the knowledge comes from.",
     unavailable: "This step needs a project you can read, and there is not one yet.",
   },
 ];

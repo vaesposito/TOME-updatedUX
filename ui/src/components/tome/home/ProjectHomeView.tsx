@@ -28,6 +28,13 @@ import type { TomeSummary, TomeSummaryItem } from "@/types/tome-summary";
  * is it going, what wants me, where does it get its knowledge — and keeps the
  * recent activity as one card among those rather than as the whole page.
  *
+ * The cards run in three bands, in the order a reader needs them. What has
+ * just happened comes first, because that is what changes between two visits
+ * and the only part that can be waiting on them. How the work is going comes
+ * second. The roster, the sources and the KPIs come last: all three are worth
+ * one read and then rarely another, so they sit where a reader can find them
+ * on purpose without passing them every time.
+ *
  * Most of it costs nothing to show: the curated pages are already loaded for
  * the wiki beside it, and the notification cards all come out of the one
  * summary read the old digest made. Only the roster is a request of its own.
@@ -155,27 +162,11 @@ export function ProjectHomeView({
     <div className="flex flex-col gap-4 p-5" data-tour="project-home">
       <HomeAskAgent title={title} onAsk={onAsk} />
 
-      {/* Three columns on a wide window, one on a narrow one. The left two
-          hold what is read as prose — how it is going, what happened — and
-          the right column the reference material, which stays legible
-          narrow. */}
+      {/* In the order a reader needs it: what has just happened, then how
+          the work is going, then the reference material that is the same
+          this week as last. Three columns on a wide window and one on a
+          narrow one, where the same order becomes a single column. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <HomeGlance
-          markdown={page(STANDUP_PAGE)}
-          standupHref={wikiPageHref(slug, STANDUP_PAGE)}
-          ingestHref={ingestHref}
-          onOpenStandup={onOpenStandup}
-          onOpenIngest={onOpenIngest}
-          onNavigate={onNavigate}
-          className="lg:col-span-2"
-        />
-
-        <HomeTeam
-          slug={slug}
-          settingsHref={settingsHref}
-          onOpenSettings={onOpenSettings}
-        />
-
         <HomeCard
           title="Needs attention"
           icon={<CircleAlert className="h-4 w-4" />}
@@ -225,12 +216,14 @@ export function ProjectHomeView({
           />
         </HomeCard>
 
+        {/* The width of the page, closing the band: nothing is asking for
+            this one, so it is read across rather than worked down. */}
         <HomeCard
           title="Latest updates"
           icon={<Newspaper className="h-4 w-4" />}
           count={feeds.updates.length}
           action={{ label: "All", href: inboxHref }}
-          className="lg:col-span-2"
+          className="lg:col-span-3"
         >
           <HomeNotificationList
             items={feeds.updates}
@@ -250,17 +243,34 @@ export function ProjectHomeView({
           />
         </HomeCard>
 
-        <HomeSources
-          sources={sources}
+        <HomeGlance
+          markdown={page(STANDUP_PAGE)}
+          standupHref={wikiPageHref(slug, STANDUP_PAGE)}
           ingestHref={ingestHref}
+          onOpenStandup={onOpenStandup}
           onOpenIngest={onOpenIngest}
+          onNavigate={onNavigate}
+          className="lg:col-span-2"
         />
 
         <HomeMilestones
           markdown={page(ROADMAP_PAGE)}
           roadmapHref={wikiPageHref(slug, ROADMAP_PAGE)}
           onOpenRoadmap={openPage(ROADMAP_PAGE)}
-          className="lg:col-span-2"
+        />
+
+        {/* Three of a width, so the shelf of things that do not change reads
+            as one row rather than as three more cards to get through. */}
+        <HomeTeam
+          slug={slug}
+          settingsHref={settingsHref}
+          onOpenSettings={onOpenSettings}
+        />
+
+        <HomeSources
+          sources={sources}
+          ingestHref={ingestHref}
+          onOpenIngest={onOpenIngest}
         />
 
         <HomeKpis

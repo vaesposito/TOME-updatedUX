@@ -1,6 +1,7 @@
 "use client";
 
 import { AutoSaveStatus } from "@/components/settings/shared/AutoSaveStatus";
+import { FeaturePreferences } from "@/components/settings/FeaturePreferences";
 import { SettingsCard } from "@/components/settings/shared/SettingsCard";
 import { apiClient } from "@/lib/api-client";
 import {
@@ -29,7 +30,7 @@ import { gradientThemes } from "@/lib/gradient-themes";
 import { cn } from "@/lib/utils";
 import { useKeyedAutoSave } from "@/hooks/use-keyed-auto-save";
 import { useTheme } from "@/components/theme-provider";
-import { Check,Monitor,Palette,Type } from "lucide-react";
+import { Check,LayoutPanelLeft,Monitor,Palette,Type } from "lucide-react";
 import { useEffect,useState } from "react";
 
 const THEME_SWATCHES: Record<ColorTheme,string> = {
@@ -283,6 +284,15 @@ export function AppearanceSettings(): React.ReactElement {
           onRetry={() => autoSave.retry("gradient_theme")}
           state={autoSave.stateFor("gradient_theme")}
         />
+      </SettingsCard>
+
+      {/* Layout rather than palette, but this is the page a reader looks at
+          when they want the interface to be arranged differently. */}
+      <SettingsCard
+        description="Try a new arrangement of the project workspace. Switch back at any time."
+        title={<span className="flex items-center gap-2"><LayoutPanelLeft className="h-5 w-5 text-primary" />Project layout</span>}
+      >
+        <FeaturePreferences categories={["tome"]} />
       </SettingsCard>
 
       <SettingsCard

@@ -31,7 +31,13 @@ const FLAG_ICONS: Record<FeatureFlagIcon, React.ReactNode> = {
   PanelLeft: <PanelLeft className="h-4 w-4" />,
 };
 
-const CATEGORY_ORDER: FeatureFlagCategory[] = ["ai", "chat", "developer"];
+/**
+ * Listed rather than derived, so the order is a decision rather than whatever
+ * order the flags happen to be declared in. A category missing from here has
+ * no row in this modal, which is the one place most readers can reach their
+ * flags from — so adding a category means adding it here too.
+ */
+const CATEGORY_ORDER: FeatureFlagCategory[] = ["ai", "chat", "tome", "developer"];
 
 interface PreferencesModalProps {
   open: boolean;

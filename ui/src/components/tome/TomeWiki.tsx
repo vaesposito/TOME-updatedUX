@@ -2149,22 +2149,29 @@ export function TomeWiki({ slug }: { slug: string }) {
                 <TooltipContent side="bottom">What is TOME?</TooltipContent>
               </Tooltip>
             )}
-            <WatchToggle slug={slug} />
+            {/* Watching the whole space moved to Settings, Notifications on
+                the new navigation, beside the rest of what is configured
+                here; a page keeps its own toggle, which is the one most
+                people reach for. Full screen went with it: a reader who
+                wants the chrome gone has the browser's own. */}
+            {!navV2 && <WatchToggle slug={slug} />}
             <McpConnectDialog />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-auto gap-1.5 px-2 py-1"
-              onClick={() => void toggleFullscreen()}
-              aria-pressed={isFullscreen}
-            >
-              {isFullscreen ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-              Toggle full screen
-            </Button>
+            {!navV2 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-auto gap-1.5 px-2 py-1"
+                onClick={() => void toggleFullscreen()}
+                aria-pressed={isFullscreen}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+                Toggle full screen
+              </Button>
+            )}
           </div>
         </header>
 

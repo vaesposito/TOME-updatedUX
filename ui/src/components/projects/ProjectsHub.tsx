@@ -33,6 +33,7 @@ import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBa
 import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
+import { NavV2Toggle } from "@/components/projects/NavV2Toggle";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -1087,6 +1088,7 @@ export function ProjectsHub() {
               initialOpen={searchParams.get("onboard") === "1"}
             />
             <div className="flex flex-wrap gap-2 md:justify-end">
+              <NavV2Toggle />
               {isTomeAdmin && (
                 <Link
                   href="/projects/admin"

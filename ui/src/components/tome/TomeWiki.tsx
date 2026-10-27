@@ -89,6 +89,7 @@ import {
   type WikiNavigationTarget,
 } from "@/components/tome/WikiSidebar";
 import { WikiPageView } from "@/components/tome/WikiPageView";
+import { WikiContentManager } from "@/components/tome/WikiContentManager";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
 import type { GlossaryPreview } from "@/components/tome/CrepeEditor";
 import { parseTomeHref } from "@/lib/tome/tome-links";
@@ -1281,6 +1282,142 @@ export function TomeWiki({ slug }: { slug: string }) {
     }
   }, [load, slug]);
 
+  /**
+   * Pages and folders ticked in the settings tree.
+   *
+   * Kept by path, which is the one identifier a page and a folder share, so
+   * the set can hold a mixed selection without a tagged union for the sake
+   * of two bulk actions.
+   */
+  const [checkedPaths, setCheckedPaths] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggleChecked = useCallback((path: string, checked: boolean) => {
+    setCheckedPaths((current) => {
+      const next = new Set(current);
+      if (checked) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }, []);
+  const clearChecked = useCallback(() => setCheckedPaths(new Set()), []);
+
+  /**
+   * What a ticked path turns out to be.
+   *
+   * The tree is the only thing that knows, and the two endpoints below need
+   * to know: a folder is deleted by its id through one route and a page by
+   * its path through another.
+   */
+  const checkedNodes = useMemo(() => {
+    const found: PageTreeNode[] = [];
+    const walk = (nodes: readonly PageTreeNode[]) => {
+      for (const node of nodes) {
+        if (checkedPaths.has(node.path)) found.push(node);
+        walk(node.children);
+      }
+    };
+    // The whole tree, not the filtered one: a tick made before a search was
+    // typed is still a tick, and silently dropping it would delete less than
+    // the count beside the button promised.
+    walk(data?.tree ?? []);
+    return found;
+  }, [checkedPaths, data?.tree]);
+
+  /**
+   * Delete everything ticked, then read the tree back once.
+   *
+   * Sequential rather than parallel: deleting a folder renumbers what is left
+   * beside it, and a page inside a folder being deleted in the same breath
+   * would otherwise race its own parent.
+   */
+  const bulkDeleteChecked = useCallback(async () => {
+    if (bulkBusy || checkedNodes.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      for (const node of checkedNodes) {
+        const response =
+          node.kind === "folder" && node.folderId
+            ? await fetch(
+                `/api/tome/projects/${encodeURIComponent(slug)}/folders/${encodeURIComponent(node.folderId)}`,
+                { method: "DELETE" },
+              )
+            : await fetch(
+                `/api/tome/projects/${encodeURIComponent(slug)}/pages/${node.path}`,
+                { method: "DELETE" },
+              );
+        if (!response.ok) {
+          throw new Error(`Could not delete ${node.title} (${response.status})`);
+        }
+        // Do not strand the reader on a page that no longer exists.
+        if (
+          (view.kind === "page" || view.kind === "pageHistory") &&
+          view.path === node.path
+        ) {
+          navigate({ kind: "summary" });
+        }
+      }
+      clearChecked();
+      await load();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : "Could not delete",
+      );
+      // Whatever survived is still ticked, so a retry is one click rather
+      // than a second pass through the tree.
+      await load();
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [bulkBusy, checkedNodes, clearChecked, load, navigate, slug, view]);
+
+  /** Move everything ticked into one folder, or out to the root. */
+  const bulkMoveChecked = useCallback(
+    async (folderId: string | null) => {
+      if (bulkBusy || checkedNodes.length === 0) return;
+      setBulkBusy(true);
+      setError(null);
+      try {
+        for (const node of checkedNodes) {
+          // A folder cannot be moved into itself.
+          if (node.kind === "folder" && node.folderId === folderId) continue;
+          const response = await fetch(
+            `/api/tome/projects/${encodeURIComponent(slug)}/navigation`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                item: {
+                  kind: node.kind === "folder" ? "folder" : "page",
+                  id: node.kind === "folder" ? node.folderId : node.path,
+                },
+                target: folderId
+                  ? { position: "inside", item: { kind: "folder", id: folderId } }
+                  : { position: "root" },
+              }),
+            },
+          );
+          if (!response.ok) {
+            const body = await response.json().catch(() => null);
+            throw new Error(body?.error ?? `Could not move ${node.title}`);
+          }
+        }
+        clearChecked();
+        await load();
+      } catch (moveError) {
+        setError(
+          moveError instanceof Error ? moveError.message : "Could not move",
+        );
+        await load();
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [bulkBusy, checkedNodes, clearChecked, load, slug],
+  );
+
   // Rename a page: write its markdown to the new path, then tombstone the old
   // one (there's no move endpoint). History starts fresh on the new path.
   const renamePage = useCallback(
@@ -1590,27 +1727,6 @@ export function TomeWiki({ slug }: { slug: string }) {
     view.kind === "page" || view.kind === "pageHistory" ? view.path : undefined;
 
   /**
-   * Everything that acts on pages: show agent-only, export, new folder,
-   * import, new page.
-   *
-   * Held as one node rather than written where it is shown, because the two
-   * navigations put it in different places — the old rail keeps it above the
-   * tree, the new one moves it into Settings, Content, Pages — and a second
-   * copy of five buttons and a dialog is a second copy of their behaviour.
-   */
-  /**
-   * The page tree, with the states that stand in for it.
-   *
-   * Taken as an argument rather than read from scope because the new rail
-   * draws two of them — the pages the team writes, and the material it
-   * mirrors — and both need the same answer to "still loading", "nothing
-   * here yet" and "nothing matches that search".
-   *
-   * `editable` is what separates the two navigations. WikiSidebar draws each
-   * action only where it was given a handler for it, so navigation-only is
-   * the same tree asked for without them, not a second component.
-   */
-  /**
    * Adding a label to track, which both rails offer in the same place: beside
    * the Issues row, where the list it extends already is. Held as one node so
    * the dialog and its state exist once however the rail is drawn.
@@ -1712,9 +1828,25 @@ export function TomeWiki({ slug }: { slug: string }) {
     ) : null
   );
 
+  /**
+   * The page tree, with the states that stand in for it.
+   *
+   * Taken as an argument rather than read from scope because the new rail
+   * draws two of them — the pages the team writes, and the material it
+   * mirrors — and both need the same answer to "still loading", "nothing
+   * here yet" and "nothing matches that search".
+   *
+   * `editable` is what separates the two navigations. WikiSidebar draws each
+   * action only where it was given a handler for it, so navigation-only is
+   * the same tree asked for without them, not a second component.
+   */
   const renderWikiTree = (
     tree: PageTreeNode[],
-    { editable, emptyNote }: { editable: boolean; emptyNote?: string },
+    {
+      editable,
+      emptyNote,
+      selectable,
+    }: { editable: boolean; emptyNote?: string; selectable?: boolean },
   ) => {
     if (loading) return <SidebarSkeleton />;
     if (tree.length === 0) {
@@ -1766,11 +1898,22 @@ export function TomeWiki({ slug }: { slug: string }) {
         onDeleteFolder={editable && canEdit ? deleteWikiFolder : undefined}
         onMoveItem={editable && canEdit ? moveWikiItem : undefined}
         unreadPaths={unreadPaths}
+        checkedPaths={selectable && canEdit ? checkedPaths : undefined}
+        onCheckedChange={selectable && canEdit ? toggleChecked : undefined}
       />
     );
   };
 
-  const wikiToolbar = (
+  /**
+   * What is true of the wiki as a whole: which pages are shown, and getting
+   * all of them out.
+   *
+   * Separated from the controls that create and remove pages because the new
+   * navigation puts the two in different places — these under Content,
+   * General, where a setting lives, and the rest beside the tree they act on.
+   * The old rail keeps them together above the tree, as it always did.
+   */
+  const wikiViewToolbar = (
     <div className="flex items-center gap-0.5 text-muted-foreground">
       {!isEmpty && !loading && (
         <button
@@ -1783,6 +1926,18 @@ export function TomeWiki({ slug }: { slug: string }) {
         </button>
       )}
       {!isEmpty && !loading && <WikiExportMenu slug={slug} />}
+    </div>
+  );
+
+  /**
+   * Making pages: a folder, an import, a blank page.
+   *
+   * Held as one node rather than written where it is shown, because the two
+   * navigations put it in different places and a second copy of three
+   * buttons and a dialog is a second copy of their behaviour.
+   */
+  const wikiPageToolbar = (
+    <div className="flex items-center gap-0.5 text-muted-foreground">
       {!loading && canEdit && (
         <button
           type="button"
@@ -2341,7 +2496,12 @@ export function TomeWiki({ slug }: { slug: string }) {
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Wiki
                   </span>
-                    {!navV2 && wikiToolbar}
+                    {!navV2 && (
+                  <div className="flex items-center gap-0.5">
+                    {wikiViewToolbar}
+                    {wikiPageToolbar}
+                  </div>
+                )}
                 </div>
 
                 {!navV2 && !loading && !isEmpty && (
@@ -2628,20 +2788,24 @@ export function TomeWiki({ slug }: { slug: string }) {
                   onOpenIngest={() => navigate({ kind: "ingest" })}
                   pagesManager={
                     navV2 ? (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs text-muted-foreground">
-                            The same tree the rail shows, with the actions it no
-                            longer carries.
-                          </p>
-                          <div className="flex items-center gap-1">{wikiToolbar}</div>
-                        </div>
-                        <div className="rounded-lg border border-border p-2">
-                          {renderWikiTree(filteredWikiTree, { editable: true })}
-                        </div>
-                      </>
+                      <WikiContentManager
+                        toolbar={wikiPageToolbar}
+                        tree={renderWikiTree(filteredWikiTree, {
+                          editable: true,
+                          selectable: true,
+                        })}
+                        query={wikiQuery}
+                        onQueryChange={setWikiQuery}
+                        checked={checkedNodes}
+                        busy={bulkBusy}
+                        folders={data?.folders ?? []}
+                        onClear={clearChecked}
+                        onMove={bulkMoveChecked}
+                        onDelete={bulkDeleteChecked}
+                      />
                     ) : undefined
                   }
+                  contentGeneral={navV2 ? wikiViewToolbar : undefined}
                 />
               </div>
             ) : view.kind === "templates" ? (

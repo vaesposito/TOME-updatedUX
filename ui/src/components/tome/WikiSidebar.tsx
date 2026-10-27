@@ -36,6 +36,15 @@ interface Props {
    * first: the tree is where someone already is when they wonder what moved.
    */
   unreadPaths?: ReadonlySet<string>;
+  /**
+   * Pages and folders ticked for an action that will apply to all of them.
+   *
+   * Both props or neither: the checkbox column only exists where there is
+   * somewhere for a tick to go, which is how the rail stays a list of places
+   * to visit while the same tree in settings becomes a thing to tidy.
+   */
+  checkedPaths?: ReadonlySet<string>;
+  onCheckedChange?: (path: string, checked: boolean) => void;
 }
 
 /**
@@ -134,6 +143,8 @@ function NodeList({
   onDeleteFolder,
   onMoveItem,
   unreadPaths,
+  checkedPaths,
+  onCheckedChange,
   onDraggingChange,
 }: {
   nodes: PageTreeNode[];
@@ -161,6 +172,8 @@ function NodeList({
               onDeleteFolder={onDeleteFolder}
               onMoveItem={onMoveItem}
               unreadPaths={unreadPaths}
+              checkedPaths={checkedPaths}
+              onCheckedChange={onCheckedChange}
               onDraggingChange={onDraggingChange}
             />
           </li>
@@ -185,6 +198,8 @@ function TreeNode({
   onDeleteFolder,
   onMoveItem,
   unreadPaths,
+  checkedPaths,
+  onCheckedChange,
   onDraggingChange,
 }: {
   node: PageTreeNode;
@@ -240,9 +255,29 @@ function TreeNode({
       onDeleteFolder={onDeleteFolder}
       onMoveItem={onMoveItem}
       unreadPaths={unreadPaths}
+      checkedPaths={checkedPaths}
+      onCheckedChange={onCheckedChange}
       onDraggingChange={onDraggingChange}
     />
   );
+
+  /**
+   * The tick, where there is anything to tick for.
+   *
+   * Stops the click from reaching the row: ticking a page is saying what to
+   * do something to, not asking to read it, and opening the page underneath
+   * would lose whichever list was being built.
+   */
+  const checkbox = onCheckedChange ? (
+    <input
+      type="checkbox"
+      checked={checkedPaths?.has(node.path) ?? false}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => onCheckedChange(node.path, event.target.checked)}
+      aria-label={`Select ${node.title}`}
+      className="h-3.5 w-3.5 shrink-0 accent-primary"
+    />
+  ) : null;
 
   // Folder = a collapsible section header (the caret toggles its children).
   if (node.kind === "folder") {
@@ -263,6 +298,7 @@ function TreeNode({
             dropZone === "after" && "border-b-2 border-primary",
           )}
         >
+          {checkbox}
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -358,9 +394,10 @@ function TreeNode({
           dropZone === "after" && "border-b-2 border-primary",
         )}
       >
+        {checkbox && <span style={indent} className="flex shrink-0 pl-1">{checkbox}</span>}
         <button
           type="button"
-          style={indent}
+          style={checkbox ? undefined : indent}
           onClick={() => onSelect(node.path)}
           className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left"
         >

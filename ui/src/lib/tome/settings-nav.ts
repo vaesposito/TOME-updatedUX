@@ -88,7 +88,8 @@ export const TOME_SETTINGS_GROUPS: readonly TomeSettingsGroup[] = [
     id: "content",
     label: "Content",
     subtabs: [
-      { value: "pages", label: "Pages" },
+      { value: "pages", label: "Content" },
+      { value: "content-general", label: "General" },
       { value: "review", label: "Review" },
       { value: "slt", label: "Metadata" },
     ],

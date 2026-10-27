@@ -210,6 +210,7 @@ export function ProjectSettingsPanel({
   onOpenIngest,
   onSaveBarInsetChange,
   pagesManager,
+  contentGeneral,
 }: {
   slug: string;
   onSaved?: (project: ProjectDocument) => void;
@@ -225,6 +226,8 @@ export function ProjectSettingsPanel({
    * navigation, where they stay above the tree in the rail.
    */
   pagesManager?: React.ReactNode;
+  /** The wiki-wide view and export controls, for Content › General. */
+  contentGeneral?: React.ReactNode;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1420,6 +1423,24 @@ export function ProjectSettingsPanel({
                     to the new project navigation to manage pages from here.
                   </p>
                 )}
+              </TabsContent>
+
+              <TabsContent value="content-general" className="space-y-6 pt-6">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">The wiki as a whole</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Which pages are shown, and getting all of them out. Agent-only
+                    pages are hidden by default because they are working notes
+                    rather than anything the team wrote.
+                  </p>
+                  {contentGeneral ? (
+                    <div className="flex items-center gap-1 pt-1">{contentGeneral}</div>
+                  ) : (
+                    <p className="pt-1 text-xs text-muted-foreground">
+                      These controls sit above the wiki tree on this navigation.
+                    </p>
+                  )}
+                </div>
               </TabsContent>
 
               <TabsContent value="notifications" className="space-y-6 pt-6">

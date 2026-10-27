@@ -94,3 +94,133 @@ describe("SharePoint document navigation", () => {
     expect(folderTree[0].folderId).toBe("folder-source");
   });
 });
+
+describe("WikiSidebar selection", () => {
+  const folderTree: PageTreeNode[] = [
+    {
+      path: "collateral",
+      title: "Collateral",
+      kind: "folder",
+      order: 0,
+      folderId: "folder-collateral",
+      children: [
+        {
+          path: "collateral/brief.md",
+          title: "Brief",
+          kind: "stable",
+          order: 0,
+          children: [],
+        },
+      ],
+    },
+  ];
+
+  it("draws no checkbox where there is nowhere for a tick to go", () => {
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+      />,
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("offers a tick for every page once asked", () => {
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        checkedPaths={new Set()}
+        onCheckedChange={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Select Alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Bravo" })).toBeInTheDocument();
+  });
+
+  it("offers a tick for folders and the pages inside them", () => {
+    render(
+      <WikiSidebar
+        tree={folderTree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        checkedPaths={new Set()}
+        onCheckedChange={jest.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select Collateral" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Brief" })).toBeInTheDocument();
+  });
+
+  it("shows which paths are already ticked", () => {
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        checkedPaths={new Set(["alpha.md"])}
+        onCheckedChange={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Select Alpha" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Bravo" })).not.toBeChecked();
+  });
+
+  it("reports a tick and an untick", () => {
+    const onCheckedChange = jest.fn();
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        checkedPaths={new Set(["bravo.md"])}
+        onCheckedChange={onCheckedChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Alpha" }));
+    expect(onCheckedChange).toHaveBeenCalledWith("alpha.md", true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Bravo" }));
+    expect(onCheckedChange).toHaveBeenCalledWith("bravo.md", false);
+  });
+
+  it("does not open the page it was asked to tick", () => {
+    const onSelect = jest.fn();
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={onSelect}
+        showHidden={false}
+        checkedPaths={new Set()}
+        onCheckedChange={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Alpha" }));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("still opens a page when the row itself is clicked", () => {
+    const onSelect = jest.fn();
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={onSelect}
+        showHidden={false}
+        checkedPaths={new Set()}
+        onCheckedChange={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+    expect(onSelect).toHaveBeenCalledWith("alpha.md");
+  });
+});

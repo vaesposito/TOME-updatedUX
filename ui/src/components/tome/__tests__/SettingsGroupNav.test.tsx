@@ -40,10 +40,24 @@ describe("SettingsGroupNav", () => {
     setup({ activeGroup: "content", activeTab: "pages" });
     const row = screen.getByRole("tablist", { name: "Content settings" });
     expect(within(row).getAllByRole("tab").map((t) => t.textContent)).toEqual([
-      "Pages",
+      "Content",
+      "General",
       "Review",
       "Metadata",
     ]);
+  });
+
+  // Both rows can carry a tab called General, so a reader is only ever told
+  // which one is lit by the row it sits in.
+  it("keeps the two tabs named General apart", () => {
+    setup({ activeGroup: "content", activeTab: "content-general" });
+    const subrow = screen.getByRole("tablist", { name: "Content settings" });
+    expect(
+      within(subrow).getByRole("tab", { name: "General" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(groupRow()).getByRole("tab", { name: "General" }),
+    ).toHaveAttribute("aria-selected", "false");
   });
 
   it("marks the subtab for the panel that is showing", () => {
@@ -52,10 +66,12 @@ describe("SettingsGroupNav", () => {
       "aria-selected",
       "true",
     );
-    expect(screen.getByRole("tab", { name: "Pages" })).toHaveAttribute(
-      "aria-selected",
-      "false",
-    );
+    expect(
+      within(screen.getByRole("tablist", { name: "Content settings" })).getByRole(
+        "tab",
+        { name: "Content" },
+      ),
+    ).toHaveAttribute("aria-selected", "false");
   });
 
   it("tells apart subtabs that share one panel", () => {

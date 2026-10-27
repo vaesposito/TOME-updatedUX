@@ -16,7 +16,7 @@ type FeatureFlag,
 type FeatureFlagCategory,
 type FeatureFlagIcon,
 } from "@/store/feature-flag-store";
-import { ArrowDownToLine,Brain,Bug,Clock,ExternalLink,Eye,Info,MessagesSquare,Settings,Ship,Sparkles } from "lucide-react";
+import { ArrowDownToLine,Brain,Bug,Clock,ExternalLink,Eye,Info,MessagesSquare,PanelLeft,Settings,Ship,Sparkles } from "lucide-react";
 import React,{ useState } from "react";
 
 const FLAG_ICONS: Record<FeatureFlagIcon, React.ReactNode> = {
@@ -28,6 +28,7 @@ const FLAG_ICONS: Record<FeatureFlagIcon, React.ReactNode> = {
   Ship: <Ship className="h-4 w-4" />,
   MessagesSquare: <MessagesSquare className="h-4 w-4" />,
   Sparkles: <Sparkles className="h-4 w-4" />,
+  PanelLeft: <PanelLeft className="h-4 w-4" />,
 };
 
 const CATEGORY_ORDER: FeatureFlagCategory[] = ["ai", "chat", "developer"];

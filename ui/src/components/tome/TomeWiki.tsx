@@ -12,6 +12,7 @@ import {
 import {
   Activity,
   ArrowUpRight,
+  BookOpen,
   ChevronRight,
   Eye,
   EyeOff,
@@ -29,14 +30,18 @@ import {
   MessageSquare,
   MessagesSquare,
   Minimize2,
+  FileSymlink,
+  Gauge,
   House,
   Newspaper,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   RefreshCw,
+  NotebookPen,
   Search,
   Settings,
+  Users,
   Sparkles,
   Target,
   Upload,
@@ -69,6 +74,10 @@ import { GistsPanel } from "@/components/tome/GistsPanel";
 import { GistView } from "@/components/tome/GistView";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import { ProjectSettingsPanel } from "@/components/tome/ProjectSettingsPanel";
+import { ProviderLogo } from "@/components/credentials/provider-logo";
+import { isReferencePath, splitWikiTree } from "@/lib/tome/wiki-tree-split";
+import { usePersistentDisclosure } from "@/lib/tome/use-persistent-disclosure";
+import { useFeatureFlagStore } from "@/store/feature-flag-store";
 import {
   ProjectDescription,
   ProjectMetadataInfo,
@@ -1534,6 +1543,32 @@ export function TomeWiki({ slug }: { slug: string }) {
     return out;
   }, [isArea, isBhag, initiatives, bhagByInitiative, transitiveBhags, areaTags, areaByLabel]);
 
+  /**
+   * Whether this reader has switched to the new rail.
+   *
+   * Read through the store rather than the non-React helper so that turning
+   * it on in Settings reaches an open project without a reload.
+   */
+  const navV2 = useFeatureFlagStore((state) => state.isEnabled("tomeNavV2"));
+  const initializeFlags = useFeatureFlagStore((state) => state.initialize);
+  useEffect(() => initializeFlags(), [initializeFlags]);
+
+  /**
+   * The tree, read as two: the pages the team writes, and the material it
+   * mirrors. Only the new rail shows them apart; the old one shows the lot.
+   */
+  const wikiSplit = useMemo(() => splitWikiTree(filteredWikiTree), [filteredWikiTree]);
+  // Open by default: the pages are the point of the place. Reference material
+  // is not, so it starts folded away and stays however the reader left it.
+  const [wikiOpen, setWikiOpen] = usePersistentDisclosure(
+    `tome.v2.wiki.expanded.${slug}`,
+    true,
+  );
+  const [referencesOpen, setReferencesOpen] = usePersistentDisclosure(
+    `tome.v2.references.expanded.${slug}`,
+    false,
+  );
+
   const navActive = {
     summary: view.kind === "summary",
     agent: view.kind === "agent",
@@ -1553,6 +1588,329 @@ export function TomeWiki({ slug }: { slug: string }) {
 
   const feedbackPagePath =
     view.kind === "page" || view.kind === "pageHistory" ? view.path : undefined;
+
+  /**
+   * Everything that acts on pages: show agent-only, export, new folder,
+   * import, new page.
+   *
+   * Held as one node rather than written where it is shown, because the two
+   * navigations put it in different places — the old rail keeps it above the
+   * tree, the new one moves it into Settings, Content, Pages — and a second
+   * copy of five buttons and a dialog is a second copy of their behaviour.
+   */
+  /**
+   * The page tree, with the states that stand in for it.
+   *
+   * Taken as an argument rather than read from scope because the new rail
+   * draws two of them — the pages the team writes, and the material it
+   * mirrors — and both need the same answer to "still loading", "nothing
+   * here yet" and "nothing matches that search".
+   *
+   * `editable` is what separates the two navigations. WikiSidebar draws each
+   * action only where it was given a handler for it, so navigation-only is
+   * the same tree asked for without them, not a second component.
+   */
+  /**
+   * Adding a label to track, which both rails offer in the same place: beside
+   * the Issues row, where the list it extends already is. Held as one node so
+   * the dialog and its state exist once however the rail is drawn.
+   */
+  const addTrackedLabelAction = (
+    canEdit ? (
+      <Dialog
+        open={trackerDialogOpen}
+        onOpenChange={(open) => {
+          if (!creatingTracker) setTrackerDialogOpen(open);
+          if (!open) {
+            setTrackerSuffix("");
+            setTrackerError(null);
+          }
+        }}
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                aria-label="Add tracked label"
+                className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="right">Add tracked label</TooltipContent>
+        </Tooltip>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add tracked label</DialogTitle>
+            <DialogDescription>
+              This project will track GitHub issues carrying this label.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label htmlFor={`tome-tracker-suffix-${slug}`} className="text-sm font-medium">
+              GitHub label
+            </label>
+            <Input
+              id={`tome-tracker-suffix-${slug}`}
+              value={trackerSuffix}
+              onChange={(event) => {
+                setTrackerSuffix(event.target.value);
+                setTrackerError(null);
+              }}
+              placeholder="security-review"
+              aria-invalid={duplicateIssueTracker ? true : undefined}
+              aria-describedby={duplicateIssueTracker
+                ? `tome-tracker-duplicate-${slug}`
+                : undefined}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              Use lowercase letters, numbers, and hyphens.
+            </p>
+            {duplicateIssueTracker && (
+              <p
+                id={`tome-tracker-duplicate-${slug}`}
+                role="alert"
+                className="text-xs text-destructive"
+              >
+                This project already tracks the GitHub label{" "}
+                <code>{duplicateIssueTracker.label}</code>.
+              </p>
+            )}
+          </div>
+          {trackerError && (
+            <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+              {trackerError}
+            </p>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTrackerDialogOpen(false)}
+              disabled={creatingTracker}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void createIssueTracker()}
+              disabled={
+                creatingTracker
+                || !trackerSuffix.trim()
+                || Boolean(duplicateIssueTracker)
+              }
+            >
+              {creatingTracker && <Loader2 className="h-4 w-4 animate-spin" />}
+              Create tracker
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    ) : null
+  );
+
+  const renderWikiTree = (
+    tree: PageTreeNode[],
+    { editable, emptyNote }: { editable: boolean; emptyNote?: string },
+  ) => {
+    if (loading) return <SidebarSkeleton />;
+    if (tree.length === 0) {
+      // A search that found nothing is the reader's own doing, and says so
+      // before anything else: the tree is not empty, their query is.
+      if (wikiQuery.trim())
+        return (
+          <p className="px-2 py-2 text-xs text-muted-foreground">
+            No pages or folders match “{wikiQuery.trim()}”.
+          </p>
+        );
+      // Only the tree that owns the wiki offers to fill it. Without this a
+      // space with nothing in it would offer an ingest twice, once under each
+      // heading, as though they were two different things to do.
+      if (emptyNote)
+        return (
+          <p className="px-2 py-2 text-xs leading-relaxed text-muted-foreground">
+            {emptyNote}
+          </p>
+        );
+      return (
+        <div className="px-2 py-2 text-xs text-muted-foreground">
+          <p className="mb-2">No wiki pages yet.</p>
+          <ViewOnlyTooltip viewOnly={!canEdit}>
+            <Button
+              size="sm"
+              onClick={() => navigate({ kind: "ingest" })}
+              disabled={!canEdit}
+            >
+              {isSynthesized ? "Ingest & synthesize" : "Run an ingest"}
+            </Button>
+          </ViewOnlyTooltip>
+        </div>
+      );
+    }
+    if (!data) return null;
+    return (
+      <WikiSidebar
+        tree={tree}
+        selectedPath={navActive.page}
+        selectedFolderId={navActive.folder}
+        onSelect={openPage}
+        onSelectFolder={openFolder}
+        showHidden={showHidden}
+        onDelete={editable && canEdit ? deletePage : undefined}
+        onCreateFolder={editable && canEdit ? openCreateFolder : undefined}
+        onCreatePage={editable && canEdit ? openNewPage : undefined}
+        onEditFolder={editable && canEdit ? openEditFolder : undefined}
+        onDeleteFolder={editable && canEdit ? deleteWikiFolder : undefined}
+        onMoveItem={editable && canEdit ? moveWikiItem : undefined}
+        unreadPaths={unreadPaths}
+      />
+    );
+  };
+
+  const wikiToolbar = (
+    <div className="flex items-center gap-0.5 text-muted-foreground">
+      {!isEmpty && !loading && (
+        <button
+          type="button"
+          onClick={() => setShowHidden((v) => !v)}
+          title={showHidden ? "Hide agent-only pages" : "Show agent-only pages"}
+          className="rounded p-1 hover:bg-muted hover:text-foreground"
+        >
+          {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      {!isEmpty && !loading && <WikiExportMenu slug={slug} />}
+      {!loading && canEdit && (
+        <button
+          type="button"
+          onClick={() => openCreateFolder(null)}
+          title="New folder"
+          aria-label="New folder"
+          className="rounded p-1 hover:bg-muted hover:text-foreground"
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {!loading && canEdit && (
+        <button
+          type="button"
+          onClick={() => uploadInputRef.current?.click()}
+          title="Import Markdown, text, HTML, DOCX, or PDF files"
+          aria-label="Import pages"
+          disabled={importing}
+          className="rounded p-1 hover:bg-muted hover:text-foreground"
+        >
+          {importing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Upload className="h-3.5 w-3.5" />
+          )}
+        </button>
+      )}
+      {!loading && canEdit && (
+        <Dialog
+          open={newPageOpen}
+          onOpenChange={(o) => {
+            setNewPageOpen(o);
+            if (o) {
+              setTimeout(() => newPageInputRef.current?.focus(), 0);
+            } else {
+              setNewPageName("");
+              setNewPageParentFolder(null);
+            }
+          }}
+        >
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              title="New page"
+              aria-label="New page"
+              onClick={() => openNewPage()}
+              className="rounded p-1 hover:bg-muted hover:text-foreground"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {newPageParentFolder
+                  ? `New page in ${newPageParentFolder.title}`
+                  : "New wiki page"}
+              </DialogTitle>
+              <DialogDescription>
+                Enter a page name, then draft it in the editor or ask the agent to help.
+              </DialogDescription>
+            </DialogHeader>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = newPageName.trim();
+                if (!name) return;
+                void createPage(name, {
+                  parentFolderId: newPageParentFolder?.id,
+                  openEditor: true,
+                });
+                setNewPageOpen(false);
+                setNewPageName("");
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-2">
+                <label
+                  htmlFor="tome-new-page-input"
+                  className="block text-sm font-medium text-foreground"
+                >
+                  Page name
+                </label>
+                <Input
+                  id="tome-new-page-input"
+                  ref={newPageInputRef}
+                  value={newPageName}
+                  onChange={(e) => setNewPageName(e.target.value)}
+                  placeholder="new-page.md"
+                  className="font-mono text-sm"
+                  aria-label="New page name"
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewPageOpen(false);
+                    setNewPageName("");
+                    uploadInputRef.current?.click();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Upload className="h-4 w-4" />
+                  Import instead
+                </button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!newPageName.trim()}
+                    onClick={() => promptAgentForPage(newPageName)}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Ask agent
+                  </Button>
+                  <Button type="submit" size="sm" disabled={!newPageName.trim()}>
+                    Write in editor
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
 
   return (
     <TooltipProvider>
@@ -1725,7 +2083,136 @@ export function TomeWiki({ slug }: { slug: string }) {
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="flex flex-col p-3">
-                <div className="flex flex-col gap-1">
+                {navV2 && (
+                  <div className="flex flex-col gap-1">
+                    <NavItem
+                      icon={<Gauge className="h-4 w-4" />}
+                      label="Overview"
+                      active={navActive.summary}
+                      onClick={() => navigate({ kind: "summary" })}
+                      tipTitle="Overview"
+                      tipDescription="What this space is and how it is going: who works on it, what needs attention, what was agreed, and where its knowledge comes from."
+                    />
+
+                    <NavSection
+                      icon={<BookOpen className="h-4 w-4" />}
+                      label="Wiki"
+                      active={Boolean(navActive.page ?? navActive.folder)}
+                      expanded={wikiOpen}
+                      onToggle={() => setWikiOpen(!wikiOpen)}
+                      controlsId={`tome-v2-wiki-${slug}`}
+                    >
+                      {!loading && !isEmpty && (
+                        <div className="relative mx-2 mb-2">
+                          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            type="search"
+                            value={wikiQuery}
+                            onChange={(event) => setWikiQuery(event.target.value)}
+                            placeholder="Search pages and folders"
+                            aria-label="Search wiki pages and folders"
+                            className="h-8 w-full rounded-md border bg-background pl-7 pr-7 text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15 [&::-webkit-search-cancel-button]:hidden"
+                          />
+                          {wikiQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setWikiQuery("")}
+                              aria-label="Clear wiki search"
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {renderWikiTree(wikiSplit.authored, { editable: false })}
+                    </NavSection>
+
+                    {showStandupReport && (
+                      <NavItem
+                        icon={<Users className="h-4 w-4" />}
+                        label="Standup"
+                        active={navActive.standup}
+                        onClick={() => navigate({ kind: "standup" })}
+                        tipTitle="Standup"
+                        tipDescription="The project's report card: headline, blockers, and what's next. Rewritten by the agent on every ingest."
+                      />
+                    )}
+
+                    {showIssuesReport && (
+                      <IssueLabelDisclosure
+                        slug={slug}
+                        controlsId={`tome-v2-issue-label-views-${slug}`}
+                        actions={addTrackedLabelAction}
+                        header={
+                          <NavItem
+                            icon={
+                              <ProviderLogo
+                                provider="github"
+                                className="h-4 w-4 shrink-0 object-contain"
+                              />
+                            }
+                            label="Issues"
+                            active={navActive.issues}
+                            onClick={() => navigate({ kind: "issues" })}
+                            tipTitle="GitHub issues"
+                            tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache."
+                          />
+                        }
+                      >
+                        <IssueLabelViewList
+                          labels={issueTrackers}
+                          activeLabel={activeTrackedIssueLabel?.label}
+                          onSelect={(label) => navigate({ kind: "issues", label })}
+                          onRemove={canRemoveIssueTrackers ? removeIssueTracker : undefined}
+                        />
+                      </IssueLabelDisclosure>
+                    )}
+
+                    <NavItem
+                      icon={<NotebookPen className="h-4 w-4" />}
+                      label="Notes"
+                      active={navActive.gists}
+                      onClick={() => navigate({ kind: "gists" })}
+                      tipTitle="Notes"
+                      tipDescription="Quick, non-committal chunks of context — a prompt, an agent memory, a snippet — saved without becoming part of the curated wiki."
+                    />
+
+                    <NavSection
+                      icon={<FileSymlink className="h-4 w-4" />}
+                      label="References"
+                      active={Boolean(
+                        navActive.page && isReferencePath(navActive.page),
+                      )}
+                      expanded={referencesOpen}
+                      onToggle={() => setReferencesOpen(!referencesOpen)}
+                      controlsId={`tome-v2-references-${slug}`}
+                    >
+                      {renderWikiTree(wikiSplit.reference, {
+                        editable: false,
+                        emptyNote:
+                          "Nothing mirrored yet. A repository, a Confluence space or a Webex room lands here once it has been read.",
+                      })}
+                    </NavSection>
+                  </div>
+                )}
+
+                {/* Settings sits apart, below the gap: it is where the space
+                    is configured rather than one of the places it holds. */}
+                {navV2 && (
+                  <div className="mt-6 flex flex-col gap-1">
+                    <NavItem
+                      icon={<Settings className="h-4 w-4" />}
+                      label="Settings"
+                      active={navActive.settings}
+                      onClick={() => navigate({ kind: "settings" })}
+                      tipTitle="Settings"
+                      tipDescription="Everything this space is configured by, including every action on its pages: what it reads, what it writes, who is told, and how it looks."
+                    />
+                  </div>
+                )}
+
+                <div className={cn("flex flex-col gap-1", navV2 && "hidden")}>
                   <NavItem
                     icon={<House className="h-4 w-4" />}
                     label="Home"
@@ -1801,7 +2288,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                   />
                 </div>
 
-                {showReports && (
+                {!navV2 && showReports && (
                   <ReportsDisclosure slug={slug}>
                     {showStandupReport && (
                       <NavItem
@@ -1827,102 +2314,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                         tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache; Areas and BHAGs roll up readable child projects."
                       />
                     }
-                    actions={
-                      canEdit ? (
-                        <Dialog
-                          open={trackerDialogOpen}
-                          onOpenChange={(open) => {
-                            if (!creatingTracker) setTrackerDialogOpen(open);
-                            if (!open) {
-                              setTrackerSuffix("");
-                              setTrackerError(null);
-                            }
-                          }}
-                        >
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <DialogTrigger asChild>
-                                <button
-                                  type="button"
-                                  aria-label="Add tracked label"
-                                  className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                </button>
-                              </DialogTrigger>
-                            </TooltipTrigger>
-                            <TooltipContent side="right">Add tracked label</TooltipContent>
-                          </Tooltip>
-                          <DialogContent className="sm:max-w-md">
-                            <DialogHeader>
-                              <DialogTitle>Add tracked label</DialogTitle>
-                              <DialogDescription>
-                                This project will track GitHub issues carrying this label.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <div className="space-y-2">
-                              <label htmlFor={`tome-tracker-suffix-${slug}`} className="text-sm font-medium">
-                                GitHub label
-                              </label>
-                              <Input
-                                id={`tome-tracker-suffix-${slug}`}
-                                value={trackerSuffix}
-                                onChange={(event) => {
-                                  setTrackerSuffix(event.target.value);
-                                  setTrackerError(null);
-                                }}
-                                placeholder="security-review"
-                                aria-invalid={duplicateIssueTracker ? true : undefined}
-                                aria-describedby={duplicateIssueTracker
-                                  ? `tome-tracker-duplicate-${slug}`
-                                  : undefined}
-                                autoFocus
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Use lowercase letters, numbers, and hyphens.
-                              </p>
-                              {duplicateIssueTracker && (
-                                <p
-                                  id={`tome-tracker-duplicate-${slug}`}
-                                  role="alert"
-                                  className="text-xs text-destructive"
-                                >
-                                  This project already tracks the GitHub label{" "}
-                                  <code>{duplicateIssueTracker.label}</code>.
-                                </p>
-                              )}
-                            </div>
-                            {trackerError && (
-                              <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
-                                {trackerError}
-                              </p>
-                            )}
-                            <DialogFooter>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => setTrackerDialogOpen(false)}
-                                disabled={creatingTracker}
-                              >
-                                Cancel
-                              </Button>
-                              <Button
-                                type="button"
-                                onClick={() => void createIssueTracker()}
-                                disabled={
-                                  creatingTracker
-                                  || !trackerSuffix.trim()
-                                  || Boolean(duplicateIssueTracker)
-                                }
-                              >
-                                {creatingTracker && <Loader2 className="h-4 w-4 animate-spin" />}
-                                Create tracker
-                              </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      ) : null
-                    }
+                    actions={addTrackedLabelAction}
                   >
                     <IssueLabelViewList
                       labels={issueTrackers}
@@ -1940,152 +2332,19 @@ export function TomeWiki({ slug }: { slug: string }) {
                   </ReportsDisclosure>
                 )}
 
-                <div className="mt-6 flex items-center justify-between gap-1 px-2 pb-1.5">
+                <div
+                  className={cn(
+                    "mt-6 flex items-center justify-between gap-1 px-2 pb-1.5",
+                    navV2 && "hidden",
+                  )}
+                >
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Wiki
                   </span>
-                  <div className="flex items-center gap-0.5 text-muted-foreground">
-                    {!isEmpty && !loading && (
-                      <button
-                        type="button"
-                        onClick={() => setShowHidden((v) => !v)}
-                        title={showHidden ? "Hide agent-only pages" : "Show agent-only pages"}
-                        className="rounded p-1 hover:bg-muted hover:text-foreground"
-                      >
-                        {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
-                    )}
-                    {!isEmpty && !loading && <WikiExportMenu slug={slug} />}
-                    {!loading && canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => openCreateFolder(null)}
-                        title="New folder"
-                        aria-label="New folder"
-                        className="rounded p-1 hover:bg-muted hover:text-foreground"
-                      >
-                        <FolderPlus className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {!loading && canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => uploadInputRef.current?.click()}
-                        title="Import Markdown, text, HTML, DOCX, or PDF files"
-                        aria-label="Import pages"
-                        disabled={importing}
-                        className="rounded p-1 hover:bg-muted hover:text-foreground"
-                      >
-                        {importing ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Upload className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    )}
-                    {!loading && canEdit && (
-                      <Dialog
-                        open={newPageOpen}
-                        onOpenChange={(o) => {
-                          setNewPageOpen(o);
-                          if (o) {
-                            setTimeout(() => newPageInputRef.current?.focus(), 0);
-                          } else {
-                            setNewPageName("");
-                            setNewPageParentFolder(null);
-                          }
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <button
-                            type="button"
-                            title="New page"
-                            aria-label="New page"
-                            onClick={() => openNewPage()}
-                            className="rounded p-1 hover:bg-muted hover:text-foreground"
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-md">
-                          <DialogHeader>
-                            <DialogTitle>
-                              {newPageParentFolder
-                                ? `New page in ${newPageParentFolder.title}`
-                                : "New wiki page"}
-                            </DialogTitle>
-                            <DialogDescription>
-                              Enter a page name, then draft it in the editor or ask the agent to help.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              const name = newPageName.trim();
-                              if (!name) return;
-                              void createPage(name, {
-                                parentFolderId: newPageParentFolder?.id,
-                                openEditor: true,
-                              });
-                              setNewPageOpen(false);
-                              setNewPageName("");
-                            }}
-                            className="space-y-4"
-                          >
-                            <div className="space-y-2">
-                              <label
-                                htmlFor="tome-new-page-input"
-                                className="block text-sm font-medium text-foreground"
-                              >
-                                Page name
-                              </label>
-                              <Input
-                                id="tome-new-page-input"
-                                ref={newPageInputRef}
-                                value={newPageName}
-                                onChange={(e) => setNewPageName(e.target.value)}
-                                placeholder="new-page.md"
-                                className="font-mono text-sm"
-                                aria-label="New page name"
-                              />
-                            </div>
-                            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNewPageOpen(false);
-                                  setNewPageName("");
-                                  uploadInputRef.current?.click();
-                                }}
-                                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                              >
-                                <Upload className="h-4 w-4" />
-                                Import instead
-                              </button>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={!newPageName.trim()}
-                                  onClick={() => promptAgentForPage(newPageName)}
-                                >
-                                  <Sparkles className="h-4 w-4" />
-                                  Ask agent
-                                </Button>
-                                <Button type="submit" size="sm" disabled={!newPageName.trim()}>
-                                  Write in editor
-                                </Button>
-                              </div>
-                            </div>
-                          </form>
-                        </DialogContent>
-                      </Dialog>
-                    )}
-                  </div>
+                    {!navV2 && wikiToolbar}
                 </div>
 
-                {!loading && !isEmpty && (
+                {!navV2 && !loading && !isEmpty && (
                   <div className="relative mx-2 mb-2">
                     <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <input
@@ -2122,44 +2381,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                   }}
                 />
 
-                {loading ? (
-                  <SidebarSkeleton />
-                ) : isEmpty ? (
-                  <div className="px-2 py-2 text-xs text-muted-foreground">
-                    <p className="mb-2">No wiki pages yet.</p>
-                    <ViewOnlyTooltip viewOnly={!canEdit}>
-                      <Button
-                        size="sm"
-                        onClick={() => navigate({ kind: "ingest" })}
-                        disabled={!canEdit}
-                      >
-                        {isSynthesized ? "Ingest & synthesize" : "Run an ingest"}
-                      </Button>
-                    </ViewOnlyTooltip>
-                  </div>
-                ) : filteredWikiTree.length === 0 ? (
-                  <p className="px-2 py-2 text-xs text-muted-foreground">
-                    No pages or folders match “{wikiQuery.trim()}”.
-                  </p>
-                ) : (
-                  data && (
-                    <WikiSidebar
-                      tree={filteredWikiTree}
-                      selectedPath={navActive.page}
-                      selectedFolderId={navActive.folder}
-                      onSelect={openPage}
-                      onSelectFolder={openFolder}
-                      showHidden={showHidden}
-                      onDelete={canEdit ? deletePage : undefined}
-                      onCreateFolder={canEdit ? openCreateFolder : undefined}
-                      onCreatePage={canEdit ? openNewPage : undefined}
-                      onEditFolder={canEdit ? openEditFolder : undefined}
-                      onDeleteFolder={canEdit ? deleteWikiFolder : undefined}
-                      onMoveItem={canEdit ? moveWikiItem : undefined}
-                      unreadPaths={unreadPaths}
-                    />
-                  )
-                )}
+                {!navV2 && renderWikiTree(filteredWikiTree, { editable: true })}
 
                 {/* Synthesized-type down-links: the projects tagged to this
                     BHAG/Area. Links out to each project's own wiki — the
@@ -2404,6 +2626,22 @@ export function TomeWiki({ slug }: { slug: string }) {
                   onSaveBarInsetChange={setAssistantBottomInset}
                   onSaved={applyProjectMeta}
                   onOpenIngest={() => navigate({ kind: "ingest" })}
+                  pagesManager={
+                    navV2 ? (
+                      <>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground">
+                            The same tree the rail shows, with the actions it no
+                            longer carries.
+                          </p>
+                          <div className="flex items-center gap-1">{wikiToolbar}</div>
+                        </div>
+                        <div className="rounded-lg border border-border p-2">
+                          {renderWikiTree(filteredWikiTree, { editable: true })}
+                        </div>
+                      </>
+                    ) : undefined
+                  }
                 />
               </div>
             ) : view.kind === "templates" ? (
@@ -2682,6 +2920,64 @@ export function TomeWiki({ slug }: { slug: string }) {
         projectName={projectTitle ?? undefined}
       />
     </TooltipProvider>
+  );
+}
+
+/**
+ * A rail row that is also the heading for a tree beneath it.
+ *
+ * Wiki and References are both a place to go and a list to browse, so the row
+ * carries a caret and does not navigate: there is no single page that "the
+ * wiki" means, and sending a reader to an arbitrary one of them would be a
+ * guess. The caret is at the leading edge, where a reader reaching for a
+ * disclosure expects it, rather than trailing like a menu.
+ */
+function NavSection({
+  icon,
+  label,
+  active,
+  expanded,
+  onToggle,
+  controlsId,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  /** Whether what is open belongs to this section. */
+  active: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  controlsId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={controlsId}
+        aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors hover:bg-muted",
+          active && "bg-muted text-primary",
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-90",
+          )}
+        />
+        {icon}
+        <span className="flex-1 truncate">{label}</span>
+      </button>
+      {expanded && (
+        <div id={controlsId} className="mt-1">
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 

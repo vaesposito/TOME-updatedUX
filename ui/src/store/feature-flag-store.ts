@@ -3,13 +3,14 @@ import { create } from "zustand";
 
 const STORAGE_KEY = "caipe-feature-flags";
 
-export type FeatureFlagIcon = "Brain" | "Bug" | "Eye" | "ArrowDownToLine" | "Clock" | "Ship" | "MessagesSquare" | "Sparkles";
-export type FeatureFlagCategory = "ai" | "chat" | "developer";
+export type FeatureFlagIcon = "Brain" | "Bug" | "Eye" | "ArrowDownToLine" | "Clock" | "Ship" | "MessagesSquare" | "Sparkles" | "PanelLeft";
+export type FeatureFlagCategory = "ai" | "chat" | "developer" | "tome";
 
 export const CATEGORY_LABELS: Record<FeatureFlagCategory, string> = {
   ai: "AI & Memory",
   chat: "Chat Behavior",
   developer: "Developer",
+  tome: "TOME",
 };
 
 export interface FeatureFlag {
@@ -98,6 +99,17 @@ export const FEATURE_FLAGS: FeatureFlag[] = [
     category: "developer",
     defaultValue: true,
     preferencesKey: "ship_loop_assistant_enabled",
+  },
+  {
+    id: "tomeNavV2",
+    label: "New project navigation",
+    description: "Fewer rows, and every page action in Settings",
+    detail:
+      "Replaces a project's left rail with seven destinations \u2014 Overview, Wiki, Standup, Issues, Notes, References and Settings \u2014 and moves the wiki's action icons into Settings \u203a Content \u203a Pages. Settings itself gains a second level of tabs. Nothing is removed: the agent stays available as the chat bubble, and ingest moves into Settings \u203a Sources.",
+    icon: "PanelLeft",
+    category: "tome",
+    defaultValue: false,
+    preferencesKey: "tome_nav_v2_enabled",
   },
   {
     id: "shipLoopSimulation",

@@ -18,7 +18,7 @@ import {
   type FeatureFlagCategory,
   type FeatureFlagIcon,
 } from "@/store/feature-flag-store";
-import { ArrowDownToLine,Brain,Bug,Clock,Eye,Info,MessagesSquare,Ship,Sparkles } from "lucide-react";
+import { ArrowDownToLine,Brain,Bug,Clock,Eye,Info,MessagesSquare,PanelLeft,Ship,Sparkles } from "lucide-react";
 import { useEffect,useRef } from "react";
 
 const FLAG_ICONS: Record<FeatureFlagIcon,React.ReactNode> = {
@@ -30,6 +30,7 @@ const FLAG_ICONS: Record<FeatureFlagIcon,React.ReactNode> = {
   Ship: <Ship className="h-4 w-4" />,
   MessagesSquare: <MessagesSquare className="h-4 w-4" />,
   Sparkles: <Sparkles className="h-4 w-4" />,
+  PanelLeft: <PanelLeft className="h-4 w-4" />,
 };
 
 interface FeaturePreferencesProps {

@@ -270,6 +270,14 @@ export interface UserSettings {
     /** Which Home page layout the user sees — the new default, or the previous fixed layout. */
     home_experience?: "new" | "classic";
     /**
+     * Whether the user has switched a project's navigation to the new rail.
+     *
+     * Stringified, as every other feature flag here is, because they all go
+     * through one store that reads them back the same way.
+     */
+    tome_nav_v2_enabled?: string;
+
+    /**
      * How the user has arranged a project's home page in Tome, for every space.
      *
      * The order they chose and the cards they put away are kept apart so that

@@ -39,13 +39,19 @@ import {
 import { UserEmailPicker } from "@/components/ui/user-email-picker";
 import { AutosavingSourcesEditor } from "@/components/projects/source-pickers/AutosavingSourcesEditor";
 import { useProjectSourceKinds } from "@/components/projects/source-pickers/useProjectSourceKinds";
+import type { SourceKind } from "@/components/projects/source-pickers";
 import { withoutMyAgentConsentFields } from "@/lib/projects/myagent-consent-client";
 import { ChildProjectsPanel } from "@/components/tome/BhagProjectsPanel";
 import { EntityModelSettings } from "@/components/tome/EntityModelSettings";
 import { PanelHeader } from "@/components/tome/PanelHeader";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
+import { WatchToggle } from "@/components/tome/WatchToggle";
 import { WebexMeetingSeriesSettings } from "@/components/tome/WebexMeetingSeriesSettings";
+import { SettingsGroupNav } from "@/components/tome/SettingsGroupNav";
+import { cn } from "@/lib/utils";
+import { groupForTab } from "@/lib/tome/settings-nav";
+import { useFeatureFlagStore } from "@/store/feature-flag-store";
 import type {
   AutoIngestConfig,
   ProjectDocument,
@@ -203,11 +209,22 @@ export function ProjectSettingsPanel({
   onSaved,
   onOpenIngest,
   onSaveBarInsetChange,
+  pagesManager,
 }: {
   slug: string;
   onSaved?: (project: ProjectDocument) => void;
   onSaveBarInsetChange?: (inset: number) => void;
   onOpenIngest?: () => void;
+  /**
+   * Everything that acts on pages, for the Content group to host.
+   *
+   * Passed in as a node rather than rebuilt here because all of it — the
+   * tree, its dialogs, the import picker, the create and delete handlers —
+   * is state the wiki already holds. Taking it as a prop moves where those
+   * controls appear without moving what owns them. Absent on the old
+   * navigation, where they stay above the tree in the rail.
+   */
+  pagesManager?: React.ReactNode;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -248,6 +265,20 @@ export function ProjectSettingsPanel({
   const [settingsTab, setSettingsTab] = useState(
     () => searchParams?.get("tab") || "general",
   );
+  /**
+   * Which of the five groups is open, and which part of a shared panel.
+   *
+   * Seeded from whichever group owns the tab that was asked for, so a link
+   * written for the flat strip — `?tab=auto-ingest` from the ingest panel,
+   * `?tab=review` from a draft review — still arrives somewhere sensible.
+   */
+  const navV2 = useFeatureFlagStore((state) => state.isEnabled("tomeNavV2"));
+  const initializeFlags = useFeatureFlagStore((state) => state.initialize);
+  useEffect(() => initializeFlags(), [initializeFlags]);
+  const [settingsGroup, setSettingsGroup] = useState(
+    () => groupForTab(searchParams?.get("tab") || "general")?.group.id ?? "general",
+  );
+  const [sourceFocus, setSourceFocus] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -266,6 +297,17 @@ export function ProjectSettingsPanel({
   const settingsSourceKinds = isSynthesized
     ? sourceKinds.filter((kind) => kind !== "myagent")
     : sourceKinds;
+  /**
+   * The connectors the editor is asked to draw.
+   *
+   * The old strip shows all of them on one tab. The new one gives each a
+   * subtab and narrows this to the one being looked at — still the same
+   * editor instance, so there is still one autosave chain over the sources.
+   */
+  const shownSourceKinds =
+    sourceFocus && settingsSourceKinds.includes(sourceFocus as SourceKind)
+      ? ([sourceFocus] as SourceKind[])
+      : settingsSourceKinds;
 
   // Scoped OpenFGA writer. A user steward can also lend credentials to the
   // source-activity feed; a team steward authorizes all team members but has no
@@ -848,7 +890,21 @@ export function ProjectSettingsPanel({
 
           <fieldset disabled={!canEdit} className="contents">
             <Tabs value={settingsTab} onValueChange={setSettingsTab}>
-              <div className="border-b border-border">
+              {navV2 ? (
+                <SettingsGroupNav
+                  activeGroup={settingsGroup}
+                  activeTab={settingsTab}
+                  activeFocus={sourceFocus}
+                  container={isSynthesized}
+                  sourceKinds={sourceKinds}
+                  onSelect={(group, subtab) => {
+                    setSettingsGroup(group.id);
+                    setSettingsTab(subtab.value);
+                    setSourceFocus(subtab.focus ?? null);
+                  }}
+                />
+              ) : null}
+              <div className={cn("border-b border-border", navV2 && "hidden")}>
                 <TabsList
                   className="h-auto w-full justify-start gap-4 overflow-x-auto overflow-y-hidden bg-transparent p-0 pb-px"
                   indicator="underline"
@@ -1350,6 +1406,68 @@ export function ProjectSettingsPanel({
                 </TabsContent>
               )}
 
+
+              {/*
+                Everything that acts on pages, which the new navigation moves
+                off the rail. The tree here is the same component the rail
+                draws, handed the handlers the rail no longer gets: creating,
+                renaming by drag, reordering and deleting all happen here.
+              */}
+              <TabsContent value="pages" className="space-y-4 pt-6">
+                {pagesManager ?? (
+                  <p className="text-sm text-muted-foreground">
+                    Page actions live in the wiki rail on this navigation. Switch
+                    to the new project navigation to manage pages from here.
+                  </p>
+                )}
+              </TabsContent>
+
+              <TabsContent value="notifications" className="space-y-6 pt-6">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">This {projectKind}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Whether what happens here reaches you, and how much of it.
+                    This is your own setting; it changes nothing for anyone else
+                    on the team.
+                  </p>
+                  <WatchToggle slug={slug} className="mt-1" />
+                </div>
+                <div className="space-y-2 border-t border-border pt-5">
+                  <h3 className="text-sm font-medium">Where and when</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Which channels a notification is delivered through, and
+                    whether it arrives as it happens or in a digest, are set
+                    once for your account rather than per space.
+                  </p>
+                  <Link
+                    href="/settings?tab=notifications"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Notification settings
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="notifications-following" className="space-y-4 pt-6">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">Followed spaces</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Every space you follow, with the level set for each, is kept
+                    together in the inbox — beside the notifications it
+                    produces, which is the only place the two can be judged
+                    against each other.
+                  </p>
+                  <Link
+                    href="/notifications?tab=following"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Open following
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
+              </TabsContent>
+
               <TabsContent value="sources" forceMount className="space-y-6 pt-6 data-[state=inactive]:hidden">
                 <div className="space-y-6">
                   <div className="flex items-center justify-end">
@@ -1379,7 +1497,7 @@ export function ProjectSettingsPanel({
                     <>
                       <AutosavingSourcesEditor
                         slug={slug}
-                        kinds={settingsSourceKinds}
+                        kinds={shownSourceKinds}
                         value={sources}
                         onChange={setSources}
                         onSaved={onSaved}

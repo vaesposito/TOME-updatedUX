@@ -15,11 +15,12 @@ import {
   Layers,
   ListChecks,
   Loader2,
-  Rocket,
+  Plus,
   Shield,
   Target,
   type LucideIcon,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   useCallback,
   useEffect,
@@ -630,23 +631,16 @@ export function ProjectOnboardingWizard({
 
   if (!open) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
         onClick={() => setOpen(true)}
-        className="group relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 px-5 py-3 text-left shadow-md transition hover:scale-[1.01] hover:shadow-lg"
+        title={stepSummary}
       >
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg gradient-primary-br text-white shadow-md">
-            <Rocket className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="font-semibold text-foreground">
-              Launch project onboarding
-            </p>
-            <p className="text-xs text-muted-foreground">{stepSummary}</p>
-          </div>
-        </div>
-      </button>
+        <Plus className="h-3.5 w-3.5" />
+        Add project
+      </Button>
     );
   }
 

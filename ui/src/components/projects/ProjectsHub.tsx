@@ -38,7 +38,6 @@ import {
   parseHubTab,
   type HubTab,
 } from "@/components/projects/HubTabs";
-import { NavV2Toggle } from "@/components/projects/NavV2Toggle";
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 import { WorkspaceOverview } from "@/components/tome/WorkspaceOverview";
 import { Button } from "@/components/ui/button";
@@ -761,8 +760,8 @@ export function ProjectsHub() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hero, setHero] = useState<OnboardingHeroConfig>({
-    title: "TOME: knowledge for your teams",
-    description: "Onboarding steps are configured externally.",
+    title: "Welcome to TOME",
+    description: "Outshift Memory Engine",
   });
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   /**
@@ -813,17 +812,10 @@ export function ProjectsHub() {
     }
   }, []);
 
-  // Default to grouping by BHAG so strategic goals are the primary lens; the
-  // user can still drop to a flat list or areas.
+  // Projects are read by the goal they belong to, so that is the grouping,
+  // and there is no control offering the other two. A ?groupBy= link still
+  // works for anyone who wants a flat list or areas.
   const groupBy = (searchParams.get("groupBy") ?? "initiative") as GroupBy;
-
-  const setGroupBy = (value: GroupBy) => {
-    setReordering(false);
-    const params = new URLSearchParams(searchParams.toString());
-    if (value === "initiative") params.delete("groupBy");
-    else params.set("groupBy", value);
-    router.replace(`/projects?${params.toString()}`);
-  };
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
@@ -1113,7 +1105,6 @@ export function ProjectsHub() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <NavV2Toggle />
               {isTomeAdmin && (
                 <Link
                   href="/projects/admin"
@@ -1128,14 +1119,15 @@ export function ProjectsHub() {
             </div>
           </div>
 
-          {/* Under the welcome rather than above the list, because they are
-              three readings of the same thing and none of them is a section
-              of the catalogue. */}
-          <div className="flex justify-center">
-            <HubTabs value={tab} onChange={setTab} />
-          </div>
         </div>
       </section>
+
+      {/* Under the welcome rather than above the list, because they are three
+          readings of the same thing and none of them is a section of the
+          catalogue. Outside the band, so the band stays a greeting. */}
+      <div className="flex justify-center">
+        <HubTabs value={tab} onChange={setTab} />
+      </div>
 
       {isTomeAdmin && <OpenFgaModelRepairBanner />}
 
@@ -1228,16 +1220,6 @@ export function ProjectsHub() {
                 )}
               </>
             )}
-            <select
-              value={groupBy}
-              onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-              aria-label="Group projects"
-              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 sm:w-auto"
-            >
-              <option value="initiative">Group by BHAG</option>
-              <option value="area">Group by Area</option>
-              <option value="none">No grouping</option>
-            </select>
           </div>
         </div>
 

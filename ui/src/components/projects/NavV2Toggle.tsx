@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * The switch for the new project navigation, where the projects are.
+ * The switch for the new TOME navigation.
  *
- * It also lives in Appearance, with the rest of the interface preferences,
- * but that is not where anyone is standing when they wonder what the new
- * navigation looks like. This is: one click from the list, and one click
- * back.
+ * It lives in Appearance, with the rest of the interface preferences. It is
+ * a preference rather than a thing to do, and the front page is a greeting
+ * and a list of projects.
  */
 
 import * as React from "react";

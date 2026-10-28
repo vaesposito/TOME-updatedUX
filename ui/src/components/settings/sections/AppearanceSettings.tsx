@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { useKeyedAutoSave } from "@/hooks/use-keyed-auto-save";
 import { useTheme } from "@/components/theme-provider";
 import { Check,LayoutPanelLeft,Monitor,Palette,Type } from "lucide-react";
+import { NavV2Toggle } from "@/components/projects/NavV2Toggle";
 import { useEffect,useState } from "react";
 
 const THEME_SWATCHES: Record<ColorTheme,string> = {
@@ -319,6 +320,21 @@ export function AppearanceSettings(): React.ReactElement {
           <code className="rounded bg-muted px-2 py-1 font-mono" style={{ fontSize: "0.85em" }}>
             const agent = new DynamicAgent();
           </code>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        description="A reworked TOME sidebar: one entry per kind of thing, with every action on a page gathered into Settings."
+        title={<span className="flex items-center gap-2"><LayoutPanelLeft className="h-5 w-5 text-primary" />TOME navigation</span>}
+      >
+        <div className="flex items-center gap-4 rounded-lg border border-border/70 p-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">New navigation</p>
+            <p className="text-xs text-muted-foreground">
+              Kept in this browser, and only affects what you see.
+            </p>
+          </div>
+          <NavV2Toggle />
         </div>
       </SettingsCard>
     </div>

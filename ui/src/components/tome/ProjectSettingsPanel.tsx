@@ -48,7 +48,7 @@ import { TomeLoading } from "@/components/tome/TomeLoading";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { FollowMenu } from "@/components/tome/FollowMenu";
 import { WebexMeetingSeriesSettings } from "@/components/tome/WebexMeetingSeriesSettings";
-import { SettingsGroupNav } from "@/components/tome/SettingsGroupNav";
+import { SETTINGS_TAB_TRIGGER_CLASS, SettingsGroupNav } from "@/components/tome/SettingsGroupNav";
 import { cn } from "@/lib/utils";
 import { groupForTab } from "@/lib/tome/settings-nav";
 import { useFeatureFlagStore } from "@/store/feature-flag-store";
@@ -112,9 +112,6 @@ const OPTIONALITY_OPTIONS = [
   "BU Graduation",
   "Free Service with Adoption",
 ] as const;
-
-const TAB_TRIGGER_CLASS =
-  "rounded-none border-b-2 border-transparent px-1 pb-2 pt-1 text-sm font-medium data-[state=active]:bg-transparent data-[state=active]:shadow-none";
 
 interface ProjectSettingsSnapshot {
   title: string;
@@ -912,38 +909,38 @@ export function ProjectSettingsPanel({
                   className="h-auto w-full justify-start gap-4 overflow-x-auto overflow-y-hidden bg-transparent p-0 pb-px"
                   indicator="underline"
                 >
-                  <TabsTrigger value="general" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="general" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     General
                   </TabsTrigger>
-                  <TabsTrigger value="organization" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="organization" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     Access Config
                   </TabsTrigger>
                   {isSynthesized && (
-                    <TabsTrigger value="projects" className={TAB_TRIGGER_CLASS}>
+                    <TabsTrigger value="projects" className={SETTINGS_TAB_TRIGGER_CLASS}>
                       Projects
                     </TabsTrigger>
                   )}
-                  <TabsTrigger value="sources" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="sources" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     Sources
                   </TabsTrigger>
-                  <TabsTrigger value="models" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="models" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     Models
                   </TabsTrigger>
-                  <TabsTrigger value="auto-ingest" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="auto-ingest" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     Auto-ingest
                   </TabsTrigger>
-                  <TabsTrigger value="review" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="review" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     Review
                   </TabsTrigger>
-                  <TabsTrigger value="slt" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="slt" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     Metadata
                   </TabsTrigger>
                   {!isSynthesized && (
-                    <TabsTrigger value="feed" className={TAB_TRIGGER_CLASS}>
+                    <TabsTrigger value="feed" className={SETTINGS_TAB_TRIGGER_CLASS}>
                       Activity Feed
                     </TabsTrigger>
                   )}
-                  <TabsTrigger value="reports" className={TAB_TRIGGER_CLASS}>
+                  <TabsTrigger value="reports" className={SETTINGS_TAB_TRIGGER_CLASS}>
                     Sidebar
                   </TabsTrigger>
                 </TabsList>

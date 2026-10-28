@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SETTINGS_TAB_TRIGGER_CLASS } from "@/components/tome/SettingsGroupNav";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { PageTemplateEditor } from "@/components/tome/PageTemplateEditor";
 import { ModelConfigTab } from "@/components/tome/admin/ModelConfigTab";
@@ -101,16 +102,16 @@ function TomeAdminPageContent() {
       />
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TomeAdminTab)} className="w-full space-y-6">
-        <TabsList className="h-auto flex-wrap gap-1">
-          <TabsTrigger value="page-templates">Page Templates</TabsTrigger>
-          <TabsTrigger value="models">Models</TabsTrigger>
-          <TabsTrigger value="assistant">Assistant</TabsTrigger>
-          <TabsTrigger value="experiments">Model Evaluations</TabsTrigger>
-          <TabsTrigger value="issue-labels">Issue Labels</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="authorization">RBAC Health</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="admins">Admins</TabsTrigger>
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-4 rounded-none border-b border-border bg-transparent p-0 pb-px">
+          <TabsTrigger value="page-templates" className={SETTINGS_TAB_TRIGGER_CLASS}>Page Templates</TabsTrigger>
+          <TabsTrigger value="models" className={SETTINGS_TAB_TRIGGER_CLASS}>Models</TabsTrigger>
+          <TabsTrigger value="assistant" className={SETTINGS_TAB_TRIGGER_CLASS}>Assistant</TabsTrigger>
+          <TabsTrigger value="experiments" className={SETTINGS_TAB_TRIGGER_CLASS}>Model Evaluations</TabsTrigger>
+          <TabsTrigger value="issue-labels" className={SETTINGS_TAB_TRIGGER_CLASS}>Issue Labels</TabsTrigger>
+          <TabsTrigger value="analytics" className={SETTINGS_TAB_TRIGGER_CLASS}>Analytics</TabsTrigger>
+          <TabsTrigger value="authorization" className={SETTINGS_TAB_TRIGGER_CLASS}>RBAC Health</TabsTrigger>
+          <TabsTrigger value="notifications" className={SETTINGS_TAB_TRIGGER_CLASS}>Notifications</TabsTrigger>
+          <TabsTrigger value="admins" className={SETTINGS_TAB_TRIGGER_CLASS}>Admins</TabsTrigger>
         </TabsList>
 
         <TabsContent value="page-templates" className="mt-0 space-y-4">

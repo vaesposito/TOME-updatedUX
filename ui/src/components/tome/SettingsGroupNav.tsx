@@ -21,6 +21,16 @@ import {
   type TomeSettingsSubTab,
 } from "@/lib/tome/settings-nav";
 
+/**
+ * The underline a top-level settings tab is marked with.
+ *
+ * Shared with the Radix tabs on the TOME admin page, which are the same kind
+ * of choice at the same level: a reader who learns what a settings tab looks
+ * like in one place should not have to learn it again in the other.
+ */
+export const SETTINGS_TAB_TRIGGER_CLASS =
+  "rounded-none border-b-2 border-transparent bg-transparent px-1 pb-2 pt-1 text-sm font-medium shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none";
+
 export function SettingsGroupNav({
   activeGroup,
   activeTab,
@@ -52,11 +62,15 @@ export function SettingsGroupNav({
   const selected = activeFocus ? `${activeTab}:${activeFocus}` : activeTab;
 
   return (
-    <div className="border-b border-border">
+    <div>
+      {/* The line closes the top row rather than the pair of them, so the
+          subtabs fall on the content's side of it, which is the side they
+          belong to: they choose what is in the panel, not what is in the
+          header. */}
       <div
         role="tablist"
         aria-label="Settings sections"
-        className="flex w-full items-center gap-4 overflow-x-auto overflow-y-hidden pb-px"
+        className="flex w-full items-center gap-4 overflow-x-auto overflow-y-hidden border-b border-border pb-px"
       >
         {groups.map(({ group, subtabs }) => {
           const isOpen = open?.group.id === group.id;
@@ -87,7 +101,7 @@ export function SettingsGroupNav({
         <div
           role="tablist"
           aria-label={`${open.group.label} settings`}
-          className="flex w-full items-center gap-3 overflow-x-auto overflow-y-hidden py-2"
+          className="flex w-full items-center gap-4 overflow-x-auto overflow-y-hidden pb-1 pl-3 pt-2.5"
         >
           {open.subtabs.map((subtab) => {
             const id = subtabId(subtab);
@@ -99,11 +113,14 @@ export function SettingsGroupNav({
                 role="tab"
                 aria-selected={isActive}
                 onClick={() => onSelect(open.group, subtab)}
+                // Plainer than the row above it, never heavier. A filled
+                // pill under a bare underline makes the smaller choice look
+                // like the larger one.
                 className={cn(
-                  "shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                  "shrink-0 whitespace-nowrap text-xs transition-colors",
                   isActive
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground",
                 )}
               >
                 {subtab.label}

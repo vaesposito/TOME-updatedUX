@@ -1092,13 +1092,18 @@ export function ProjectsHub() {
   return (
     <div className="relative isolate mx-auto w-full max-w-[1600px] space-y-8 p-6">
       {/* A wash in the corner the eye leaves last, so the three tabs sit on
-          something rather than on nothing. Fixed, so it stays where it is
-          while a long list of projects scrolls past it; in the theme colour,
-          so it follows whatever the reader chose; and far enough down in
-          opacity that it reads as depth rather than as a shape. */}
+          something rather than on nothing. Two discs rather than one, so the
+          colour turns across the corner instead of sitting there flat, and
+          far enough down in opacity that it reads as depth rather than as a
+          shape. Both are fixed, so they hold still while a long list of
+          projects scrolls past them. */}
       <div
         aria-hidden
-        className="pointer-events-none fixed bottom-0 right-0 -z-10 h-[40rem] w-[40rem] translate-x-1/4 translate-y-1/4 rounded-full bg-primary/[0.13] blur-[130px]"
+        className="pointer-events-none fixed bottom-0 right-0 -z-10 h-[40rem] w-[40rem] translate-x-1/4 translate-y-1/4 rounded-full bg-[hsla(270,75%,60%,0.16)] blur-[130px]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed bottom-0 right-[18rem] -z-10 h-[32rem] w-[32rem] translate-y-1/3 rounded-full bg-[hsla(214,85%,55%,0.14)] blur-[130px]"
       />
 
       <section className="relative overflow-hidden rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-background to-primary/5 p-5 md:p-6">

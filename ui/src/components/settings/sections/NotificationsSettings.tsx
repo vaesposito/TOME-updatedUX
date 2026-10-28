@@ -16,13 +16,14 @@ import {
   requestBrowserNotificationPermission,
   type BrowserNotificationCapability,
 } from "@/lib/agent-completion-notifications";
-import { Activity,Bell,BellRing,ChevronsDownUp,ChevronsUpDown,Loader2,Volume2 } from "lucide-react";
+import { Activity,Bell,BellRing,BookOpen,ChevronsDownUp,ChevronsUpDown,ExternalLink,Loader2,Volume2 } from "lucide-react";
+import Link from "next/link";
 import { useEffect,useRef,useState } from "react";
 
 type NotificationKey = "release-notes" | "browser-completions" | "completion-chime" | "platform-health";
-type NotificationSection = "agent-completions" | "release-notes" | "platform-health";
+type NotificationSection = "agent-completions" | "release-notes" | "tome" | "platform-health";
 
-const NOTIFICATION_SECTIONS: NotificationSection[] = ["agent-completions","release-notes","platform-health"];
+const NOTIFICATION_SECTIONS: NotificationSection[] = ["agent-completions","release-notes","tome","platform-health"];
 
 interface NotificationPreferences {
   browserEnabled: boolean;
@@ -72,7 +73,7 @@ export function NotificationsSettings(): React.ReactElement {
   const { isAdmin } = useAdminRole();
   const visibleSections: NotificationSection[] = isAdmin
     ? NOTIFICATION_SECTIONS
-    : ["agent-completions","release-notes"];
+    : ["agent-completions","release-notes","tome"];
   const [preferences,setPreferences] = useState<NotificationPreferences>({
     browserEnabled: false,
     chimeEnabled: false,
@@ -403,6 +404,25 @@ export function NotificationsSettings(): React.ReactElement {
           <ReleaseNotesPreview isAdmin={false} />
         </div>
       </SettingsCard>
+      <SettingsCard
+        collapsibleLabel="TOME"
+        description="Updates from the TOME projects, Areas, and BHAGs you follow."
+        expanded={expandedSections.has("tome")}
+        onExpandedChange={(expanded) => setSectionExpanded("tome",expanded)}
+        title={<span className="flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" />TOME</span>}
+      >
+        {/* What to follow, and how loudly, is chosen per space rather than
+            with one switch, so this card points at that rather than
+            reproducing a tree of every space a reader can see. */}
+        <Link
+          className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:no-underline"
+          href="/notifications?tab=following"
+        >
+          Manage TOME notifications
+          <ExternalLink className="h-3.5 w-3.5" />
+        </Link>
+      </SettingsCard>
+
       {isAdmin ? <SettingsCard
         collapsibleLabel="Platform health"
         description="Choose whether global platform incidents appear in your personal notification feed."

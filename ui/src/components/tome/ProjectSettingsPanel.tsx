@@ -46,7 +46,7 @@ import { EntityModelSettings } from "@/components/tome/EntityModelSettings";
 import { PanelHeader } from "@/components/tome/PanelHeader";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
-import { WatchToggle } from "@/components/tome/WatchToggle";
+import { FollowMenu } from "@/components/tome/FollowMenu";
 import { WebexMeetingSeriesSettings } from "@/components/tome/WebexMeetingSeriesSettings";
 import { SettingsGroupNav } from "@/components/tome/SettingsGroupNav";
 import { cn } from "@/lib/utils";
@@ -1451,7 +1451,7 @@ export function ProjectSettingsPanel({
                     This is your own setting; it changes nothing for anyone else
                     on the team.
                   </p>
-                  <WatchToggle slug={slug} className="mt-1" />
+                  <FollowMenu slug={slug} className="mt-1" />
                 </div>
                 <div className="space-y-2 border-t border-border pt-5">
                   <h3 className="text-sm font-medium">Where and when</h3>

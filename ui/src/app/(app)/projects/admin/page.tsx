@@ -14,6 +14,7 @@ import { TomeAuthorizationHealthTab } from "@/components/tome/admin/TomeAuthoriz
 import { AutoIngestCredentialHealthTab } from "@/components/tome/admin/AutoIngestCredentialHealthTab";
 import { ExperimentsTab } from "@/components/tome/admin/ExperimentsTab";
 import { IssueLabelsTab } from "@/components/tome/admin/IssueLabelsTab";
+import { TomeNotificationSettings } from "@/components/tome/TomeNotificationSettings";
 import { useSubtabParam } from "@/hooks/use-subtab-param";
 
 const TOME_ADMIN_TABS = [
@@ -24,6 +25,7 @@ const TOME_ADMIN_TABS = [
   "issue-labels",
   "analytics",
   "authorization",
+  "notifications",
   "admins",
 ] as const;
 type TomeAdminTab = (typeof TOME_ADMIN_TABS)[number];
@@ -36,6 +38,7 @@ const TOME_ADMIN_TAB_LABELS: Record<TomeAdminTab, string> = {
   "issue-labels": "Issue Labels",
   analytics: "Analytics",
   authorization: "RBAC Health",
+  notifications: "Notifications",
   admins: "Admins",
 };
 
@@ -106,6 +109,7 @@ function TomeAdminPageContent() {
           <TabsTrigger value="issue-labels">Issue Labels</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="authorization">RBAC Health</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="admins">Admins</TabsTrigger>
         </TabsList>
 
@@ -142,6 +146,14 @@ function TomeAdminPageContent() {
           <div className="border-t border-border/60 pt-8">
             <AutoIngestCredentialHealthTab />
           </div>
+        </TabsContent>
+
+        {/* Personal rather than administrative: what reaches this reader,
+            not how TOME is configured for everyone. It sits here because
+            that is where the design puts it; the same panel is reachable
+            from the notification inbox, which everyone can open. */}
+        <TabsContent value="notifications" className="mt-0 space-y-4">
+          <TomeNotificationSettings />
         </TabsContent>
 
         <TabsContent value="admins" className="mt-0 space-y-4">

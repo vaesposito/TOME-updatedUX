@@ -108,7 +108,7 @@ import { EngagementPanel } from "@/components/tome/EngagementPanel";
 import { PageHistoryView } from "@/components/tome/PageHistoryView";
 import { Breadcrumb, type Crumb } from "@/components/tome/Breadcrumb";
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
-import { WatchToggle } from "@/components/tome/WatchToggle";
+import { FollowMenu } from "@/components/tome/FollowMenu";
 import { isTourRunning } from "@/components/tour/notification-tour";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
 import { ProjectHomeView } from "@/components/tome/home/ProjectHomeView";
@@ -2175,7 +2175,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 here; a page keeps its own toggle, which is the one most
                 people reach for. Full screen went with it: a reader who
                 wants the chrome gone has the browser's own. */}
-            {!navV2 && <WatchToggle slug={slug} />}
+            {!navV2 && <FollowMenu slug={slug} />}
             <McpConnectDialog />
             {!navV2 && (
               <Button

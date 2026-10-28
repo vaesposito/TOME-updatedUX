@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import { DigestConfigPanel } from "@/components/tome/DigestConfigPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -71,6 +72,11 @@ const SAMPLE = {
 
 export function WorkspaceDigest() {
   const [copied, setCopied] = React.useState(false);
+  /**
+   * In place of the digest rather than beside it: the configuration is about
+   * the thing it replaces, and a reader reading one is not reading the other.
+   */
+  const [configuring, setConfiguring] = React.useState(false);
 
   React.useEffect(() => {
     if (!copied) return;
@@ -78,11 +84,20 @@ export function WorkspaceDigest() {
     return () => window.clearTimeout(timer);
   }, [copied]);
 
+  if (configuring) {
+    return <DigestConfigPanel onBack={() => setConfiguring(false)} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold tracking-tight">Digest</h2>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5" disabled>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5"
+          onClick={() => setConfiguring(true)}
+        >
           <Settings2 className="h-3.5 w-3.5" />
           Configure digest
         </Button>

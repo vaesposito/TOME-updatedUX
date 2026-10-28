@@ -310,6 +310,22 @@ export interface UserSettings {
     tome_enabled?: boolean;
     /** Tome entity slugs this user has muted from the notification page. */
     tome_muted_entity_slugs?: string[];
+    /**
+     * The hub's digest: what the reader asked it to cover, and when.
+     *
+     * Kept on the reader rather than on a space, because the digest spans
+     * everything they can see and belongs to none of it. Read back through
+     * `parseDigestConfig`, which takes each field on its own merits, so an
+     * older or hand-edited document gives up the parts that still make sense.
+     */
+    tome_digest?: {
+      topic?: string;
+      frequency?: string;
+      /** 0 Sunday to 6 Saturday. */
+      weekday?: number;
+      /** 0 to 23. */
+      hour?: number;
+    };
   };
   defaults: {
     default_model: string;

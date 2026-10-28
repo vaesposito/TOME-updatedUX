@@ -1,7 +1,14 @@
 /** @jest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as React from "react";
+
+jest.mock("@/lib/api-client", () => ({
+  apiClient: {
+    getSettings: () => Promise.resolve({ notifications: {} }),
+    updateNotifications: () => Promise.resolve({}),
+  },
+}));
 
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 
@@ -43,5 +50,17 @@ describe("WorkspaceDigest", () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<WorkspaceDigest />);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("opens the configuration in place of the digest, and comes back", async () => {
+    // In place of it rather than beside it: the configuration is about the
+    // thing it replaces, and nobody reads both at once.
+    render(<WorkspaceDigest />);
+    fireEvent.click(screen.getByRole("button", { name: /Configure digest/ }));
+    expect(await screen.findByText("Digest configuration")).toBeInTheDocument();
+    expect(screen.queryByText("What moved")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to the digest" }));
+    await waitFor(() => expect(screen.getByText("What moved")).toBeInTheDocument());
   });
 });

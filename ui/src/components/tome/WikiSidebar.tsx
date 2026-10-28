@@ -313,8 +313,10 @@ function TreeNode({
           className={cn(
             // Set apart from the pages rather than listed among them: a gap
             // above, so a folder reads as the start of what follows it, and
-            // the same uppercase label every heading in this rail uses.
-            "group mt-2 flex w-full items-center gap-1 rounded pr-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground",
+            // a heavier label. The size and the case are the pages' own, so
+            // a branch reads as one list at one measure; the folder mark and
+            // the space above it are what tell a folder from a page.
+            "group mt-2 flex w-full items-center gap-1 rounded pr-1 py-1 font-semibold text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground",
             selected && "bg-muted text-primary",
             dropZone === "inside" && "bg-primary/15 text-primary ring-1 ring-inset ring-primary/50",
             dropZone === "before" && "border-t-2 border-primary",
@@ -354,7 +356,7 @@ function TreeNode({
             )}
           </button>
           {node.folderId && (onCreatePage || onEditFolder || onMoveItem) && (
-            <span className="hidden shrink-0 items-center gap-0.5 normal-case group-hover:flex">
+            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
               {onMoveItem && navigationItem && (
                 <DragHandle
                   item={navigationItem}

@@ -89,7 +89,11 @@ export function WorkspaceDigest() {
   }
 
   return (
-    <div className="space-y-4">
+    /* A digest is prose, so it is held to a reading measure and centred
+       rather than let out to the width of the page. The cap is on the
+       column, not on the paragraphs inside it, so the text reaches the
+       card's edge instead of stopping short of it. */
+    <div className="mx-auto max-w-[68ch] space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold tracking-tight">Digest</h2>
         <Button
@@ -141,7 +145,7 @@ export function WorkspaceDigest() {
         <div className="space-y-6 px-5 py-5">
           {/* Said plainly and at the top, because a reader who stops after one
               paragraph should still have been told the useful part. */}
-          <p className="max-w-[70ch] text-sm leading-relaxed text-foreground">
+          <p className="text-sm leading-relaxed text-foreground">
             {SAMPLE.lede}
           </p>
 
@@ -211,7 +215,7 @@ function Line({
         aria-hidden
         className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/60"
       />
-      <div className="min-w-0 max-w-[70ch]">
+      <div className="min-w-0">
         {/* A span, not a paragraph: the badge beside the title is a div. */}
         <span className="block text-sm leading-snug text-foreground">
           {title}{" "}

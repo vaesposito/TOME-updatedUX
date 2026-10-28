@@ -1846,7 +1846,13 @@ export function TomeWiki({ slug }: { slug: string }) {
       editable,
       emptyNote,
       selectable,
-    }: { editable: boolean; emptyNote?: string; selectable?: boolean },
+      showMeta,
+    }: {
+      editable: boolean;
+      emptyNote?: string;
+      selectable?: boolean;
+      showMeta?: boolean;
+    },
   ) => {
     if (loading) return <SidebarSkeleton />;
     if (tree.length === 0) {
@@ -1900,6 +1906,7 @@ export function TomeWiki({ slug }: { slug: string }) {
         unreadPaths={unreadPaths}
         checkedPaths={selectable && canEdit ? checkedPaths : undefined}
         onCheckedChange={selectable && canEdit ? toggleChecked : undefined}
+        showMeta={showMeta ?? true}
       />
     );
   };
@@ -2287,7 +2294,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                           )}
                         </div>
                       )}
-                      {renderWikiTree(wikiSplit.authored, { editable: false })}
+                      {renderWikiTree(wikiSplit.authored, {
+                            editable: false,
+                            showMeta: false,
+                          })}
                     </NavSection>
 
                     {showStandupReport && (
@@ -2301,34 +2311,24 @@ export function TomeWiki({ slug }: { slug: string }) {
                       />
                     )}
 
+                    {/* One destination, not one per label. A tracked label
+                        narrows the issues; it is not a place with contents of
+                        its own, and a row in the rail said otherwise. The
+                        labels are a filter above the list they filter. */}
                     {showIssuesReport && (
-                      <IssueLabelDisclosure
-                        slug={slug}
-                        controlsId={`tome-v2-issue-label-views-${slug}`}
-                        actions={addTrackedLabelAction}
-                        header={
-                          <NavItem
-                            icon={
-                              <ProviderLogo
-                                provider="github"
-                                className="h-4 w-4 shrink-0 object-contain"
-                              />
-                            }
-                            label="Issues"
-                            active={navActive.issues}
-                            onClick={() => navigate({ kind: "issues" })}
-                            tipTitle="GitHub issues"
-                            tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache."
+                      <NavItem
+                        icon={
+                          <ProviderLogo
+                            provider="github"
+                            className="h-4 w-4 shrink-0 object-contain"
                           />
                         }
-                      >
-                        <IssueLabelViewList
-                          labels={issueTrackers}
-                          activeLabel={activeTrackedIssueLabel?.label}
-                          onSelect={(label) => navigate({ kind: "issues", label })}
-                          onRemove={canRemoveIssueTrackers ? removeIssueTracker : undefined}
-                        />
-                      </IssueLabelDisclosure>
+                        label="Issues"
+                        active={navActive.issues}
+                        onClick={() => navigate({ kind: "issues" })}
+                        tipTitle="GitHub issues"
+                        tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache."
+                      />
                     )}
 
                     <NavItem
@@ -2746,7 +2746,22 @@ export function TomeWiki({ slug }: { slug: string }) {
                   initialLabel={activeTrackedIssueLabel?.label}
                   title={activeTrackedIssueLabel?.title}
                   trackedLabels={issueTrackers}
+                  {...(navV2
+                    ? {
+                        onSelectLabel: (label: string) =>
+                          navigate({ kind: "issues", label }),
+                        onRemoveLabel: canRemoveIssueTrackers
+                          ? removeIssueTracker
+                          : undefined,
+                        addLabelAction: addTrackedLabelAction,
+                      }
+                    : {})}
                 />
+                {navV2 && trackerRemovalError && (
+                  <p className="mt-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                    {trackerRemovalError}
+                  </p>
+                )}
               </div>
             ) : view.kind === "feed" ? (
               <div className="min-h-0 min-w-0 flex-1">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   type KeyboardEvent,
   type MouseEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -46,6 +47,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { IssueLabelFilter } from "@/components/tome/IssueLabelFilter";
 import {
   matchesTomeTrackedIssueLabel,
   TOME_TRACKED_ISSUE_LABELS,
@@ -234,12 +236,28 @@ export function GithubIssuesPanel({
   initialLabel,
   title,
   trackedLabels = TOME_TRACKED_ISSUE_LABELS,
+  onSelectLabel,
+  onRemoveLabel,
+  isLabelRemovable,
+  addLabelAction,
 }: {
   slug: string;
   canEdit: boolean;
   initialLabel?: string;
   title?: string;
   trackedLabels?: readonly TomeTrackedIssueLabel[];
+  /**
+   * Switches which label is being read, when the choice is made here.
+   *
+   * Its presence is what draws the filter row: a caller that offers the
+   * labels somewhere else of its own has no use for a second copy, so the
+   * row exists exactly where there is somewhere for a click to go.
+   */
+  onSelectLabel?: (label: string) => void;
+  onRemoveLabel?: (tracked: TomeTrackedIssueLabel) => void;
+  isLabelRemovable?: (tracked: TomeTrackedIssueLabel) => boolean;
+  /** Whatever adds a tracked label, placed at the end of the filter row. */
+  addLabelAction?: ReactNode;
 }) {
   const trackedLabel = initialLabel?.trim().toLowerCase();
   const [payload, setPayload] = useState<IssuesPayload | null>(null);
@@ -1054,6 +1072,17 @@ export function GithubIssuesPanel({
             </p>
           </div>
         )}
+
+      {onSelectLabel && (
+        <IssueLabelFilter
+          labels={trackedLabels}
+          activeLabel={trackedLabel}
+          onSelect={onSelectLabel}
+          onRemove={onRemoveLabel}
+          isRemovable={isLabelRemovable}
+          action={addLabelAction}
+        />
+      )}
 
       {payload && (payload.credentialConfigured || payload.issues.length > 0) && (
         <div className="relative min-w-0">

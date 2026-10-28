@@ -45,6 +45,18 @@ interface Props {
    */
   checkedPaths?: ReadonlySet<string>;
   onCheckedChange?: (path: string, checked: boolean) => void;
+  /**
+   * Whether rows carry the right-hand column that reports on them — a page's
+   * kind, a folder's size.
+   *
+   * Off where the tree is a list of places to go. A page's kind is chosen on
+   * the page itself, so a badge here only reports a setting, and neither it
+   * nor a tally of what is inside a folder helps anyone decide where to go;
+   * together they turn every row into a small status display nobody asked to
+   * read. On where pages are being surveyed rather than visited, which is
+   * what Settings > Content is for.
+   */
+  showMeta?: boolean;
 }
 
 /**
@@ -145,6 +157,7 @@ function NodeList({
   unreadPaths,
   checkedPaths,
   onCheckedChange,
+  showMeta,
   onDraggingChange,
 }: {
   nodes: PageTreeNode[];
@@ -174,6 +187,7 @@ function NodeList({
               unreadPaths={unreadPaths}
               checkedPaths={checkedPaths}
               onCheckedChange={onCheckedChange}
+              showMeta={showMeta}
               onDraggingChange={onDraggingChange}
             />
           </li>
@@ -200,6 +214,7 @@ function TreeNode({
   unreadPaths,
   checkedPaths,
   onCheckedChange,
+  showMeta,
   onDraggingChange,
 }: {
   node: PageTreeNode;
@@ -257,6 +272,7 @@ function TreeNode({
       unreadPaths={unreadPaths}
       checkedPaths={checkedPaths}
       onCheckedChange={onCheckedChange}
+      showMeta={showMeta}
       onDraggingChange={onDraggingChange}
     />
   );
@@ -332,7 +348,7 @@ function TreeNode({
               // own button, so a screen reader already said which one.
               <UnreadDot unread label="New activity" />
             )}
-            {hasChildren && (
+            {showMeta && hasChildren && (
               <span className="ml-auto shrink-0 pl-2 text-[10px] font-normal tabular-nums text-muted-foreground/70 group-hover:hidden">
                 {node.children.length}
               </span>
@@ -407,14 +423,15 @@ function TreeNode({
           <span className={cn("truncate", unread && "font-medium text-foreground")}>
             {node.title}
           </span>
-          {/* Next to the title rather than at the row's end, where the kind
-              badge already lives: the dot is about this page's content, not
-              about what sort of page it is. */}
+          {/* Next to the title rather than at the row's end: the dot is about
+              this page's content, not about what sort of page it is. */}
           <UnreadDot unread={unread} label="New activity" />
         </button>
-        <span className="flex shrink-0 items-center">
-          <KindBadge kind={node.kind as PageKind} iconOnly />
-        </span>
+        {showMeta && (
+          <span className="flex shrink-0 items-center">
+            <KindBadge kind={node.kind as PageKind} iconOnly />
+          </span>
+        )}
         {onMoveItem && navigationItem && (
           <span className="hidden group-hover:inline-flex">
             <DragHandle

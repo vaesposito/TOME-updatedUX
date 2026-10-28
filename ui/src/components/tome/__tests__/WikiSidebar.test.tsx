@@ -224,3 +224,51 @@ describe("WikiSidebar selection", () => {
     expect(onSelect).toHaveBeenCalledWith("alpha.md");
   });
 });
+
+describe("WikiSidebar row metadata", () => {
+  const kinds: PageTreeNode[] = [
+    { path: "charter.md", title: "Charter", kind: "stable", order: 0, children: [] },
+    { path: "roadmap.md", title: "Roadmap", kind: "dynamic", order: 1, children: [] },
+    {
+      path: "notes",
+      title: "Notes",
+      kind: "folder",
+      folderId: "notes",
+      order: 2,
+      children: [
+        { path: "notes/one.md", title: "One", kind: "stable", order: 0, children: [] },
+      ],
+    },
+  ];
+
+  const base = {
+    tree: kinds,
+    selectedPath: null,
+    onSelect: jest.fn(),
+    showHidden: false,
+  };
+
+  it("reports kind and size where pages are being surveyed", () => {
+    render(<WikiSidebar {...base} showMeta />);
+    expect(screen.getAllByLabelText("stable").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("dynamic")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("reports neither where the tree is a list of places to go", () => {
+    // A page's kind is chosen on the page, so a badge here only reports a
+    // setting; neither it nor a tally of what is in a folder helps anyone
+    // decide where to go. Together they made every row a status display.
+    render(<WikiSidebar {...base} showMeta={false} />);
+    expect(screen.queryByLabelText("stable")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("dynamic")).not.toBeInTheDocument();
+    expect(screen.queryByText("1")).not.toBeInTheDocument();
+  });
+
+  it("still names every row", () => {
+    render(<WikiSidebar {...base} showMeta={false} />);
+    expect(screen.getByText("Charter")).toBeInTheDocument();
+    expect(screen.getByText("Roadmap")).toBeInTheDocument();
+    expect(screen.getByText("Notes")).toBeInTheDocument();
+  });
+});

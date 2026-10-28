@@ -38,13 +38,11 @@ import {
   Plus,
   RefreshCw,
   NotebookPen,
-  Search,
   Settings,
   Users,
   Sparkles,
   Target,
   Upload,
-  X,
 } from "lucide-react";
 
 import { HeaderBreadcrumbPortal } from "@/components/layout/HeaderBreadcrumbSlot";
@@ -1706,7 +1704,14 @@ export function TomeWiki({ slug }: { slug: string }) {
    * The tree, read as two: the pages the team writes, and the material it
    * mirrors. Only the new rail shows them apart; the old one shows the lot.
    */
-  const wikiSplit = useMemo(() => splitWikiTree(filteredWikiTree), [filteredWikiTree]);
+  // The whole tree, not the filtered one. The only search box left is in
+  // Settings > Content, and a query typed there must not quietly shorten the
+  // navigation and the landing views, where there would be nothing to explain
+  // the missing pages and nothing to clear.
+  const wikiSplit = useMemo(
+    () => splitWikiTree(data?.tree ?? []),
+    [data?.tree],
+  );
   // Open by default: the pages are the point of the place. Reference material
   // is not, so it starts folded away and stays however the reader left it.
   const [wikiOpen, setWikiOpen] = usePersistentDisclosure(
@@ -2287,29 +2292,6 @@ export function TomeWiki({ slug }: { slug: string }) {
                       onClick={() => navigate({ kind: "wiki" })}
                       controlsId={`tome-v2-wiki-${slug}`}
                     >
-                      {!loading && !isEmpty && (
-                        <div className="relative mx-2 mb-2">
-                          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                          <input
-                            type="search"
-                            value={wikiQuery}
-                            onChange={(event) => setWikiQuery(event.target.value)}
-                            placeholder="Search pages and folders"
-                            aria-label="Search wiki pages and folders"
-                            className="h-8 w-full rounded-md border bg-background pl-7 pr-7 text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15 [&::-webkit-search-cancel-button]:hidden"
-                          />
-                          {wikiQuery && (
-                            <button
-                              type="button"
-                              onClick={() => setWikiQuery("")}
-                              aria-label="Clear wiki search"
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      )}
                       {renderWikiTree(wikiSplit.authored, {
                             editable: false,
                             showMeta: false,
@@ -2531,30 +2513,6 @@ export function TomeWiki({ slug }: { slug: string }) {
                   </div>
                 )}
                 </div>
-
-                {!navV2 && !loading && !isEmpty && (
-                  <div className="relative mx-2 mb-2">
-                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      type="search"
-                      value={wikiQuery}
-                      onChange={(event) => setWikiQuery(event.target.value)}
-                      placeholder="Search pages and folders"
-                      aria-label="Search wiki pages and folders"
-                      className="h-8 w-full rounded-md border bg-background pl-7 pr-7 text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15 [&::-webkit-search-cancel-button]:hidden"
-                    />
-                    {wikiQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setWikiQuery("")}
-                        aria-label="Clear wiki search"
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                )}
 
                 <input
                   ref={uploadInputRef}

@@ -116,6 +116,17 @@ function StandupSection({
 }
 
 /**
+ * The heading, in both states.
+ *
+ * A reader who has no standup yet and one who has arrived at this week's are
+ * in the same place, and the heading says the same thing to both; only what
+ * is under it differs.
+ */
+const STANDUP_TITLE = "Standup";
+const STANDUP_DESCRIPTION =
+  "This space's report card: the headline, what is blocked, and what comes next. Rewritten on every ingest.";
+
+/**
  * The Standup surface — `standup.md`'s report card (headline / progress /
  * blockers / up-next), rewritten by the agent every ingest.
  * Excluded from the ordinary wiki tree (schema.ts `SURFACE_PATHS`); this is
@@ -133,7 +144,9 @@ export function StandupView({
     return (
       <PanelShell
         maxWidthClassName="max-w-4xl"
-        contentClassName="flex min-h-[calc(100vh-10rem)] items-center"
+        title={STANDUP_TITLE}
+        titleAccessory={<BetaBadge />}
+        description={STANDUP_DESCRIPTION}
       >
         <section className="relative w-full overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.09] via-background to-background p-6 text-center shadow-sm sm:p-10">
           <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
@@ -141,12 +154,11 @@ export function StandupView({
             <span className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-sm">
               <Sparkles className="h-5 w-5" />
             </span>
-            <div className="mb-2 flex items-center justify-center gap-2">
-              <p className="text-xl font-semibold tracking-tight sm:text-2xl">
-                Your next stand-up, written for you
-              </p>
-              <BetaBadge />
-            </div>
+            {/* No beta badge here: it sits beside the heading above, and one
+                page should not say it twice. */}
+            <p className="mb-2 text-xl font-semibold tracking-tight sm:text-2xl">
+              Your next stand-up, written for you
+            </p>
             <p className="mx-auto max-w-xl text-sm leading-relaxed text-muted-foreground">
               {isSynthesized ? "Synthesize this wiki" : "Run an ingest"} to turn
               recent activity into a concise team update—not a commit log or a
@@ -203,15 +215,20 @@ export function StandupView({
   const fullHeadline = plainStandupHeadline(s.headline);
 
   return (
-    <PanelShell maxWidthClassName="max-w-5xl" contentClassName="space-y-5 pb-10">
+    <PanelShell
+      maxWidthClassName="max-w-5xl"
+      contentClassName="space-y-5 pb-10"
+      title={STANDUP_TITLE}
+      titleAccessory={<BetaBadge />}
+      description={STANDUP_DESCRIPTION}
+    >
       <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.09] via-background to-background p-6 shadow-sm sm:p-8">
         <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative max-w-3xl space-y-3">
-          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-            <Sparkles className="h-3.5 w-3.5" />
-            The Standup
-            <BetaBadge />
-          </span>
+          {/* The panel used to name itself here, in an eyebrow above the
+              headline. The heading above does that now, for every place the
+              rail leads to and in the same words, so what is left in the
+              panel is the report. */}
           {headline ? (
             <Tooltip className="block w-full">
               <TooltipTrigger asChild>

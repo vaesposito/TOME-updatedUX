@@ -810,7 +810,9 @@ export function GithubIssuesPanel({
   return (
     <PanelShell
       maxWidthClassName=""
-      contentClassName="space-y-3 p-4 sm:p-5"
+      // Full width for the board, but the same padding as every other panel,
+      // so the heading starts where a reader last saw one.
+      contentClassName="space-y-3 p-6"
       title={title ? `${title} issues` : "Tracked issues"}
       titleAccessory={<BetaBadge />}
       description={trackedLabel ? (

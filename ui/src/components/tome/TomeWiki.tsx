@@ -2860,12 +2860,12 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "folder" ? (
-              <div className="min-w-0 flex-1 overflow-auto p-8">
+              <div className="min-h-0 min-w-0 flex-1">
                 {activeFolderNode ? (
                   <TreeIndex
                     icon={<FolderKanban className="h-4 w-4" />}
-                    eyebrow="Folder"
                     title={activeFolderNode.title}
+                    description="A folder of the wiki, and the pages and subfolders kept in it."
                     nodes={activeFolderNode.children}
                     emptyNote="Pages written here, or moved here from elsewhere in the wiki, appear in this list."
                     emptyAction={canEdit
@@ -2878,27 +2878,31 @@ export function TomeWiki({ slug }: { slug: string }) {
                         <Button variant="outline" onClick={() => openEditFolder(activeFolderNode)}>
                           Edit folder
                         </Button>
-                        <Button variant="outline" onClick={() => openNewPage(activeFolderNode)}>
-                          <FilePlus2 className="h-4 w-4" />
-                          New page
-                        </Button>
-                        <Button onClick={() => openCreateFolder(activeFolderNode.folderId ?? null)}>
+                        <Button variant="outline" onClick={() => openCreateFolder(activeFolderNode.folderId ?? null)}>
                           <FolderPlus className="h-4 w-4" />
                           New subfolder
+                        </Button>
+                        {/* The filled one, here as on Wiki and on Notes: a
+                            folder is somewhere to put a page, and a reader
+                            should not have to work out which of three
+                            buttons is the one they came for. */}
+                        <Button onClick={() => openNewPage(activeFolderNode)}>
+                          <FilePlus2 className="h-4 w-4" />
+                          New page
                         </Button>
                       </>
                     ) : undefined}
                   />
                 ) : (
-                  <p className="text-sm text-muted-foreground">Folder not found.</p>
+                  <p className="p-6 text-sm text-muted-foreground">Folder not found.</p>
                 )}
               </div>
             ) : view.kind === "wiki" ? (
-              <div className="min-w-0 flex-1 overflow-auto p-8">
+              <div className="min-h-0 min-w-0 flex-1">
                 <TreeIndex
                   icon={<BookOpen className="h-4 w-4" />}
-                  eyebrow="Wiki"
                   title="Wiki"
+                  description="The curated pages for this space: what people wrote, and what the agent drafted from what it read."
                   nodes={wikiSplit.authored}
                   emptyNote="Pages people write, and pages the agent drafts from what it has read, collect here."
                   emptyAction={canEdit
@@ -2907,7 +2911,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                   onOpenPage={openPage}
                   onOpenFolder={openFolder}
                   actions={canEdit ? (
-                    <Button variant="outline" onClick={() => openNewPage(null)}>
+                    // Filled, like New note on Notes: the one thing a reader
+                    // comes to an empty branch to do looks the same whichever
+                    // branch they came to.
+                    <Button onClick={() => openNewPage(null)}>
                       <FilePlus2 className="h-4 w-4" />
                       New page
                     </Button>
@@ -2915,11 +2922,11 @@ export function TomeWiki({ slug }: { slug: string }) {
                 />
               </div>
             ) : view.kind === "references" ? (
-              <div className="min-w-0 flex-1 overflow-auto p-8">
+              <div className="min-h-0 min-w-0 flex-1">
                 <TreeIndex
                   icon={<FileSymlink className="h-4 w-4" />}
-                  eyebrow="Referencing Projects"
                   title="Referencing Projects"
+                  description="Everything this space reads from, mirrored page by page: repositories, Confluence spaces and Webex rooms."
                   nodes={wikiSplit.reference}
                   emptyNote="A repository, a Confluence space or a Webex room lands here once it has been read."
                   emptyAction={canEdit

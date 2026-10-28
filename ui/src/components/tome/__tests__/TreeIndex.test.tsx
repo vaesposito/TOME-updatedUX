@@ -20,8 +20,8 @@ const nodes: PageTreeNode[] = [
 function renderIndex(overrides: Partial<React.ComponentProps<typeof TreeIndex>> = {}) {
   const props = {
     icon: <span />,
-    eyebrow: "Wiki",
     title: "Wiki",
+    description: "The curated pages for this space.",
     nodes,
     emptyNote: "Nothing written yet.",
     onOpenPage: jest.fn(),
@@ -36,7 +36,16 @@ describe("TreeIndex", () => {
   it("says what the branch is and how much is in it", () => {
     renderIndex();
     expect(screen.getByRole("heading", { name: "Wiki" })).toBeInTheDocument();
+    expect(screen.getByText("The curated pages for this space.")).toBeInTheDocument();
     expect(screen.getByText("2 items")).toBeInTheDocument();
+  });
+
+  it("heads itself the way every other panel does", () => {
+    renderIndex();
+    // One shape for every place the rail leads to: a level-two heading at the
+    // shared size, not a page-sized title with an eyebrow over it.
+    const heading = screen.getByRole("heading", { name: "Wiki", level: 2 });
+    expect(heading).toHaveClass("text-lg", "font-semibold");
   });
 
   it("counts a single child without pluralising", () => {

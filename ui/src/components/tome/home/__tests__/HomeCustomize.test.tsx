@@ -122,6 +122,24 @@ describe("arranging a project's home page", () => {
     expect(screen.queryByRole("button", { name: "Move Team" })).not.toBeInTheDocument();
   });
 
+  it("names itself the way every other place the rail leads to does", () => {
+    home();
+    const heading = screen.getByRole("heading", { level: 2, name: "Overview" });
+    expect(heading).toHaveClass("text-lg", "font-semibold");
+  });
+
+  it("keeps Customize on the heading's row until it has instructions to give", () => {
+    home();
+    // Closed it is one button and sits where a panel's actions sit; open it
+    // is a band of text, which would crowd the heading it sat beside.
+    const heading = screen.getByRole("heading", { level: 2, name: "Overview" });
+    const headingRow = heading.closest(".justify-between");
+    expect(headingRow).toContainElement(screen.getByRole("button", { name: /Customize/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Customize/ }));
+    expect(headingRow).not.toContainElement(screen.getByRole("button", { name: "Done" }));
+  });
+
   it("shows a handle and a hide control on every card once arranging", () => {
     home();
     fireEvent.click(screen.getByRole("button", { name: /Customize/ }));

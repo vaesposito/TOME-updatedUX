@@ -33,6 +33,7 @@ import { HomeSources } from "@/components/tome/home/HomeSources";
 import { HomeTeam } from "@/components/tome/home/HomeTeam";
 import { HomeWidgetFrame } from "@/components/tome/home/HomeWidgetFrame";
 import { splitHomeFeeds } from "@/components/tome/home/home-feeds";
+import { PanelHeader } from "@/components/tome/PanelHeader";
 import { computeReorder } from "@/lib/reorder";
 import {
   TOME_HOME_WIDGETS,
@@ -410,19 +411,32 @@ export function ProjectHomeView({
     ),
   };
 
+  const customizeBar = (
+    <HomeCustomizeBar
+      editing={editing}
+      hidden={layout.hidden.filter((id) =>
+        widgetAppliesTo(id as TomeHomeWidgetId, kind ?? "project"),
+      )}
+      customized={isCustomized(layout)}
+      onEdit={() => setEditing(true)}
+      onDone={() => setEditing(false)}
+      onShow={showWidget}
+      onReset={resetLayout}
+    />
+  );
+
   return (
-    <div className="flex flex-col gap-3 p-5" data-tour="project-home">
-      <HomeCustomizeBar
-        editing={editing}
-        hidden={layout.hidden.filter((id) =>
-          widgetAppliesTo(id as TomeHomeWidgetId, kind ?? "project"),
-        )}
-        customized={isCustomized(layout)}
-        onEdit={() => setEditing(true)}
-        onDone={() => setEditing(false)}
-        onShow={showWidget}
-        onReset={resetLayout}
+    <div className="flex flex-col gap-6 p-6" data-tour="project-home">
+      {/* Headed like every other place the rail leads to. Closed, the
+          customize control is one quiet button and belongs on the heading's
+          own row, where a panel's actions go; open, it becomes a band of
+          instructions too wide for that row, so it drops below. */}
+      <PanelHeader
+        title="Overview"
+        description="Who works on this space, what needs attention, and where its knowledge comes from."
+        action={editing ? undefined : customizeBar}
       />
+      {editing && customizeBar}
 
       {/* Three columns on a wide window, one on a narrow one, where the same
           order becomes a single column. The cards carry their own widths, so

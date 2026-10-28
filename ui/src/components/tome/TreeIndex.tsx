@@ -2,6 +2,7 @@
 
 import { ChevronRight, FileText, FolderKanban } from "lucide-react";
 
+import { PanelShell } from "@/components/tome/PanelHeader";
 import { TomeEmpty, type TomeEmptyAction } from "@/components/tome/TomeEmpty";
 import type { PageTreeNode } from "@/types/tome";
 
@@ -13,11 +14,14 @@ import type { PageTreeNode } from "@/types/tome";
  * Referencing Projects need a destination rather than only a caret. A folder
  * needs the same page for the same reason, which is why one component serves
  * all three instead of each growing its own list.
+ *
+ * It heads itself through PanelShell, like every other place the rail leads
+ * to, so arriving here from Notes or Issues is the same arrival.
  */
 export function TreeIndex({
   icon,
-  eyebrow,
   title,
+  description,
   nodes,
   emptyNote,
   emptyAction,
@@ -25,10 +29,11 @@ export function TreeIndex({
   onOpenPage,
   onOpenFolder,
 }: {
+  /** Stands in for the branch in the empty state; the heading carries no icon. */
   icon: React.ReactNode;
-  /** What kind of thing this is — "Folder", "Wiki", "Referencing Projects". */
-  eyebrow: string;
   title: string;
+  /** What this branch holds, in one sentence. */
+  description: React.ReactNode;
   nodes: readonly PageTreeNode[];
   /** What would put something in this branch, in one sentence. */
   emptyNote: string;
@@ -40,19 +45,16 @@ export function TreeIndex({
   onOpenFolder: (folderId: string) => void;
 }) {
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="flex items-start justify-between gap-4 border-b pb-5">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {icon}
-            {eyebrow}
-          </div>
-          <h2 className="text-3xl font-semibold tracking-tight">{title}</h2>
-          <p className="mt-2 text-sm text-muted-foreground">{countLabel(nodes.length)}</p>
-        </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
-      </div>
-
+    <PanelShell
+      title={title}
+      description={description}
+      titleAccessory={
+        <span className="text-xs font-normal text-muted-foreground">
+          {countLabel(nodes.length)}
+        </span>
+      }
+      action={actions && <div className="flex items-center gap-2">{actions}</div>}
+    >
       {nodes.length === 0 ? (
         <TomeEmpty
           icon={icon}
@@ -87,7 +89,7 @@ export function TreeIndex({
           ))}
         </div>
       )}
-    </div>
+    </PanelShell>
   );
 }
 

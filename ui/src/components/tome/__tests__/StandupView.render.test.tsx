@@ -43,3 +43,29 @@ kind: report
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 });
+
+describe("StandupView heading", () => {
+  const report = `---
+title: The Standup
+kind: report
+---
+## Headline
+
+**Shipped.**
+`;
+
+  it.each([
+    ["with a report", report],
+    ["without one", undefined],
+  ])("names itself the same way %s", (_case, markdown) => {
+    render(<StandupView markdown={markdown} />);
+
+    const heading = screen.getByRole("heading", { level: 2, name: "Standup" });
+    expect(heading).toHaveClass("text-lg", "font-semibold");
+  });
+
+  it("says beta once, beside the heading", () => {
+    render(<StandupView markdown={undefined} />);
+    expect(screen.getAllByText("Beta")).toHaveLength(1);
+  });
+});

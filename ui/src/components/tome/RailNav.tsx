@@ -36,6 +36,7 @@ export function NavSection({
   onToggle,
   onClick,
   controlsId,
+  empty,
   children,
 }: {
   icon: React.ReactNode;
@@ -43,6 +44,15 @@ export function NavSection({
   /** Whether what is open belongs to this section. */
   active: boolean;
   expanded: boolean;
+  /**
+   * Whether there is nothing under this section.
+   *
+   * Said on the row rather than left to be found: a caret that opens onto
+   * nothing costs a click to learn something the rail could have shown.
+   * The row still goes somewhere, because its landing view is where an
+   * empty section explains itself and offers the way to fill it.
+   */
+  empty?: boolean;
   onToggle: () => void;
   /** Where the row goes — its own landing view, listing what it holds. */
   onClick: () => void;
@@ -65,23 +75,30 @@ export function NavSection({
           {icon}
           <span className="flex-1 truncate">{label}</span>
         </button>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={controlsId}
-          aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
-          className="shrink-0 rounded-md py-2 pl-1"
-        >
-          <ChevronRight
-            className={cn(
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-90",
-            )}
-          />
-        </button>
+        {empty ? (
+          <>
+            <EmptyNote />
+            <span aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={controlsId}
+            aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
+            className="shrink-0 rounded-md py-2 pl-1"
+          >
+            <ChevronRight
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                expanded && "rotate-90",
+              )}
+            />
+          </button>
+        )}
       </div>
-      {expanded && (
+      {expanded && !empty && (
         <div id={controlsId} className="mt-1">
           {children}
         </div>
@@ -152,5 +169,19 @@ export function NavItem({
         <span className="opacity-70">{tipDescription}</span>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * What a row says when there is nothing under it.
+ *
+ * A word rather than a nought: "0" beside a label reads as a count that
+ * might be anything, and the rail is scanned rather than totted up.
+ */
+export function EmptyNote() {
+  return (
+    <span className="shrink-0 pl-2 text-[10px] font-normal uppercase tracking-wide text-muted-foreground/60">
+      Empty
+    </span>
   );
 }

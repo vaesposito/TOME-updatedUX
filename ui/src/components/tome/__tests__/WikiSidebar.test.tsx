@@ -272,3 +272,55 @@ describe("WikiSidebar row metadata", () => {
     expect(screen.getByText("Notes")).toBeInTheDocument();
   });
 });
+
+describe("WikiSidebar empty folders", () => {
+  const tree: PageTreeNode[] = [
+    {
+      path: "decisions",
+      title: "Decisions",
+      kind: "folder",
+      folderId: "decisions",
+      order: 0,
+      children: [],
+    },
+    {
+      path: "notes",
+      title: "Notes",
+      kind: "folder",
+      folderId: "notes",
+      order: 1,
+      children: [
+        { path: "notes/one.md", title: "One", kind: "stable", order: 0, children: [] },
+      ],
+    },
+  ];
+
+  const base = {
+    tree,
+    selectedPath: null,
+    onSelect: jest.fn(),
+    showHidden: false,
+  };
+
+  it("says a folder is empty rather than making it be opened to find out", () => {
+    render(<WikiSidebar {...base} />);
+    expect(screen.getByText("Empty")).toBeInTheDocument();
+  });
+
+  it("offers no caret on a folder with nothing under it", () => {
+    render(<WikiSidebar {...base} />);
+
+    expect(
+      screen.queryByRole("button", { name: /Expand Decisions|Collapse Decisions/ }),
+    ).not.toBeInTheDocument();
+    // The folder that does hold something keeps its caret.
+    expect(
+      screen.getByRole("button", { name: /Expand Notes|Collapse Notes/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("says it of the empty folder only", () => {
+    render(<WikiSidebar {...base} />);
+    expect(screen.getAllByText("Empty")).toHaveLength(1);
+  });
+});

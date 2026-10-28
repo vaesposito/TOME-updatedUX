@@ -60,6 +60,52 @@ describe("NavSection", () => {
     expect(row.parentElement?.lastElementChild).toBe(caret);
   });
 
+  it("says a section is empty rather than making it be opened to find out", () => {
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Referencing Projects"
+        active={false}
+        expanded={false}
+        empty
+        onToggle={jest.fn()}
+        onClick={jest.fn()}
+        controlsId="references-tree"
+      >
+        <p>Should never render</p>
+      </NavSection>,
+    );
+
+    expect(screen.getByText("Empty")).toBeInTheDocument();
+    // No caret: it would promise something to open.
+    expect(
+      screen.queryByRole("button", { name: /Expand|Collapse/ }),
+    ).not.toBeInTheDocument();
+    // The row still goes somewhere, because its landing view explains itself.
+    expect(
+      screen.getByRole("button", { name: "Referencing Projects" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps an empty section shut even if something says it is open", () => {
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded
+        empty
+        onToggle={jest.fn()}
+        onClick={jest.fn()}
+        controlsId="wiki-tree"
+      >
+        <p>Should never render</p>
+      </NavSection>,
+    );
+
+    expect(screen.queryByText("Should never render")).not.toBeInTheDocument();
+  });
+
   it("hides what is underneath until it is expanded", () => {
     const { rerender } = renderRail(
       <NavSection

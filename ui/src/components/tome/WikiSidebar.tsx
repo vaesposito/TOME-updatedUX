@@ -11,6 +11,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { EmptyNote } from "@/components/tome/RailNav";
 import { cn } from "@/lib/utils";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
@@ -387,21 +388,30 @@ function TreeNode({
             </span>
           )}
           {/* Last, so the hover actions appearing to its left do not move it,
-              and so every row in the rail is toggled from the same edge. */}
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${node.title}`}
-            className="shrink-0"
-          >
-            <ChevronRight
-              className={cn(
-                "h-3 w-3 shrink-0 transition-transform",
-                open && "rotate-90",
-              )}
-            />
-          </button>
+              and so every row in the rail is toggled from the same edge. A
+              folder with nothing in it says so instead: a caret there would
+              cost a click to learn what the row could have shown. */}
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              aria-label={`${open ? "Collapse" : "Expand"} ${node.title}`}
+              className="shrink-0"
+            >
+              <ChevronRight
+                className={cn(
+                  "h-3 w-3 shrink-0 transition-transform",
+                  open && "rotate-90",
+                )}
+              />
+            </button>
+          ) : (
+            <>
+              <EmptyNote />
+              <span className="h-3 w-3 shrink-0" aria-hidden />
+            </>
+          )}
         </div>
         {open && children}
       </>

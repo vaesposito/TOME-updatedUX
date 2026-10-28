@@ -13,6 +13,7 @@
  */
 
 import { ChevronLeft } from "lucide-react";
+import Link from "next/link";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
@@ -205,9 +206,20 @@ export function DigestConfigPanel({ onBack }: { onBack: () => void }) {
               aria-label="Send on Webex"
             />
           </div>
+          {/* A new tab rather than this one: connecting Webex is a trip
+              through another screen, and the digest being configured here
+              is unsaved. */}
           <p className="text-xs text-muted-foreground">
-            Webex isn&apos;t connected yet. Connect Webex to enable this
-            option.
+            Webex isn&apos;t connected yet.{" "}
+            <Link
+              href="/credentials#connections"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4 hover:no-underline"
+            >
+              Connect Webex
+            </Link>{" "}
+            to enable this option.
           </p>
         </section>
 

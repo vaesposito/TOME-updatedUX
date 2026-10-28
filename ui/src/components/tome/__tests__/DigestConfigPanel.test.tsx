@@ -144,6 +144,15 @@ describe("DigestConfigPanel", () => {
     await waitFor(() => expect(getSettings).toHaveBeenCalled());
   });
 
+  it("offers connecting Webex in a new tab, so the unsaved digest survives", async () => {
+    render(<DigestConfigPanel onBack={jest.fn()} />);
+    const link = screen.getByRole("link", { name: "Connect Webex" });
+    expect(link).toHaveAttribute("href", "/credentials#connections");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+  });
+
   it("goes back to the digest", async () => {
     const onBack = jest.fn();
     render(<DigestConfigPanel onBack={onBack} />);

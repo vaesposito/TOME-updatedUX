@@ -349,7 +349,12 @@ export function TomeNotificationSettings() {
                 {unavailable && (
                   <p className="pl-6 text-xs text-muted-foreground">
                     Webex isn&apos;t connected yet.{" "}
-                    <Link href="/credentials" className="underline underline-offset-4 hover:no-underline">
+                    <Link
+                      href="/credentials#connections"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-4 hover:no-underline"
+                    >
                       Connect Webex
                     </Link>{" "}
                     to enable this option.

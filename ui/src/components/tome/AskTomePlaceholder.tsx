@@ -23,13 +23,12 @@ import * as React from "react";
 import { AuditNotice } from "@/components/chat/AuditNotice";
 import { useTomeAssistantSettings } from "@/hooks/use-tome-assistant-settings";
 import { cn } from "@/lib/utils";
-
-/** The real panel's own figures, so the stand-in takes up the same room. */
-const DEFAULT_PANEL_SIZE = { width: 720, height: 780 };
-const MIN_PANEL_SIZE = { width: 480, height: 560 };
-const MAX_PANEL_SIZE = { width: 1180, height: 940 };
-
-type AskTomeTab = "chat" | "history" | "scheduled";
+import {
+  ASK_TOME_MAX_SIZE,
+  ASK_TOME_MIN_SIZE,
+  useAskTomeStore,
+  type AskTomeTab,
+} from "@/store/ask-tome-store";
 
 /**
  * The tabs, as drawn.
@@ -86,14 +85,33 @@ const HISTORY = [
  *
  * It renders only when the real panel does not. Two assistants in one corner
  * would sit on top of each other, and one of them would be a lie told next to
- * something that works.
+ * something that works. It is mounted where the real one is mounted, and
+ * nowhere else, for the same reason: a stand-in that turned up in a corner
+ * the real thing never occupies would be standing in for nothing.
+ *
+ * What it is doing is kept in a store rather than here, so that following a
+ * link from the hub into a space — which takes this component down and puts
+ * another up — leaves the panel open, on the same tab, at the same size.
  */
-export function AskTomePlaceholder() {
+export function AskTomePlaceholder({
+  /**
+   * Room to leave at the foot of the page, for a surface with something of
+   * its own down there — the settings view's Save bar, say. The real panel
+   * takes the same measurement.
+   */
+  bottomInset,
+}: {
+  bottomInset?: number;
+} = {}) {
   const settings = useTomeAssistantSettings();
-  const [open, setOpen] = React.useState(false);
-  const [tab, setTab] = React.useState<AskTomeTab>("chat");
-  const [expanded, setExpanded] = React.useState(false);
-  const [panelSize, setPanelSize] = React.useState(DEFAULT_PANEL_SIZE);
+  const open = useAskTomeStore((state) => state.open);
+  const setOpen = useAskTomeStore((state) => state.setOpen);
+  const tab = useAskTomeStore((state) => state.tab);
+  const setTab = useAskTomeStore((state) => state.setTab);
+  const expanded = useAskTomeStore((state) => state.expanded);
+  const setExpanded = useAskTomeStore((state) => state.setExpanded);
+  const panelSize = useAskTomeStore((state) => state.size);
+  const setPanelSize = useAskTomeStore((state) => state.setSize);
 
   // Dragged from the corner handle, exactly as the real panel is: the design
   // asks for a resizable panel, and a handle that does not move is a worse
@@ -110,13 +128,13 @@ export function AskTomePlaceholder() {
         setPanelSize({
           width: clamp(
             startSize.width + (start.x - move.clientX),
-            MIN_PANEL_SIZE.width,
-            MAX_PANEL_SIZE.width,
+            ASK_TOME_MIN_SIZE.width,
+            ASK_TOME_MAX_SIZE.width,
           ),
           height: clamp(
             startSize.height + (start.y - move.clientY),
-            MIN_PANEL_SIZE.height,
-            MAX_PANEL_SIZE.height,
+            ASK_TOME_MIN_SIZE.height,
+            ASK_TOME_MAX_SIZE.height,
           ),
         });
       }
@@ -131,13 +149,16 @@ export function AskTomePlaceholder() {
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [panelSize],
+    [panelSize, setPanelSize],
   );
 
   if (settings.tome_assistant_popup_enabled) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-4 top-18 z-40 flex flex-col items-end justify-end gap-3 sm:inset-x-6 sm:bottom-6">
+    <div
+      className="pointer-events-none fixed inset-x-4 bottom-4 top-18 z-40 flex flex-col items-end justify-end gap-3 sm:inset-x-6 sm:bottom-6"
+      style={{ bottom: bottomInset }}
+    >
       {open && (
         <section
           role="dialog"
@@ -170,7 +191,7 @@ export function AskTomePlaceholder() {
               <HeaderButton
                 label={expanded ? "Reduce Ask Tome" : "Expand Ask Tome"}
                 pressed={expanded}
-                onClick={() => setExpanded((value) => !value)}
+                onClick={() => setExpanded(!expanded)}
               >
                 {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </HeaderButton>
@@ -295,7 +316,7 @@ export function AskTomePlaceholder() {
         aria-label="Open Ask Tome"
         aria-expanded={open}
         className="pointer-events-auto inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-200/30 bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-200"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
       >
         <MessageCircle className="h-4 w-4" aria-hidden />
         Ask Tome

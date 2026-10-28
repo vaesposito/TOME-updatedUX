@@ -65,6 +65,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ChatPanel } from "@/components/tome/ChatPanel";
+import { AskTomePlaceholder } from "@/components/tome/AskTomePlaceholder";
 import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
 import { FeedPanel } from "@/components/tome/FeedPanel";
 import { GistsPanel } from "@/components/tome/GistsPanel";
@@ -2980,14 +2981,24 @@ export function TomeWiki({ slug }: { slug: string }) {
             )}
           </main>
         </div>
+        {/* Not on the agent view: that view is a chat, and a second one in
+            the corner of it would be two chats in one place. */}
         {data && !error && view.kind !== "agent" && (
-          <TomeAssistantBubble
-            key={slug}
-            slug={slug}
-            projectTitle={projectTitle ?? undefined}
-            pagePath={trackedPagePath}
-            bottomInset={view.kind === "settings" ? assistantBottomInset : undefined}
-          />
+          <>
+            <TomeAssistantBubble
+              key={slug}
+              slug={slug}
+              projectTitle={projectTitle ?? undefined}
+              pagePath={trackedPagePath}
+              bottomInset={view.kind === "settings" ? assistantBottomInset : undefined}
+            />
+            {/* Stands in only where the real one is switched off, and sits
+                where the real one would, so a reader who opened it on the hub
+                finds it open here. */}
+            <AskTomePlaceholder
+              bottomInset={view.kind === "settings" ? assistantBottomInset : undefined}
+            />
+          </>
         )}
       </div>
 

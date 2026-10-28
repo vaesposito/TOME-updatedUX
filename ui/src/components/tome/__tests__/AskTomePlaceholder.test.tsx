@@ -4,6 +4,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import * as React from "react";
 
 import { AskTomePlaceholder } from "@/components/tome/AskTomePlaceholder";
+import {
+  ASK_TOME_DEFAULT_SIZE,
+  useAskTomeStore,
+} from "@/store/ask-tome-store";
 
 const settings = jest.fn();
 jest.mock("@/hooks/use-tome-assistant-settings", () => ({
@@ -13,6 +17,14 @@ jest.mock("@/hooks/use-tome-assistant-settings", () => ({
 describe("AskTomePlaceholder", () => {
   beforeEach(() => {
     settings.mockReturnValue({ tome_assistant_popup_enabled: false, agent_id: null });
+    // The panel's state outlives the component on purpose, so each test has
+    // to put it back or it inherits the last one's panel.
+    useAskTomeStore.setState({
+      open: false,
+      tab: "chat",
+      expanded: false,
+      size: ASK_TOME_DEFAULT_SIZE,
+    });
   });
 
   it("stands aside when the real assistant is switched on", () => {
@@ -94,5 +106,25 @@ describe("AskTomePlaceholder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
     fireEvent.click(screen.getByRole("button", { name: "Close Ask Tome" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("stays open, and on the same tab, when the surface under it changes", () => {
+    // Following a link from the hub into a space takes this component down
+    // and puts another up. A reader who opened the panel did not ask for it
+    // to be shut again on the way.
+    const first = render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    first.unmount();
+
+    render(<AskTomePlaceholder />);
+    expect(screen.getByRole("dialog", { name: "Ask Tome" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "History", selected: true })).toBeInTheDocument();
+  });
+
+  it("leaves room at the foot of the page when a surface asks for it", () => {
+    useAskTomeStore.setState({ open: true });
+    const { container } = render(<AskTomePlaceholder bottomInset={88} />);
+    expect(container.firstChild).toHaveStyle({ bottom: "88px" });
   });
 });

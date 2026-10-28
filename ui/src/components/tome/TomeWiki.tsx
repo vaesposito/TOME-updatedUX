@@ -1513,7 +1513,7 @@ export function TomeWiki({ slug }: { slug: string }) {
       case "wiki":
         return [{ label: "Wiki" }];
       case "references":
-        return [{ label: "References" }];
+        return [{ label: "Referencing Projects" }];
       case "issues": {
         if (!view.label) return [{ label: "Issues" }];
         return [
@@ -2361,7 +2361,7 @@ export function TomeWiki({ slug }: { slug: string }) {
 
                     <NavSection
                       icon={<FileSymlink className="h-4 w-4" />}
-                      label="References"
+                      label="Referencing Projects"
                       active={navActive.references || Boolean(
                         navActive.page && isReferencePath(navActive.page),
                       )}
@@ -2952,8 +2952,8 @@ export function TomeWiki({ slug }: { slug: string }) {
               <div className="min-w-0 flex-1 overflow-auto p-8">
                 <TreeIndex
                   icon={<FileSymlink className="h-4 w-4" />}
-                  eyebrow="References"
-                  title="References"
+                  eyebrow="Referencing Projects"
+                  title="Referencing Projects"
                   nodes={wikiSplit.reference}
                   emptyNote="Nothing mirrored yet. A repository, a Confluence space or a Webex room lands here once it has been read."
                   onOpenPage={openPage}

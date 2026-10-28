@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  * The caret is a control of its own, beside the row rather than part of it,
  * so that every first-level row behaves the same way: clicking it goes
  * somewhere, and only the caret opens or closes what is underneath. Wiki and
- * References each have a landing view listing what they hold, so "go
+ * Referencing Projects each have a landing view listing what they hold, so "go
  * somewhere" means something for them too.
  *
  * The caret sits at the leading edge, where a reader reaching for a

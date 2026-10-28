@@ -9,9 +9,9 @@ import type { PageTreeNode } from "@/types/tome";
  * it, and a row per thing inside.
  *
  * Every first-level rail row goes somewhere when clicked, so Wiki and
- * References need a destination rather than only a caret. A folder needs the
- * same page for the same reason, which is why one component serves all three
- * instead of each growing its own list.
+ * Referencing Projects need a destination rather than only a caret. A folder
+ * needs the same page for the same reason, which is why one component serves
+ * all three instead of each growing its own list.
  */
 export function TreeIndex({
   icon,
@@ -24,7 +24,7 @@ export function TreeIndex({
   onOpenFolder,
 }: {
   icon: React.ReactNode;
-  /** What kind of thing this is — "Folder", "Wiki", "References". */
+  /** What kind of thing this is — "Folder", "Wiki", "Referencing Projects". */
   eyebrow: string;
   title: string;
   nodes: readonly PageTreeNode[];

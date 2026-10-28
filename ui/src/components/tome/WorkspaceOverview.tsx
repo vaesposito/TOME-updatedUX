@@ -132,9 +132,37 @@ export function WorkspaceOverview() {
     [data?.summary],
   );
 
-  /** Reading a row is following it to where it happened, as in the inbox. */
-  const open = React.useCallback((item: TomeSummaryItem) => {
-    if (item.href) window.location.assign(item.href);
+  /**
+   * Following a row is what "I have read it" means, as in the inbox.
+   *
+   * Only the count and the row's own state: the row is a link and does its
+   * own navigating. Sending it somewhere from here as well pointed it at
+   * `item.href` while the link pointed at the artifact, so an unread row
+   * raced itself to two different places.
+   */
+  const markRead = React.useCallback((item: TomeSummaryItem) => {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            summary: current.summary
+              ? {
+                  ...current.summary,
+                  counts: {
+                    ...current.summary.counts,
+                    unread: Math.max(0, current.summary.counts.unread - 1),
+                  },
+                  sections: current.summary.sections.map((section) => ({
+                    ...section,
+                    items: section.items.map((row) =>
+                      row.id === item.id ? { ...row, read: true } : row,
+                    ),
+                  })),
+                }
+              : current.summary,
+          }
+        : current,
+    );
   }, []);
 
   const pending = !data && !failed ? <HomeSkeleton rows={2} /> : null;
@@ -165,7 +193,8 @@ export function WorkspaceOverview() {
             items={feeds.attention}
             viewing=""
             limit={ROWS}
-            onOpen={open}
+            onOpen={markRead}
+            newTab
             empty={
               <HomeEmpty
                 icon={<CircleAlert />}
@@ -191,7 +220,8 @@ export function WorkspaceOverview() {
             items={feeds.tagged}
             viewing=""
             limit={ROWS}
-            onOpen={open}
+            onOpen={markRead}
+            newTab
             empty={
               <HomeEmpty
                 icon={<AtSign />}
@@ -217,7 +247,8 @@ export function WorkspaceOverview() {
             items={feeds.updates}
             viewing=""
             limit={ROWS}
-            onOpen={open}
+            onOpen={markRead}
+            newTab
             empty={
               <HomeEmpty
                 icon={<Newspaper />}
@@ -238,6 +269,7 @@ export function WorkspaceOverview() {
     children: (
       <HomeChildren
         kind="workspace"
+        newTab
         settingsHref="/projects"
         entities={data?.summary?.scope_entities}
         {...(data

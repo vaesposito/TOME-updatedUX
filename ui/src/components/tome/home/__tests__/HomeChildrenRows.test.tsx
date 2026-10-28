@@ -48,6 +48,20 @@ describe("HomeChildren given its rows", () => {
     expect(screen.getByText("Example Area")).toBeInTheDocument();
   });
 
+  it("keeps the workspace reading open behind a row, when asked to", () => {
+    const { rerender } = render(
+      <HomeChildren kind="workspace" settingsHref="/projects" rows={rows} />,
+    );
+    expect(screen.getByRole("link", { name: /Example Area/ })).not.toHaveAttribute("target");
+
+    rerender(
+      <HomeChildren kind="workspace" settingsHref="/projects" rows={rows} newTab />,
+    );
+    const link = screen.getByRole("link", { name: /Example Area/ });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
+
   it("still fetches for a container that only knows its slug", async () => {
     render(
       <HomeChildren

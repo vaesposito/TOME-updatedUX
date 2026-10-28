@@ -190,6 +190,27 @@ describe("HomeNotificationList", () => {
     list([item({ resolved: true })]);
     expect(screen.getByText("Resolved")).toBeInTheDocument();
   });
+
+  it("stays in this tab on a space's own page", () => {
+    list([item({ href: "/projects/example-project/tome/wiki/charter.md" })]);
+    expect(screen.getByRole("link")).not.toHaveAttribute("target");
+  });
+
+  it("opens in a new tab where the whole workspace is being read", () => {
+    render(
+      <HomeNotificationList
+        items={[item({ href: "/projects/example-project/tome/wiki/charter.md" })]}
+        viewing="example-project"
+        limit={5}
+        empty={<p>Nothing yet.</p>}
+        newTab
+      />,
+    );
+
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
 });
 
 describe("HomeMilestones", () => {

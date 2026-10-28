@@ -55,6 +55,7 @@ export function HomeChildren({
   rows: supplied,
   title: suppliedTitle,
   className,
+  newTab,
 }: {
   /** Whose children these are. Ignored when `rows` is supplied. */
   slug?: string;
@@ -74,6 +75,15 @@ export function HomeChildren({
   /** Overrides the heading, which is otherwise read off `kind`. */
   title?: string;
   className?: string;
+  /**
+   * Open the row in a new tab.
+   *
+   * For the hub's Overview, which is a reading of every space at once:
+   * following a row there goes deep into one of them, and the survey a reader
+   * came for would be gone. On a space's own home the row stays in this tab,
+   * because it is a step further into the thing already being read.
+   */
+  newTab?: boolean;
 }) {
   const [data, setData] = React.useState<ChildrenResponse | null>(null);
   const [failed, setFailed] = React.useState(false);
@@ -171,6 +181,7 @@ export function HomeChildren({
                 row={row}
                 tally={tallies.get(row.slug)}
                 nested={Boolean(row.parent_slug)}
+                newTab={newTab}
               />
             ))}
           </ul>
@@ -199,10 +210,12 @@ function ChildLine({
   row,
   tally,
   nested,
+  newTab,
 }: {
   row: ChildRow;
   tally?: TomeSummaryEntity;
   nested: boolean;
+  newTab?: boolean;
 }) {
   const attention = tally?.attention ?? 0;
   const touched = lastTouch(row, tally?.latest_at);
@@ -211,6 +224,7 @@ function ChildLine({
     <li>
       <Link
         href={`/projects/${row.slug}/tome`}
+        {...(newTab ? { target: "_blank", rel: "noreferrer noopener" } : {})}
         className={cn(
           "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/60",
           nested && "ml-4",

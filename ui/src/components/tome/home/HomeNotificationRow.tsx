@@ -28,11 +28,21 @@ export function HomeNotificationRow({
   item,
   viewing,
   onOpen,
+  newTab,
 }: {
   item: TomeSummaryItem;
   /** Entity whose home page this is, so a row about it links to the artifact. */
   viewing: string;
   onOpen?: (item: TomeSummaryItem) => void;
+  /**
+   * Open the row in a new tab.
+   *
+   * For the hub's Overview, which is a reading of every space at once:
+   * following a row there goes deep into one of them, and the survey a reader
+   * came for would be gone. On a space's own home the row stays in this tab,
+   * because it is a step further into the thing already being read.
+   */
+  newTab?: boolean;
 }) {
   const target = artifactLink(item, viewing);
   const mentioned = item.reason === "mentioned";
@@ -96,7 +106,7 @@ export function HomeNotificationRow({
     <li>
       <Link
         href={target.href}
-        {...(target.external
+        {...(target.external || newTab
           ? { target: "_blank", rel: "noreferrer noopener" }
           : {})}
         aria-label={target.aria}
@@ -118,12 +128,22 @@ export function HomeNotificationList({
   limit,
   onOpen,
   empty,
+  newTab,
 }: {
   items: readonly TomeSummaryItem[];
   viewing: string;
   limit: number;
   onOpen?: (item: TomeSummaryItem) => void;
   empty: React.ReactNode;
+  /**
+   * Open the row in a new tab.
+   *
+   * For the hub's Overview, which is a reading of every space at once:
+   * following a row there goes deep into one of them, and the survey a reader
+   * came for would be gone. On a space's own home the row stays in this tab,
+   * because it is a step further into the thing already being read.
+   */
+  newTab?: boolean;
 }) {
   if (items.length === 0) return <>{empty}</>;
   return (
@@ -134,6 +154,7 @@ export function HomeNotificationList({
           item={item}
           viewing={viewing}
           onOpen={onOpen}
+          newTab={newTab}
         />
       ))}
     </ul>

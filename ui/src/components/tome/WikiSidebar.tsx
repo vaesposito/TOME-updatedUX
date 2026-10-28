@@ -4,6 +4,8 @@ import { useState, type DragEvent } from "react";
 import {
   ChevronRight,
   FilePlus2,
+  Folder,
+  FolderOpen,
   FolderPlus,
   GripVertical,
   Pencil,
@@ -115,7 +117,9 @@ export function WikiSidebar(props: Props) {
 
 // Left padding per nesting level. The caret/spacer slot (CARET_W) is rendered
 // on every row, so a child clears its parent's *label* (not just its caret).
-const STEP_PX = 12;
+// Wide enough that a glance down the rail reads the nesting without counting:
+// at twelve the steps were there but had to be looked for.
+const STEP_PX = 16;
 const BASE_PX = 8;
 
 // Collection-root folders that start collapsed, so the rail leads with the
@@ -307,7 +311,10 @@ function TreeNode({
           onDragLeave={() => setDropZone(null)}
           onDrop={handleDrop}
           className={cn(
-            "group flex w-full items-center gap-1 rounded pr-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            // Set apart from the pages rather than listed among them: a gap
+            // above, so a folder reads as the start of what follows it, and
+            // the same uppercase label every heading in this rail uses.
+            "group mt-2 flex w-full items-center gap-1 rounded pr-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground",
             selected && "bg-muted text-primary",
             dropZone === "inside" && "bg-primary/15 text-primary ring-1 ring-inset ring-primary/50",
             dropZone === "before" && "border-t-2 border-primary",
@@ -336,8 +343,14 @@ function TreeNode({
               : setOpen((openState) => !openState)}
             className="flex min-w-0 flex-1 items-center gap-1 text-left"
           >
-            {provider && (
+            {/* A folder mark unless the folder belongs to a source, in which
+                case that source's mark says more. */}
+            {provider ? (
               <ProviderLogo provider={provider} className="h-3 w-3 shrink-0 object-contain" />
+            ) : open ? (
+              <FolderOpen className="h-3 w-3 shrink-0" />
+            ) : (
+              <Folder className="h-3 w-3 shrink-0" />
             )}
             <span className="truncate">{node.title}</span>
             {/* Only while closed: open, the dots on the pages themselves say
@@ -417,8 +430,10 @@ function TreeNode({
           onClick={() => onSelect(node.path)}
           className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left"
         >
-          {/* Empty caret slot keeps page labels aligned with folder labels at
-              the same depth. */}
+          {/* Empty caret and icon slots keep page labels aligned with folder
+              labels at the same depth. The folder is told apart by its mark,
+              its case and the space above it, not by sitting further in. */}
+          <span className="h-3 w-3 shrink-0" aria-hidden />
           <span className="h-3 w-3 shrink-0" aria-hidden />
           <span className={cn("truncate", unread && "font-medium text-foreground")}>
             {node.title}

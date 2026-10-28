@@ -2290,7 +2290,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                       expanded={wikiOpen}
                       onToggle={() => setWikiOpen(!wikiOpen)}
                       onClick={() => navigate({ kind: "wiki" })}
-                      empty={!loading && wikiSplit.authored.length === 0}
+                      count={loading ? undefined : wikiSplit.authored.length}
                       controlsId={`tome-v2-wiki-${slug}`}
                     >
                       {renderWikiTree(wikiSplit.authored, {
@@ -2351,7 +2351,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                       expanded={referencesOpen}
                       onToggle={() => setReferencesOpen(!referencesOpen)}
                       onClick={() => navigate({ kind: "references" })}
-                      empty={!loading && wikiSplit.reference.length === 0}
+                      count={loading ? undefined : wikiSplit.reference.length}
                       controlsId={`tome-v2-references-${slug}`}
                     >
                       {renderWikiTree(wikiSplit.reference, {

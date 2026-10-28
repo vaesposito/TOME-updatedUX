@@ -11,7 +11,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { EmptyNote } from "@/components/tome/RailNav";
+import { NavCount } from "@/components/tome/RailNav";
 import { cn } from "@/lib/utils";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
@@ -356,11 +356,6 @@ function TreeNode({
               // own button, so a screen reader already said which one.
               <UnreadDot unread label="New activity" />
             )}
-            {showMeta && hasChildren && (
-              <span className="ml-auto shrink-0 pl-2 text-[10px] font-normal tabular-nums text-muted-foreground/70 group-hover:hidden">
-                {node.children.length}
-              </span>
-            )}
           </button>
           {node.folderId && (onCreatePage || onEditFolder || onMoveItem) && (
             <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
@@ -397,6 +392,9 @@ function TreeNode({
               and so every row in the rail is toggled from the same edge. A
               folder with nothing in it says so instead: a caret there would
               cost a click to learn what the row could have shown. */}
+          {/* Out of the way while the row is hovered, where the move and edit
+              actions want the same space. */}
+          <NavCount count={node.children.length} className="ml-auto group-hover:hidden" />
           {hasChildren ? (
             <button
               type="button"
@@ -413,10 +411,7 @@ function TreeNode({
               />
             </button>
           ) : (
-            <>
-              <EmptyNote />
-              <span className="h-3 w-3 shrink-0" aria-hidden />
-            </>
+            <span className="h-3 w-3 shrink-0" aria-hidden />
           )}
         </div>
         {open && children}

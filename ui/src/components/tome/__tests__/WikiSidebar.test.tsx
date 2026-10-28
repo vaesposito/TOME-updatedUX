@@ -255,14 +255,14 @@ describe("WikiSidebar row metadata", () => {
     expect(screen.getByText("1")).toBeInTheDocument();
   });
 
-  it("reports neither where the tree is a list of places to go", () => {
+  it("drops the kind badge where the tree is a list of places to go", () => {
     // A page's kind is chosen on the page, so a badge here only reports a
-    // setting; neither it nor a tally of what is in a folder helps anyone
-    // decide where to go. Together they made every row a status display.
+    // setting, and it does not help anyone decide where to go. How much is
+    // in a folder does, so that stays.
     render(<WikiSidebar {...base} showMeta={false} />);
     expect(screen.queryByLabelText("stable")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("dynamic")).not.toBeInTheDocument();
-    expect(screen.queryByText("1")).not.toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
   });
 
   it("still names every row", () => {
@@ -302,9 +302,12 @@ describe("WikiSidebar empty folders", () => {
     showHidden: false,
   };
 
-  it("says a folder is empty rather than making it be opened to find out", () => {
+  it("counts a folder rather than making it be opened to find out", () => {
     render(<WikiSidebar {...base} />);
-    expect(screen.getByText("Empty")).toBeInTheDocument();
+    // One mark for both answers, so a reader going down the tree is reading
+    // a column of figures rather than a word here and a number there.
+    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
   });
 
   it("offers no caret on a folder with nothing under it", () => {
@@ -319,9 +322,9 @@ describe("WikiSidebar empty folders", () => {
     ).toBeInTheDocument();
   });
 
-  it("says it of the empty folder only", () => {
+  it("says nought of the empty folder only", () => {
     render(<WikiSidebar {...base} />);
-    expect(screen.getAllByText("Empty")).toHaveLength(1);
+    expect(screen.getAllByText("0")).toHaveLength(1);
   });
 
   it("goes to a folder and opens it from the row, the way the rail's sections do", () => {

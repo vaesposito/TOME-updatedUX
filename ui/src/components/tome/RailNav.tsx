@@ -36,7 +36,7 @@ export function NavSection({
   onToggle,
   onClick,
   controlsId,
-  empty,
+  count,
   children,
 }: {
   icon: React.ReactNode;
@@ -45,20 +45,25 @@ export function NavSection({
   active: boolean;
   expanded: boolean;
   /**
-   * Whether there is nothing under this section.
+   * How much is under this section.
    *
-   * Said on the row rather than left to be found: a caret that opens onto
-   * nothing costs a click to learn something the rail could have shown.
-   * The row still goes somewhere, because its landing view is where an
-   * empty section explains itself and offers the way to fill it.
+   * Said on the row rather than left to be found: opening a section to learn
+   * how much is in it, or that there is nothing in it, costs a click for
+   * something the rail could have shown. Left undefined while the tree is
+   * still arriving — a nought there would be a count, and wrong.
+   *
+   * At nought the row still goes somewhere, because its landing view is where
+   * an empty section explains itself and offers the way to fill it.
    */
-  empty?: boolean;
+  count?: number;
   onToggle: () => void;
   /** Where the row goes — its own landing view, listing what it holds. */
   onClick: () => void;
   controlsId: string;
   children: React.ReactNode;
 }) {
+  const empty = count === 0;
+
   return (
     <div className="flex flex-col">
       <div
@@ -83,11 +88,9 @@ export function NavSection({
           {icon}
           <span className="flex-1 truncate">{label}</span>
         </button>
+        <NavCount count={count} />
         {empty ? (
-          <>
-            <EmptyNote />
-            <span aria-hidden className="h-3.5 w-3.5 shrink-0" />
-          </>
+          <span aria-hidden className="h-3.5 w-3.5 shrink-0" />
         ) : (
           <button
             type="button"
@@ -181,15 +184,25 @@ export function NavItem({
 }
 
 /**
- * What a row says when there is nothing under it.
+ * How much is under a row.
  *
- * A word rather than a nought: "0" beside a label reads as a count that
- * might be anything, and the rail is scanned rather than totted up.
+ * One mark for both answers rather than a word for nothing and a number for
+ * something: a reader going down the rail is comparing these, and "Empty"
+ * beside "3" is two different things to read where a nought beside a three
+ * is one. Lining figures, so the column reads straight.
+ *
+ * Nothing at all while the count is unknown, which is not the same as nought.
  */
-export function EmptyNote() {
+export function NavCount({ count, className }: { count?: number; className?: string }) {
+  if (count === undefined) return null;
   return (
-    <span className="shrink-0 pl-2 text-[10px] font-normal uppercase tracking-wide text-muted-foreground/60">
-      Empty
+    <span
+      className={cn(
+        "shrink-0 pl-2 text-[10px] font-normal tabular-nums text-muted-foreground/70",
+        className,
+      )}
+    >
+      {count}
     </span>
   );
 }

@@ -60,7 +60,46 @@ describe("NavSection", () => {
     expect(row.parentElement?.lastElementChild).toBe(caret);
   });
 
-  it("says a section is empty rather than making it be opened to find out", () => {
+  it("counts what is under a section, so it need not be opened to find out", () => {
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded={false}
+        count={3}
+        onToggle={jest.fn()}
+        onClick={jest.fn()}
+        controlsId="wiki-tree"
+      >
+        <p>Charter</p>
+      </NavSection>,
+    );
+
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("says nothing about a count it does not have yet", () => {
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded={false}
+        onToggle={jest.fn()}
+        onClick={jest.fn()}
+        controlsId="wiki-tree"
+      >
+        <p>Charter</p>
+      </NavSection>,
+    );
+
+    // A nought would be a count, and while the tree is still arriving it
+    // would be the wrong one.
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("counts a section at nought rather than making it be opened to find out", () => {
     const onToggle = jest.fn();
 
     renderRail(
@@ -69,7 +108,7 @@ describe("NavSection", () => {
         label="Referencing Projects"
         active={false}
         expanded={false}
-        empty
+        count={0}
         onToggle={onToggle}
         onClick={jest.fn()}
         controlsId="references-tree"
@@ -78,7 +117,7 @@ describe("NavSection", () => {
       </NavSection>,
     );
 
-    expect(screen.getByText("Empty")).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
     // No caret: it would promise something to open.
     expect(
       screen.queryByRole("button", { name: /Expand|Collapse/ }),
@@ -100,7 +139,7 @@ describe("NavSection", () => {
         label="Wiki"
         active={false}
         expanded
-        empty
+        count={0}
         onToggle={jest.fn()}
         onClick={jest.fn()}
         controlsId="wiki-tree"

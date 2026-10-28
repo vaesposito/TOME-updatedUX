@@ -68,7 +68,7 @@ async function readGistResponse(
   if (!parsed.ok) {
     if (response.status === 413) {
       throw new Error(
-        "This gist is too large to save. Remove an embedded image or use a smaller image, then try again.",
+        "This note is too large to save. Remove an embedded image or use a smaller image, then try again.",
       );
     }
     throw new Error(
@@ -82,7 +82,7 @@ async function readGistResponse(
   }
   const gist = parsed.data.data?.gist;
   if (!gist) {
-    throw new Error(`${fallbackMessage}: the server response did not include the gist.`);
+    throw new Error(`${fallbackMessage}: the server response did not include the note.`);
   }
   return gist;
 }
@@ -224,7 +224,7 @@ export function GistView({
     setEditing(false);
     fetch(`/api/tome/projects/${slug}/gists/${id}`)
       .then(async (response) => {
-        return readGistResponse(response, "Failed to load gist");
+        return readGistResponse(response, "Failed to load note");
       })
       .then((loadedGist) => {
         if (!cancelled) setGist(loadedGist);
@@ -356,7 +356,7 @@ export function GistView({
       : documentBody;
     return {
       current_value: selected,
-      extra_context: `Gist: ${title.trim() || "Untitled gist"}\nDocument excerpt:\n${excerpt}`,
+      extra_context: `Note: ${title.trim() || "Untitled note"}\nDocument excerpt:\n${excerpt}`,
     };
   }, [editorMode, rawDraft, title]);
 
@@ -422,7 +422,7 @@ export function GistView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: nextTitle }),
       });
-      const updatedGist = await readGistResponse(response, "Failed to rename gist");
+      const updatedGist = await readGistResponse(response, "Failed to rename note");
       setGist(updatedGist);
       setTitle(updatedGist.title);
       setTitleDraft(updatedGist.title);
@@ -474,7 +474,7 @@ export function GistView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: nextFilename }),
       });
-      const updatedGist = await readGistResponse(response, "Failed to rename gist");
+      const updatedGist = await readGistResponse(response, "Failed to rename note");
       const updatedFilename = updatedGist.filename ?? defaultGistFilename(updatedGist.title);
       setGist(updatedGist);
       setFilename(updatedFilename);
@@ -521,7 +521,7 @@ export function GistView({
       });
       const savedGist = await readGistResponse(
         response,
-        `Failed to ${creating ? "create" : "update"} gist`,
+        `Failed to ${creating ? "create" : "update"} note`,
       );
       const savedFilename = savedGist.filename ?? defaultGistFilename(savedGist.title);
       window.localStorage.removeItem(draftStorageKey);
@@ -544,7 +544,7 @@ export function GistView({
 
   const remove = useCallback(async () => {
     if (!gist || !id) return;
-    if (!window.confirm(`Delete gist "${gist.title}"?`)) return;
+    if (!window.confirm(`Delete note "${gist.title}"?`)) return;
     setDeleting(true);
     try {
       const response = await fetch(`/api/tome/projects/${slug}/gists/${id}`, { method: "DELETE" });
@@ -569,7 +569,7 @@ export function GistView({
       >
         <Button variant="ghost" size="sm" className="h-auto gap-1.5 px-2 py-1" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
-          Gists
+          Notes
         </Button>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {gist && !editing && id && (
@@ -626,7 +626,7 @@ export function GistView({
                 options={MARKDOWN_DOCUMENT_EDITOR_MODES}
                 onChange={handleModeChange}
                 disabled={saving}
-                ariaLabel="Gist editor mode"
+                ariaLabel="Note editor mode"
                 testId="gist-editor-mode-toggle"
               />
               {editorMode !== "preview" && (
@@ -674,7 +674,7 @@ export function GistView({
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
               >
                 {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {saving ? "Saving…" : creating ? "Create gist" : "Save"}
+                {saving ? "Saving…" : creating ? "Create note" : "Save"}
               </button>
             </>
           ) : gist && canChange ? (
@@ -714,7 +714,7 @@ export function GistView({
         {loading ? (
           <TomeLoading />
         ) : !gist && !creating ? (
-          <div className="p-8 text-sm text-muted-foreground">Gist not found.</div>
+          <div className="p-8 text-sm text-muted-foreground">Note not found.</div>
         ) : (
           <div
             className={cn(
@@ -730,7 +730,7 @@ export function GistView({
               <div className="min-w-48 flex-1">
                 {renamingTitle ? (
                   <Input
-                    aria-label="Gist title"
+                    aria-label="Note title"
                     value={titleDraft}
                     onChange={(event) => setTitleDraft(event.target.value)}
                     onKeyDown={(event) => {
@@ -743,7 +743,7 @@ export function GistView({
                       }
                     }}
                     onBlur={() => void commitTitleRename()}
-                    placeholder="Untitled gist"
+                    placeholder="Untitled note"
                     className="h-auto w-full border-0 px-0 py-0 text-2xl font-semibold leading-tight shadow-none focus-visible:ring-0"
                     autoFocus
                     disabled={titleSaving}
@@ -751,7 +751,7 @@ export function GistView({
                 ) : (
                   <div className="group/title flex min-w-0 items-center gap-1.5">
                     <h1 className="truncate text-2xl font-semibold leading-tight">
-                      {editing ? title.trim() || "Untitled gist" : gist?.title}
+                      {editing ? title.trim() || "Untitled note" : gist?.title}
                     </h1>
                     {canChange && (
                       <Tooltip>
@@ -760,7 +760,7 @@ export function GistView({
                             type="button"
                             onClick={startTitleRename}
                             disabled={titleSaving}
-                            aria-label="Rename gist title"
+                            aria-label="Rename note title"
                             className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-60 outline-none transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover/title:opacity-100 md:group-focus-within/title:opacity-100 disabled:opacity-40"
                           >
                             {titleSaving ? (
@@ -771,7 +771,7 @@ export function GistView({
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="text-xs">
-                          Rename gist title
+                          Rename note title
                         </TooltipContent>
                       </Tooltip>
                     )}
@@ -803,7 +803,7 @@ export function GistView({
                       onBlur={() => void commitFilenameRename()}
                       disabled={filenameSaving}
                       className="block w-full max-w-md rounded border border-input bg-background px-1 py-0.5 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                      aria-label="Rename gist filename (Enter to save, Esc to cancel)"
+                      aria-label="Rename note filename (Enter to save, Esc to cancel)"
                     />
                   ) : (
                     <span className="group/filename flex min-w-0 items-center gap-0.5">
@@ -819,14 +819,14 @@ export function GistView({
                               type="button"
                               onClick={startFilenameRename}
                               disabled={filenameSaving}
-                              aria-label="Rename gist filename"
+                              aria-label="Rename note filename"
                               className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 outline-none transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover/filename:opacity-100 md:group-focus-within/filename:opacity-100 disabled:opacity-40"
                             >
                               <Pencil className="h-3 w-3" aria-hidden="true" />
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="text-xs">
-                            Rename gist filename
+                            Rename note filename
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -838,7 +838,7 @@ export function GistView({
                   {creating ? (
                     <>
                       <span aria-hidden="true">·</span>
-                      <span title="Gists are saved separately from the curated wiki">New gist</span>
+                      <span title="Notes are saved separately from the curated wiki">New note</span>
                     </>
                   ) : gist ? (
                     <>
@@ -850,7 +850,7 @@ export function GistView({
                         <TooltipTrigger asChild>
                           <button
                             type="button"
-                            aria-label="View gist creation and modification details"
+                            aria-label="View note creation and modification details"
                             className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <Info className="h-3.5 w-3.5" aria-hidden="true" />
@@ -892,7 +892,7 @@ export function GistView({
                   aria-live="polite"
                   title={
                     creating
-                      ? "Saved in this browser until you create the gist."
+                      ? "Saved in this browser until you create the note."
                       : "Saved in this browser as a local edit."
                   }
                 >

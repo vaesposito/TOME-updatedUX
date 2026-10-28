@@ -230,7 +230,7 @@ describe("GistView", () => {
     );
     expect(document.querySelector(".tome-mermaid-error")).toBeNull();
     expect(screen.queryByText("plain text", { exact: true })).toBeNull();
-    expect(screen.getByRole("button", { name: "Export this gist" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export this note" })).toBeInTheDocument();
   });
 
   it("keeps gist metadata compact and reveals audit details in a tooltip", async () => {
@@ -270,7 +270,7 @@ describe("GistView", () => {
 
     fireEvent.mouseEnter(
       screen.getByRole("button", {
-        name: "View gist creation and modification details",
+        name: "View note creation and modification details",
       }),
     );
     const tooltip = await screen.findByRole("tooltip");
@@ -309,11 +309,11 @@ describe("GistView", () => {
     );
 
     await screen.findByRole("heading", { name: "Example gist" });
-    const renameButton = screen.getByRole("button", { name: "Rename gist filename" });
+    const renameButton = screen.getByRole("button", { name: "Rename note filename" });
     expect(renameButton).toHaveClass("md:opacity-0", "md:group-hover/filename:opacity-100");
     fireEvent.click(renameButton);
     const filenameInput = screen.getByRole("textbox", {
-      name: "Rename gist filename (Enter to save, Esc to cancel)",
+      name: "Rename note filename (Enter to save, Esc to cancel)",
     });
     fireEvent.change(filenameInput, { target: { value: "renamed" } });
     fireEvent.keyDown(filenameInput, { key: "Enter" });
@@ -367,7 +367,7 @@ describe("GistView", () => {
 
     fireEvent.mouseEnter(
       screen.getByRole("button", {
-        name: "View gist creation and modification details",
+        name: "View note creation and modification details",
       }),
     );
     const tooltip = await screen.findByRole("tooltip");
@@ -406,9 +406,9 @@ describe("GistView", () => {
     );
 
     await screen.findByRole("heading", { name: "Example gist" });
-    fireEvent.click(screen.getByRole("button", { name: "Rename gist filename" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename note filename" }));
     const filenameInput = screen.getByRole("textbox", {
-      name: "Rename gist filename (Enter to save, Esc to cancel)",
+      name: "Rename note filename (Enter to save, Esc to cancel)",
     });
     fireEvent.change(filenameInput, { target: { value: "renamed" } });
     fireEvent.keyDown(filenameInput, { key: "Enter" });
@@ -452,10 +452,10 @@ describe("GistView", () => {
     );
 
     await screen.findByRole("heading", { name: "Example gist" });
-    const renameButton = screen.getByRole("button", { name: "Rename gist title" });
+    const renameButton = screen.getByRole("button", { name: "Rename note title" });
     expect(renameButton).toHaveClass("md:opacity-0", "md:group-hover/title:opacity-100");
     fireEvent.click(renameButton);
-    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
+    const titleInput = screen.getByRole("textbox", { name: "Note title" });
     fireEvent.change(titleInput, { target: { value: "Renamed gist" } });
     fireEvent.keyDown(titleInput, { key: "Enter" });
 
@@ -512,7 +512,7 @@ describe("GistView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const titleTagsRow = screen.getByTestId("gist-title-tags-row");
-    expect(titleTagsRow).toContainElement(screen.getByRole("button", { name: "Rename gist title" }));
+    expect(titleTagsRow).toContainElement(screen.getByRole("button", { name: "Rename note title" }));
     expect(titleTagsRow).toContainElement(screen.getByTestId("gist-author-meta"));
     expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("test-user");
     expect(titleTagsRow).toContainElement(screen.getByRole("textbox", { name: "Add tag" }));
@@ -556,8 +556,8 @@ describe("GistView", () => {
     expect(
       screen.getByRole("textbox", { name: "Gist body" }).closest(".tome-rich-editor-full-width"),
     ).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
-    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.click(screen.getByRole("button", { name: "Rename note title" }));
+    const titleInput = screen.getByRole("textbox", { name: "Note title" });
     fireEvent.change(titleInput, {
       target: { value: "Updated gist" },
     });
@@ -664,14 +664,14 @@ describe("GistView", () => {
     const metadata = screen.getByTestId("gist-author-meta");
     expect(screen.getByRole("heading", { name: "New context" })).toBeInTheDocument();
     expect(metadata).toHaveTextContent("new-context.md");
-    expect(metadata).toHaveTextContent("New gist");
+    expect(metadata).toHaveTextContent("New note");
     expect(metadata).not.toHaveTextContent("saved outside the curated wiki");
     expect(global.fetch).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Gist body" }), {
       target: { value: "Useful markdown" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create gist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create note" }));
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
       "/api/tome/projects/example-project/gists",
@@ -720,7 +720,7 @@ describe("GistView", () => {
 
     expect(
       await screen.findByText(
-        "This gist is too large to save. Remove an embedded image or use a smaller image, then try again.",
+        "This note is too large to save. Remove an embedded image or use a smaller image, then try again.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
@@ -741,8 +741,8 @@ describe("GistView", () => {
     );
 
     expect(screen.queryByTestId("gist-draft-status")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
-    const titleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.click(screen.getByRole("button", { name: "Rename note title" }));
+    const titleInput = screen.getByRole("textbox", { name: "Note title" });
     fireEvent.change(titleInput, {
       target: { value: "Local draft" },
     });
@@ -760,7 +760,7 @@ describe("GistView", () => {
     expect(status).toHaveAttribute("aria-live", "polite");
     expect(status).toHaveAttribute(
       "title",
-      "Saved in this browser until you create the gist.",
+      "Saved in this browser until you create the note.",
     );
     expect(status.querySelector("time")).toHaveAttribute(
       "dateTime",
@@ -784,8 +784,8 @@ describe("GistView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
-    const firstTitleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.click(screen.getByRole("button", { name: "Rename note title" }));
+    const firstTitleInput = screen.getByRole("textbox", { name: "Note title" });
     fireEvent.change(firstTitleInput, { target: { value: "Saved draft" } });
     fireEvent.keyDown(firstTitleInput, { key: "Enter" });
     fireEvent.change(screen.getByRole("textbox", { name: "Gist body" }), {
@@ -797,15 +797,15 @@ describe("GistView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByRole("heading", { name: "Saved draft" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Rename gist title" }));
-    const renamedTitleInput = screen.getByRole("textbox", { name: "Gist title" });
+    fireEvent.click(screen.getByRole("button", { name: "Rename note title" }));
+    const renamedTitleInput = screen.getByRole("textbox", { name: "Note title" });
     fireEvent.change(renamedTitleInput, { target: { value: "Renamed after autosave" } });
     fireEvent.keyDown(renamedTitleInput, { key: "Enter" });
     expect(screen.getByRole("heading", { name: "Renamed after autosave" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Rename gist filename" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename note filename" }));
     const filenameInput = screen.getByRole("textbox", {
-      name: "Rename gist filename (Enter to save, Esc to cancel)",
+      name: "Rename note filename (Enter to save, Esc to cancel)",
     });
     fireEvent.change(filenameInput, { target: { value: "renamed-draft" } });
     fireEvent.keyDown(filenameInput, { key: "Enter" });

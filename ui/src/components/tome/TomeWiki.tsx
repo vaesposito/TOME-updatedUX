@@ -1512,16 +1512,16 @@ export function TomeWiki({ slug }: { slug: string }) {
       case "feed":
         return [{ label: "Activity" }];
       case "gists":
-        return [{ label: "Gists" }];
+        return [{ label: "Notes" }];
       case "newGist":
         return [
-          { label: "Gists", onClick: () => navigate({ kind: "gists" }) },
-          { label: "New gist" },
+          { label: "Notes", onClick: () => navigate({ kind: "gists" }) },
+          { label: "New note" },
         ];
       case "gist":
         return [
-          { label: "Gists", onClick: () => navigate({ kind: "gists" }) },
-          { label: "Gist" },
+          { label: "Notes", onClick: () => navigate({ kind: "gists" }) },
+          { label: "Note" },
         ];
       case "settings":
         return [{ label: "Settings" }];
@@ -2414,14 +2414,14 @@ export function TomeWiki({ slug }: { slug: string }) {
                     active={navActive.feed}
                     onClick={() => navigate({ kind: "feed" })}
                     tipTitle="Activity"
-                    tipDescription="The project's activity feed: GitHub and ingest events, shared gists, plus live discussion, powered by Mycelium. People and agents post here; the wiki holds the context, this holds the activity and signal around it."
+                    tipDescription="The project's activity feed: GitHub and ingest events, shared notes, plus live discussion, powered by Mycelium. People and agents post here; the wiki holds the context, this holds the activity and signal around it."
                   />
                   <NavItem
                     icon={<FileText className="h-4 w-4" />}
-                    label="Gists"
+                    label="Notes"
                     active={navActive.gists}
                     onClick={() => navigate({ kind: "gists" })}
-                    tipTitle="Gists"
+                    tipTitle="Notes"
                     tipDescription="Quick, non-committal chunks of context (a prompt, an agent memory, a snippet) saved without becoming part of the curated wiki. Share one into the activity feed when a teammate should see it."
                   />
                   <NavItem

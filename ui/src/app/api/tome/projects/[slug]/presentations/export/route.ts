@@ -39,7 +39,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   if (gistId) {
     const gists = await getTomeGistsCollection();
     const gist = await gists.findOne({ _id: gistId, project_id: tctx.projectId });
-    if (!gist) throw new ApiError("Gist not found", 404, "GIST_NOT_FOUND");
+    if (!gist) throw new ApiError("Note not found", 404, "GIST_NOT_FOUND");
     allowedPaths = [presentationGistSourcePath(gistId)];
   } else {
     const store = await getPageStore();

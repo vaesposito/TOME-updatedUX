@@ -48,7 +48,7 @@ describe("WikiExportMenu", () => {
       </ToastProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Export this gist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export this note" }));
     expect(screen.getByRole("link", { name: /Markdown/ })).toHaveAttribute(
       "href",
       "/api/tome/projects/example-project/export?format=markdown&gist=gist-1",

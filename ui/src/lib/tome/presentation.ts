@@ -280,7 +280,7 @@ export function presentationSourceFromGist(
 ): PresentationSource {
   return {
     path: presentationGistSourcePath(id),
-    title: title.trim() || "Gist",
+    title: title.trim() || "Note",
     content: stripAgentHtmlComments(markdown),
   };
 }

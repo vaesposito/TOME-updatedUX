@@ -152,7 +152,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     if (!gistId) throw new ApiError("gist_id is required for a gist presentation", 400, "BAD_REQUEST");
     const gists = await getTomeGistsCollection();
     const gist = await gists.findOne({ _id: gistId, project_id: tctx.projectId });
-    if (!gist) throw new ApiError("Gist not found", 404, "GIST_NOT_FOUND");
+    if (!gist) throw new ApiError("Note not found", 404, "GIST_NOT_FOUND");
     const source = presentationSourceFromGist(gistId, gist.title, gist.body);
     if (paths[0] !== source.path) {
       throw new ApiError("The gist source reference does not match gist_id", 400, "BAD_REQUEST");

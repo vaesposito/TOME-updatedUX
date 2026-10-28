@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import type { GistRecord } from "@/types/tome";
 
 /**
- * Gists: quick, non-committal chunks of context (a prompt, an agent memory, a
+ * Notes, stored as gists: quick, non-committal chunks of context (a prompt, an agent memory, a
  * snippet) saved without becoming part of the curated wiki, not ingested, not
  * synthesized, not loaded into agent context by default. Every gist is posted
  * to the Feed automatically at creation (also reachable via the
@@ -68,7 +68,7 @@ export function GistsPanel({
     try {
       const res = await fetch(`/api/tome/projects/${slug}/gists`);
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error?.message || `Failed to load gists (${res.status})`);
+      if (!res.ok) throw new Error(body?.error?.message || `Failed to load notes (${res.status})`);
       setGists(body?.data?.gists ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -82,7 +82,7 @@ export function GistsPanel({
 
   const remove = useCallback(
     async (gist: GistRecord) => {
-      if (!window.confirm(`Delete gist "${gist.title}"?`)) return;
+      if (!window.confirm(`Delete note "${gist.title}"?`)) return;
       try {
         const res = await fetch(`/api/tome/projects/${slug}/gists/${gist.id}`, { method: "DELETE" });
         if (!res.ok) {
@@ -112,7 +112,7 @@ export function GistsPanel({
     <div className="flex h-full flex-col">
       <div className="mx-auto w-full max-w-4xl px-6 pt-6">
         <PanelHeader
-          title="Gists"
+          title="Notes"
           description="Quick, non-committal context saved outside the wiki."
           action={(
             <Dialog
@@ -130,14 +130,14 @@ export function GistsPanel({
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1.5">
                   <Plus className="h-3.5 w-3.5" />
-                  New gist
+                  New note
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>New gist</DialogTitle>
+                  <DialogTitle>New note</DialogTitle>
                   <DialogDescription>
-                    Enter a gist name, then draft it in the editor.
+                    Enter a note name, then draft it in the editor.
                   </DialogDescription>
                 </DialogHeader>
                 <form
@@ -156,7 +156,7 @@ export function GistsPanel({
                       htmlFor="tome-new-gist-input"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Gist name
+                      Note name
                     </label>
                     <Input
                       id="tome-new-gist-input"
@@ -164,7 +164,7 @@ export function GistsPanel({
                       value={newGistName}
                       onChange={(event) => setNewGistName(event.target.value)}
                       placeholder="Deployment notes"
-                      aria-label="New gist name"
+                      aria-label="New note name"
                     />
                   </div>
                   <div className="flex justify-end pt-2">
@@ -191,7 +191,7 @@ export function GistsPanel({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <FileText className="h-6 w-6 text-primary" />
             </div>
-            <h3 className="text-base font-semibold">No gists yet</h3>
+            <h3 className="text-base font-semibold">No notes yet</h3>
             <p className="max-w-md text-sm text-muted-foreground">
               Save a working prompt, a deploy note, or an agent memory here, it stays out of the
               wiki until someone chooses to pull it in.
@@ -267,7 +267,7 @@ export function GistsPanel({
                   <div className="flex shrink-0 items-center gap-0.5">
                     <CopyButton
                       value={() => `${window.location.origin}/projects/${slug}/tome/gists/${gist.id}`}
-                      label="Copy link to this gist"
+                      label="Copy link to this note"
                       copiedLabel="Link copied"
                       icon={Link2}
                       className="h-7 w-7 text-muted-foreground/60"
@@ -277,7 +277,7 @@ export function GistsPanel({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-muted-foreground/60 hover:text-destructive"
-                        aria-label="Delete gist"
+                        aria-label="Delete note"
                         onClick={() => void remove(gist)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />

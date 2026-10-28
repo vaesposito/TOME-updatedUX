@@ -645,6 +645,11 @@ export interface ChatRun {
  * a snippet) that's saved and shareable without becoming part of the curated
  * wiki. NOT ingested, NOT synthesized, NOT loaded into agent context by
  * default — a stored, linkable chunk a teammate pulls in only when relevant.
+ *
+ * Called a note everywhere a person reads it. The stored collection, the
+ * `/gists` routes and the `tome_*_gist` MCP tools keep the original name:
+ * renaming them would orphan saved documents, break links already posted to
+ * the Feed, and break MCP clients that call the tools by name.
  */
 export interface Gist {
   _id?: string;

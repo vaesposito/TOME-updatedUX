@@ -65,7 +65,7 @@ export function WikiExportMenu({ slug, path, gist, title, triggerClassName }: Pr
   const [open, setOpen] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const { toast } = useToast();
-  const label = gist ? "Export this gist" : path ? "Export this page" : "Export complete wiki";
+  const label = gist ? "Export this note" : path ? "Export this page" : "Export complete wiki";
 
   async function handleExportClick(
     event: MouseEvent<HTMLAnchorElement>,

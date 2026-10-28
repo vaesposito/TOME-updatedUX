@@ -582,7 +582,7 @@ export function FeedPanel({
               </div>
               <h2 className="text-lg font-semibold">The {slug} activity feed</h2>
               <p className="max-w-md text-sm text-muted-foreground">
-                Source activity, ingest runs, and shared gists for <span className="font-medium">{slug}</span>,
+                Source activity, ingest runs, and shared notes for <span className="font-medium">{slug}</span>,
                 plus live discussion, powered by Mycelium. People and agents post decisions,
                 questions, and updates here too. The wiki holds the durable context; this holds
                 the activity and signal around it.
@@ -952,7 +952,7 @@ function GistRefRow({
   highlighted?: boolean;
 }) {
   const isAgent = isAgentHandle(m.sender_handle);
-  const sub = ["Gist", m.display_name || displayName(m.sender_handle), relativeTime(m.created_at)]
+  const sub = ["Note", m.display_name || displayName(m.sender_handle), relativeTime(m.created_at)]
     .filter(Boolean)
     .join(" · ");
   if (!payload.gist_id) return null;
@@ -975,7 +975,7 @@ function GistRefRow({
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground/90">
-            {payload.title ?? "Untitled gist"}
+            {payload.title ?? "Untitled note"}
           </p>
           <div className="flex min-w-0 items-center gap-1.5">
             <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
@@ -999,7 +999,7 @@ function GistRefRow({
           }}
           className="inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium text-foreground/80 transition hover:bg-background hover:text-foreground"
         >
-          View gist
+          View note
           <ArrowUpRight className="h-3.5 w-3.5" />
         </Link>
       </div>

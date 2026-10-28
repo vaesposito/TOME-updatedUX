@@ -19,7 +19,7 @@ import { NextRequest } from "next/server";
 import { successResponse, withErrorHandler } from "@/lib/api-middleware";
 import { getCollection } from "@/lib/mongodb";
 import { sessionSub } from "@/lib/tome/agent-proxy";
-import { iso, stateByProjectId } from "@/lib/tome/child-state.server";
+import { stateByProjectId } from "@/lib/tome/child-state.server";
 import { filterReadableTomeProjects } from "@/lib/tome/access";
 import { resolveEntitySubtree, sortHierarchy } from "@/lib/tome/entity-hierarchy";
 import { loadTomeProject } from "@/lib/tome/tome-api";

@@ -26,7 +26,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
 
   const gists = await getTomeGistsCollection();
   const gist = await gists.findOne({ _id: id, project_id: projectId });
-  if (!gist) throw new ApiError("Gist not found", 404, "GIST_NOT_FOUND");
+  if (!gist) throw new ApiError("Note not found", 404, "GIST_NOT_FOUND");
 
   return successResponse({
     gist: {
@@ -108,7 +108,7 @@ export const PATCH = withErrorHandler(async (request: NextRequest, ctx: Ctx) => 
 
   const gists = await getTomeGistsCollection();
   const gist = await gists.findOne({ _id: id, project_id: tctx.projectId });
-  if (!gist) throw new ApiError("Gist not found", 404, "GIST_NOT_FOUND");
+  if (!gist) throw new ApiError("Note not found", 404, "GIST_NOT_FOUND");
 
   await gists.updateOne(
     { _id: id, project_id: tctx.projectId },
@@ -151,7 +151,7 @@ export const DELETE = withErrorHandler(async (request: NextRequest, ctx: Ctx) =>
 
   const gists = await getTomeGistsCollection();
   const gist = await gists.findOne({ _id: id, project_id: tctx.projectId });
-  if (!gist) throw new ApiError("Gist not found", 404, "GIST_NOT_FOUND");
+  if (!gist) throw new ApiError("Note not found", 404, "GIST_NOT_FOUND");
 
   await gists.deleteOne({ _id: id, project_id: tctx.projectId });
 

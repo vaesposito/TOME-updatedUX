@@ -46,14 +46,14 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const requestedPath = request.nextUrl.searchParams.get("path")?.trim() || null;
   const requestedGistId = request.nextUrl.searchParams.get("gist")?.trim() || null;
   if (requestedPath && requestedGistId) {
-    throw new ApiError("Choose either a wiki page or a gist to export", 400, "BAD_REQUEST");
+    throw new ApiError("Choose either a wiki page or a note to export", 400, "BAD_REQUEST");
   }
   const tctx = await loadTomeProject(request, slug);
 
   if (requestedGistId) {
     const gists = await getTomeGistsCollection();
     const gist = await gists.findOne({ _id: requestedGistId, project_id: tctx.projectId });
-    if (!gist) throw new ApiError("Gist not found", 404, "GIST_NOT_FOUND");
+    if (!gist) throw new ApiError("Note not found", 404, "GIST_NOT_FOUND");
 
     const filename = gist.filename ?? defaultGistFilename(gist.title);
     const stem = filename.replace(/\.mdx?$/i, "");

@@ -522,14 +522,14 @@ function FeedStep() {
 function GistsStep() {
   return (
     <div className="space-y-4">
-      <StepHeader icon={<FileText className="h-5 w-5" />} eyebrow="Gists" title="Save the scraps too">
-        A gist is a quick, non-committal chunk of context: a working prompt, an
-        agent memory, a deploy note. It skips the wiki entirely, so it&apos;s never
-        ingested, synthesized, or loaded into agent context by default.
+      <StepHeader icon={<FileText className="h-5 w-5" />} eyebrow="Notes" title="Save the scraps too">
+        A note is a quick, non-committal chunk of context: a working prompt, an
+        agent memory, a deployment incantation. It skips the wiki entirely, so
+        it&apos;s never ingested, synthesized, or loaded into agent context by default.
       </StepHeader>
       <GistsDemo />
       <p className="text-sm leading-relaxed text-muted-foreground">
-        Every gist you save is posted to the activity feed automatically, so a
+        Every note you save is posted to the activity feed automatically, so a
         teammate sees it right away, or their agent can pull it on demand with{" "}
         <code className="rounded bg-muted px-1 py-0.5 text-xs">tome_get_gist</code>.
         Nothing lands in the curated wiki unless someone chooses to promote it.
@@ -664,7 +664,7 @@ function GistsDemo() {
               key={`f-${i}`}
               className="fill-mode-both line-clamp-1 animate-in rounded-full border bg-background px-2.5 py-1 text-[11px] text-muted-foreground fade-in slide-in-from-top-1 duration-300"
             >
-              shared gist &ldquo;{ex.title}&rdquo; → <span className="font-medium text-foreground">Activity</span>
+              shared note &ldquo;{ex.title}&rdquo; → <span className="font-medium text-foreground">Activity</span>
             </span>
           </>
         ) : (

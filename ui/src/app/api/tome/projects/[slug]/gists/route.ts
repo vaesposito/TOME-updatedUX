@@ -111,7 +111,7 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
     try {
       await postEvent(slug, {
         sender_handle: gist.author,
-        content: `shared gist "${gist.title}"`,
+        content: `shared note "${gist.title}"`,
         kind: "gist_ref",
         payload: { gist_id: gist._id, title: gist.title, tags },
       });

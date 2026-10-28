@@ -23,13 +23,13 @@ describe("GistsPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "New gist" }));
-    expect(screen.getByRole("dialog", { name: "New gist" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    expect(screen.getByRole("dialog", { name: "New note" })).toBeInTheDocument();
     expect(onNewGist).not.toHaveBeenCalled();
     const writeButton = screen.getByRole("button", { name: "Write in editor" });
     expect(writeButton).toBeDisabled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "New gist name" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "New note name" }), {
       target: { value: "  Deployment notes  " },
     });
     expect(writeButton).toBeEnabled();
@@ -55,8 +55,8 @@ describe("GistsPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "New gist" }));
-    expect(screen.getByRole("textbox", { name: "New gist name" })).toHaveValue(
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    expect(screen.getByRole("textbox", { name: "New note name" })).toHaveValue(
       "Recovered context",
     );
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
@@ -73,8 +73,8 @@ describe("GistsPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "New gist" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "New gist name" }), {
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "New note name" }), {
       target: { value: "Discarded name" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -82,8 +82,8 @@ describe("GistsPanel", () => {
     expect(onNewGist).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "New gist" }));
-    expect(screen.getByRole("textbox", { name: "New gist name" })).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    expect(screen.getByRole("textbox", { name: "New note name" })).toHaveValue("");
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
   });
 });

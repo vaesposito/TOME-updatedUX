@@ -11,6 +11,7 @@ import type { ProjectDocument } from "@/types/projects";
 import {
   type TomeSummary,
   type TomeSummaryCounts,
+  type TomeSummaryEntity,
   type TomeSummaryItem,
   type TomeSummaryReason,
   type TomeSummaryScope,
@@ -206,12 +207,27 @@ export async function getEntitySummary(input: {
   scope?: TomeSummaryScope;
   /** Rows to return per section. Defaults to a digest's worth. */
   rows?: number;
+  /**
+   * The spaces to cover, when the caller has already worked them out.
+   *
+   * The workspace overview covers everything its reader may open, which is
+   * not a subtree of anything: there is no entity above a BHAG to hang it
+   * from. Passing the set in keeps one implementation of the row reading,
+   * the sectioning and the per-entity tallies rather than growing a second
+   * that would drift from this one.
+   *
+   * Nothing is adjacent to a scope that is already everything, so the
+   * neighbouring-space lookup is skipped along with the subtree walk.
+   */
+  entities?: readonly TomeSummaryEntity[];
 }): Promise<TomeSummary> {
   const scope: TomeSummaryScope = input.scope === "for_me" ? "for_me" : "all";
-  const scopeEntities = await resolveEntitySubtree(input.entity);
+  const scopeEntities = input.entities ?? (await resolveEntitySubtree(input.entity));
   const scopeSlugs = new Set(scopeEntities.map((entry) => entry.slug));
   const [adjacentSlugs, watchedEntities, prefs] = await Promise.all([
-    resolveAdjacentSlugs(input.entity, scopeSlugs),
+    input.entities
+      ? Promise.resolve([] as string[])
+      : resolveAdjacentSlugs(input.entity, scopeSlugs),
     listSubjectWatchedEntities(input.principal.subject),
     getNotificationPreferences(input.principal.email),
   ]);

@@ -14,6 +14,15 @@
 
 import type { ProjectType } from "@/types/projects";
 
+/**
+ * What a home page is about.
+ *
+ * The workspace is not an entity — there is nothing above a BHAG to be one —
+ * but the hub's Overview tab reads like a home page for it, so it takes the
+ * same place in these functions as the kind of entity being read.
+ */
+export type HomeScope = ProjectType | "workspace";
+
 export type TomeHomeWidgetId =
   | "ask"
   | "attention"
@@ -41,6 +50,15 @@ export interface TomeHomeWidget {
    * because it reads as something broken rather than something inapplicable.
    */
   kinds?: readonly ProjectType[];
+  /**
+   * Whether this card also means something with no single space in view.
+   *
+   * Opt-in rather than inherited from `kinds`, because most of these cards
+   * are about one wiki — its roadmap, its stewards, its sources, a question
+   * put to its agent — and have no answer at all when "this space" is every
+   * space. The ones that survive the move up are the ones made of rows.
+   */
+  workspace?: boolean;
 }
 
 /**
@@ -52,14 +70,15 @@ export interface TomeHomeWidget {
  */
 export const TOME_HOME_WIDGETS: readonly TomeHomeWidget[] = [
   { id: "ask", label: "Ask the agent", width: 3 },
-  { id: "attention", label: "Needs attention", width: 2 },
-  { id: "tagged", label: "Tagged for you", width: 1 },
-  { id: "updates", label: "Latest updates", width: 3 },
+  { id: "attention", label: "Needs attention", width: 2, workspace: true },
+  { id: "tagged", label: "Tagged for you", width: 1, workspace: true },
+  { id: "updates", label: "Latest updates", width: 3, workspace: true },
   {
     id: "children",
     label: "Areas & projects",
     width: 3,
     kinds: ["bhag", "area"],
+    workspace: true,
   },
   { id: "glance", label: "At a glance", width: 2 },
   { id: "milestones", label: "Milestones", width: 1 },
@@ -90,13 +109,15 @@ export function widgetLabel(id: TomeHomeWidgetId): string {
   return TOME_HOME_WIDGETS.find((widget) => widget.id === id)?.label ?? id;
 }
 
-/** Whether this card means anything for an entity of this kind. */
+/** Whether this card means anything at this altitude. */
 export function widgetAppliesTo(
   id: TomeHomeWidgetId,
-  kind: ProjectType,
+  scope: HomeScope,
 ): boolean {
   const widget = TOME_HOME_WIDGETS.find((entry) => entry.id === id);
-  return !widget?.kinds || widget.kinds.includes(kind);
+  if (!widget) return true;
+  if (scope === "workspace") return Boolean(widget.workspace);
+  return !widget.kinds || widget.kinds.includes(scope);
 }
 
 /** Tailwind's share of the three columns, on windows wide enough to have them. */
@@ -143,14 +164,14 @@ function clean(ids: readonly unknown[]): TomeHomeWidgetId[] {
 /**
  * The cards to render, in the order to render them.
  *
- * The kind filters the result rather than the arrangement: an order and a
+ * The scope filters the result rather than the arrangement: an order and a
  * hidden set are the reader's, and they are the same wherever they are, so a
- * card that does not apply to the entity being read is left out of the answer
+ * card that does not apply to what is being read is left out of the answer
  * without being forgotten.
  */
 export function visibleWidgets(
   layout: TomeHomeLayout,
-  kind?: ProjectType,
+  scope?: HomeScope,
 ): TomeHomeWidgetId[] {
   const hidden = new Set(clean(layout.hidden));
   const shown = clean(layout.order).filter((id) => !hidden.has(id));
@@ -158,7 +179,7 @@ export function visibleWidgets(
     if (hidden.has(id) || shown.includes(id)) continue;
     shown.splice(insertionIndex(id, shown, DEFAULT_ORDER), 0, id);
   }
-  return kind ? shown.filter((id) => widgetAppliesTo(id, kind)) : shown;
+  return scope ? shown.filter((id) => widgetAppliesTo(id, scope)) : shown;
 }
 
 /**

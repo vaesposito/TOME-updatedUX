@@ -24,7 +24,7 @@ import type { TomeSummaryEntity } from "@/types/tome-summary";
 
 import { HomeCard, HomeEmpty, HomeSkeleton, homeAction } from "./HomeCard";
 
-interface ChildRow {
+export interface ChildRow {
   slug: string;
   title: string;
   type?: "project" | "bhag" | "area";
@@ -35,7 +35,7 @@ interface ChildRow {
   ingesting: "queued" | "running" | null;
 }
 
-interface ChildrenResponse {
+export interface ChildrenResponse {
   children: ChildRow[];
   total: number;
   withheld: number;
@@ -52,13 +52,27 @@ export function HomeChildren({
   kind,
   entities,
   settingsHref,
+  rows: supplied,
+  title: suppliedTitle,
   className,
 }: {
-  slug: string;
-  kind: "bhag" | "area";
+  /** Whose children these are. Ignored when `rows` is supplied. */
+  slug?: string;
+  kind: "bhag" | "area" | "workspace";
   /** The digest's per-entity tallies, so a row can say what is waiting in it. */
   entities?: readonly TomeSummaryEntity[];
   settingsHref: string;
+  /**
+   * Rows the caller already has.
+   *
+   * The workspace overview fetches the spaces and the digest in one request,
+   * because it needs both and they come from one read. Handing the rows over
+   * rather than letting this card fetch again is what lets the same card
+   * serve a container and the whole workspace.
+   */
+  rows?: ChildrenResponse;
+  /** Overrides the heading, which is otherwise read off `kind`. */
+  title?: string;
   className?: string;
 }) {
   const [data, setData] = React.useState<ChildrenResponse | null>(null);
@@ -66,6 +80,8 @@ export function HomeChildren({
   const [reload, setReload] = React.useState(0);
 
   React.useEffect(() => {
+    // Nothing to fetch when the caller brought the rows with it.
+    if (supplied || !slug) return;
     let cancelled = false;
     setData(null);
     setFailed(false);
@@ -82,14 +98,15 @@ export function HomeChildren({
     return () => {
       cancelled = true;
     };
-  }, [slug, reload]);
+  }, [slug, reload, supplied]);
 
   const tallies = React.useMemo(
     () => new Map((entities ?? []).map((entry) => [entry.slug, entry] as const)),
     [entities],
   );
 
-  const rows = data?.children ?? [];
+  const shown = supplied ?? data;
+  const rows = shown?.children ?? [];
   const waiting = rows.reduce(
     (sum, row) => sum + (tallies.get(row.slug)?.attention ?? 0),
     0,
@@ -98,29 +115,39 @@ export function HomeChildren({
   return (
     <HomeCard
       icon={<FolderTree />}
-      title={kind === "bhag" ? "Areas & projects" : "Projects"}
-      {...(data && data.total > 0 ? { count: data.total } : {})}
+      title={
+        suppliedTitle ?? (kind === "area" ? "Projects" : "Areas & projects")
+      }
+      {...(shown && shown.total > 0 ? { count: shown.total } : {})}
       className={className}
     >
-      {!data && !failed ? <HomeSkeleton rows={4} /> : null}
+      {!shown && !failed ? <HomeSkeleton rows={4} /> : null}
 
       {failed ? (
         <HomeEmpty
           icon={<Layers />}
           headline="Could not load what's below"
-          hint="The list of areas and projects under this space could not be read just now."
+          hint={
+            kind === "workspace"
+              ? "The list of goals, areas and projects could not be read just now."
+              : "The list of areas and projects under this space could not be read just now."
+          }
           action={homeAction("Try again", "", () => setReload((n) => n + 1))}
         />
       ) : null}
 
-      {data && rows.length === 0 ? (
+      {shown && rows.length === 0 ? (
         <HomeEmpty
           icon={<Layers />}
-          headline="Nothing below this yet"
+          headline={
+            kind === "workspace" ? "No spaces yet" : "Nothing below this yet"
+          }
           hint={
-            kind === "bhag"
-              ? "Areas and projects name this space as the one they belong to, and appear here once they do."
-              : "Projects name this area as the one they belong to, and appear here once they do."
+            kind === "workspace"
+              ? "Goals, areas and projects appear here once one has been shared with you."
+              : kind === "bhag"
+                ? "Areas and projects name this space as the one they belong to, and appear here once they do."
+                : "Projects name this area as the one they belong to, and appear here once they do."
           }
           action={homeAction("Open settings", settingsHref)}
         />
@@ -134,7 +161,7 @@ export function HomeChildren({
               across{" "}
               {rows.filter((row) => (tallies.get(row.slug)?.attention ?? 0) > 0)
                 .length}{" "}
-              of {data?.total ?? rows.length}.
+              of {shown?.total ?? rows.length}.
             </p>
           ) : null}
           <ul className="min-w-0 space-y-px">
@@ -147,10 +174,10 @@ export function HomeChildren({
               />
             ))}
           </ul>
-          {data && (data.total > rows.length || data.withheld > 0) ? (
+          {shown && (shown.total > rows.length || shown.withheld > 0) ? (
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Showing {rows.length} of {data.total}
-              {data.withheld > 0
+              Showing {rows.length} of {shown.total}
+              {shown.withheld > 0
                 ? `, and ${data.withheld} not shared with you`
                 : ""}
               .

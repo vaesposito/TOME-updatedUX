@@ -33,7 +33,14 @@ import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBa
 import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
+import {
+  HubTabs,
+  parseHubTab,
+  type HubTab,
+} from "@/components/projects/HubTabs";
 import { NavV2Toggle } from "@/components/projects/NavV2Toggle";
+import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
+import { WorkspaceOverview } from "@/components/tome/WorkspaceOverview";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -758,6 +765,28 @@ export function ProjectsHub() {
     description: "Onboarding steps are configured externally.",
   });
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  /**
+   * Which of the three views is open, kept in the address bar.
+   *
+   * So that the overview and the digest can be linked to and come back on a
+   * refresh. Read on every render rather than copied into state, because the
+   * query string is the one record of it.
+   */
+  const tab = parseHubTab(searchParams.get("tab"));
+  const setTab = useCallback(
+    (next: HubTab) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "projects") params.delete("tab");
+      else params.set("tab", next);
+      const query = params.toString();
+      // Replaced, not pushed: moving between the three is looking around, and
+      // Back should leave TOME rather than walk the tabs in reverse.
+      router.replace(query ? `/projects?${query}` : "/projects", {
+        scroll: false,
+      });
+    },
+    [router, searchParams],
+  );
   const [isTomeAdmin, setIsTomeAdmin] = useState(false);
   const [bhagOrder, setBhagOrder] = useState<string[]>([]);
   const [reordering, setReordering] = useState(false);
@@ -1072,22 +1101,18 @@ export function ProjectsHub() {
     <div className="mx-auto w-full max-w-[1600px] space-y-8 p-6">
       <section className="relative overflow-hidden rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-background to-primary/5 p-5 md:p-6">
         <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-primary/20 blur-3xl" />
-        <div className="relative grid gap-5 md:grid-cols-2 md:items-center">
-          <div className="space-y-2">
-            <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight md:text-3xl">
-              <FolderKanban className="h-7 w-7 shrink-0 text-primary md:h-8 md:w-8" />
-              {hero.title}
-            </h1>
-            <p className="max-w-lg text-sm leading-6 text-muted-foreground">
-              {hero.description}
-            </p>
-          </div>
-          <div className="flex flex-col items-stretch gap-2 md:items-end">
-            <ProjectOnboardingWizard
-              onComplete={() => void load()}
-              initialOpen={searchParams.get("onboard") === "1"}
-            />
-            <div className="flex flex-wrap gap-2 md:justify-end">
+        <div className="relative space-y-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 space-y-2">
+              <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight md:text-3xl">
+                <FolderKanban className="h-7 w-7 shrink-0 text-primary md:h-8 md:w-8" />
+                {hero.title}
+              </h1>
+              <p className="max-w-lg text-sm leading-6 text-muted-foreground">
+                {hero.description}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <NavV2Toggle />
               {isTomeAdmin && (
                 <Link
@@ -1102,12 +1127,27 @@ export function ProjectsHub() {
               <TomeProductFeedback variant="link" />
             </div>
           </div>
+
+          {/* Under the welcome rather than above the list, because they are
+              three readings of the same thing and none of them is a section
+              of the catalogue. */}
+          <div className="flex justify-center">
+            <HubTabs value={tab} onChange={setTab} />
+          </div>
         </div>
       </section>
 
       {isTomeAdmin && <OpenFgaModelRepairBanner />}
 
-      <section className="space-y-6">
+      {/* The overview is mounted only while it is open, because it fetches on
+          mount and nothing it holds is worth keeping. The catalogue below is
+          hidden instead: it carries a search, a grouping and a reorder mode a
+          reader has set, over three requests, and dropping that to look at
+          the digest for a moment would be a poor trade. */}
+      {tab === "overview" && <WorkspaceOverview />}
+      {tab === "digest" && <WorkspaceDigest />}
+
+      <section className={cn("space-y-6", tab !== "projects" && "hidden")}>
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <h2 className="whitespace-nowrap text-xl font-semibold">
@@ -1157,6 +1197,10 @@ export function ProjectsHub() {
                 <TooltipContent side="bottom">What is TOME?</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            <ProjectOnboardingWizard
+              onComplete={() => void load()}
+              initialOpen={searchParams.get("onboard") === "1"}
+            />
             <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
             {isTomeAdmin && groupBy === "initiative" && (
               <>

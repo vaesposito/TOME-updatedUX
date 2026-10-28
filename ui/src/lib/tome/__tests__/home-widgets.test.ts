@@ -227,3 +227,50 @@ describe("kinds", () => {
     }
   });
 });
+
+describe("the workspace scope", () => {
+  it("shows only the cards made of rows", () => {
+    // What is waiting, what named the reader, what happened, and where. The
+    // rest need one wiki to be about.
+    expect(visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "workspace")).toEqual([
+      "attention",
+      "tagged",
+      "updates",
+      "children",
+    ]);
+  });
+
+  it("requires a card to say so rather than inheriting it", () => {
+    // A card with no `kinds` applies to every entity, which must not quietly
+    // mean it applies with no entity at all: a question put to this space's
+    // agent has no answer when the space is all of them.
+    for (const widget of TOME_HOME_WIDGETS) {
+      expect(widgetAppliesTo(widget.id, "workspace")).toBe(
+        Boolean(widget.workspace),
+      );
+    }
+    expect(widgetAppliesTo("ask", "workspace")).toBe(false);
+    expect(widgetAppliesTo("ask", "project")).toBe(true);
+  });
+
+  it("keeps one arrangement across both altitudes", () => {
+    // The cards mean the same thing from either, so hiding one in a project
+    // and finding it on the hub would make the eye a per-page setting.
+    const layout = withHidden(DEFAULT_TOME_HOME_LAYOUT, "tagged");
+    expect(visibleWidgets(layout, "workspace")).not.toContain("tagged");
+    expect(visibleWidgets(layout, "project")).not.toContain("tagged");
+  });
+
+  it("drops the cards that do not apply without forgetting them", () => {
+    const moved = withOrder(DEFAULT_TOME_HOME_LAYOUT, [
+      "updates",
+      ...visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "workspace").filter(
+        (id) => id !== "updates",
+      ),
+    ]);
+    expect(visibleWidgets(moved, "workspace")[0]).toBe("updates");
+    // The project's home still has every one of its own.
+    expect(visibleWidgets(moved, "project")).toContain("ask");
+    expect(visibleWidgets(moved, "project")).toContain("team");
+  });
+});

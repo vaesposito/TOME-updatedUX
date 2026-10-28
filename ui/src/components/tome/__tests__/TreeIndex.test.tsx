@@ -66,6 +66,18 @@ describe("TreeIndex", () => {
     expect(screen.getByText("0 items")).toBeInTheDocument();
   });
 
+  it("offers a way out of an empty branch", () => {
+    const onClick = jest.fn();
+    renderIndex({
+      nodes: [],
+      emptyNote: "Nothing mirrored yet.",
+      emptyAction: { label: "Connect a source", onClick },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a source" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it("carries header actions only when it is given them", () => {
     renderIndex({ actions: <button type="button">New page</button> });
     expect(screen.getByRole("button", { name: "New page" })).toBeInTheDocument();

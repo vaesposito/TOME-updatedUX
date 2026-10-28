@@ -2,6 +2,7 @@
 
 import { ChevronRight, FileText, FolderKanban } from "lucide-react";
 
+import { TomeEmpty, type TomeEmptyAction } from "@/components/tome/TomeEmpty";
 import type { PageTreeNode } from "@/types/tome";
 
 /**
@@ -19,6 +20,7 @@ export function TreeIndex({
   title,
   nodes,
   emptyNote,
+  emptyAction,
   actions,
   onOpenPage,
   onOpenFolder,
@@ -28,8 +30,10 @@ export function TreeIndex({
   eyebrow: string;
   title: string;
   nodes: readonly PageTreeNode[];
-  /** Shown in place of the list when there is nothing in this branch yet. */
+  /** What would put something in this branch, in one sentence. */
   emptyNote: string;
+  /** The one thing to go and do about an empty branch. */
+  emptyAction?: TomeEmptyAction;
   /** Buttons for the header, e.g. New page. */
   actions?: React.ReactNode;
   onOpenPage: (path: string) => void;
@@ -50,7 +54,12 @@ export function TreeIndex({
       </div>
 
       {nodes.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">{emptyNote}</div>
+        <TomeEmpty
+          icon={icon}
+          headline={`Nothing in ${title} yet`}
+          hint={emptyNote}
+          action={emptyAction}
+        />
       ) : (
         <div className="divide-y">
           {nodes.map((node) => (

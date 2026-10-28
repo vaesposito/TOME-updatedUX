@@ -9,6 +9,7 @@ import { useTheme } from "next-themes";
 import { ArrowUpRight, ChevronRight, Loader2, Network, Search, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import {
   Dialog,
   DialogContent,
@@ -311,9 +312,12 @@ export function EdgeGraphDialog({ slug }: { slug: string }) {
             </div>
           )}
           {isEmpty && (
-            <div className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-muted-foreground">
-              No edges yet. Ask chat to create one, or the ingest agent will author edges it
-              discovers with real evidence.
+            <div className="absolute inset-0 flex items-center justify-center">
+              <TomeEmpty
+                icon={<Network />}
+                headline="No edges yet"
+                hint="Edges are drawn between pages that bear on each other. Ask chat for one, or let the ingest agent author the ones it finds real evidence for."
+              />
             </div>
           )}
           {!loading && !error && !isEmpty && (

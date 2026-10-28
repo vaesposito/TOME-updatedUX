@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  History,
   Loader2,
   Play,
   Scissors,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -390,7 +392,11 @@ function RunsDialog({
         </DialogHeader>
         <ScrollArea className="max-h-[65vh]">
           {runs.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">No ingests yet.</p>
+            <TomeEmpty
+              icon={<History />}
+              headline="No ingests yet"
+              hint="Each run is kept here with what it read and what it wrote, so a page can be traced back to where it came from."
+            />
           ) : (
             <ul className="divide-y rounded-lg border">
               {runs.map((r) => (

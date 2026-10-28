@@ -6,6 +6,7 @@ import { FileText, Link2, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { CopyButton } from "@/components/ui/copy-button";
 import {
   Dialog,
@@ -64,6 +65,13 @@ export function GistsPanel({
     }
   }, [slug]);
 
+  /** Opening the dialog, from the trigger or from the empty list. */
+  const openNewNote = useCallback(() => {
+    setNewGistOpen(true);
+    setNewGistName(existingDraftTitle());
+    setTimeout(() => newGistInputRef.current?.focus(), 0);
+  }, [existingDraftTitle]);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/tome/projects/${slug}/gists`);
@@ -118,11 +126,10 @@ export function GistsPanel({
             <Dialog
               open={newGistOpen}
               onOpenChange={(open) => {
-                setNewGistOpen(open);
                 if (open) {
-                  setNewGistName(existingDraftTitle());
-                  setTimeout(() => newGistInputRef.current?.focus(), 0);
+                  openNewNote();
                 } else {
+                  setNewGistOpen(false);
                   setNewGistName("");
                 }
               }}
@@ -187,16 +194,12 @@ export function GistsPanel({
         {gists === null ? (
           <TomeLoading variant="list" />
         ) : gists.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <FileText className="h-6 w-6 text-primary" />
-            </div>
-            <h3 className="text-base font-semibold">No notes yet</h3>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Save a working prompt, a deploy note, or an agent memory here, it stays out of the
-              wiki until someone chooses to pull it in.
-            </p>
-          </div>
+          <TomeEmpty
+            icon={<FileText />}
+            headline="No notes yet"
+            hint="Save a working prompt, a deploy note, or an agent memory here. It stays out of the wiki until someone chooses to pull it in."
+            action={{ label: "New note", onClick: openNewNote }}
+          />
         ) : (
           <div className="mx-auto max-w-4xl px-6 py-4">
             <div className="mb-3 flex items-center justify-between gap-3">

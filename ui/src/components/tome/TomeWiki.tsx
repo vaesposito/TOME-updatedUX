@@ -2865,7 +2865,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                     eyebrow="Folder"
                     title={activeFolderNode.title}
                     nodes={activeFolderNode.children}
-                    emptyNote="This folder is empty. Add a subfolder or move content here."
+                    emptyNote="Pages written here, or moved here from elsewhere in the wiki, appear in this list."
+                    emptyAction={canEdit
+                      ? { label: "New page", onClick: () => openNewPage(activeFolderNode) }
+                      : undefined}
                     onOpenPage={openPage}
                     onOpenFolder={openFolder}
                     actions={canEdit ? (
@@ -2895,7 +2898,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                   eyebrow="Wiki"
                   title="Wiki"
                   nodes={wikiSplit.authored}
-                  emptyNote="Nothing written yet. Create a page, or run an ingest and let the agent draft one."
+                  emptyNote="Pages people write, and pages the agent drafts from what it has read, collect here."
+                  emptyAction={canEdit
+                    ? { label: "Run an ingest", onClick: () => navigate({ kind: "ingest" }) }
+                    : undefined}
                   onOpenPage={openPage}
                   onOpenFolder={openFolder}
                   actions={canEdit ? (
@@ -2913,7 +2919,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                   eyebrow="Referencing Projects"
                   title="Referencing Projects"
                   nodes={wikiSplit.reference}
-                  emptyNote="Nothing mirrored yet. A repository, a Confluence space or a Webex room lands here once it has been read."
+                  emptyNote="A repository, a Confluence space or a Webex room lands here once it has been read."
+                  emptyAction={canEdit
+                    ? { label: "Connect a source", onClick: () => navigate({ kind: "ingest" }) }
+                    : undefined}
                   onOpenPage={openPage}
                   onOpenFolder={openFolder}
                 />

@@ -27,6 +27,7 @@ import {
 import { BetaBadge } from "@/components/tome/BetaBadge";
 import { PanelShell } from "@/components/tome/PanelHeader";
 import { Button } from "@/components/ui/button";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { SearchablePicker } from "@/components/ui/searchable-picker";
 import {
   Dialog,
@@ -268,6 +269,11 @@ export function GithubIssuesPanel({
   const [warning, setWarning] = useState<string | null>(null);
   const [warningCode, setWarningCode] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Somewhere to look when TOME has nothing: the first attached repository's
+  // own issue list, which is the thing this board is a reading of.
+  const firstRepoIssuesUrl = payload?.repos[0]
+    ? `https://github.com/${payload.repos[0]}/issues`
+    : null;
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
   const [issueRepository, setIssueRepository] = useState("");
   const [issueNumber, setIssueNumber] = useState("");
@@ -1125,15 +1131,31 @@ export function GithubIssuesPanel({
           GitHub…
         </div>
       ) : filteredIssues.length === 0 ? (
-        <div className="rounded-2xl border border-dashed p-12 text-center">
-          <AlertCircle className="mx-auto h-10 w-10 text-muted-foreground/40" />
-          <p className="mt-3 font-medium">
-            {(payload?.repos.length ?? 0) === 0
-              ? "No attached GitHub repositories"
-              : issues.length === 0
-                ? "No tracked issues yet"
-                : "No tracked issues match your search"}
-          </p>
+        <div className="rounded-2xl border border-dashed">
+          {(payload?.repos.length ?? 0) === 0 ? (
+            <TomeEmpty
+              icon={<AlertCircle />}
+              headline="No attached GitHub repositories"
+              hint="Attach a repository to this project and its issues are tracked here, alongside what the wiki says about them."
+              action={canEdit ? { label: "Attach a repository", href: `/projects/${slug}/tome/ingest` } : undefined}
+            />
+          ) : issues.length === 0 ? (
+            <TomeEmpty
+              icon={<AlertCircle />}
+              headline="No tracked issues yet"
+              hint="Issues picked up from the attached repositories appear here. There are none open, or none has been synchronised yet."
+              action={firstRepoIssuesUrl
+                ? { label: "Open on GitHub", href: firstRepoIssuesUrl, newTab: true }
+                : undefined}
+            />
+          ) : (
+            <TomeEmpty
+              icon={<AlertCircle />}
+              headline="No tracked issues match your search"
+              hint={`Nothing tracked here matches \u201C${query.trim()}\u201D. Clearing the search brings the board back.`}
+              action={{ label: "Clear search", onClick: () => setQuery("") }}
+            />
+          )}
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-3">

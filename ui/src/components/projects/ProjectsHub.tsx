@@ -18,7 +18,6 @@ import {
   ListOrdered,
   Plus,
   RotateCcw,
-  Rocket,
   Search,
   Settings,
   Target,
@@ -31,6 +30,7 @@ import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { OnboardingModal } from "@/components/tome/OnboardingModal";
 import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBanner";
 import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import {
@@ -1241,25 +1241,23 @@ export function ProjectsHub() {
         )}
 
         {!loading && projects.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-border p-12 text-center">
-            <Rocket className="mx-auto h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4 font-medium">No projects yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create a project with the onboarding wizard above.
-            </p>
+          <div className="rounded-2xl border border-dashed border-border">
+            <TomeEmpty
+              icon={<FolderKanban />}
+              headline="No projects yet"
+              hint="A project is a space with a wiki, the sources it reads and the people who follow it. Add one and it appears in this list."
+            />
           </div>
         )}
 
         {!loading && projects.length > 0 && filteredProjects.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-border px-6 py-10 text-center">
-            <p className="text-sm font-medium">No projects match “{normalizedProjectQuery}”.</p>
-            <button
-              type="button"
-              onClick={() => setProjectQuery("")}
-              className="mt-2 text-sm text-primary hover:underline"
-            >
-              Clear search
-            </button>
+          <div className="rounded-2xl border border-dashed border-border">
+            <TomeEmpty
+              icon={<Search />}
+              headline="No projects match your search"
+              hint={`Nothing in this list matches \u201C${normalizedProjectQuery}\u201D. Clearing the search brings every project back.`}
+              action={{ label: "Clear search", onClick: () => setProjectQuery("") }}
+            />
           </div>
         )}
 

@@ -6,6 +6,7 @@ import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { CheckCircle2, History, Loader2, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { cn } from "@/lib/utils";
@@ -230,7 +231,12 @@ export function PageHistoryView({
           {revisions === null ? (
             <p className="p-4 text-sm text-muted-foreground">Loading…</p>
           ) : revisions.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">No revisions yet.</p>
+            <TomeEmpty
+              icon={<History />}
+              headline="No revisions yet"
+              hint="Every save is kept here, so an edit can be read beside the one before it."
+              className="px-3 py-10"
+            />
           ) : (
             <ul>
               {revisions.map((r, i) => (

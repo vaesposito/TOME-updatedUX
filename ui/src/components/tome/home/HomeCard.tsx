@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
-import { Button } from "@/components/ui/button";
+import { EmptyAction, EmptyArt } from "@/components/tome/TomeEmpty";
 import { cn } from "@/lib/utils";
 
 /** Somewhere to go: a route, or a view the surrounding page can open itself. */
@@ -175,48 +175,5 @@ export function HomeSkeleton({ rows = 3 }: { rows?: number }) {
         </span>
       ))}
     </div>
-  );
-}
-
-/**
- * The illustration every empty card is drawn under.
- *
- * A dashed ring around a soft disc, holding the card's own icon: the ring
- * means "not filled in yet" the way a dashed outline does everywhere else,
- * and the icon says which thing is not filled in. Hidden from assistive
- * technology, where the headline underneath already carries the whole
- * message and a second rendering of the icon would only repeat it.
- */
-function EmptyArt({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="relative mb-0.5 flex h-11 w-11 items-center justify-center"
-    >
-      <span className="absolute inset-0 rounded-full border border-dashed border-border" />
-      <span className="absolute inset-[5px] rounded-full bg-gradient-to-b from-muted to-muted/30" />
-      <span className="relative text-muted-foreground/70 [&>svg]:h-[1.125rem] [&>svg]:w-[1.125rem]">
-        {children}
-      </span>
-    </span>
-  );
-}
-
-function EmptyAction({ action }: { action: HomeAction }) {
-  const style = "mt-1 h-7 px-2.5 text-xs";
-  return "href" in action ? (
-    <Button asChild variant="outline" size="sm" className={style}>
-      <Link href={action.href}>{action.label}</Link>
-    </Button>
-  ) : (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={action.onClick}
-      className={style}
-    >
-      {action.label}
-    </Button>
   );
 }

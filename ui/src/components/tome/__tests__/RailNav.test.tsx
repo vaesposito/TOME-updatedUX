@@ -8,7 +8,7 @@ function renderRail(ui: React.ReactNode) {
 }
 
 describe("NavSection", () => {
-  it("goes somewhere when the row is clicked", () => {
+  it("goes somewhere and opens when the row is clicked", () => {
     const onClick = jest.fn();
     const onToggle = jest.fn();
 
@@ -28,10 +28,10 @@ describe("NavSection", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Wiki" }));
     expect(onClick).toHaveBeenCalledTimes(1);
-    expect(onToggle).not.toHaveBeenCalled();
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("opens and closes only from the caret", () => {
+  it("opens from the caret without going anywhere", () => {
     const onClick = jest.fn();
     const onToggle = jest.fn();
 
@@ -61,6 +61,8 @@ describe("NavSection", () => {
   });
 
   it("says a section is empty rather than making it be opened to find out", () => {
+    const onToggle = jest.fn();
+
     renderRail(
       <NavSection
         icon={<span />}
@@ -68,7 +70,7 @@ describe("NavSection", () => {
         active={false}
         expanded={false}
         empty
-        onToggle={jest.fn()}
+        onToggle={onToggle}
         onClick={jest.fn()}
         controlsId="references-tree"
       >
@@ -81,10 +83,14 @@ describe("NavSection", () => {
     expect(
       screen.queryByRole("button", { name: /Expand|Collapse/ }),
     ).not.toBeInTheDocument();
-    // The row still goes somewhere, because its landing view explains itself.
-    expect(
-      screen.getByRole("button", { name: "Referencing Projects" }),
-    ).toBeInTheDocument();
+
+    // The row still goes somewhere, because its landing view explains itself
+    // — but it does not claim to open, which is the one thing it has just
+    // said it cannot do.
+    const row = screen.getByRole("button", { name: "Referencing Projects" });
+    expect(row).not.toHaveAttribute("aria-expanded");
+    fireEvent.click(row);
+    expect(onToggle).not.toHaveBeenCalled();
   });
 
   it("keeps an empty section shut even if something says it is open", () => {

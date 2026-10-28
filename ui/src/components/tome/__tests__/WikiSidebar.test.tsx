@@ -323,4 +323,36 @@ describe("WikiSidebar empty folders", () => {
     render(<WikiSidebar {...base} />);
     expect(screen.getAllByText("Empty")).toHaveLength(1);
   });
+
+  it("goes to a folder and opens it from the row, the way the rail's sections do", () => {
+    const onSelectFolder = jest.fn();
+    render(<WikiSidebar {...base} onSelectFolder={onSelectFolder} />);
+
+    const row = screen.getByRole("button", { name: "Notes" });
+    expect(row).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(row);
+    expect(onSelectFolder).toHaveBeenCalledWith("notes");
+    expect(screen.getByRole("button", { name: "Notes" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByRole("button", { name: "One" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Notes" }));
+    expect(screen.getByRole("button", { name: "One" })).toBeInTheDocument();
+  });
+
+  it("does not claim to open a folder it has just called empty", () => {
+    const onSelectFolder = jest.fn();
+    render(<WikiSidebar {...base} onSelectFolder={onSelectFolder} />);
+
+    const row = screen.getByRole("button", { name: "Decisions" });
+    expect(row).not.toHaveAttribute("aria-expanded");
+
+    // It still goes there: the folder's own page is where an empty folder
+    // explains itself and offers the way to fill it.
+    fireEvent.click(row);
+    expect(onSelectFolder).toHaveBeenCalledWith("decisions");
+  });
 });

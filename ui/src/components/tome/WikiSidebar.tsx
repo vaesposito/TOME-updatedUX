@@ -327,9 +327,15 @@ function TreeNode({
           {checkbox}
           <button
             type="button"
-            onClick={() => node.folderId && onSelectFolder
-              ? onSelectFolder(node.folderId)
-              : setOpen((openState) => !openState)}
+            // Both things, as on the rail's own sections: a folder row opens
+            // the folder and goes to its page, so the whole row does what the
+            // whole row looks like it does and the caret is the way to open
+            // one without leaving where you are.
+            onClick={() => {
+              if (node.folderId && onSelectFolder) onSelectFolder(node.folderId);
+              if (hasChildren) setOpen((openState) => !openState);
+            }}
+            aria-expanded={hasChildren ? open : undefined}
             className="flex min-w-0 flex-1 items-center gap-1 text-left"
           >
             {/* A folder mark unless the folder belongs to a source, in which

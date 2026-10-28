@@ -17,13 +17,13 @@ import { cn } from "@/lib/utils";
 /**
  * A rail row that is also the heading for a tree beneath it.
  *
- * The caret is a control of its own, beside the row rather than part of it,
- * so that every first-level row behaves the same way: clicking it goes
- * somewhere, and only the caret opens or closes what is underneath. Wiki and
- * Referencing Projects each have a landing view listing what they hold, so "go
- * somewhere" means something for them too.
+ * Clicking the row does both things: it goes to the section's landing view
+ * and it opens or closes what is underneath. A row with a tree under it
+ * reads as the way into that tree, and asking for the caret specifically is
+ * a small target to hit for the thing the whole row looks like it does.
  *
- * The caret sits at the trailing edge, out of the way of the icons and labels
+ * The caret stays, as the way to open a section without leaving where you
+ * are. It sits at the trailing edge, out of the way of the icons and labels
  * that are read down the rail, and far enough from the row's text that
  * reaching for one is not a near miss for the other. `NavItem` keeps an empty
  * column the same width, so the rows end together.
@@ -69,7 +69,15 @@ export function NavSection({
       >
         <button
           type="button"
-          onClick={onClick}
+          // Not when there is nothing under it: there is no caret on an empty
+          // section either, and a row that reports itself empty should not
+          // also claim to open.
+          onClick={() => {
+            onClick();
+            if (!empty) onToggle();
+          }}
+          aria-expanded={empty ? undefined : expanded}
+          aria-controls={empty ? undefined : controlsId}
           className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-2 text-left"
         >
           {icon}

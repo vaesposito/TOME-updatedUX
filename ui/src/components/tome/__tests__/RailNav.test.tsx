@@ -52,6 +52,12 @@ describe("NavSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand Wiki" }));
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onClick).not.toHaveBeenCalled();
+
+    // After the row, not before it: the caret is reached from the edge the
+    // whole sidebar is toggled from.
+    const caret = screen.getByRole("button", { name: "Expand Wiki" });
+    const row = screen.getByRole("button", { name: "Wiki" });
+    expect(row.parentElement?.lastElementChild).toBe(caret);
   });
 
   it("hides what is underneath until it is expanded", () => {
@@ -144,5 +150,20 @@ describe("NavItem", () => {
       </TooltipProvider>,
     );
     expect(container.querySelector("span[aria-hidden]")).not.toBeInTheDocument();
+  });
+
+  it("reserves the column at the trailing edge, where the carets are", () => {
+    const { container } = renderRail(
+      <NavItem
+        icon={<span />}
+        label="Overview"
+        active={false}
+        onClick={jest.fn()}
+        reserveCaret
+      />,
+    );
+
+    const row = screen.getByRole("button", { name: "Overview" });
+    expect(row.lastElementChild).toBe(container.querySelector("span[aria-hidden]"));
   });
 });

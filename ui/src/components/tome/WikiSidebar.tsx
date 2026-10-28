@@ -324,20 +324,6 @@ function TreeNode({
           {checkbox}
           <button
             type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${node.title}`}
-            className="shrink-0"
-          >
-            <ChevronRight
-              className={cn(
-                "h-3 w-3 shrink-0 transition-transform",
-                open && "rotate-90",
-              )}
-            />
-          </button>
-          <button
-            type="button"
             onClick={() => node.folderId && onSelectFolder
               ? onSelectFolder(node.folderId)
               : setOpen((openState) => !openState)}
@@ -398,6 +384,22 @@ function TreeNode({
               )}
             </span>
           )}
+          {/* Last, so the hover actions appearing to its left do not move it,
+              and so every row in the rail is toggled from the same edge. */}
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-label={`${open ? "Collapse" : "Expand"} ${node.title}`}
+            className="shrink-0"
+          >
+            <ChevronRight
+              className={cn(
+                "h-3 w-3 shrink-0 transition-transform",
+                open && "rotate-90",
+              )}
+            />
+          </button>
         </div>
         {open && children}
       </>
@@ -430,10 +432,10 @@ function TreeNode({
           onClick={() => onSelect(node.path)}
           className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left"
         >
-          {/* Empty caret and icon slots keep page labels aligned with folder
-              labels at the same depth. The folder is told apart by its mark,
-              its case and the space above it, not by sitting further in. */}
-          <span className="h-3 w-3 shrink-0" aria-hidden />
+          {/* An empty slot where the folder mark goes, so page labels line up
+              with folder labels at the same depth. The folder is told apart by
+              that mark, its case and the space above it, not by sitting
+              further in. */}
           <span className="h-3 w-3 shrink-0" aria-hidden />
           <span className={cn("truncate", unread && "font-medium text-foreground")}>
             {node.title}
@@ -470,6 +472,8 @@ function TreeNode({
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         )}
+        {/* Where a folder's caret would be, so the rows end together. */}
+        <span className="h-3 w-3 shrink-0" aria-hidden />
       </div>
       {children}
     </>

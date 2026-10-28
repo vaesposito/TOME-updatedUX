@@ -13,7 +13,6 @@ import {
   Activity,
   ArrowUpRight,
   BookOpen,
-  ChevronRight,
   Eye,
   EyeOff,
   FilePlus2,
@@ -72,7 +71,9 @@ import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
 import { FeedPanel } from "@/components/tome/FeedPanel";
 import { GistsPanel } from "@/components/tome/GistsPanel";
 import { GistView } from "@/components/tome/GistView";
+import { NavItem, NavSection } from "@/components/tome/RailNav";
 import { TomeLoading } from "@/components/tome/TomeLoading";
+import { TreeIndex } from "@/components/tome/TreeIndex";
 import { ProjectSettingsPanel } from "@/components/tome/ProjectSettingsPanel";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { isReferencePath, splitWikiTree } from "@/lib/tome/wiki-tree-split";
@@ -94,7 +95,6 @@ import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
 import type { GlossaryPreview } from "@/components/tome/CrepeEditor";
 import { parseTomeHref } from "@/lib/tome/tome-links";
 import { useTomeViewTracking } from "@/lib/tome/usage-tracking";
-import { BetaBadge } from "@/components/tome/BetaBadge";
 import { ReportsDisclosure } from "@/components/tome/ReportsDisclosure";
 import { StandupView } from "@/components/tome/StandupView";
 import { GithubIssuesPanel } from "@/components/tome/GithubIssuesPanel";
@@ -188,6 +188,8 @@ type MainView =
   | { kind: "summary" }
   | { kind: "agent" }
   | { kind: "standup" }
+  | { kind: "wiki" }
+  | { kind: "references" }
   | { kind: "issues"; label?: string }
   | { kind: "feed" }
   | { kind: "gists" }
@@ -219,6 +221,10 @@ function viewToPath(slug: string, view: MainView): string {
       return `${base}/agent`;
     case "standup":
       return `${base}/standup`;
+    case "wiki":
+      return `${base}/wiki`;
+    case "references":
+      return `${base}/references`;
     case "issues":
       return view.label
         ? `${base}/issues/label/${encodeURIComponent(view.label)}`
@@ -295,7 +301,9 @@ function pathToView(segments: string[]): MainView {
     case "wiki":
       return rest.length
         ? { kind: "page", path: rest.join("/") }
-        : { kind: "summary" };
+        : { kind: "wiki" };
+    case "references":
+      return { kind: "references" };
     case "history":
       return rest.length
         ? { kind: "pageHistory", path: rest.join("/") }
@@ -1502,6 +1510,10 @@ export function TomeWiki({ slug }: { slug: string }) {
         return [{ label: "Agent" }];
       case "standup":
         return [{ label: "Standup" }];
+      case "wiki":
+        return [{ label: "Wiki" }];
+      case "references":
+        return [{ label: "References" }];
       case "issues": {
         if (!view.label) return [{ label: "Issues" }];
         return [
@@ -1713,6 +1725,8 @@ export function TomeWiki({ slug }: { slug: string }) {
     issues: view.kind === "issues" && !view.label,
     feed: view.kind === "feed",
     gists: view.kind === "gists" || view.kind === "newGist" || view.kind === "gist",
+    wiki: view.kind === "wiki",
+    references: view.kind === "references",
     settings: view.kind === "settings",
     templates: view.kind === "templates",
     insights: view.kind === "insights",
@@ -2261,14 +2275,16 @@ export function TomeWiki({ slug }: { slug: string }) {
                       onClick={() => navigate({ kind: "summary" })}
                       tipTitle="Overview"
                       tipDescription="What this space is and how it is going: who works on it, what needs attention, what was agreed, and where its knowledge comes from."
+                      reserveCaret
                     />
 
                     <NavSection
                       icon={<BookOpen className="h-4 w-4" />}
                       label="Wiki"
-                      active={Boolean(navActive.page ?? navActive.folder)}
+                      active={navActive.wiki || Boolean(navActive.page ?? navActive.folder)}
                       expanded={wikiOpen}
                       onToggle={() => setWikiOpen(!wikiOpen)}
+                      onClick={() => navigate({ kind: "wiki" })}
                       controlsId={`tome-v2-wiki-${slug}`}
                     >
                       {!loading && !isEmpty && (
@@ -2308,6 +2324,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                         onClick={() => navigate({ kind: "standup" })}
                         tipTitle="Standup"
                         tipDescription="The project's report card: headline, blockers, and what's next. Rewritten by the agent on every ingest."
+                        reserveCaret
                       />
                     )}
 
@@ -2328,6 +2345,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                         onClick={() => navigate({ kind: "issues" })}
                         tipTitle="GitHub issues"
                         tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache."
+                        reserveCaret
                       />
                     )}
 
@@ -2338,16 +2356,18 @@ export function TomeWiki({ slug }: { slug: string }) {
                       onClick={() => navigate({ kind: "gists" })}
                       tipTitle="Notes"
                       tipDescription="Quick, non-committal chunks of context — a prompt, an agent memory, a snippet — saved without becoming part of the curated wiki."
+                      reserveCaret
                     />
 
                     <NavSection
                       icon={<FileSymlink className="h-4 w-4" />}
                       label="References"
-                      active={Boolean(
+                      active={navActive.references || Boolean(
                         navActive.page && isReferencePath(navActive.page),
                       )}
                       expanded={referencesOpen}
                       onToggle={() => setReferencesOpen(!referencesOpen)}
+                      onClick={() => navigate({ kind: "references" })}
                       controlsId={`tome-v2-references-${slug}`}
                     >
                       {renderWikiTree(wikiSplit.reference, {
@@ -2370,6 +2390,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                       onClick={() => navigate({ kind: "settings" })}
                       tipTitle="Settings"
                       tipDescription="Everything this space is configured by, including every action on its pages: what it reads, what it writes, who is told, and how it looks."
+                      reserveCaret
                     />
                   </div>
                 )}
@@ -2881,71 +2902,63 @@ export function TomeWiki({ slug }: { slug: string }) {
             ) : view.kind === "folder" ? (
               <div className="min-w-0 flex-1 overflow-auto p-8">
                 {activeFolderNode ? (
-                  <div className="mx-auto max-w-4xl">
-                    <div className="flex items-start justify-between gap-4 border-b pb-5">
-                      <div>
-                        <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          <FolderKanban className="h-4 w-4" />
-                          Folder
-                        </div>
-                        <h2 className="text-3xl font-semibold tracking-tight">{activeFolderNode.title}</h2>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {activeFolderNode.children.length} {activeFolderNode.children.length === 1 ? "item" : "items"}
-                        </p>
-                      </div>
-                      {canEdit && (
-                        <div className="flex items-center gap-2">
-                          <Button variant="outline" onClick={() => openEditFolder(activeFolderNode)}>
-                            Edit folder
-                          </Button>
-                          <Button variant="outline" onClick={() => openNewPage(activeFolderNode)}>
-                            <FilePlus2 className="h-4 w-4" />
-                            New page
-                          </Button>
-                          <Button onClick={() => openCreateFolder(activeFolderNode.folderId ?? null)}>
-                            <FolderPlus className="h-4 w-4" />
-                            New subfolder
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                    {activeFolderNode.children.length === 0 ? (
-                      <div className="py-16 text-center text-sm text-muted-foreground">
-                        This folder is empty. Add a subfolder or move content here.
-                      </div>
-                    ) : (
-                      <div className="divide-y">
-                        {activeFolderNode.children.map((child) => (
-                          <button
-                            key={child.path}
-                            type="button"
-                            onClick={() => child.kind === "folder" && child.folderId
-                              ? openFolder(child.folderId)
-                              : openPage(child.path)}
-                            className="flex w-full items-center gap-3 px-2 py-4 text-left transition-colors hover:bg-muted/60"
-                          >
-                            {child.kind === "folder" ? (
-                              <FolderKanban className="h-5 w-5 shrink-0 text-primary" />
-                            ) : (
-                              <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
-                            )}
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-medium">{child.title}</span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {child.kind === "folder"
-                                  ? `${child.children.length} ${child.children.length === 1 ? "item" : "items"}`
-                                  : child.path}
-                              </span>
-                            </span>
-                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <TreeIndex
+                    icon={<FolderKanban className="h-4 w-4" />}
+                    eyebrow="Folder"
+                    title={activeFolderNode.title}
+                    nodes={activeFolderNode.children}
+                    emptyNote="This folder is empty. Add a subfolder or move content here."
+                    onOpenPage={openPage}
+                    onOpenFolder={openFolder}
+                    actions={canEdit ? (
+                      <>
+                        <Button variant="outline" onClick={() => openEditFolder(activeFolderNode)}>
+                          Edit folder
+                        </Button>
+                        <Button variant="outline" onClick={() => openNewPage(activeFolderNode)}>
+                          <FilePlus2 className="h-4 w-4" />
+                          New page
+                        </Button>
+                        <Button onClick={() => openCreateFolder(activeFolderNode.folderId ?? null)}>
+                          <FolderPlus className="h-4 w-4" />
+                          New subfolder
+                        </Button>
+                      </>
+                    ) : undefined}
+                  />
                 ) : (
                   <p className="text-sm text-muted-foreground">Folder not found.</p>
                 )}
+              </div>
+            ) : view.kind === "wiki" ? (
+              <div className="min-w-0 flex-1 overflow-auto p-8">
+                <TreeIndex
+                  icon={<BookOpen className="h-4 w-4" />}
+                  eyebrow="Wiki"
+                  title="Wiki"
+                  nodes={wikiSplit.authored}
+                  emptyNote="Nothing written yet. Create a page, or run an ingest and let the agent draft one."
+                  onOpenPage={openPage}
+                  onOpenFolder={openFolder}
+                  actions={canEdit ? (
+                    <Button variant="outline" onClick={() => openNewPage(null)}>
+                      <FilePlus2 className="h-4 w-4" />
+                      New page
+                    </Button>
+                  ) : undefined}
+                />
+              </div>
+            ) : view.kind === "references" ? (
+              <div className="min-w-0 flex-1 overflow-auto p-8">
+                <TreeIndex
+                  icon={<FileSymlink className="h-4 w-4" />}
+                  eyebrow="References"
+                  title="References"
+                  nodes={wikiSplit.reference}
+                  emptyNote="Nothing mirrored yet. A repository, a Confluence space or a Webex room lands here once it has been read."
+                  onOpenPage={openPage}
+                  onOpenFolder={openFolder}
+                />
               </div>
             ) : view.kind === "pageHistory" ? (
               <div className="min-h-0 min-w-0 flex-1">
@@ -3109,120 +3122,6 @@ export function TomeWiki({ slug }: { slug: string }) {
   );
 }
 
-/**
- * A rail row that is also the heading for a tree beneath it.
- *
- * Wiki and References are both a place to go and a list to browse, so the row
- * carries a caret and does not navigate: there is no single page that "the
- * wiki" means, and sending a reader to an arbitrary one of them would be a
- * guess. The caret is at the leading edge, where a reader reaching for a
- * disclosure expects it, rather than trailing like a menu.
- */
-function NavSection({
-  icon,
-  label,
-  active,
-  expanded,
-  onToggle,
-  controlsId,
-  children,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  /** Whether what is open belongs to this section. */
-  active: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-  controlsId: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-controls={controlsId}
-        aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
-        className={cn(
-          "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors hover:bg-muted",
-          active && "bg-muted text-primary",
-        )}
-      >
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-            expanded && "rotate-90",
-          )}
-        />
-        {icon}
-        <span className="flex-1 truncate">{label}</span>
-      </button>
-      {expanded && (
-        <div id={controlsId} className="mt-1">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NavItem({
-  icon,
-  label,
-  active,
-  onClick,
-  tipTitle,
-  tipDescription,
-  tag,
-  beta,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  tipTitle?: string;
-  tipDescription?: React.ReactNode;
-  /** Small trailing badge, e.g. "needs review". */
-  tag?: string;
-  /** Renders a presentational Beta badge; the row tooltip owns the explanation. */
-  beta?: boolean;
-}) {
-  const button = (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors hover:bg-muted",
-        active && "bg-muted text-primary",
-      )}
-    >
-      {icon}
-      <span className="flex-1 truncate">{label}</span>
-      {beta && <BetaBadge showTooltip={false} />}
-      {tag && (
-        <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-          {tag}
-        </span>
-      )}
-    </button>
-  );
-
-  if (!tipTitle) return button;
-
-  return (
-    <Tooltip className="w-full">
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent
-        side="right"
-        className="flex w-64 flex-col gap-1 whitespace-normal text-[11px] font-normal normal-case leading-relaxed"
-      >
-        <span className="text-xs font-semibold">{tipTitle}</span>
-        <span className="opacity-70">{tipDescription}</span>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 function SidebarSkeleton() {
   const widths = ["w-3/4", "w-1/2", "w-2/3", "w-1/2", "w-3/5", "w-2/5"];

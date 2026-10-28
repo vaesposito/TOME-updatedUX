@@ -1,0 +1,148 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+
+import { NavItem, NavSection } from "@/components/tome/RailNav";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+function renderRail(ui: React.ReactNode) {
+  return render(<TooltipProvider>{ui}</TooltipProvider>);
+}
+
+describe("NavSection", () => {
+  it("goes somewhere when the row is clicked", () => {
+    const onClick = jest.fn();
+    const onToggle = jest.fn();
+
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded={false}
+        onToggle={onToggle}
+        onClick={onClick}
+        controlsId="wiki-tree"
+      >
+        <p>Charter</p>
+      </NavSection>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Wiki" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("opens and closes only from the caret", () => {
+    const onClick = jest.fn();
+    const onToggle = jest.fn();
+
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded={false}
+        onToggle={onToggle}
+        onClick={onClick}
+        controlsId="wiki-tree"
+      >
+        <p>Charter</p>
+      </NavSection>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand Wiki" }));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("hides what is underneath until it is expanded", () => {
+    const { rerender } = renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded={false}
+        onToggle={jest.fn()}
+        onClick={jest.fn()}
+        controlsId="wiki-tree"
+      >
+        <p>Charter</p>
+      </NavSection>,
+    );
+
+    expect(screen.queryByText("Charter")).not.toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider>
+        <NavSection
+          icon={<span />}
+          label="Wiki"
+          active={false}
+          expanded
+          onToggle={jest.fn()}
+          onClick={jest.fn()}
+          controlsId="wiki-tree"
+        >
+          <p>Charter</p>
+        </NavSection>
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("Charter")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Wiki" })).toHaveAttribute(
+      "aria-controls",
+      "wiki-tree",
+    );
+  });
+});
+
+describe("NavItem", () => {
+  it("navigates when clicked", () => {
+    const onClick = jest.fn();
+    renderRail(
+      <NavItem icon={<span />} label="Overview" active={false} onClick={onClick} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no caret, since there is nothing under it to open", () => {
+    renderRail(
+      <NavItem
+        icon={<span />}
+        label="Overview"
+        active={false}
+        onClick={jest.fn()}
+        reserveCaret
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Expand|Collapse/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("holds the caret's column open so the rail lines up", () => {
+    const { container, rerender } = renderRail(
+      <NavItem
+        icon={<span data-testid="icon" />}
+        label="Overview"
+        active={false}
+        onClick={jest.fn()}
+        reserveCaret
+      />,
+    );
+
+    const spacer = container.querySelector("span[aria-hidden]");
+    expect(spacer).toBeInTheDocument();
+    expect(spacer).toHaveClass("w-3.5");
+
+    // A rail with no sections has nothing to line up with, so the column is
+    // opt-in rather than always there.
+    rerender(
+      <TooltipProvider>
+        <NavItem icon={<span />} label="Overview" active={false} onClick={jest.fn()} />
+      </TooltipProvider>,
+    );
+    expect(container.querySelector("span[aria-hidden]")).not.toBeInTheDocument();
+  });
+});

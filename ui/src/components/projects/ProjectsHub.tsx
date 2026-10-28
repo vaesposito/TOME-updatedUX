@@ -1090,7 +1090,17 @@ export function ProjectsHub() {
   const activeIngests = filteredProjects.flatMap((p) => p.active_ingests ?? []);
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-8 p-6">
+    <div className="relative isolate mx-auto w-full max-w-[1600px] space-y-8 p-6">
+      {/* A wash in the corner the eye leaves last, so the three tabs sit on
+          something rather than on nothing. Fixed, so it stays where it is
+          while a long list of projects scrolls past it; in the theme colour,
+          so it follows whatever the reader chose; and far enough down in
+          opacity that it reads as depth rather than as a shape. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed bottom-0 right-0 -z-10 h-[40rem] w-[40rem] translate-x-1/4 translate-y-1/4 rounded-full bg-primary/[0.13] blur-[130px]"
+      />
+
       <section className="relative overflow-hidden rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/10 via-background to-primary/5 p-5 md:p-6">
         <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-primary/20 blur-3xl" />
         <div className="relative space-y-5">

@@ -116,11 +116,16 @@ export function WikiSidebar(props: Props) {
   );
 }
 
-// Left padding per nesting level. The caret/spacer slot (CARET_W) is rendered
-// on every row, so a child clears its parent's *label* (not just its caret).
-// Wide enough that a glance down the rail reads the nesting without counting:
-// at twelve the steps were there but had to be looked for.
-const STEP_PX = 16;
+// Left padding per nesting level.
+//
+// A folder spends the first sixteen of these on its own mark, because the
+// mark begins where a sibling page's title begins rather than hanging to the
+// left of it. So a step of sixteen put a child exactly under its parent's
+// title and the nesting read as nothing at all; the step has to cover the
+// mark and then show a step beyond it. Thirty-two leaves every child clear of
+// its parent's title by a full sixteen, which a glance down the rail reads
+// without counting.
+const STEP_PX = 32;
 const BASE_PX = 8;
 
 // Collection-root folders that start collapsed, so the rail leads with the

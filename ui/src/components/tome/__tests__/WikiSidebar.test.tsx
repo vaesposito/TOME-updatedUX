@@ -273,6 +273,45 @@ describe("WikiSidebar row metadata", () => {
   });
 });
 
+describe("WikiSidebar nesting", () => {
+  const tree: PageTreeNode[] = [
+    { path: "charter.md", title: "Charter", kind: "stable", order: 0, children: [] },
+    {
+      path: "demos",
+      title: "demos",
+      kind: "folder",
+      folderId: "demos",
+      order: 1,
+      children: [
+        { path: "demos/one.md", title: "One", kind: "stable", order: 0, children: [] },
+      ],
+    },
+  ];
+
+  /** The left padding a row's own indent puts on it, in pixels. */
+  function padding(name: string): number {
+    const row = screen.getByRole("button", { name });
+    const indented = row.style.paddingLeft ? row : row.closest("[style*='padding-left']");
+    return Number.parseInt((indented as HTMLElement).style.paddingLeft, 10);
+  }
+
+  it("clears a child of its parent's title, not just of the folder mark", () => {
+    render(<WikiSidebar tree={tree} selectedPath={null} onSelect={jest.fn()} showHidden={false} />);
+
+    // A folder spends the head of its own indent on its mark, so a step only
+    // as wide as that mark would put the child exactly under the parent's
+    // title and the nesting would read as nothing. The step has to be wider
+    // than the mark for a child to look like a child.
+    const markWidth = 16;
+    expect(padding("One") - padding("demos")).toBeGreaterThan(markWidth);
+  });
+
+  it("starts a folder where a sibling page starts", () => {
+    render(<WikiSidebar tree={tree} selectedPath={null} onSelect={jest.fn()} showHidden={false} />);
+    expect(padding("demos")).toBe(padding("Charter"));
+  });
+});
+
 describe("WikiSidebar empty folders", () => {
   const tree: PageTreeNode[] = [
     {

@@ -114,7 +114,9 @@ describe("AskTomePlaceholder", () => {
     const note = screen.getByRole("region", { name: "Configure Webex" });
     expect(within(note).getAllByRole("listitem").map((step) => step.textContent)).toEqual([
       "Go to Webex.",
-      "Type “tome” in the search bar.",
+      // The address, so the reader searches for the one bot rather than the
+      // word.
+      "Search for tome@webex.bot.",
       "Start a conversation with the Tome agent.",
     ]);
 

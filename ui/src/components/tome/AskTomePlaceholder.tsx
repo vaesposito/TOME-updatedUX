@@ -476,7 +476,14 @@ export function AskTomePlaceholder({
           </div>
           <ol className="list-decimal space-y-2 py-3 pl-8 pr-3 text-xs text-foreground/85">
             <li>Go to Webex.</li>
-            <li>Type &ldquo;tome&rdquo; in the search bar.</li>
+            {/* The address, not the word: searching for "tome" returns
+                whatever else is named that, and the reader is being told how
+                to reach one particular bot. Set in mono so the full stop
+                after it cannot be read as part of it. */}
+            <li>
+              Search for{" "}
+              <span className="font-mono">tome@webex.bot</span>.
+            </li>
             <li>Start a conversation with the Tome agent.</li>
           </ol>
         </section>

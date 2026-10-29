@@ -317,6 +317,13 @@ function TreeNode({
             // a heavier label. The size and the case are the pages' own, so
             // a branch reads as one list at one measure; the folder mark and
             // the space above it are what tell a folder from a page.
+            //
+            // Indented like a page, not outdented past one: the folder mark
+            // begins where a sibling page's title begins, rather than hanging
+            // to the left of it in a gutter the pages leave blank. That puts
+            // the folder's own title one step in, which is where the pages
+            // inside it sit — so a branch reads as a title with its contents
+            // ranged under it.
             "group mt-2 flex w-full items-center gap-1 rounded pr-1 py-1 font-semibold text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground",
             selected && "bg-muted text-primary",
             dropZone === "inside" && "bg-primary/15 text-primary ring-1 ring-inset ring-primary/50",
@@ -445,11 +452,6 @@ function TreeNode({
           onClick={() => onSelect(node.path)}
           className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left"
         >
-          {/* An empty slot where the folder mark goes, so page labels line up
-              with folder labels at the same depth. The folder is told apart by
-              that mark, its case and the space above it, not by sitting
-              further in. */}
-          <span className="h-3 w-3 shrink-0" aria-hidden />
           <span className={cn("truncate", unread && "font-medium text-foreground")}>
             {node.title}
           </span>

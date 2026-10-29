@@ -30,17 +30,10 @@ import {
   type AskTomeTab,
 } from "@/store/ask-tome-store";
 
-/**
- * The tabs, as drawn.
- *
- * Scheduled is struck through in the design: it is where scheduled questions
- * would go, and there is nothing behind it yet. Shown and disabled rather
- * than left out, because the row is part of what is being agreed on.
- */
-const TABS: readonly { id: AskTomeTab; label: string; ready: boolean }[] = [
-  { id: "chat", label: "Chat", ready: true },
-  { id: "history", label: "History", ready: true },
-  { id: "scheduled", label: "Scheduled", ready: false },
+/** The tabs, as drawn. */
+const TABS: readonly { id: AskTomeTab; label: string }[] = [
+  { id: "chat", label: "Chat" },
+  { id: "history", label: "History" },
 ];
 
 /**
@@ -113,34 +106,43 @@ export function AskTomePlaceholder({
   const panelSize = useAskTomeStore((state) => state.size);
   const setPanelSize = useAskTomeStore((state) => state.setSize);
 
-  // Dragged from the corner handle, exactly as the real panel is: the design
-  // asks for a resizable panel, and a handle that does not move is a worse
-  // answer to that than no handle at all.
+  /**
+   * Dragged from the panel's own edges, which is what the design asks for:
+   * the pointer changes over a border and the border moves.
+   *
+   * The panel is pinned to the bottom-right, so it is the top and left edges
+   * that are free to move, and dragging them away from the corner makes it
+   * bigger. There is no visible grip: a reader finds this the way they find
+   * the edge of a window, and the one that was there sat over the panel's own
+   * header like something spilled on it.
+   */
   const startResize = React.useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
+    (edge: "left" | "top" | "corner") => (event: React.PointerEvent<HTMLElement>) => {
       event.preventDefault();
       const start = { x: event.clientX, y: event.clientY };
       const startSize = panelSize;
-      document.body.style.cursor = "nwse-resize";
       document.body.style.userSelect = "none";
 
       function onMove(move: PointerEvent) {
         setPanelSize({
-          width: clamp(
-            startSize.width + (start.x - move.clientX),
-            ASK_TOME_MIN_SIZE.width,
-            ASK_TOME_MAX_SIZE.width,
-          ),
-          height: clamp(
-            startSize.height + (start.y - move.clientY),
-            ASK_TOME_MIN_SIZE.height,
-            ASK_TOME_MAX_SIZE.height,
-          ),
+          width: edge === "top"
+            ? startSize.width
+            : clamp(
+              startSize.width + (start.x - move.clientX),
+              ASK_TOME_MIN_SIZE.width,
+              ASK_TOME_MAX_SIZE.width,
+            ),
+          height: edge === "left"
+            ? startSize.height
+            : clamp(
+              startSize.height + (start.y - move.clientY),
+              ASK_TOME_MIN_SIZE.height,
+              ASK_TOME_MAX_SIZE.height,
+            ),
         });
       }
 
       function onUp() {
-        document.body.style.cursor = "";
         document.body.style.userSelect = "";
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
@@ -169,18 +171,36 @@ export function AskTomePlaceholder({
             height: expanded ? "100%" : `min(${panelSize.height}px, 100%)`,
           }}
         >
-          <button
-            type="button"
-            aria-label="Resize Ask Tome"
-            onPointerDown={startResize}
-            className="absolute left-3 top-3 z-10 flex h-10 w-10 cursor-nwse-resize touch-none items-center justify-center rounded-full border border-border bg-background/60 shadow-lg backdrop-blur-md transition hover:border-cyan-500/50 hover:bg-cyan-500/10 dark:border-cyan-200/30 dark:bg-slate-950/35 dark:hover:border-cyan-200/60 dark:hover:bg-cyan-300/10"
-          >
-            <span className="absolute h-7 w-7 rounded-full border border-cyan-600/30 dark:border-cyan-200/30" aria-hidden />
-            <span className="absolute h-4 w-4 rounded-full border border-cyan-600/40 dark:border-cyan-300/40" aria-hidden />
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-600 shadow-[0_0_14px_rgba(34,211,238,0.5)] dark:bg-cyan-200" aria-hidden />
-          </button>
+          {/* The edges, as grips. Nothing to see: the cursor over a border is
+              the whole affordance, the way it is on a window. Not while
+              expanded, when the panel fills the page and has no edge of its
+              own to pull. A reader on a keyboard resizes with Expand, which
+              is a button in the header.
 
-          <header className="flex items-center justify-between gap-3 border-b border-border bg-popover/40 py-3 pl-16 pr-4 backdrop-blur-3xl dark:bg-cyan-950/30">
+              The corner grip is larger than it looks because the panel's own
+              rounding clips it to the curve, leaving only the part of the
+              square that falls inside. */}
+          {!expanded && (
+            <>
+              <span
+                aria-hidden
+                onPointerDown={startResize("left")}
+                className="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize touch-none"
+              />
+              <span
+                aria-hidden
+                onPointerDown={startResize("top")}
+                className="absolute inset-x-0 top-0 z-10 h-2 cursor-ns-resize touch-none"
+              />
+              <span
+                aria-hidden
+                onPointerDown={startResize("corner")}
+                className="absolute left-0 top-0 z-20 h-6 w-6 cursor-nwse-resize touch-none"
+              />
+            </>
+          )}
+
+          <header className="flex items-center justify-between gap-3 border-b border-border bg-popover/40 py-3 pl-4 pr-4 backdrop-blur-3xl dark:bg-cyan-950/30">
             <div className="flex min-w-0 items-center gap-2">
               <span className="rounded-full bg-cyan-500/10 p-2 text-cyan-700 dark:bg-cyan-300/15 dark:text-cyan-100">
                 <Bot className="h-4 w-4" aria-hidden />
@@ -219,7 +239,7 @@ export function AskTomePlaceholder({
             aria-label="Ask Tome sections"
             className="flex items-center gap-4 border-b border-border px-4"
           >
-            {TABS.map(({ id, label, ready }) => (
+            {TABS.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
@@ -227,14 +247,12 @@ export function AskTomePlaceholder({
                 id={`ask-tome-tab-${id}`}
                 aria-controls={`ask-tome-panel-${id}`}
                 aria-selected={tab === id}
-                disabled={!ready}
                 onClick={() => setTab(id)}
                 className={cn(
                   "-mb-px border-b-2 border-transparent py-2.5 text-sm transition-colors",
-                  !ready && "line-through",
                   tab === id
                     ? "border-cyan-500 font-semibold text-foreground dark:border-cyan-300"
-                    : "font-medium text-muted-foreground enabled:hover:text-foreground",
+                    : "font-medium text-muted-foreground hover:text-foreground",
                 )}
               >
                 {label}

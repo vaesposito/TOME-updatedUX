@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type AskTomeTab = "chat" | "history" | "scheduled";
+export type AskTomeTab = "chat" | "history";
 
 /** The real panel's own figures, so the stand-in takes up the same room. */
 export const ASK_TOME_DEFAULT_SIZE = { width: 720, height: 780 };

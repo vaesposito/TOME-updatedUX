@@ -65,7 +65,7 @@ describe("AskTomePlaceholder", () => {
     render(<AskTomePlaceholder />);
     fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
 
-    for (const label of ["Expand Ask Tome", "Resize Ask Tome", "Close Ask Tome"]) {
+    for (const label of ["Expand Ask Tome", "Close Ask Tome"]) {
       expect(screen.getByRole("button", { name: label })).toBeEnabled();
     }
     for (const label of [
@@ -77,12 +77,15 @@ describe("AskTomePlaceholder", () => {
     }
   });
 
-  it("opens on Chat, offers History, and shuts Scheduled", () => {
+  it("opens on Chat and offers History, and offers nothing else", () => {
     render(<AskTomePlaceholder />);
     fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
 
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Chat",
+      "History",
+    ]);
     expect(screen.getByRole("tab", { name: "Chat", selected: true })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Scheduled" })).toBeDisabled();
     expect(screen.getByText(/What changed across my projects this week\?/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "History" }));

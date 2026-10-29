@@ -128,20 +128,6 @@ export function WikiSidebar(props: Props) {
 const STEP_PX = 32;
 const BASE_PX = 8;
 
-// Collection-root folders that start collapsed, so the rail leads with the
-// top-level synthesis pages rather than per-source subtrees or the glossary.
-const COLLAPSED_ROOTS = new Set([
-  "repos",
-  "webex",
-  "confluence",
-  "sharepoint",
-  "glossary",
-  "edges",
-  "issues",
-  "decisions",
-  "suggestions",
-]);
-
 // Root source folders get their provider's brand mark instead of a bare label.
 const ROOT_PROVIDER: Record<string, string> = {
   repos: "github",
@@ -233,7 +219,22 @@ function TreeNode({
 } & Omit<Props, "tree">) {
   const hasChildren = node.children.length > 0;
   const leaf = node.path.split("/").pop() ?? node.path;
-  const [open, setOpen] = useState(!COLLAPSED_ROOTS.has(leaf));
+  // Holds whatever page is open, however deep. Folders start closed, so
+  // without this the rail would hide the reader's own position: they would
+  // arrive on a nested page and see a tree that admits nothing is selected.
+  const holdsSelection = Boolean(selectedPath?.startsWith(`${node.path}/`));
+  const [open, setOpen] = useState(holdsSelection);
+
+  // Opens, and only opens, as the selection moves into this branch: a reader
+  // following a link into a folded one is shown where they landed, and can
+  // still fold it again afterwards, which deriving `open` outright would not
+  // allow. Adjusted during the render that notices the move rather than in an
+  // effect, so the rail never paints a frame denying where the reader is.
+  const [heldBefore, setHeldBefore] = useState(holdsSelection);
+  if (holdsSelection !== heldBefore) {
+    setHeldBefore(holdsSelection);
+    if (holdsSelection) setOpen(true);
+  }
   const [dropZone, setDropZone] = useState<"before" | "inside" | "after" | null>(null);
   const indent = { paddingLeft: `${depth * STEP_PX + BASE_PX}px` };
   const navigationItem: WikiNavigationItem | null = node.kind === "folder"

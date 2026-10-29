@@ -109,8 +109,13 @@ export function NavSection({
           </button>
         )}
       </div>
+      {/* Ranged under the label, not under the icon: the icon is the mark for
+          the section as a whole, so a row beginning beneath it reads as a
+          sibling of the section rather than something kept inside it. Twenty-
+          four clears the icon and the gap after it, which is exactly where the
+          label starts. */}
       {expanded && !empty && (
-        <div id={controlsId} className="mt-1">
+        <div id={controlsId} className="mt-1 pl-6">
           {children}
         </div>
       )}

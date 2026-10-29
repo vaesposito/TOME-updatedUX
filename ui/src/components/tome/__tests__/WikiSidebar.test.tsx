@@ -156,6 +156,8 @@ describe("WikiSidebar selection", () => {
     expect(
       screen.getByRole("checkbox", { name: "Select Collateral" }),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand Collateral" }));
     expect(screen.getByRole("checkbox", { name: "Select Brief" })).toBeInTheDocument();
   });
 
@@ -297,6 +299,7 @@ describe("WikiSidebar nesting", () => {
 
   it("clears a child of its parent's title, not just of the folder mark", () => {
     render(<WikiSidebar tree={tree} selectedPath={null} onSelect={jest.fn()} showHidden={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand demos" }));
 
     // A folder spends the head of its own indent on its mark, so a step only
     // as wide as that mark would put the child exactly under the parent's
@@ -309,6 +312,35 @@ describe("WikiSidebar nesting", () => {
   it("starts a folder where a sibling page starts", () => {
     render(<WikiSidebar tree={tree} selectedPath={null} onSelect={jest.fn()} showHidden={false} />);
     expect(padding("demos")).toBe(padding("Charter"));
+  });
+
+  it("starts folded, so the rail opens on what the team wrote", () => {
+    render(<WikiSidebar tree={tree} selectedPath={null} onSelect={jest.fn()} showHidden={false} />);
+
+    expect(screen.getByRole("button", { name: "demos" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByText("One")).not.toBeInTheDocument();
+  });
+
+  it("shows the reader where they are, however folded the branch holding them", () => {
+    // Otherwise arriving on a nested page from a link leaves a tree that
+    // admits to nothing being open.
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath="demos/one.md"
+        onSelect={jest.fn()}
+        showHidden={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "demos" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByText("One")).toBeInTheDocument();
   });
 });
 
@@ -371,18 +403,18 @@ describe("WikiSidebar empty folders", () => {
     render(<WikiSidebar {...base} onSelectFolder={onSelectFolder} />);
 
     const row = screen.getByRole("button", { name: "Notes" });
-    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.click(row);
     expect(onSelectFolder).toHaveBeenCalledWith("notes");
     expect(screen.getByRole("button", { name: "Notes" })).toHaveAttribute(
       "aria-expanded",
-      "false",
+      "true",
     );
-    expect(screen.queryByRole("button", { name: "One" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "One" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Notes" }));
-    expect(screen.getByRole("button", { name: "One" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "One" })).not.toBeInTheDocument();
   });
 
   it("does not claim to open a folder it has just called empty", () => {

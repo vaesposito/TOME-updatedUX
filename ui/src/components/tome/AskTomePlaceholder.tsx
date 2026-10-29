@@ -7,23 +7,30 @@ import {
   Maximize2,
   Minimize2,
   MessageCircle,
+  MoreVertical,
   Paperclip,
   Plus,
   RotateCcw,
   SendHorizonal,
   ThumbsDown,
   ThumbsUp,
-  Trash2,
   TriangleAlert,
   User,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
 
 import { AuditNotice } from "@/components/chat/AuditNotice";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useTomeAssistantSettings } from "@/hooks/use-tome-assistant-settings";
 import { cn } from "@/lib/utils";
 import {
+  ASK_TOME_DEFAULT_SIZE,
   ASK_TOME_MAX_SIZE,
   ASK_TOME_MIN_SIZE,
   useAskTomeStore,
@@ -105,6 +112,9 @@ export function AskTomePlaceholder({
   const setExpanded = useAskTomeStore((state) => state.setExpanded);
   const panelSize = useAskTomeStore((state) => state.size);
   const setPanelSize = useAskTomeStore((state) => state.setSize);
+  // Not in the store: a menu left hanging open across a navigation would be a
+  // menu the reader did not ask for.
+  const [menuOpen, setMenuOpen] = React.useState(false);
 
   /**
    * Dragged from the panel's own edges, which is what the design asks for:
@@ -207,26 +217,47 @@ export function AskTomePlaceholder({
               </span>
               <h2 className="truncate text-sm font-semibold text-foreground">Ask Tome</h2>
             </div>
+            {/* Three controls, as the real panel carries: the overflow menu,
+                the way out to the chat space, and close. Everything that acts
+                on the chat itself lives in the menu rather than spread across
+                the header. */}
             <div className="flex items-center gap-2">
-              <HeaderButton
-                label={expanded ? "Reduce Ask Tome" : "Expand Ask Tome"}
-                pressed={expanded}
-                onClick={() => setExpanded(!expanded)}
-              >
-                {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </HeaderButton>
+              <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+                <PopoverTrigger asChild>
+                  <HeaderButton label="Ask Tome options" pressed={menuOpen}>
+                    <MoreVertical className="h-4 w-4" />
+                  </HeaderButton>
+                </PopoverTrigger>
+                <PopoverContent align="end" side="bottom" className="w-52 p-1.5">
+                  <MenuItem icon={Plus} label="New chat" disabled />
+                  <MenuItem
+                    icon={expanded ? Minimize2 : Maximize2}
+                    label={expanded ? "Reduce chat" : "Expand chat"}
+                    onClick={() => {
+                      setExpanded(!expanded);
+                      setMenuOpen(false);
+                    }}
+                  />
+                  {/* Leaves the expanded state too: expanded ignores the
+                      stored size, so putting the size back while expanded
+                      would look like nothing happened. */}
+                  <MenuItem
+                    icon={RotateCcw}
+                    label="Reset size"
+                    onClick={() => {
+                      setExpanded(false);
+                      setPanelSize(ASK_TOME_DEFAULT_SIZE);
+                      setMenuOpen(false);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
               {/* Shut, not merely unwired. The design has this opening the
                   same question in the chat space; there is no conversation
                   here to carry over, and a button that looks live and does
                   nothing is worse than one that says it is shut. */}
               <HeaderButton label="Open Ask Tome in the chat space" disabled>
                 <ExternalLink className="h-4 w-4" />
-              </HeaderButton>
-              <HeaderButton label="Start a new Ask Tome chat" disabled>
-                <Plus className="h-4 w-4" />
-              </HeaderButton>
-              <HeaderButton label="Clear this Ask Tome chat" disabled>
-                <Trash2 className="h-4 w-4" />
               </HeaderButton>
               <HeaderButton label="Close Ask Tome" onClick={() => setOpen(false)}>
                 <X className="h-4 w-4" />
@@ -410,16 +441,21 @@ function HeaderButton({
   pressed,
   disabled,
   onClick,
+  // Forwarded so PopoverTrigger can anchor its menu to the button it opened
+  // from; without it the menu has nothing to measure itself against.
+  ref,
   children,
 }: {
   label: string;
   pressed?: boolean;
   disabled?: boolean;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
+  ref?: React.Ref<HTMLButtonElement>;
   children: React.ReactNode;
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       aria-pressed={pressed}
@@ -428,6 +464,31 @@ function HeaderButton({
       className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >
       {children}
+    </button>
+  );
+}
+
+/** A row of the header's overflow menu: icon, then label, nothing else. */
+function MenuItem({
+  icon: Icon,
+  label,
+  disabled,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 rounded px-2 py-2 text-left text-sm text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground disabled:opacity-60 disabled:hover:bg-transparent"
+    >
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      {label}
     </button>
   );
 }

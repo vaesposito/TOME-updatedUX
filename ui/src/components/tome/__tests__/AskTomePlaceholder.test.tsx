@@ -65,16 +65,44 @@ describe("AskTomePlaceholder", () => {
     render(<AskTomePlaceholder />);
     fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
 
-    for (const label of ["Expand Ask Tome", "Close Ask Tome"]) {
+    for (const label of ["Ask Tome options", "Close Ask Tome"]) {
       expect(screen.getByRole("button", { name: label })).toBeEnabled();
     }
-    for (const label of [
-      "Open Ask Tome in the chat space",
-      "Start a new Ask Tome chat",
-      "Clear this Ask Tome chat",
-    ]) {
-      expect(screen.getByRole("button", { name: label })).toBeDisabled();
-    }
+    expect(
+      screen.getByRole("button", { name: "Open Ask Tome in the chat space" }),
+    ).toBeDisabled();
+  });
+
+  it("keeps what acts on the chat in one menu, as the real panel does", () => {
+    render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ask Tome options" }));
+
+    expect(screen.getByRole("button", { name: "New chat" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Expand chat" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reset size" })).toBeEnabled();
+  });
+
+  it("expands from the menu, and offers the way back", () => {
+    render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ask Tome options" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expand chat" }));
+
+    expect(useAskTomeStore.getState().expanded).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Ask Tome options" }));
+    expect(screen.getByRole("button", { name: "Reduce chat" })).toBeInTheDocument();
+  });
+
+  it("puts a dragged panel back, and the expanded one with it", () => {
+    useAskTomeStore.setState({ size: { width: 900, height: 900 }, expanded: true });
+    render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ask Tome options" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset size" }));
+
+    expect(useAskTomeStore.getState().size).toEqual(ASK_TOME_DEFAULT_SIZE);
+    expect(useAskTomeStore.getState().expanded).toBe(false);
   });
 
   it("opens on Chat and offers History, and offers nothing else", () => {

@@ -414,7 +414,11 @@ function TreeNode({
               onClick={() => setOpen((o) => !o)}
               aria-expanded={open}
               aria-label={`${open ? "Collapse" : "Expand"} ${node.title}`}
-              className="shrink-0"
+              // The same width the rail's own rows reserve, though the mark
+              // inside it is smaller: the figures in front of these columns
+              // make one column down the whole rail, and a narrower caret
+              // here would push this row's figure out of it.
+              className="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
             >
               <ChevronRight
                 className={cn(
@@ -424,7 +428,7 @@ function TreeNode({
               />
             </button>
           ) : (
-            <span className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="h-3.5 w-3.5 shrink-0" aria-hidden />
           )}
         </div>
         {open && children}

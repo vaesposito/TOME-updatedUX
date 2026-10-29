@@ -137,6 +137,7 @@ import {
   DEFAULT_TOME_REPORT_VISIBILITY,
   resolveTomeReportVisibility,
 } from "@/lib/tome/report-visibility";
+import { useTomeRailCounts } from "@/hooks/use-tome-rail-counts";
 import { useWikiUnread } from "@/hooks/use-wiki-unread";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
 import type {
@@ -1723,6 +1724,11 @@ export function TomeWiki({ slug }: { slug: string }) {
     `tome.v2.references.expanded.${slug}`,
     false,
   );
+  // Only for the rail that reports counts, and only for the rows whose
+  // contents are not already in the wiki payload.
+  const railCounts = useTomeRailCounts(slug, {
+    issues: navV2 && showIssuesReport,
+  });
 
   const navActive = {
     summary: view.kind === "summary",
@@ -2327,6 +2333,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                         label="Issues"
                         active={navActive.issues}
                         onClick={() => navigate({ kind: "issues" })}
+                        count={railCounts.issues}
                         tipTitle="GitHub issues"
                         tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache."
                         reserveCaret
@@ -2338,6 +2345,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                       label="Notes"
                       active={navActive.gists}
                       onClick={() => navigate({ kind: "gists" })}
+                      count={railCounts.notes}
                       tipTitle="Notes"
                       tipDescription="Quick, non-committal chunks of context — a prompt, an agent memory, a snippet — saved without becoming part of the curated wiki."
                       reserveCaret

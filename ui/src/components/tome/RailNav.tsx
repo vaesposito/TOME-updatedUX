@@ -98,7 +98,10 @@ export function NavSection({
             aria-expanded={expanded}
             aria-controls={controlsId}
             aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
-            className="shrink-0 rounded-md py-2 pl-1"
+            // No padding of its own against the count: the count brings its
+            // own, and a second gap here put this row's figure four pixels
+            // off every other row's.
+            className="shrink-0 rounded-md py-2"
           >
             <ChevronRight
               className={cn(
@@ -140,6 +143,7 @@ export function NavItem({
   tipDescription,
   tag,
   beta,
+  count,
   reserveCaret,
 }: {
   icon: React.ReactNode;
@@ -150,6 +154,15 @@ export function NavItem({
   tipDescription?: React.ReactNode;
   /** Small trailing badge, e.g. "needs review". */
   tag?: string;
+  /**
+   * How much this row leads to, counted the same way a section's is.
+   *
+   * A row with contents says how many, including nought, so the rail can be
+   * read down a single column rather than opened place by place. Left
+   * undefined by rows that hold one thing or no things — a count of a
+   * settings page is a number about nothing.
+   */
+  count?: number;
   /**
    * Hold open the trailing column a `NavSection` puts its caret in, so the
    * rows end together. The caret itself stays absent: it would promise
@@ -176,7 +189,13 @@ export function NavItem({
           {tag}
         </span>
       )}
-      {reserveCaret && <span aria-hidden className="h-3.5 w-3.5 shrink-0" />}
+      {/* Gapless, unlike the row that holds it: the row's own gap after the
+          count would stand this figure further from the edge than a
+          section's, and the two sit one above the other. */}
+      <span className="flex shrink-0 items-center">
+        <NavCount count={count} />
+        {reserveCaret && <span aria-hidden className="h-3.5 w-3.5 shrink-0" />}
+      </span>
     </button>
   );
 

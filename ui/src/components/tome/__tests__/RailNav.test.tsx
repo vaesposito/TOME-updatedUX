@@ -279,6 +279,93 @@ describe("NavItem", () => {
     );
 
     const row = screen.getByRole("button", { name: "Overview" });
-    expect(row.lastElementChild).toBe(container.querySelector("span[aria-hidden]"));
+    const spacer = container.querySelector("span[aria-hidden]");
+    expect(row.lastElementChild?.lastElementChild).toBe(spacer);
+  });
+
+  it("says how much it leads to, nought included", () => {
+    const { rerender } = renderRail(
+      <NavItem
+        icon={<span />}
+        label="Issues"
+        active={false}
+        onClick={jest.fn()}
+        count={0}
+        reserveCaret
+      />,
+    );
+
+    // The point of the figure: a reader learns the row is empty without
+    // spending a click to find out.
+    expect(screen.getByText("0")).toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider>
+        <NavItem
+          icon={<span />}
+          label="Issues"
+          active={false}
+          onClick={jest.fn()}
+          count={4}
+          reserveCaret
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByText("4")).toBeInTheDocument();
+  });
+
+  it("shows nothing at all until the count is known", () => {
+    renderRail(
+      <NavItem
+        icon={<span />}
+        label="Issues"
+        active={false}
+        onClick={jest.fn()}
+        reserveCaret
+      />,
+    );
+
+    // A nought while loading would be a count, and a wrong one.
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("puts its figure in the same column a section's sits in", () => {
+    renderRail(
+      <>
+        <NavItem
+          icon={<span />}
+          label="Issues"
+          active={false}
+          onClick={jest.fn()}
+          count={0}
+          reserveCaret
+        />
+        <NavSection
+          icon={<span />}
+          label="Wiki"
+          active={false}
+          expanded={false}
+          onToggle={jest.fn()}
+          onClick={jest.fn()}
+          controlsId="wiki-tree"
+          count={3}
+        >
+          <p>Charter</p>
+        </NavSection>
+      </>,
+    );
+
+    // Both figures are followed by the caret column and nothing else, which
+    // is what holds them to one column down the rail. Measuring is a
+    // browser's job; what a test can hold is the structure that makes the
+    // measurement come out.
+    const itemFigure = screen.getByText("0");
+    const sectionFigure = screen.getByText("3");
+    expect(itemFigure.nextElementSibling).toHaveClass("w-3.5");
+    expect(sectionFigure.nextElementSibling).toHaveAttribute(
+      "aria-label",
+      "Expand Wiki",
+    );
+    expect(sectionFigure.nextElementSibling?.className).not.toContain("pl-1");
   });
 });

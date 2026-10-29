@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ProjectSettingsPanel } from "../ProjectSettingsPanel";
 import { ToastProvider } from "@/components/ui/toast";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
+import { useFeatureFlagStore } from "@/store/feature-flag-store";
 
 jest.mock("next-auth/react", () => ({
   useSession: () => ({ data: { user: { email: "test-user@example.com" } } }),
@@ -522,5 +523,36 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
     const link = await screen.findByRole("link", { name: "Manage connections" });
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
+
+  it("settles the notification settings here rather than pointing at them", async () => {
+    // The Notifications group belongs to the newer navigation, so the flag has
+    // to be on for the tab to exist at all. Marked initialized with it, or the
+    // store's own startup read puts the stored defaults back over this.
+    const before = useFeatureFlagStore.getState();
+    useFeatureFlagStore.setState({
+      flags: { ...before.flags, tomeNavV2: true },
+      initialized: true,
+    });
+    installEntitySettingsFetch("project");
+    renderSettings({ slug: "example-project" });
+    fireEvent.click(await screen.findByRole("tab", { name: "Notifications" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "What type of notifications?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Where would you like to be notified?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "When would you like to be notified?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Send me notifications")).toBeInTheDocument();
+
+    // The panel's own Save bar covers this tab, so the settings bring no
+    // second button of their own.
+    expect(screen.queryByRole("link", { name: "Notification settings" })).not.toBeInTheDocument();
+
+    useFeatureFlagStore.setState({ flags: before.flags, initialized: before.initialized });
   });
 });

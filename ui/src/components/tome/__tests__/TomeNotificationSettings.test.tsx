@@ -146,4 +146,34 @@ describe("TomeNotificationSettings", () => {
     expect(await screen.findByText(/Could not load your spaces/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "What type of notifications?" })).toBeInTheDocument();
   });
+
+  it("draws the account's own choices alone when asked for that half", async () => {
+    mockTree();
+    render(<TomeNotificationSettings section="account" />);
+    await screen.findByRole("heading", { name: "What type of notifications?" });
+
+    expect(screen.getByLabelText("Send me notifications")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "When would you like to be notified?" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Followed spaces" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Example Goal")).not.toBeInTheDocument();
+  });
+
+  it("draws the spaces alone when asked for that half", async () => {
+    mockTree();
+    render(<TomeNotificationSettings section="spaces" />);
+    expect(await screen.findByText("Example Goal")).toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { name: "Followed spaces" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "What type of notifications?" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Send me notifications")).not.toBeInTheDocument();
+  });
+
+  it("leaves Save to a panel that already carries one, but keeps saying nothing is kept", async () => {
+    mockTree();
+    render(<TomeNotificationSettings section="spaces" showSave={false} />);
+    await screen.findByText("Example Goal");
+
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Nothing here is saved yet/)).toBeInTheDocument();
+  });
 });

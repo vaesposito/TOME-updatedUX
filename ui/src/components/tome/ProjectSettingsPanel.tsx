@@ -47,6 +47,7 @@ import { PanelHeader } from "@/components/tome/PanelHeader";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { FollowMenu } from "@/components/tome/FollowMenu";
+import { TomeNotificationSettings } from "@/components/tome/TomeNotificationSettings";
 import { WebexMeetingSeriesSettings } from "@/components/tome/WebexMeetingSeriesSettings";
 import { SETTINGS_TAB_TRIGGER_CLASS, SettingsGroupNav } from "@/components/tome/SettingsGroupNav";
 import { cn } from "@/lib/utils";
@@ -1450,44 +1451,19 @@ export function ProjectSettingsPanel({
                   </p>
                   <FollowMenu slug={slug} className="mt-1" />
                 </div>
-                <div className="space-y-2 border-t border-border pt-5">
-                  <h3 className="text-sm font-medium">Where and when</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Which channels a notification is delivered through, and
-                    whether it arrives as it happens or in a digest, are set
-                    once for your account rather than per space.
-                  </p>
-                  <Link
-                    href="/settings?tab=notifications"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Notification settings
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
+                {/* The settings themselves, not a way out to them. They are
+                    an account's rather than a space's, so they read the same
+                    here as on the admin page and are drawn by the same
+                    component — but a reader who opened Notifications came to
+                    set notifications, and was being sent to another tab to do
+                    it. */}
+                <div className="border-t border-border pt-5">
+                  <TomeNotificationSettings section="account" showSave={false} />
                 </div>
               </TabsContent>
 
               <TabsContent value="notifications-following" className="space-y-4 pt-6">
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium">Followed spaces</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Every space you follow, with the level set for each, is kept
-                    together in the inbox — beside the notifications it
-                    produces, which is the only place the two can be judged
-                    against each other.
-                  </p>
-                  <Link
-                    href="/notifications?tab=following"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Open following
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
-                </div>
+                <TomeNotificationSettings section="spaces" showSave={false} />
               </TabsContent>
 
               <TabsContent value="sources" forceMount className="space-y-6 pt-6 data-[state=inactive]:hidden">

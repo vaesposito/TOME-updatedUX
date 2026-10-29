@@ -85,10 +85,13 @@ function RowControls({
   onChange: (next: Partial<SpacePreference>) => void;
 }) {
   return (
+    // py-0 against the shared control's own padding: these are short enough
+    // that the inherited eight pixels top and bottom left twelve for a
+    // twelve-pixel line, which cut the descenders off every value.
     <div className="flex shrink-0 items-center gap-1.5">
       <Select
         aria-label={`How much to hear about ${labelSuffix}`}
-        className="h-7 w-[7.5rem] text-xs"
+        className="h-7 w-[7.5rem] py-0 text-xs"
         disabled={disabled}
         value={mixed?.level ? "" : value.level}
         onChange={(event) => onChange({ level: event.target.value as SpaceLevel })}
@@ -101,7 +104,7 @@ function RowControls({
 
       <Select
         aria-label={`Where to be told about ${labelSuffix}`}
-        className="h-7 w-[7.5rem] text-xs"
+        className="h-7 w-[7.5rem] py-0 text-xs"
         disabled={disabled}
         value={mixed?.channels ? "" : value.channels.join(",")}
         onChange={(event) => onChange({
@@ -117,7 +120,7 @@ function RowControls({
 
       <Select
         aria-label={`How often to be told about ${labelSuffix}`}
-        className="h-7 w-[7.5rem] text-xs"
+        className="h-7 w-[7.5rem] py-0 text-xs"
         disabled={disabled}
         value={mixed?.cadence ? "" : value.cadence}
         onChange={(event) => onChange({ cadence: event.target.value as Cadence })}
@@ -220,8 +223,29 @@ function SpaceRow({
  * None of it is stored yet, and none of it changes what the pipeline sends.
  * The controls are here to be looked at and agreed on; the panel says so
  * rather than showing a Save that would quietly do nothing.
+ *
+ * The same controls serve the admin page, which shows them whole, and a
+ * space's own settings, which keep them under the two headings that
+ * navigation already offers. Splitting them there rather than linking out
+ * means a reader who went looking for a notification setting finds it where
+ * they went looking.
  */
-export function TomeNotificationSettings() {
+export function TomeNotificationSettings({
+  section = "all",
+  showSave = section === "all",
+}: {
+  /** Which half to draw: the account-wide choices, the per-space ones, or both. */
+  section?: "all" | "account" | "spaces";
+  /**
+   * Whether to offer the panel's own Save.
+   *
+   * Off where a surrounding panel already carries one, so a reader is not
+   * given two buttons and left to guess which of them covers what.
+   */
+  showSave?: boolean;
+} = {}) {
+  const showAccount = section !== "spaces";
+  const showSpaces = section !== "account";
   const [nodes, setNodes] = useState<NotificationFollowTreeNode[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<TomeNotificationPreferences>(
@@ -291,19 +315,22 @@ export function TomeNotificationSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Switch
-          checked={preferences.enabled}
-          onCheckedChange={(next) => setPreferences((current) => ({ ...current, enabled: next }))}
-          aria-label="Send me notifications"
-        />
-        <span className="text-sm font-medium">Send me notifications</span>
-      </div>
+      {showAccount && (
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={preferences.enabled}
+            onCheckedChange={(next) => setPreferences((current) => ({ ...current, enabled: next }))}
+            aria-label="Send me notifications"
+          />
+          <span className="text-sm font-medium">Send me notifications</span>
+        </div>
+      )}
 
       {/* inert rather than a dimmed overlay: with notifications off these
           controls decide nothing, and leaving them reachable by keyboard
           would let someone set a preference that is not being consulted. */}
       <div className={cn("space-y-6", off && "opacity-50")} inert={off}>
+        {showAccount && (
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">What type of notifications?</h3>
           <div role="radiogroup" aria-label="What type of notifications?" className="space-y-2">
@@ -322,7 +349,9 @@ export function TomeNotificationSettings() {
             ))}
           </div>
         </section>
+        )}
 
+        {showAccount && (
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">Where would you like to be notified?</h3>
           {CHANNELS.map((channel) => {
@@ -364,7 +393,9 @@ export function TomeNotificationSettings() {
             );
           })}
         </section>
+        )}
 
+        {showAccount && (
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">When would you like to be notified?</h3>
           <Select
@@ -441,7 +472,9 @@ export function TomeNotificationSettings() {
             </div>
           )}
         </section>
+        )}
 
+        {showSpaces && (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-semibold">Followed spaces</h3>
@@ -498,6 +531,7 @@ export function TomeNotificationSettings() {
             )}
           </div>
         </section>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-4 border-t pt-4">
@@ -505,7 +539,7 @@ export function TomeNotificationSettings() {
           A preview. Nothing here is saved yet, and what reaches you is unchanged
           meanwhile — the choices above are for agreeing on, not yet for keeping.
         </p>
-        <Button disabled>Save</Button>
+        {showSave && <Button disabled>Save</Button>}
       </div>
     </div>
   );

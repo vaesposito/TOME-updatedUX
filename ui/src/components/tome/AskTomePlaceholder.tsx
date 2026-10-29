@@ -4,6 +4,7 @@ import {
   Bot,
   Copy,
   ExternalLink,
+  GripVertical,
   Maximize2,
   Minimize2,
   MessageCircle,
@@ -22,6 +23,7 @@ import {
 import * as React from "react";
 
 import { AuditNotice } from "@/components/chat/AuditNotice";
+import { ProviderLogo } from "@/components/credentials/provider-logo";
 import {
   Popover,
   PopoverContent,
@@ -36,6 +38,19 @@ import {
   useAskTomeStore,
   type AskTomeTab,
 } from "@/store/ask-tome-store";
+
+/** The Webex note's width, needed to keep it inside the window as it moves. */
+const WEBEX_HELP_WIDTH = 272;
+
+/**
+ * How far down the note may be dragged, at the least.
+ *
+ * The same inset the panel itself keeps, and for the same reason: the app's
+ * own header sits above this line and takes the clicks of anything that slides
+ * under it, so a note dragged into the top corner would be a note that can no
+ * longer be closed.
+ */
+const WEBEX_HELP_TOP_PX = 72;
 
 /** The tabs, as drawn. */
 const TABS: readonly { id: AskTomeTab; label: string }[] = [
@@ -115,6 +130,62 @@ export function AskTomePlaceholder({
   // Not in the store: a menu left hanging open across a navigation would be a
   // menu the reader did not ask for.
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [webexHelpOpen, setWebexHelpOpen] = React.useState(false);
+  // Null until it is opened, when it is placed under its own button. Held in
+  // viewport coordinates because the note is dragged clear of the panel.
+  const [webexHelpAt, setWebexHelpAt] = React.useState<{ x: number; y: number } | null>(null);
+  const webexButtonRef = React.useRef<HTMLButtonElement>(null);
+
+  const openWebexHelp = React.useCallback(() => {
+    const rect = webexButtonRef.current?.getBoundingClientRect();
+    if (rect) {
+      setWebexHelpAt({
+        // Hung under the button and pulled back inside the right edge, since
+        // the button sits near it.
+        x: clamp(rect.right - WEBEX_HELP_WIDTH, 16, window.innerWidth - WEBEX_HELP_WIDTH - 16),
+        y: Math.max(WEBEX_HELP_TOP_PX, rect.bottom + 10),
+      });
+    }
+    setWebexHelpOpen(true);
+  }, []);
+
+  const closeWebexHelp = React.useCallback(() => setWebexHelpOpen(false), []);
+
+  /** Dragged by its own top row, and kept inside the window. */
+  const startWebexHelpDrag = React.useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      if (!webexHelpAt) return;
+      event.preventDefault();
+      const start = { x: event.clientX, y: event.clientY };
+      const from = webexHelpAt;
+      document.body.style.userSelect = "none";
+
+      function onMove(move: PointerEvent) {
+        setWebexHelpAt({
+          x: clamp(
+            from.x + (move.clientX - start.x),
+            8,
+            Math.max(8, window.innerWidth - WEBEX_HELP_WIDTH - 8),
+          ),
+          y: clamp(
+            from.y + (move.clientY - start.y),
+            WEBEX_HELP_TOP_PX,
+            Math.max(WEBEX_HELP_TOP_PX, window.innerHeight - 80),
+          ),
+        });
+      }
+
+      function onUp() {
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      }
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [webexHelpAt],
+  );
 
   /**
    * Dragged from the panel's own edges, which is what the design asks for:
@@ -222,6 +293,22 @@ export function AskTomePlaceholder({
                 on the chat itself lives in the menu rather than spread across
                 the header. */}
             <div className="flex items-center gap-2">
+              <button
+                ref={webexButtonRef}
+                type="button"
+                aria-expanded={webexHelpOpen}
+                onClick={() => (webexHelpOpen ? closeWebexHelp() : openWebexHelp())}
+                className={cn(
+                  "flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-cyan-500/50 hover:bg-cyan-500/10 hover:text-foreground dark:border-cyan-200/30 dark:hover:border-cyan-200/60",
+                  // Held down while its note is out, so the note and the
+                  // button it came from read as the same thing.
+                  webexHelpOpen &&
+                    "border-cyan-500/50 bg-cyan-500/10 text-foreground dark:border-cyan-200/60",
+                )}
+              >
+                <ProviderLogo provider="webex" className="h-3.5 w-3.5 shrink-0 object-contain" />
+                Configure Webex
+              </button>
               <Popover open={menuOpen} onOpenChange={setMenuOpen}>
                 <PopoverTrigger asChild>
                   <HeaderButton label="Ask Tome options" pressed={menuOpen}>
@@ -357,6 +444,41 @@ export function AskTomePlaceholder({
               <AuditNotice />
             </p>
           </div>
+        </section>
+      )}
+
+      {/* Outside the panel, not in it: the panel clips what it holds, and this
+          note is meant to be dragged somewhere the Webex window is not in the
+          way. It stays until it is closed on its own cross, because a reader
+          following three steps will be clicking around while they read. */}
+      {open && webexHelpOpen && webexHelpAt && (
+        <section
+          aria-label="Configure Webex"
+          style={{ left: webexHelpAt.x, top: webexHelpAt.y, width: WEBEX_HELP_WIDTH }}
+          className="pointer-events-auto fixed z-50 rounded-xl border border-border bg-popover shadow-xl ring-1 ring-cyan-500/20 dark:border-cyan-200/40 dark:ring-cyan-200/30"
+        >
+          <div
+            onPointerDown={startWebexHelpDrag}
+            className="flex cursor-move touch-none items-center gap-1.5 border-b border-border px-3 py-2"
+          >
+            <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <h3 className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
+              Configure Webex
+            </h3>
+            <button
+              type="button"
+              aria-label="Close the Webex steps"
+              onClick={closeWebexHelp}
+              className="rounded-full p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </div>
+          <ol className="list-decimal space-y-2 py-3 pl-8 pr-3 text-xs text-foreground/85">
+            <li>Go to Webex.</li>
+            <li>Type &ldquo;tome&rdquo; in the search bar.</li>
+            <li>Start a conversation with the Tome agent.</li>
+          </ol>
         </section>
       )}
 

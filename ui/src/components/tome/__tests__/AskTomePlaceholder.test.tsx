@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import * as React from "react";
 
 import { AskTomePlaceholder } from "@/components/tome/AskTomePlaceholder";
@@ -103,6 +103,29 @@ describe("AskTomePlaceholder", () => {
 
     expect(useAskTomeStore.getState().size).toEqual(ASK_TOME_DEFAULT_SIZE);
     expect(useAskTomeStore.getState().expanded).toBe(false);
+  });
+
+  it("tells the reader how to reach Tome in Webex, and keeps telling them", () => {
+    render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+    expect(screen.queryByRole("region", { name: "Configure Webex" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure Webex" }));
+    const note = screen.getByRole("region", { name: "Configure Webex" });
+    expect(within(note).getAllByRole("listitem").map((step) => step.textContent)).toEqual([
+      "Go to Webex.",
+      "Type “tome” in the search bar.",
+      "Start a conversation with the Tome agent.",
+    ]);
+
+    // Nothing outside it dismisses it: a reader works through the steps with
+    // the rest of the page still under their pointer.
+    fireEvent.pointerDown(document.body);
+    fireEvent.click(document.body);
+    expect(screen.getByRole("region", { name: "Configure Webex" })).toBeInTheDocument();
+
+    fireEvent.click(within(note).getByRole("button", { name: "Close the Webex steps" }));
+    expect(screen.queryByRole("region", { name: "Configure Webex" })).not.toBeInTheDocument();
   });
 
   it("opens on Chat and offers History, and offers nothing else", () => {

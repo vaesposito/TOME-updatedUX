@@ -1459,6 +1459,8 @@ export function ProjectSettingsPanel({
                   </p>
                   <Link
                     href="/settings?tab=notifications"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Notification settings
@@ -1478,6 +1480,8 @@ export function ProjectSettingsPanel({
                   </p>
                   <Link
                     href="/notifications?tab=following"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Open following
@@ -1488,9 +1492,16 @@ export function ProjectSettingsPanel({
 
               <TabsContent value="sources" forceMount className="space-y-6 pt-6 data-[state=inactive]:hidden">
                 <div className="space-y-6">
+                  {/* Away from this panel, not out of it: these three all leave
+                      the product's own settings behind, and this one does it
+                      from a form that may be half-filled and unsaved. Their
+                      mark already promises a new tab; they now keep that
+                      promise. */}
                   <div className="flex items-center justify-end">
                     <Link
                       href="/credentials"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                     >
                       Manage connections

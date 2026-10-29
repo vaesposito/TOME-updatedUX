@@ -510,4 +510,17 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
       screen.queryByRole("checkbox", { name: "Enable scheduled auto-ingest" }),
     ).not.toBeInTheDocument();
   });
+
+  it("leaves the settings form standing when sending the reader to the connections", async () => {
+    // This leads out of the product's own settings, away from a form that may
+    // be half-filled and unsaved. It carries an external mark, so it is
+    // expected to open beside the panel rather than replace it.
+    installEntitySettingsFetch("project");
+    renderSettings({ slug: "example-project" });
+    await screen.findByText("Project settings");
+
+    const link = await screen.findByRole("link", { name: "Manage connections" });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
 });

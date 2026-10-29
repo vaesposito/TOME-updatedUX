@@ -115,7 +115,15 @@ export function NavSection({
           four clears the icon and the gap after it, which is exactly where the
           label starts. */}
       {expanded && !empty && (
-        <div id={controlsId} className="mt-1 pl-6">
+        <div id={controlsId} className="relative mt-1 pl-6">
+          {/* A line down from the middle of the section's own icon, so what
+              hangs under the label is also visibly tied to the row it came
+              from. Drawn rather than bordered: a border would eat into the
+              padding and take every label a pixel off the row above. */}
+          {/* Not bg-border: against the rail's own light panel that is a
+              shade off invisible, and a guide nobody can see guides nobody.
+              Taken from the text colour instead, so it holds in both themes. */}
+          <span aria-hidden className="absolute inset-y-0 left-4 w-px bg-foreground/20" />
           {children}
         </div>
       )}

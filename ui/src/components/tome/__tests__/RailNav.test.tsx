@@ -190,6 +190,30 @@ describe("NavSection", () => {
       "wiki-tree",
     );
   });
+
+  it("ties what it opened back to the row it came from", () => {
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded
+        onToggle={jest.fn()}
+        onClick={jest.fn()}
+        controlsId="wiki-tree"
+      >
+        <p>Charter</p>
+      </NavSection>,
+    );
+
+    // A line down the left of the contents, and nothing a reader is told
+    // about: it says what the indent already says.
+    const guide = document
+      .getElementById("wiki-tree")
+      ?.querySelector("span[aria-hidden]");
+    expect(guide).toBeTruthy();
+    expect(guide).toHaveClass("absolute", "w-px");
+  });
 });
 
 describe("NavItem", () => {

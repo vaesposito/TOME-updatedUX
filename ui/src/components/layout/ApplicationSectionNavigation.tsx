@@ -11,6 +11,10 @@ import {
   type DynamicAgentNavigationTab,
 } from "@/components/dynamic-agents/navigation";
 import { WorkspaceNavigationList } from "@/components/layout/WorkspaceNavigation";
+import {
+  activeTomeNavigationId,
+  TOME_GROUPS,
+} from "@/components/projects/navigation";
 import { KnowledgeSidebar } from "@/components/rag/KnowledgeSidebar";
 import { SettingsNavigation } from "@/components/settings/SettingsNavigation";
 import {
@@ -30,8 +34,25 @@ export const APPLICATION_SECTION_AREA_KEYS = new Set([
   "dynamic-agents",
   "credentials",
   "admin",
+  "projects",
   "settings",
 ]);
+
+function TomeApplicationNavigation(): React.ReactElement {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  return (
+    <WorkspaceNavigationList
+      activeItemId={activeTomeNavigationId(pathname, {
+        tab: searchParams.get("tab"),
+        groupBy: searchParams.get("groupBy"),
+      })}
+      ariaLabel="TOME sections"
+      groups={TOME_GROUPS}
+    />
+  );
+}
 
 function DynamicAgentsApplicationNavigation(): React.ReactElement {
   const pathname = usePathname();
@@ -136,6 +157,7 @@ export function ApplicationSectionNavigation({
     );
   }
   if (areaKey === "admin") return <AdminApplicationNavigation />;
+  if (areaKey === "projects") return <TomeApplicationNavigation />;
   if (areaKey === "settings") return <SettingsApplicationNavigation />;
   return null;
 }

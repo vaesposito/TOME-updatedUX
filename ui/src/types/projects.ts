@@ -137,6 +137,7 @@ export interface ProjectLabels {
   domain?: string;
   initiatives?: string[]; // BHAG / Initiative
   areas?: string[]; // Area
+  functions?: string[]; // The part of the organisation that owns the space
 }
 
 /**

@@ -39,6 +39,7 @@ import {
   parseHubTab,
   type HubTab,
 } from "@/components/projects/HubTabs";
+import { ORG_FUNCTIONS } from "@/components/projects/navigation";
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 import { WorkspaceOverview } from "@/components/tome/WorkspaceOverview";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,7 @@ import { cn } from "@/lib/utils";
 import { dataStewardLabel, type ProjectDocument } from "@/types/projects";
 import type { ActiveIngestRun } from "@/types/tome";
 
-type GroupBy = "none" | "initiative" | "area";
+type GroupBy = "none" | "initiative" | "area" | "function";
 
 // Shared with TomeWiki so the first-run walkthrough shows once per browser
 // across the hub and any project's wiki.
@@ -246,7 +247,9 @@ function groupProjects(
     const values =
       groupBy === "initiative"
         ? (p.labels?.initiatives ?? [])
-        : (p.labels?.areas ?? []);
+        : groupBy === "function"
+          ? (p.labels?.functions ?? [])
+          : (p.labels?.areas ?? []);
 
     if (values.length === 0) {
       ungrouped.push(p);
@@ -813,9 +816,10 @@ export function ProjectsHub() {
     }
   }, []);
 
-  // Projects are read by the goal they belong to, so that is the grouping,
-  // and there is no control offering the other two. A ?groupBy= link still
-  // works for anyone who wants a flat list or areas.
+  // Projects are read by the goal they belong to, so that is the grouping.
+  // The application navigation offers the one other grouping a reader asks
+  // for by name, by function; a ?groupBy= link still serves anyone who wants
+  // a flat list or areas.
   const groupBy = (searchParams.get("groupBy") ?? "initiative") as GroupBy;
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
@@ -1071,6 +1075,30 @@ export function ProjectsHub() {
         items: [],
       });
     }
+  }
+  // The functions are a fixed list of the organisation's parts, not a set
+  // derived from what happens to be tagged. A function with nothing in TOME
+  // is worth showing as such: drop it and the view says the organisation is
+  // whatever it found, which is the question the reader came to answer.
+  // Held in their own order too, since an order by size would reshuffle the
+  // organisation every time a space was added.
+  if (!normalizedProjectQuery && groupBy === "function") {
+    const found = new Map(groups.map((group) => [normLabel(group.label), group]));
+    const known = ORG_FUNCTIONS.map((name) => {
+      const group = found.get(normLabel(name));
+      // The canonical spelling wins over whatever a tag happened to use, so
+      // the column reads as one list rather than as several conventions.
+      return group ? { ...group, label: name } : { key: name, label: name, items: [] };
+    });
+    const tagged = new Set(ORG_FUNCTIONS.map((name) => normLabel(name)));
+    groups = [
+      ...known,
+      ...groups.filter(
+        (group) =>
+          group.key !== "__ungrouped__" && !tagged.has(normLabel(group.label)),
+      ),
+      ...groups.filter((group) => group.key === "__ungrouped__"),
+    ];
   }
   if (groupBy === "initiative") {
     const ungrouped = groups.filter((group) => group.key === "__ungrouped__");

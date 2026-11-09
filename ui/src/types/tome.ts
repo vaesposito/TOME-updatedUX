@@ -570,6 +570,11 @@ export const TOME_USAGE_VIEW_KINDS = [
   "meetings",
   "wiki",
   "glossary",
+  "sources",
+  "source",
+  "related",
+  // Kept alongside the name that replaced it: rows recorded before the
+  // mirrored material moved to Sources are the same place.
   "references",
   "issues",
   "feed",

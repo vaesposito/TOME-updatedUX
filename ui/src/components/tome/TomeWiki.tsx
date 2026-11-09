@@ -15,6 +15,8 @@ import {
   BookA,
   BookOpen,
   CalendarDays,
+  ChevronRight,
+  Plug,
   Eye,
   EyeOff,
   FilePlus2,
@@ -72,6 +74,9 @@ import { FeedPanel } from "@/components/tome/FeedPanel";
 import { GistsPanel } from "@/components/tome/GistsPanel";
 import { GistView } from "@/components/tome/GistView";
 import { GlossaryView } from "@/components/tome/GlossaryView";
+import { PanelShell } from "@/components/tome/PanelHeader";
+import { SourcesIndex } from "@/components/tome/SourcesIndex";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { NavCount, NavItem, NavSection } from "@/components/tome/RailNav";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import {
@@ -81,6 +86,7 @@ import {
 import { TreeIndex } from "@/components/tome/TreeIndex";
 import { ProjectSettingsPanel } from "@/components/tome/ProjectSettingsPanel";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
+import { groupBySource, sourceById } from "@/lib/tome/sources";
 import { isReferencePath, splitWikiTree } from "@/lib/tome/wiki-tree-split";
 import { usePersistentDisclosure } from "@/lib/tome/use-persistent-disclosure";
 import { useFeatureFlagStore } from "@/store/feature-flag-store";
@@ -199,7 +205,9 @@ type MainView =
   | { kind: "meetings" }
   | { kind: "wiki" }
   | { kind: "glossary" }
-  | { kind: "references" }
+  | { kind: "sources" }
+  | { kind: "source"; id: string }
+  | { kind: "related" }
   | { kind: "issues"; label?: string }
   | { kind: "feed" }
   | { kind: "gists" }
@@ -237,8 +245,12 @@ function viewToPath(slug: string, view: MainView): string {
       return `${base}/wiki`;
     case "glossary":
       return `${base}/glossary`;
-    case "references":
-      return `${base}/references`;
+    case "sources":
+      return `${base}/sources`;
+    case "source":
+      return `${base}/sources/${encodeURIComponent(view.id)}`;
+    case "related":
+      return `${base}/related`;
     case "issues":
       return view.label
         ? `${base}/issues/label/${encodeURIComponent(view.label)}`
@@ -324,8 +336,14 @@ function pathToView(segments: string[]): MainView {
       return rest.length
         ? { kind: "page", path: rest.join("/") }
         : { kind: "wiki" };
+    case "sources":
+      return rest[0] ? { kind: "source", id: rest[0] } : { kind: "sources" };
+    case "related":
+    // The mirrored material moved to Sources and the section kept only the
+    // spaces tagged alongside, but a link written against the old name still
+    // has to land somewhere true.
     case "references":
-      return { kind: "references" };
+      return { kind: "related" };
     case "history":
       return rest.length
         ? { kind: "pageHistory", path: rest.join("/") }
@@ -1541,11 +1559,28 @@ export function TomeWiki({ slug }: { slug: string }) {
           { label: "Wiki", onClick: () => navigate({ kind: "wiki" }) },
           { label: "Glossary" },
         ];
-      case "references":
-        return [{ label: "Connections" }];
-      case "issues": {
-        if (!view.label) return [{ label: "Issues" }];
+      case "related":
+        return [{ label: "Related projects" }];
+      case "sources":
+        return [{ label: "Sources" }];
+      case "source":
         return [
+          { label: "Sources", onClick: () => navigate({ kind: "sources" }) },
+          { label: sourceById(view.id)?.name ?? view.id },
+        ];
+      case "issues": {
+        // Under GitHub, which is where the issues are raised and where the
+        // navigation now keeps them.
+        const under = [
+          { label: "Sources", onClick: () => navigate({ kind: "sources" }) },
+          {
+            label: "GitHub",
+            onClick: () => navigate({ kind: "source", id: "github" }),
+          },
+        ];
+        if (!view.label) return [...under, { label: "Issues" }];
+        return [
+          ...under,
           { label: "Issues", onClick: () => navigate({ kind: "issues" }) },
           { label: activeTrackedIssueLabel?.title ?? "Issues" },
         ];
@@ -1746,6 +1781,11 @@ export function TomeWiki({ slug }: { slug: string }) {
   // The terms themselves, not the folder holding them: the rail's figures
   // say how much is behind a row, and "1" for a glossary of forty words
   // would be a lie told in the same column as every honest count.
+  // The mirrored material, sorted into the systems it arrived from.
+  const sources = useMemo(
+    () => groupBySource(wikiSplit.reference),
+    [wikiSplit.reference],
+  );
   const glossaryTerms = useMemo(
     () =>
       wikiSplit.glossary.reduce(
@@ -1764,6 +1804,14 @@ export function TomeWiki({ slug }: { slug: string }) {
     `tome.v2.references.expanded.${slug}`,
     false,
   );
+  const [sourcesOpen, setSourcesOpen] = usePersistentDisclosure(
+    `tome.v2.sources.expanded.${slug}`,
+    false,
+  );
+  // One system open at a time, and none to begin with: five systems opened
+  // together would bury everything below them under the whole of what this
+  // space has ever read.
+  const [openSource, setOpenSource] = useState<string | null>(null);
   // Only for the rail that reports counts, and only for the rows whose
   // contents are not already in the wiki payload.
   const railCounts = useTomeRailCounts(slug, {
@@ -1785,7 +1833,8 @@ export function TomeWiki({ slug }: { slug: string }) {
     gists: view.kind === "gists" || view.kind === "newGist" || view.kind === "gist",
     wiki: view.kind === "wiki",
     glossary: view.kind === "glossary",
-    references: view.kind === "references",
+    related: view.kind === "related",
+    sources: view.kind === "sources",
     settings: view.kind === "settings",
     templates: view.kind === "templates",
     insights: view.kind === "insights",
@@ -2402,27 +2451,82 @@ export function TomeWiki({ slug }: { slug: string }) {
                       reserveCaret
                     />
 
-                    {/* One destination, not one per label. A tracked label
-                        narrows the issues; it is not a place with contents of
-                        its own, and a row in the rail said otherwise. The
-                        labels are a filter above the list they filter. */}
-                    {showIssuesReport && (
-                      <NavItem
-                        icon={
-                          <ProviderLogo
-                            provider="github"
-                            className="h-4 w-4 shrink-0 object-contain"
-                          />
-                        }
-                        label="Issues"
-                        active={navActive.issues}
-                        onClick={() => navigate({ kind: "issues" })}
-                        count={railCounts.issues}
-                        tipTitle="GitHub issues"
-                        tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache."
-                        reserveCaret
-                      />
-                    )}
+                    {/* Grouped by the system the material came from rather
+                        than listed as the folders it arrived in. Issues sit
+                        under GitHub, with the repositories they are raised
+                        against, instead of beside Notes as though they were
+                        something this space wrote. */}
+                    <NavSection
+                      icon={<Plug className="h-4 w-4" />}
+                      label="Sources"
+                      active={
+                        navActive.sources ||
+                        view.kind === "source" ||
+                        navActive.issues ||
+                        view.kind === "issues" ||
+                        Boolean(navActive.page && isReferencePath(navActive.page))
+                      }
+                      expanded={sourcesOpen}
+                      onToggle={() => setSourcesOpen(!sourcesOpen)}
+                      onClick={() => navigate({ kind: "sources" })}
+                      count={loading ? undefined : sources.length}
+                      controlsId={`tome-v2-sources-${slug}`}
+                    >
+                      {sources.map(({ source, nodes, count }) => {
+                        const isGithub = source.id === "github";
+                        const showIssues = isGithub && showIssuesReport;
+                        return (
+                          <NavSection
+                            key={source.id}
+                            icon={
+                              <ProviderLogo
+                                provider={source.provider}
+                                className="h-4 w-4 shrink-0 object-contain"
+                              />
+                            }
+                            label={source.name}
+                            active={
+                              (view.kind === "source" && view.id === source.id) ||
+                              (isGithub && view.kind === "issues")
+                            }
+                            expanded={openSource === source.id}
+                            onToggle={() =>
+                              setOpenSource(
+                                openSource === source.id ? null : source.id,
+                              )
+                            }
+                            onClick={() =>
+                              navigate({ kind: "source", id: source.id })
+                            }
+                            // The issues are one of the things behind GitHub,
+                            // so they are counted as one of them.
+                            count={
+                              loading ? undefined : count + (showIssues ? 1 : 0)
+                            }
+                            controlsId={`tome-v2-source-${source.id}-${slug}`}
+                          >
+                            {showIssues && (
+                              <NavItem
+                                icon={<ListChecks className="h-4 w-4" />}
+                                label="Issues"
+                                active={navActive.issues}
+                                onClick={() => navigate({ kind: "issues" })}
+                                count={railCounts.issues}
+                                tipTitle="GitHub issues"
+                                tipDescription="Issues linked from attached GitHub repositories. GitHub remains authoritative while TOME serves a webhook-backed read cache."
+                                reserveCaret
+                              />
+                            )}
+                            {renderWikiTree(nodes, {
+                              editable: false,
+                              emptyNote: source.unavailable
+                                ? `${source.name} is not connected to this space yet.`
+                                : `Nothing read from ${source.name} yet.`,
+                            })}
+                          </NavSection>
+                        );
+                      })}
+                    </NavSection>
 
                     <NavItem
                       icon={<NotebookPen className="h-4 w-4" />}
@@ -2435,28 +2539,21 @@ export function TomeWiki({ slug }: { slug: string }) {
                       reserveCaret
                     />
 
+                    {/* What the mirrored sources left behind: the spaces
+                        tagged into the same categories as this one. Those
+                        are projects, which the old name claimed and never
+                        held. */}
                     <NavSection
                       icon={<FileSymlink className="h-4 w-4" />}
-                      label="Connections"
-                      active={navActive.references || Boolean(
-                        navActive.page && isReferencePath(navActive.page),
-                      )}
+                      label="Related projects"
+                      active={navActive.related}
                       expanded={referencesOpen}
                       onToggle={() => setReferencesOpen(!referencesOpen)}
-                      onClick={() => navigate({ kind: "references" })}
-                      count={
-                        loading
-                          ? undefined
-                          : wikiSplit.reference.length + related.length
-                      }
-                      controlsId={`tome-v2-references-${slug}`}
+                      onClick={() => navigate({ kind: "related" })}
+                      count={related.length}
+                      controlsId={`tome-v2-related-${slug}`}
                     >
-                      <RelatedSpacesRail related={related} />
-                      {renderWikiTree(wikiSplit.reference, {
-                        editable: false,
-                        emptyNote:
-                          "Nothing mirrored yet. A repository, a Confluence space or a Webex room lands here once it has been read.",
-                      })}
+                      <RelatedSpacesRail related={related} bare />
                     </NavSection>
                   </div>
                 )}
@@ -3027,22 +3124,95 @@ export function TomeWiki({ slug }: { slug: string }) {
               <div className="min-h-0 min-w-0 flex-1">
                 <GlossaryView slug={slug} onOpenPage={openPage} />
               </div>
-            ) : view.kind === "references" ? (
+            ) : view.kind === "sources" ? (
               <div className="min-h-0 min-w-0 flex-1">
-                <TreeIndex
-                  icon={<FileSymlink className="h-4 w-4" />}
-                  title="Connections"
-                  description="What this space is attached to: the spaces tagged into the same categories, and everything it mirrors page by page — repositories, Confluence spaces and Webex rooms."
-                  nodes={wikiSplit.reference}
-                  lead={<RelatedSpacesBlock related={related} />}
-                  leadCount={related.length}
-                  emptyNote="A repository, a Confluence space or a Webex room lands here once it has been read."
-                  emptyAction={canEdit
-                    ? { label: "Connect a source", onClick: () => navigate({ kind: "ingest" }) }
-                    : undefined}
-                  onOpenPage={openPage}
-                  onOpenFolder={openFolder}
+                <SourcesIndex
+                  sources={sources}
+                  onOpenSource={(id) => navigate({ kind: "source", id })}
                 />
+              </div>
+            ) : view.kind === "source" ? (
+              <div className="min-h-0 min-w-0 flex-1">
+                {(() => {
+                  const entry =
+                    sources.find((candidate) => candidate.source.id === view.id)
+                      ?? sources[0];
+                  const { source, nodes } = entry;
+                  const withIssues = source.id === "github" && showIssuesReport;
+                  return (
+                    <TreeIndex
+                      icon={
+                        <ProviderLogo
+                          provider={source.provider}
+                          className="h-5 w-5 object-contain"
+                        />
+                      }
+                      title={source.name}
+                      description={source.blurb}
+                      nodes={nodes}
+                      // Raised in GitHub and read here, so they head the
+                      // system they belong to rather than sitting among the
+                      // pages mirrored from it.
+                      lead={
+                        withIssues ? (
+                          <button
+                            type="button"
+                            onClick={() => navigate({ kind: "issues" })}
+                            className="flex w-full items-center gap-3 border-b px-2 py-4 text-left transition-colors hover:bg-muted/60"
+                          >
+                            <ListChecks className="h-5 w-5 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium">Issues</span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                Raised against the repositories this space watches
+                              </span>
+                            </span>
+                            {railCounts.issues !== undefined && (
+                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                {railCounts.issues}
+                              </span>
+                            )}
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          </button>
+                        ) : undefined
+                      }
+                      leadCount={withIssues ? 1 : 0}
+                      emptyNote={
+                        source.unavailable
+                          ? `${source.name} is not connected to this space yet. Once it is, what this space reads from it lands here.`
+                          : `Nothing read from ${source.name} yet. Its pages land here once they have been read.`
+                      }
+                      emptyAction={canEdit
+                        ? { label: "Connect a source", onClick: () => navigate({ kind: "ingest" }) }
+                        : undefined}
+                      onOpenPage={openPage}
+                      onOpenFolder={openFolder}
+                    />
+                  );
+                })()}
+              </div>
+            ) : view.kind === "related" ? (
+              <div className="min-h-0 min-w-0 flex-1">
+                <PanelShell
+                  title="Related projects"
+                  description="The spaces tagged into the same categories as this one. Tagging happens on the By function view, where the categories are made."
+                  titleAccessory={
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {related.length} {related.length === 1 ? "space" : "spaces"}
+                    </span>
+                  }
+                >
+                  {related.length === 0 ? (
+                    <TomeEmpty
+                      icon={<FileSymlink />}
+                      headline="Nothing tagged alongside this space"
+                      hint="Tag this space into a category and everything else in that category appears here."
+                      action={{ label: "Open By function", href: "/projects?tab=functions" }}
+                    />
+                  ) : (
+                    <RelatedSpacesBlock related={related} bare />
+                  )}
+                </PanelShell>
               </div>
             ) : view.kind === "pageHistory" ? (
               <div className="min-h-0 min-w-0 flex-1">

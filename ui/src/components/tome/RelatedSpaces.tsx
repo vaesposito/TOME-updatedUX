@@ -23,14 +23,28 @@ function href(slug: string): string {
 }
 
 /** The rail's rendering: names under the section, at the tree's own measure. */
-export function RelatedSpacesRail({ related }: { related: RelatedSpaceRow[] }) {
+export function RelatedSpacesRail({
+  related,
+  bare,
+}: {
+  related: RelatedSpaceRow[];
+  /**
+   * Drop the heading.
+   *
+   * Set where the section above already says what these are; a second
+   * heading under its own row would name the same thing twice.
+   */
+  bare?: boolean;
+}) {
   if (related.length === 0) return null;
 
   return (
     <div className="mb-2">
-      <p className="px-1.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Tagged alongside
-      </p>
+      {!bare && (
+        <p className="px-1.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Tagged alongside
+        </p>
+      )}
       <ul>
         {related.map((space) => (
           <li key={space.slug}>
@@ -53,14 +67,23 @@ export function RelatedSpacesRail({ related }: { related: RelatedSpaceRow[] }) {
 }
 
 /** The page's rendering: the same spaces, with the category that ties them. */
-export function RelatedSpacesBlock({ related }: { related: RelatedSpaceRow[] }) {
+export function RelatedSpacesBlock({
+  related,
+  bare,
+}: {
+  related: RelatedSpaceRow[];
+  /** Drop the heading, where the page's own already says this. */
+  bare?: boolean;
+}) {
   if (related.length === 0) return null;
 
   return (
     <section className="pb-2">
-      <h3 className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Tagged alongside
-      </h3>
+      {!bare && (
+        <h3 className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Tagged alongside
+        </h3>
+      )}
       <div className="divide-y">
         {related.map((space) => (
           <Link

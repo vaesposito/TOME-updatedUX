@@ -6,6 +6,7 @@ import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { ChevronLeft, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { pageDisplayPath } from "@/lib/tome/page-names";
 import { cn } from "@/lib/utils";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import type { ModelProvenance } from "@/types/tome";
@@ -388,7 +389,7 @@ function RunDiffPane({ slug, runId }: { slug: string; runId: string }) {
                   )}
                   title={p.path}
                 >
-                  {p.path}
+                  {pageDisplayPath(p.path)}
                   {p.isNewPage && (
                     <span className="ml-1.5 rounded bg-emerald-900/40 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-emerald-300">
                       new

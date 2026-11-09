@@ -34,7 +34,9 @@ export const PAGE_KIND_DESCRIPTIONS: Record<PageKind, string> = {
     "A focused, structured surface, not a wiki page. Lives above the wiki and renders as its own UI element. Editable, but the agent rewrites it on each ingest like dynamic pages.",
 };
 
-const SPECS: Record<PageKind, Spec> = {
+/** The chip's own look, so a control that stands in for the badge (the page
+ * header's kind toggle) reads as the same thing rather than a plain button. */
+export const PAGE_KIND_SPECS: Record<PageKind, Spec> = {
   stable: {
     label: "stable",
     Icon: Anchor,
@@ -82,7 +84,7 @@ export function KindBadge({
   size?: "xs" | "sm";
   iconOnly?: boolean;
 }) {
-  const spec = SPECS[kind];
+  const spec = PAGE_KIND_SPECS[kind];
   const { Icon } = spec;
 
   if (iconOnly) {

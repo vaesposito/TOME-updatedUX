@@ -8,7 +8,7 @@ import "./crepe-theme.css";
 import { editorViewCtx, remarkPluginsCtx } from "@milkdown/kit/core";
 import { imageBlockSchema } from "@milkdown/kit/component/image-block";
 import { redo, undo } from "@milkdown/kit/prose/history";
-import { Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
+import { Plugin, TextSelection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import { Fragment, type Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
 import type { Node as MarkdownAstNode } from "@milkdown/transformer";
@@ -72,14 +72,6 @@ export type CrepeEditorHandle = {
   getMarkdown: () => string;
   setMarkdown: (md: string) => void;
   insertMarkdown: (md: string) => void;
-  /** Current text selection, retained while an editor popover has focus. */
-  getSelectedText: () => string;
-  /** Retain and visibly mark the current selection while another control has focus. */
-  captureSelection: () => void;
-  /** Restore a retained selection after a popover is discarded. */
-  restoreSelection: () => void;
-  /** Replace the current selection, or insert at the cursor when it is empty. */
-  replaceSelection: (md: string) => void;
   /**
    * Swap the `@…` being typed for finished markdown. The range is re-derived
    * here rather than passed in, so the picker never has to hold document
@@ -126,8 +118,6 @@ type Props = {
   showToolbar?: boolean;
   /** Open a host-owned media picker. Defaults to Crepe's built-in picker. */
   onInsertMedia?: () => void;
-  /** Open the host AI Assist flow for the current non-empty selection. */
-  onEnhanceSelection?: () => void;
   /**
    * Called as an `@…` is typed and again with null once it ends, so the host
    * can offer a people picker over the editor.
@@ -166,15 +156,6 @@ const TOME_REDO_ICON = [
   '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
   "</svg>",
 ].join("");
-const TOME_AI_ICON = [
-  '<svg data-tome-ai-icon="true" viewBox="0 0 24 24" fill="none"',
-  ' xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2"',
-  ' stroke-linecap="round" stroke-linejoin="round">',
-  '<path d="m12 3-1.5 4.5L6 9l4.5 1.5L12 15l1.5-4.5L18 9l-4.5-1.5L12 3Z"/>',
-  '<path d="m19 14-.8 2.2L16 17l2.2.8L19 20l.8-2.2L22 17l-2.2-.8L19 14Z"/>',
-  '<path d="M5 3v4M3 5h4"/>',
-  "</svg>",
-].join("");
 const TOME_COLUMNS_ICON = [
   '<svg data-tome-columns-icon="true" viewBox="0 0 24 24" fill="none"',
   ' xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2"',
@@ -183,44 +164,6 @@ const TOME_COLUMNS_ICON = [
   '<rect x="14" y="4" width="7" height="16" rx="1"/>',
   "</svg>",
 ].join("");
-
-type PendingAiSelection = { from: number; to: number } | null;
-
-const pendingAiSelectionKey = new PluginKey<PendingAiSelection>(
-  "tome-pending-ai-selection",
-);
-
-const pendingAiSelectionPlugin = $prose(
-  () =>
-    new Plugin<PendingAiSelection>({
-      key: pendingAiSelectionKey,
-      state: {
-        init: () => null,
-        apply: (transaction, current) => {
-          const next = transaction.getMeta(pendingAiSelectionKey) as
-            | PendingAiSelection
-            | undefined;
-          if (next !== undefined) return next;
-          if (!current) return null;
-          return {
-            from: transaction.mapping.map(current.from),
-            to: transaction.mapping.map(current.to),
-          };
-        },
-      },
-      props: {
-        decorations: (state) => {
-          const selection = pendingAiSelectionKey.getState(state);
-          if (!selection || selection.from === selection.to) return null;
-          return DecorationSet.create(state.doc, [
-            Decoration.inline(selection.from, selection.to, {
-              class: "tome-pending-ai-selection",
-            }),
-          ]);
-        },
-      },
-    }),
-);
 
 /** An in-progress `@…` at the cursor, handed to React to draw a picker. */
 export interface MentionQuery {
@@ -404,30 +347,6 @@ const tomeColumnsPlugin = $prose(
       },
     }),
 );
-
-function capturePendingAiSelection(view: EditorView): void {
-  const { from, to } = view.state.selection;
-  view.dispatch(view.state.tr.setMeta(pendingAiSelectionKey, { from, to }));
-}
-
-function getPendingAiSelection(view: EditorView): PendingAiSelection {
-  return pendingAiSelectionKey.getState(view.state) ?? null;
-}
-
-function restorePendingAiSelection(view: EditorView): boolean {
-  const selection = getPendingAiSelection(view);
-  if (!selection) return false;
-  const maxPosition = view.state.doc.content.size;
-  const from = Math.min(selection.from, maxPosition);
-  const to = Math.min(selection.to, maxPosition);
-  view.dispatch(
-    view.state.tr
-      .setSelection(TextSelection.create(view.state.doc, from, to))
-      .setMeta(pendingAiSelectionKey, null),
-  );
-  view.focus();
-  return true;
-}
 
 type MutableMarkdownAstNode = MarkdownAstNode & {
   children?: MutableMarkdownAstNode[];
@@ -789,7 +708,6 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     onChange,
     showToolbar,
     onInsertMedia,
-    onEnhanceSelection,
     onMentionQuery,
     enableColumns = false,
   },
@@ -824,10 +742,6 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
   useEffect(() => {
     onInsertMediaRef.current = onInsertMedia;
   }, [onInsertMedia]);
-  const onEnhanceSelectionRef = useRef(onEnhanceSelection);
-  useEffect(() => {
-    onEnhanceSelectionRef.current = onEnhanceSelection;
-  }, [onEnhanceSelection]);
   const onMentionQueryRef = useRef(onMentionQuery);
   useEffect(() => {
     onMentionQueryRef.current = onMentionQuery;
@@ -896,20 +810,6 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
             });
           },
         },
-        [Crepe.Feature.Toolbar]: {
-          buildToolbar: (builder) => {
-            if (!onEnhanceSelectionRef.current) return;
-            builder.addGroup("tome-ai", "AI").addItem("tome-enhance-ai", {
-              icon: TOME_AI_ICON,
-              label: "Enhance with AI",
-              active: () => false,
-              onRun: (ctx) => {
-                capturePendingAiSelection(ctx.get(editorViewCtx));
-                onEnhanceSelectionRef.current?.();
-              },
-            });
-          },
-        },
       },
     });
     if (typeof crepe.on === "function") {
@@ -921,7 +821,6 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     }
     crepeRef.current = crepe;
     readyRef.current = false;
-    crepe.editor.use(pendingAiSelectionPlugin);
     crepe.editor.use(
       mentionTriggerPlugin((query) => onMentionQueryRef.current?.(query)),
     );
@@ -1761,31 +1660,6 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
         if (!crepe || !readyRef.current) return;
         crepe.editor.action(insert(md));
       },
-      getSelectedText: () => {
-        const crepe = crepeRef.current;
-        if (!crepe || !readyRef.current) return "";
-        let selected = "";
-        crepe.editor.action((ctx) => {
-          const view = ctx.get(editorViewCtx);
-          const { from, to } = getPendingAiSelection(view) ?? view.state.selection;
-          selected = view.state.doc.textBetween(from, to, "\n");
-        });
-        return selected;
-      },
-      captureSelection: () => {
-        const crepe = crepeRef.current;
-        if (!crepe || !readyRef.current) return;
-        crepe.editor.action((ctx) => {
-          capturePendingAiSelection(ctx.get(editorViewCtx));
-        });
-      },
-      restoreSelection: () => {
-        const crepe = crepeRef.current;
-        if (!crepe || !readyRef.current) return;
-        crepe.editor.action((ctx) => {
-          restorePendingAiSelection(ctx.get(editorViewCtx));
-        });
-      },
       completeMention: (md: string) => {
         const crepe = crepeRef.current;
         if (!crepe || !readyRef.current) return;
@@ -1810,29 +1684,6 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
           view.dispatch(
             transaction
               .setSelection(TextSelection.near(transaction.doc.resolve(cursor), 1))
-              .scrollIntoView(),
-          );
-          view.focus();
-        });
-      },
-      replaceSelection: (md: string) => {
-        const crepe = crepeRef.current;
-        if (!crepe || !readyRef.current) return;
-        crepe.editor.action((ctx) => {
-          const view = ctx.get(editorViewCtx);
-          const { from, to } = getPendingAiSelection(view) ?? view.state.selection;
-          const slice = markdownToSlice(md)(ctx);
-          const transaction = view.state.tr.replace(from, to, slice);
-          const cursorPosition = Math.min(
-            transaction.mapping.map(to),
-            transaction.doc.content.size,
-          );
-          view.dispatch(
-            transaction
-              .setSelection(
-                TextSelection.near(transaction.doc.resolve(cursorPosition), -1),
-              )
-              .setMeta(pendingAiSelectionKey, null)
               .scrollIntoView(),
           );
           view.focus();

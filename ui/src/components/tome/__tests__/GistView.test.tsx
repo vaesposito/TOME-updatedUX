@@ -63,10 +63,6 @@ function htmlResponse(body: string, status: number): Response {
   } as Response;
 }
 
-jest.mock("@/components/ai-assist", () => ({
-  AiAssistButton: () => <button type="button">AI</button>,
-}));
-
 jest.mock("@/components/ui/scroll-area", () => ({
   ScrollArea: ({
     children,
@@ -93,8 +89,6 @@ jest.mock("@/components/tome/CrepeEditor", () => {
       ref: React.ForwardedRef<{
         getMarkdown: () => string;
         insertMarkdown: (value: string) => void;
-        getSelectedText: () => string;
-        replaceSelection: (value: string) => void;
       }>,
     ) {
       mockCrepeEditor({ initialMarkdown });
@@ -108,9 +102,6 @@ jest.mock("@/components/tome/CrepeEditor", () => {
             return next;
           });
         },
-        getSelectedText: () => "",
-        captureSelection: () => {},
-        restoreSelection: () => {},
         replaceSelection: (markdown: string) => {
           setValue(markdown);
           onChange?.(markdown);
@@ -540,22 +531,13 @@ describe("GistView", () => {
       "ring-inset",
       "ring-amber-400/70",
     );
-    expect(screen.getByRole("button", { name: "Use narrow content width" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    // One width, always the full canvas: the note is as wide as the pane it
+    // is read in, with no control to put it back into a column.
+    expect(screen.queryByRole("button", { name: /content width/ })).toBeNull();
+    expect(screen.getByTestId("gist-content-layout")).not.toHaveClass("max-w-[65rem]");
     expect(
       screen.getByRole("textbox", { name: "Gist body" }).closest(".tome-rich-editor-full-width"),
     ).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Use narrow content width" }));
-    expect(screen.getByTestId("gist-content-layout")).toHaveClass("max-w-[65rem]");
-    expect(screen.getByRole("button", { name: "Use wide content width" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    expect(
-      screen.getByRole("textbox", { name: "Gist body" }).closest(".tome-rich-editor-full-width"),
-    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Rename note title" }));
     const titleInput = screen.getByRole("textbox", { name: "Note title" });
     fireEvent.change(titleInput, {

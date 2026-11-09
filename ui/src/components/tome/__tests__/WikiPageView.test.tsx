@@ -1,4 +1,4 @@
-import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import type { RenderOptions } from "@testing-library/react";
 
 import { ToastProvider } from "@/components/ui/toast";
@@ -7,9 +7,6 @@ import { WikiPageView } from "../WikiPageView";
 const render = (ui: React.ReactElement, options?: RenderOptions) =>
   rtlRender(ui, { wrapper: ToastProvider, ...options });
 
-const mockAiContext = jest.fn();
-const mockCaptureSelection = jest.fn();
-const mockRestoreSelection = jest.fn();
 const mockMarkdownRenderer = jest.fn();
 let mockUseRealMarkdownRenderer = false;
 const mockMermaidRender = jest.fn(async () => ({
@@ -41,38 +38,6 @@ jest.mock("shiki", () => ({
     getLoadedLanguages: () => ["text"],
     loadLanguage: jest.fn(),
   })),
-}));
-
-jest.mock("@/components/ai-assist", () => ({
-  AiAssistButton: ({
-    getContext,
-    onApply,
-    open,
-    onOpenChange,
-  }: {
-    getContext: () => unknown;
-    onApply: (value: string) => void;
-    open?: boolean;
-    onOpenChange?: (open: boolean) => void;
-  }) => (
-    <>
-      <button
-        type="button"
-        data-open={String(Boolean(open))}
-        onClick={() => {
-          mockAiContext(getContext());
-          onApply("AI-generated Markdown");
-        }}
-      >
-        AI
-      </button>
-      {open && (
-        <button type="button" onClick={() => onOpenChange?.(false)}>
-          Discard AI suggestion
-        </button>
-      )}
-    </>
-  ),
 }));
 
 jest.mock("@/components/ui/scroll-area", () => ({
@@ -122,32 +87,21 @@ jest.mock("@/components/tome/CrepeEditor", () => {
         initialMarkdown,
         readonly,
         onChange,
-        onEnhanceSelection,
       }: {
         initialMarkdown: string;
         readonly: boolean;
         onChange?: (value: string) => void;
-        onEnhanceSelection?: () => void;
       },
       ref: React.ForwardedRef<{
         getMarkdown: () => string;
         insertMarkdown: (value: string) => void;
-        getSelectedText: () => string;
-        replaceSelection: (value: string) => void;
       }>,
     ) {
       const [value, setValue] = React.useState(initialMarkdown);
       React.useImperativeHandle(ref, () => ({
         getMarkdown: () => value,
         insertMarkdown: () => {},
-        getSelectedText: () => "Selected sentence",
-        captureSelection: mockCaptureSelection,
-        restoreSelection: mockRestoreSelection,
-        replaceSelection: (next: string) => {
-          setValue(next);
-          onChange?.(next);
-        },
-      }), [onChange, value]);
+      }), [value]);
       return (
         <>
           <textarea
@@ -159,11 +113,6 @@ jest.mock("@/components/tome/CrepeEditor", () => {
               onChange?.(event.target.value);
             }}
           />
-          {!readonly && onEnhanceSelection && (
-            <button type="button" onClick={onEnhanceSelection}>
-              Enhance with AI
-            </button>
-          )}
         </>
       );
     }),
@@ -178,19 +127,21 @@ describe("WikiPageView", () => {
    * controls fetch on mount too, so the history request is not reliably the
    * first one the page makes.
    */
-  const mockRevision = (revision: {
+  type TestRevision = {
     id: string;
     author: string;
     created_at: string;
-  }) => {
+    status?: string;
+    deleted?: boolean;
+  };
+
+  const mockRevision = (...revisions: TestRevision[]) => {
     (global.fetch as jest.Mock).mockImplementation((url: string) =>
       Promise.resolve({
         ok: true,
         status: 200,
         json: async () =>
-          String(url).includes("/history/")
-            ? { data: { revisions: [revision] } }
-            : {},
+          String(url).includes("/history/") ? { data: { revisions } } : {},
         text: async () => "",
       }),
     );
@@ -204,9 +155,6 @@ describe("WikiPageView", () => {
   };
 
   beforeEach(() => {
-    mockAiContext.mockClear();
-    mockCaptureSelection.mockClear();
-    mockRestoreSelection.mockClear();
     mockMarkdownRenderer.mockClear();
     mockUseRealMarkdownRenderer = false;
     window.localStorage.clear();
@@ -307,7 +255,7 @@ describe("WikiPageView", () => {
     expect(warning).toHaveTextContent("Agent rewrites on ingest");
   });
 
-  it("contains long revision metadata and labels the reading-width control", async () => {
+  it("contains long revision metadata and offers no reading-width control", async () => {
     mockRevision({
       id: "revision-header-layout",
       author: "test-user@example.com",
@@ -325,15 +273,107 @@ describe("WikiPageView", () => {
       />,
     );
 
-    const history = await screen.findByRole("button", {
-      name: /Updated .* by test-user@example\.com/,
-    });
+    const history = await screen.findByTestId("tome-page-last-update");
     expect(screen.getByTestId("tome-page-metadata-row")).toHaveClass("overflow-hidden");
     expect(history).toHaveClass("min-w-0", "truncate", "text-left");
     expect(screen.getByTestId("tome-page-actions")).toHaveClass("max-w-full", "flex-wrap");
 
-    fireEvent.click(screen.getByRole("button", { name: "Use wide reading width" }));
-    expect(screen.getByRole("button", { name: "Use narrow reading width" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reading width/ })).toBeNull();
+  });
+
+  it("says a person edited the page, and when, without naming their mailbox", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-09-18T18:18:54.000Z"));
+    mockRevision({
+      id: "revision-human",
+      author: "test.user@example.com",
+      created_at: "2026-09-15T18:18:54.000Z",
+    });
+
+    const { unmount } = render(
+      <WikiPageView
+        slug="example-project"
+        path="charter.md"
+        markdown={"---\ntitle: Charter\nkind: stable\n---\nCharter content"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+        onOpenHistory={jest.fn()}
+      />,
+    );
+
+    const update = await screen.findByTestId("tome-page-last-update");
+    expect(update).toHaveTextContent("Edited by Test User 3d ago");
+    expect(update).toHaveAttribute(
+      "title",
+      expect.stringContaining("test.user@example.com"),
+    );
+
+    unmount();
+    jest.useRealTimers();
+  });
+
+  it("says the ingest rewrote the page rather than crediting a person", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-09-15T20:18:54.000Z"));
+    mockRevision({
+      id: "revision-ingest",
+      author: "tome-ingest",
+      created_at: "2026-09-15T18:18:54.000Z",
+    });
+
+    const { unmount } = render(
+      <WikiPageView
+        slug="example-project"
+        path="activity.md"
+        markdown={"---\ntitle: Activity\nkind: dynamic\n---\nRecent activity"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+        onOpenHistory={jest.fn()}
+      />,
+    );
+
+    expect(await screen.findByTestId("tome-page-last-update")).toHaveTextContent(
+      "Rewritten by ingest 2h ago",
+    );
+
+    unmount();
+    jest.useRealTimers();
+  });
+
+  it("states the page kind to a reader who cannot change it", () => {
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="activity.md"
+        markdown={"---\ntitle: Activity\nkind: dynamic\n---\nRecent activity"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+        canEdit={false}
+      />,
+    );
+
+    const actions = screen.getByTestId("tome-page-actions");
+    expect(actions).toHaveTextContent("dynamic");
+    expect(screen.queryByTitle(/Click to change the kind/)).toBeNull();
+  });
+
+  it("wears the kind's own badge on the control that changes it", () => {
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="roadmap.md"
+        markdown={"---\ntitle: Roadmap\nkind: dynamic\n---\nRoadmap content"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    const toggle = screen.getByTitle(/Dynamic page/);
+    expect(toggle).toHaveTextContent("dynamic");
+    expect(toggle).toHaveAttribute(
+      "title",
+      expect.stringContaining("Agent rewrites this page on every reingest"),
+    );
   });
 
   it("explains every page kind from explicit info buttons", async () => {
@@ -347,7 +387,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTitle("Change page kind"));
+    fireEvent.click(screen.getByTitle(/Stable page/));
 
     const stableInfo = screen.getByRole("button", { name: "About Stable pages" });
     const dynamicInfo = screen.getByRole("button", { name: "About Dynamic pages" });
@@ -393,7 +433,7 @@ describe("WikiPageView", () => {
     ).not.toBeNull();
   });
 
-  it("shows and renames only the filename while preserving its folder", async () => {
+  it("names and renames the page without its file extension", async () => {
     const onRename = jest.fn().mockResolvedValue(undefined);
 
     render(
@@ -407,19 +447,19 @@ describe("WikiPageView", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("button", { name: "17.08.2026.md" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "17.08.2026" })).toBeInTheDocument();
     expect(screen.queryByText("meetings/17.08.2026.md")).not.toBeInTheDocument();
+    expect(screen.queryByText(/\.md/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "17.08.2026.md" }));
-    const filenameInput = screen.getByRole("textbox", {
-      name: "Rename page file name (Enter to save, Esc to cancel)",
+    fireEvent.click(screen.getByRole("button", { name: "17.08.2026" }));
+    const nameInput = screen.getByRole("textbox", {
+      name: "Rename page (Enter to save, Esc to cancel)",
     });
-    expect(filenameInput).toHaveValue("17.08.2026.md");
-    fireEvent.change(filenameInput, { target: { value: "18.08.2026.md" } });
-    fireEvent.keyDown(filenameInput, { key: "Enter" });
+    expect(nameInput).toHaveValue("17.08.2026");
+    fireEvent.change(nameInput, { target: { value: "18.08.2026" } });
+    fireEvent.keyDown(nameInput, { key: "Enter" });
 
+    // The stored path keeps the extension the reader never sees.
     await waitFor(() =>
       expect(onRename).toHaveBeenCalledWith(
         "meetings/17.08.2026.md",
@@ -484,54 +524,172 @@ describe("WikiPageView", () => {
     );
   });
 
-  it("applies an AI suggestion only at the rich editor selection", async () => {
-    render(
+  it("attributes the page to the live revision, not a draft awaiting review", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-09-18T12:00:00.000Z"));
+    // A draft is the newest row in history but is not what anyone is
+    // reading, so it must not be reported as the page's last change.
+    mockRevision(
+      {
+        id: "revision-draft",
+        author: "tome-ingest",
+        created_at: "2026-09-18T11:00:00.000Z",
+        status: "draft",
+      },
+      {
+        id: "revision-rejected",
+        author: "tome-ingest",
+        created_at: "2026-09-17T12:00:00.000Z",
+        status: "rejected",
+      },
+      {
+        id: "revision-live",
+        author: "test.user@example.com",
+        created_at: "2026-09-15T12:00:00.000Z",
+        status: "live",
+      },
+    );
+
+    const { unmount } = render(
       <WikiPageView
         slug="example-project"
         path="charter.md"
-        markdown={"---\ntitle: Example charter\nkind: stable\n---\nOriginal markdown"}
+        markdown={"---\ntitle: Charter\nkind: stable\n---\nCharter content"}
         onWrite={jest.fn().mockResolvedValue(undefined)}
         onReload={jest.fn()}
+        onOpenHistory={jest.fn()}
       />,
     );
 
-    await openEditor();
-    fireEvent.click(screen.getByRole("button", { name: "AI" }));
+    const update = await screen.findByTestId("tome-page-last-update");
+    expect(update).toHaveTextContent("Edited by Test User 3d ago");
+    expect(update).not.toHaveTextContent("Rewritten");
 
-    expect(mockAiContext).toHaveBeenCalledWith(expect.objectContaining({
-      current_value: "Selected sentence",
-      extra_context: expect.stringContaining("Page: charter.md"),
-    }));
-    expect(screen.getByRole("textbox", { name: "Wiki editor" })).toHaveValue(
-      "AI-generated Markdown",
-    );
+    unmount();
+    jest.useRealTimers();
   });
 
-  it("opens AI Assist from the rich text selection toolbar", async () => {
-    render(
+  it("keeps both dates when the ingest has written over a person's edit", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-09-18T12:00:00.000Z"));
+    mockRevision(
+      {
+        id: "revision-ingest",
+        author: "tome-ingest",
+        created_at: "2026-09-18T10:00:00.000Z",
+      },
+      {
+        id: "revision-person",
+        author: "test.user@example.com",
+        created_at: "2026-09-15T12:00:00.000Z",
+      },
+    );
+
+    const { unmount } = render(
       <WikiPageView
         slug="example-project"
-        path="charter.md"
-        markdown={"---\ntitle: Example charter\nkind: stable\n---\nOriginal markdown"}
+        path="activity.md"
+        markdown={"---\ntitle: Activity\nkind: dynamic\n---\nRecent activity"}
         onWrite={jest.fn().mockResolvedValue(undefined)}
         onReload={jest.fn()}
+        onOpenHistory={jest.fn()}
       />,
     );
 
-    await openEditor();
-    expect(screen.getByRole("button", { name: "AI" })).toHaveAttribute(
-      "data-open",
-      "false",
+    expect(await screen.findByTestId("tome-page-last-update")).toHaveTextContent(
+      "Rewritten by ingest 2h ago",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Enhance with AI" }));
-    expect(mockCaptureSelection).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "AI" })).toHaveAttribute(
-      "data-open",
-      "true",
+    expect(screen.getByTestId("tome-page-last-edit")).toHaveTextContent(
+      "Edited by Test User 3d ago",
     );
+
+    unmount();
+    jest.useRealTimers();
   });
 
-  it("restores the rich editor selection when an AI suggestion is discarded", async () => {
+  it("does not repeat a person's edit as a second date", async () => {
+    mockRevision({
+      id: "revision-person",
+      author: "test.user@example.com",
+      created_at: "2026-09-15T12:00:00.000Z",
+    });
+
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="charter.md"
+        markdown={"---\ntitle: Charter\nkind: stable\n---\nCharter content"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+        onOpenHistory={jest.fn()}
+      />,
+    );
+
+    await screen.findByTestId("tome-page-last-update");
+    expect(screen.queryByTestId("tome-page-last-edit")).toBeNull();
+  });
+
+  it("says nothing about templates when a page came from none", () => {
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="charter.md"
+        markdown={"---\ntitle: Charter\nkind: stable\n---\nCharter content"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/template/i)).toBeNull();
+  });
+
+  it("offers custom prompts only while editing a dynamic page", async () => {
+    const { rerender } = render(
+      <WikiPageView
+        slug="example-project"
+        path="activity.md"
+        markdown={"---\ntitle: Activity\nkind: dynamic\n---\nRecent activity"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("tome-custom-prompts")).toBeNull();
+
+    await openEditor();
+    const panel = screen.getByTestId("tome-custom-prompts");
+    expect(panel).toHaveTextContent("Custom prompts");
+    // Closed until asked for, like every other disclosure in the app.
+    expect(screen.queryByLabelText("Content prompt")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Custom prompts/ }));
+    expect(screen.getByLabelText("Content prompt")).toBeInTheDocument();
+    expect(screen.getByLabelText("Source prompt")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.queryByTestId("tome-custom-prompts-source-error")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Source prompt"), {
+      target: { value: "Pull the open items from Jira" },
+    });
+    expect(screen.getByTestId("tome-custom-prompts-source-error")).toHaveTextContent(
+      "The requested source is not configured.",
+    );
+    expect(within(panel).getByRole("button", { name: "Save" })).toBeEnabled();
+
+    rerender(
+      <WikiPageView
+        slug="example-project"
+        path="charter.md"
+        markdown={"---\ntitle: Charter\nkind: stable\n---\nCharter content"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+    await openEditor();
+    expect(screen.queryByTestId("tome-custom-prompts")).toBeNull();
+  });
+
+  it("offers no AI assistance inside the page editor", async () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -543,13 +701,9 @@ describe("WikiPageView", () => {
     );
 
     await openEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Enhance with AI" }));
-    fireEvent.click(screen.getByRole("button", { name: "Discard AI suggestion" }));
 
-    expect(mockRestoreSelection).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("textbox", { name: "Wiki editor" })).toHaveValue(
-      "Original markdown",
-    );
+    expect(screen.queryByRole("button", { name: "AI" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Enhance with AI" })).toBeNull();
   });
 
   it("previews an unsaved rich edit before saving", async () => {

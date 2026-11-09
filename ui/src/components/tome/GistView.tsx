@@ -9,7 +9,6 @@ import {
 } from "react";
 import {
   ArrowLeft,
-  ArrowLeftRight,
   ImagePlus,
   Info,
   Link2,
@@ -25,7 +24,6 @@ import {
   type MarkdownDocumentEditorMode,
 } from "@/components/shared/MarkdownEditorModeToggle";
 import { MarkdownRenderer } from "@/components/shared/timeline/MarkdownRenderer";
-import { AiAssistButton } from "@/components/ai-assist";
 import {
   RichCodeEditor,
   type ReactCodeMirrorRef,
@@ -109,7 +107,6 @@ export function GistView({
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(creating);
   const [editorMode, setEditorMode] = useState<MarkdownDocumentEditorMode>("rich");
-  const [wideContent, setWideContent] = useState(true);
   const [rawDraft, setRawDraft] = useState("");
   const [richInitialBody, setRichInitialBody] = useState("");
   const [editorEpoch, setEditorEpoch] = useState(0);
@@ -126,12 +123,10 @@ export function GistView({
   const [tagDraft, setTagDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [inlineAiOpen, setInlineAiOpen] = useState(false);
   const [draftStatus, setDraftStatus] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const editorRef = useRef<CrepeEditorHandle>(null);
   const sourceEditorRef = useRef<ReactCodeMirrorRef | null>(null);
-  const sourceAiSelectionRef = useRef<{ from: number; to: number } | null>(null);
 
   const draftStorageKey = useMemo(
     () => `tome:gist-draft:${slug}:${id ?? "new"}`,
@@ -312,68 +307,6 @@ export function GistView({
     } else {
       setRawDraft((current) => `${current}${embedMarkdown}`);
     }
-  }, [editorMode]);
-
-  const handleInlineAiOpenChange = useCallback((open: boolean) => {
-    if (open) {
-      if (editorMode === "source") {
-        const selection = sourceEditorRef.current?.view?.state.selection.main;
-        sourceAiSelectionRef.current = selection
-          ? { from: selection.from, to: selection.to }
-          : null;
-      } else {
-        editorRef.current?.captureSelection();
-      }
-    } else if (editorMode === "source") {
-      const view = sourceEditorRef.current?.view;
-      const selection = sourceAiSelectionRef.current;
-      sourceAiSelectionRef.current = null;
-      if (view && selection) {
-        view.dispatch({ selection: { anchor: selection.from, head: selection.to } });
-        view.focus();
-      }
-    } else {
-      editorRef.current?.restoreSelection();
-    }
-    setInlineAiOpen(open);
-  }, [editorMode]);
-
-  const inlineAiContext = useCallback(() => {
-    let selected = "";
-    let documentBody = rawDraft;
-    if (editorMode === "source") {
-      const view = sourceEditorRef.current?.view;
-      if (view) {
-        const { from, to } = sourceAiSelectionRef.current ?? view.state.selection.main;
-        selected = view.state.sliceDoc(from, to);
-      }
-    } else {
-      selected = editorRef.current?.getSelectedText() ?? "";
-      documentBody = editorRef.current?.getMarkdown() ?? rawDraft;
-    }
-    const excerpt = documentBody.length > 3000
-      ? `${documentBody.slice(0, 3000)}\n…`
-      : documentBody;
-    return {
-      current_value: selected,
-      extra_context: `Note: ${title.trim() || "Untitled note"}\nDocument excerpt:\n${excerpt}`,
-    };
-  }, [editorMode, rawDraft, title]);
-
-  const applyInlineAi = useCallback((markdown: string) => {
-    if (editorMode === "source") {
-      const view = sourceEditorRef.current?.view;
-      if (!view) return;
-      const { from, to } = sourceAiSelectionRef.current ?? view.state.selection.main;
-      sourceAiSelectionRef.current = null;
-      view.dispatch({
-        changes: { from, to, insert: markdown },
-        selection: { anchor: from + markdown.length },
-      });
-      view.focus();
-      return;
-    }
-    editorRef.current?.replaceSelection(markdown);
   }, [editorMode]);
 
   const commitTagDraft = useCallback(() => {
@@ -600,25 +533,6 @@ export function GistView({
               />
             </>
           )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => setWideContent((current) => !current)}
-                aria-label={wideContent ? "Use narrow content width" : "Use wide content width"}
-                aria-pressed={wideContent}
-                className={cn(
-                  "rounded-md border border-border p-1.5 transition-colors hover:bg-muted hover:text-foreground",
-                  wideContent ? "bg-muted text-foreground" : "text-muted-foreground",
-                )}
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {wideContent ? "Narrow content width" : "Wide content width"}
-            </TooltipContent>
-          </Tooltip>
           {editing ? (
             <>
               <MarkdownEditorModeToggle
@@ -629,23 +543,6 @@ export function GistView({
                 ariaLabel="Note editor mode"
                 testId="gist-editor-mode-toggle"
               />
-              {editorMode !== "preview" && (
-                <AiAssistButton
-                  task="tome-inline-markdown"
-                  label="AI"
-                  getContext={inlineAiContext}
-                  onApply={applyInlineAi}
-                  presets={[
-                    "Continue writing here",
-                    "Make the selection concise",
-                    "Add a supporting bullet list",
-                  ]}
-                  disabled={saving}
-                  triggerTestId="gist-inline-ai"
-                  open={inlineAiOpen}
-                  onOpenChange={handleInlineAiOpenChange}
-                />
-              )}
               {editorMode === "source" && (
                 <Button
                   type="button"
@@ -717,10 +614,7 @@ export function GistView({
           <div className="p-8 text-sm text-muted-foreground">Note not found.</div>
         ) : (
           <div
-            className={cn(
-              "flex min-h-full w-full flex-1 flex-col transition-[max-width]",
-              !wideContent && "mx-auto max-w-[65rem]",
-            )}
+            className="flex min-h-full w-full flex-1 flex-col"
             data-testid="gist-content-layout"
           >
             <div
@@ -954,7 +848,7 @@ export function GistView({
               className={cn(
                 "min-h-[28rem] flex-1 text-sm transition-shadow",
                 editing && "ring-2 ring-inset ring-amber-400/70 dark:ring-amber-700/60",
-                editing && editorMode === "rich" && wideContent && "tome-rich-editor-full-width",
+                editing && editorMode === "rich" && "tome-rich-editor-full-width",
               )}
               data-testid="gist-editor-canvas"
             >
@@ -989,7 +883,6 @@ export function GistView({
                   initialMarkdown={richInitialBody}
                   onChange={setRawDraft}
                   onInsertMedia={() => setMediaOpen(true)}
-                  onEnhanceSelection={() => handleInlineAiOpenChange(true)}
                   enableColumns
                 />
               ) : gist ? (

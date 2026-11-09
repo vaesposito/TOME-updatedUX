@@ -1283,10 +1283,6 @@ pre code.hljs {
   user-select: text;
 }
 
-.wide-reading .milkdown-host .milkdown .ProseMirror {
-  max-width: none;
-}
-
 /* Source and Preview use the available editing canvas. Give Tome's Rich mode
    the same width and horizontal inset instead of Crepe's reading-width cap. */
 .tome-rich-editor-full-width .milkdown-host .milkdown .ProseMirror {
@@ -1343,13 +1339,6 @@ pre code.hljs {
 .milkdown-host .milkdown .ProseMirror *::-moz-selection,
 .milkdown-host .milkdown .ProseMirror::selection,
 .milkdown-host .milkdown .ProseMirror *::selection {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-}
-
-/* Keep the target of an inline AI edit visible while AI Assist owns browser
-   focus. Applying clears the decoration; discarding restores native selection. */
-.milkdown-host .milkdown .ProseMirror .tome-pending-ai-selection {
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
 }

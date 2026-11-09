@@ -40,6 +40,7 @@ import {
   type PresentationSourceScope,
 } from "@/lib/tome/presentation";
 import { parseFrontmatter, SPEC_BY_PATH } from "@/lib/tome/schema";
+import { pageDisplayPath } from "@/lib/tome/page-names";
 import { cn } from "@/lib/utils";
 
 interface PageChoice {
@@ -547,7 +548,7 @@ export function PresentationExportDialog({
                         {loadingPages ? <p className="p-2 text-xs text-muted-foreground">Loading pages…</p> : visiblePages.map((page) => (
                           <label key={page.path} className="flex cursor-pointer items-start gap-2 rounded p-2 text-xs hover:bg-muted">
                             <input type="checkbox" checked={selectedPaths.includes(page.path)} onChange={(event) => setSelectedPaths((current) => event.target.checked ? [...current, page.path] : current.filter((path) => path !== page.path))} />
-                            <span><span className="block font-medium">{page.title}</span><span className="font-mono text-[10px] text-muted-foreground">{page.path}</span></span>
+                            <span><span className="block font-medium">{page.title}</span><span className="font-mono text-[10px] text-muted-foreground">{pageDisplayPath(page.path)}</span></span>
                           </label>
                         ))}
                       </div>

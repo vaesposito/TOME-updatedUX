@@ -6,6 +6,7 @@ import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { pageDisplayPath } from "@/lib/tome/page-names";
 import { cn } from "@/lib/utils";
 import type { ArtifactEvaluation } from "@/types/tome-evaluation";
 
@@ -415,7 +416,9 @@ export function DraftReviewView({
                       ) : (
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-sky-600" aria-label="Already published" />
                       )}
-                      <span className="min-w-0 flex-1 break-all leading-5">{p.path}</span>
+                      <span className="min-w-0 flex-1 break-all leading-5">
+                        {pageDisplayPath(p.path)}
+                      </span>
                       <span className={cn(
                         "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                         p.decision === "accept"
@@ -454,7 +457,7 @@ export function DraftReviewView({
                 <div className="flex items-center justify-between gap-4 border-b bg-background px-5 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium" title={selected.path}>
-                      {selected.path}
+                      {pageDisplayPath(selected.path)}
                     </p>
                     <p role="status" className="text-xs text-muted-foreground">
                       {selected.decision === "accept"

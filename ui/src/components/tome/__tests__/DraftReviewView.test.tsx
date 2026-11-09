@@ -104,8 +104,9 @@ describe("DraftReviewView", () => {
     );
 
     expect(await screen.findByText("2 changed · 0 of 1 required decisions complete")).toBeInTheDocument();
-    expect(screen.getAllByText("memory.md")).toHaveLength(2);
-    expect(screen.getByText("repos/example/activity.md")).toBeInTheDocument();
+    // Pages are named without the extension they are stored under.
+    expect(screen.getAllByText("memory")).toHaveLength(2);
+    expect(screen.getByText("repos/example/activity")).toBeInTheDocument();
     expect(screen.getByText(/Choose Accept or Reject for 1 remaining file/)).toBeInTheDocument();
     expect(screen.getByText(/already published by the “Stable pages only” policy/)).toBeInTheDocument();
 

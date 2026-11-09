@@ -407,135 +407,13 @@ describe("CrepeEditor media configuration", () => {
     );
   });
 
-  it("adds Enhance with AI to the text-selection toolbar", async () => {
-    const onEnhanceSelection = jest.fn();
-    render(
-      <CrepeEditor
-        initialMarkdown="# Example"
-        onEnhanceSelection={onEnhanceSelection}
-      />,
-    );
+  it("offers no AI affordance in the text-selection toolbar", async () => {
+    render(<CrepeEditor initialMarkdown="# Example" />);
 
     await waitFor(() => expect(mockCrepeConstructor).toHaveBeenCalledTimes(1));
     const options = mockCrepeConstructor.mock.calls[0][0] as CrepeOptions;
-    const aiGroup = { addItem: jest.fn() } as unknown as TestTopBarGroup;
-    (aiGroup.addItem as jest.Mock).mockReturnValue(aiGroup);
-    options.featureConfigs.toolbar.buildToolbar?.({
-      addGroup: (key, label) => {
-        expect([key, label]).toEqual(["tome-ai", "AI"]);
-        return aiGroup;
-      },
-    });
 
-    expect(aiGroup.addItem).toHaveBeenCalledWith(
-      "tome-enhance-ai",
-      expect.objectContaining({
-        label: "Enhance with AI",
-        icon: expect.stringContaining("data-tome-ai-icon"),
-      }),
-    );
-    const transaction = { setMeta: jest.fn() };
-    transaction.setMeta.mockReturnValue(transaction);
-    const view = {
-      state: { selection: { from: 3, to: 12 }, tr: transaction },
-      dispatch: jest.fn(),
-    };
-    const item = (aiGroup.addItem as jest.Mock).mock.calls[0][1] as TestTopBarItem;
-    item.onRun({ get: () => view });
-    expect(transaction.setMeta).toHaveBeenCalledWith(
-      expect.anything(),
-      { from: 3, to: 12 },
-    );
-    expect(view.dispatch).toHaveBeenCalledWith(transaction);
-    expect(onEnhanceSelection).toHaveBeenCalledTimes(1);
-  });
-
-  it("reads and restores the retained AI selection after focus leaves the editor", async () => {
-    const transaction = {
-      setSelection: jest.fn(),
-      setMeta: jest.fn(),
-    };
-    transaction.setSelection.mockReturnValue(transaction);
-    transaction.setMeta.mockReturnValue(transaction);
-    const view = {
-      state: {
-        pendingAiSelection: { from: 3, to: 12 },
-        selection: { from: 12, to: 12 },
-        doc: {
-          content: { size: 20 },
-          textBetween: jest.fn(() => "Selected text"),
-        },
-        tr: transaction,
-      },
-      dispatch: jest.fn(),
-      focus: jest.fn(),
-    };
-    mockEditorAction.mockImplementation((action: unknown) => {
-      if (typeof action === "function") {
-        (action as (ctx: { get: () => unknown }) => void)({ get: () => view });
-      }
-    });
-    const editorRef = createRef<CrepeEditorHandle>();
-
-    render(<CrepeEditor ref={editorRef} initialMarkdown="# Example" />);
-    await waitFor(() => expect(mockSetReadonly).toHaveBeenCalled());
-
-    expect(editorRef.current?.getSelectedText()).toBe("Selected text");
-    expect(view.state.doc.textBetween).toHaveBeenCalledWith(3, 12, "\n");
-
-    editorRef.current?.restoreSelection();
-    expect(transaction.setSelection).toHaveBeenCalledWith({ from: 3, to: 12 });
-    expect(transaction.setMeta).toHaveBeenCalledWith(expect.anything(), null);
-    expect(view.dispatch).toHaveBeenCalledWith(transaction);
-    expect(view.focus).toHaveBeenCalledTimes(1);
-  });
-
-  it("atomically replaces the retained range and collapses the AI selection", async () => {
-    const transaction = {
-      replace: jest.fn(),
-      setSelection: jest.fn(),
-      setMeta: jest.fn(),
-      scrollIntoView: jest.fn(),
-      mapping: { map: jest.fn(() => 11) },
-      doc: {
-        content: { size: 20 },
-        resolve: jest.fn(() => ({ position: 11 })),
-      },
-    };
-    transaction.replace.mockReturnValue(transaction);
-    transaction.setSelection.mockReturnValue(transaction);
-    transaction.setMeta.mockReturnValue(transaction);
-    transaction.scrollIntoView.mockReturnValue(transaction);
-    const view = {
-      state: {
-        pendingAiSelection: { from: 4, to: 10 },
-        selection: { from: 10, to: 10 },
-        doc: { content: { size: 20 } },
-        tr: transaction,
-      },
-      dispatch: jest.fn(),
-      focus: jest.fn(),
-    };
-    mockEditorAction.mockImplementation((action: unknown) => {
-      if (typeof action === "function") {
-        (action as (ctx: { get: () => unknown }) => void)({ get: () => view });
-      }
-    });
-    const editorRef = createRef<CrepeEditorHandle>();
-
-    render(<CrepeEditor ref={editorRef} initialMarkdown="# Example" />);
-    await waitFor(() => expect(mockSetReadonly).toHaveBeenCalled());
-    editorRef.current?.replaceSelection("Improved text");
-
-    expect(mockMarkdownToSlice).toHaveBeenCalledWith("Improved text");
-    expect(transaction.replace).toHaveBeenCalledWith(4, 10, {
-      markdown: "Improved text",
-    });
-    expect(transaction.setSelection).toHaveBeenCalledWith({ cursor: true });
-    expect(transaction.setMeta).toHaveBeenCalledWith(expect.anything(), null);
-    expect(transaction.scrollIntoView).toHaveBeenCalledTimes(1);
-    expect(view.dispatch).toHaveBeenCalledWith(transaction);
-    expect(view.focus).toHaveBeenCalledTimes(1);
+    expect(options.featureConfigs.toolbar).toBeUndefined();
   });
 
   it("leaves a supported URL to Crepe's normal paste behavior", async () => {

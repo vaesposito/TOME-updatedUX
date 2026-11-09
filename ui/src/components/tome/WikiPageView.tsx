@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, ArrowLeftRight, ChevronDown, ImagePlus, Info, Loader2, X } from "lucide-react";
+import { AlertTriangle, Bot, ChevronDown, ImagePlus, Info, Loader2, UserRound, X } from "lucide-react";
 
 import {
   MARKDOWN_DOCUMENT_EDITOR_MODES,
@@ -15,7 +15,6 @@ import {
   type MarkdownDocumentEditorMode,
 } from "@/components/shared/MarkdownEditorModeToggle";
 import { MarkdownRenderer } from "@/components/shared/timeline/MarkdownRenderer";
-import { AiAssistButton } from "@/components/ai-assist";
 import {
   RichCodeEditor,
   type ReactCodeMirrorRef,
@@ -41,6 +40,7 @@ import {
   type CrepeEditorHandle,
   type MentionQuery,
 } from "@/components/tome/CrepeEditor";
+import { CustomPromptsPanel } from "@/components/tome/CustomPromptsPanel";
 import { TomeMediaInsertDialog } from "@/components/tome/TomeMediaInsertDialog";
 import type { GlossaryResolver } from "@/lib/tome/tome-links";
 import { GlossaryFields } from "@/components/tome/GlossaryFields";
@@ -49,10 +49,18 @@ import { TrackedEntityFields } from "@/components/tome/TrackedEntityFields";
 import {
   KindBadge,
   PAGE_KIND_DESCRIPTIONS,
+  PAGE_KIND_SPECS,
 } from "@/components/tome/KindBadge";
 import { MentionPicker } from "@/components/tome/MentionPicker";
 import { PageNotifyMenu } from "@/components/tome/PageNotifyMenu";
 import { mentionMarkdown } from "@/lib/tome/mentions";
+import {
+  liveRevisions,
+  readPageProvenance,
+  type PageAuthorKind,
+  type PageRevisionLike,
+} from "@/lib/tome/page-provenance";
+import { asPagePath, pageDisplayName } from "@/lib/tome/page-names";
 import { WatchToggle } from "@/components/tome/WatchToggle";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
@@ -215,7 +223,6 @@ export function WikiPageView({
 }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [editorMode, setEditorMode] = useState<MarkdownDocumentEditorMode>("rich");
-  const [wideReading, setWideReading] = useState(false);
   const [rawDraft, setRawDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [editorEpoch, setEditorEpoch] = useState(0);
@@ -224,7 +231,6 @@ export function WikiPageView({
   const [richInitialBody, setRichInitialBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [inlineAiOpen, setInlineAiOpen] = useState(false);
   const [draftStatus, setDraftStatus] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [baseRevisionId, setBaseRevisionId] = useState<string | null>(null);
@@ -243,26 +249,20 @@ export function WikiPageView({
   const { toast } = useToast();
   const editorRef = useRef<CrepeEditorHandle>(null);
   const sourceEditorRef = useRef<ReactCodeMirrorRef | null>(null);
-  const sourceAiSelectionRef = useRef<{ from: number; to: number } | null>(null);
   const previewMode = editorMode === "preview";
 
-  // Last revision — fetched once per page, used for the "Updated X ago by Y" line.
-  const [lastRevision, setLastRevision] = useState<{
-    id: string;
-    author: string;
-    created_at: string;
-  } | null>(null);
+  // The page's live history — fetched once per page, and read into the header
+  // line that says who last wrote it and what kind of writing it was. Drafts
+  // and rejected drafts are dropped: they are not what is on screen, so
+  // attributing the page to one would credit a change nobody can see.
+  const [liveHistory, setLiveHistory] = useState<PageRevisionLike[]>([]);
 
   // Editing must capture the revision that exists when the editor opens. The
   // history request is asynchronous, so auto-opening a newly-created page can
   // otherwise start with a null base revision and produce a false conflict.
   const historyRequestRef = useRef<{
     key: string;
-    promise: Promise<{
-      id: string;
-      author: string;
-      created_at: string;
-    } | null>;
+    promise: Promise<PageRevisionLike[]>;
   } | null>(null);
 
   const refreshLastRevision = useCallback(async () => {
@@ -274,22 +274,19 @@ export function WikiPageView({
       const response = await fetch(`/api/tome/projects/${slug}/history/${path}`);
       if (!response.ok) throw new Error(`history load failed (${response.status})`);
       const payload = await response.json();
-      return (payload?.data?.revisions?.[0] ?? null) as {
-        id: string;
-        author: string;
-        created_at: string;
-      } | null;
+      const revisions = (payload?.data?.revisions ?? []) as PageRevisionLike[];
+      return liveRevisions(revisions);
     })();
     historyRequestRef.current = { key, promise };
 
     try {
-      const revision = await promise;
+      const revisions = await promise;
       // A page switch may have started another request while this one was in
       // flight. Only apply the result belonging to the active page.
       if (historyRequestRef.current?.promise === promise) {
-        setLastRevision(revision);
+        setLiveHistory(revisions);
       }
-      return revision;
+      return revisions;
     } finally {
       if (historyRequestRef.current?.promise === promise) {
         historyRequestRef.current = null;
@@ -298,7 +295,7 @@ export function WikiPageView({
   }, [path, slug]);
 
   useEffect(() => {
-    setLastRevision(null);
+    setLiveHistory([]);
     void refreshLastRevision().catch(() => undefined);
   }, [refreshLastRevision]);
 
@@ -311,7 +308,7 @@ export function WikiPageView({
     const t =
       typeof f.title === "string"
         ? f.title
-        : (SPEC_BY_PATH.get(path)?.title ?? path);
+        : (SPEC_BY_PATH.get(path)?.title ?? pageDisplayName(path));
     return { frontmatter: f, body: b, kind: k, title: t };
   }, [markdown, path]);
   const [draftFrontmatter, draftBody] = useMemo(() => {
@@ -323,7 +320,9 @@ export function WikiPageView({
   const isEdgeEntry = useMemo(() => isEdge(frontmatter), [frontmatter]);
   const isTrackedEntry = useMemo(() => isTrackedEntity(frontmatter), [frontmatter]);
   const isMirror = useMemo(() => isMirrorPage(frontmatter), [frontmatter]);
-  const filename = useMemo(() => path.split("/").pop() || path, [path]);
+  // Named for a reader, so the stored `.md` never reaches the header.
+  const displayName = useMemo(() => pageDisplayName(path), [path]);
+  const provenance = useMemo(() => readPageProvenance(liveHistory), [liveHistory]);
 
   // Template binding (#488/#508): passive, zero-extra-fetch badge read
   // straight off this page's own frontmatter (code-stamped by the ingest
@@ -407,12 +406,15 @@ export function WikiPageView({
   }, [markdown]);
 
   const startRename = useCallback(() => {
-    setPathDraft(filename);
+    setPathDraft(displayName);
     setRenaming(true);
-  }, [filename]);
+  }, [displayName]);
 
   const commitRename = useCallback(async () => {
-    const nextFilename = pathDraft.trim().split(/[\\/]/).pop()?.trim() ?? "";
+    // The field holds a name, not a path: the extension the store requires
+    // is put back here rather than asked of whoever is renaming the page.
+    const typed = pathDraft.trim().split(/[\\/]/).pop()?.trim() ?? "";
+    const nextFilename = asPagePath(typed);
     const parentPath = path.slice(0, path.lastIndexOf("/") + 1);
     const next = `${parentPath}${nextFilename}`;
     setRenaming(false);
@@ -546,78 +548,12 @@ export function WikiPageView({
     }
   }, [editorMode]);
 
-  const handleInlineAiOpenChange = useCallback((open: boolean) => {
-    if (open) {
-      if (editorMode === "source") {
-        const selection = sourceEditorRef.current?.view?.state.selection.main;
-        sourceAiSelectionRef.current = selection
-          ? { from: selection.from, to: selection.to }
-          : null;
-      } else {
-        editorRef.current?.captureSelection();
-      }
-    } else if (editorMode === "source") {
-      const view = sourceEditorRef.current?.view;
-      const selection = sourceAiSelectionRef.current;
-      sourceAiSelectionRef.current = null;
-      if (view && selection) {
-        view.dispatch({ selection: { anchor: selection.from, head: selection.to } });
-        view.focus();
-      }
-    } else {
-      editorRef.current?.restoreSelection();
-    }
-    setInlineAiOpen(open);
-  }, [editorMode]);
-
-  const inlineAiContext = useCallback(() => {
-    let selected = "";
-    let documentBody = draftBody;
-    if (editorMode === "source") {
-      const view = sourceEditorRef.current?.view;
-      if (view) {
-        const { from, to } = sourceAiSelectionRef.current ?? view.state.selection.main;
-        selected = view.state.sliceDoc(from, to);
-      }
-    } else {
-      selected = editorRef.current?.getSelectedText() ?? "";
-      documentBody = editorRef.current?.getMarkdown() ?? draftBody;
-    }
-    const excerpt = documentBody.length > 3000
-      ? `${documentBody.slice(0, 3000)}\n…`
-      : documentBody;
-    return {
-      current_value: selected,
-      extra_context: `Page: ${path}\nDocument excerpt:\n${excerpt}`,
-    };
-  }, [draftBody, editorMode, path]);
-
-  const applyInlineAi = useCallback((markdown: string) => {
-    if (editorMode === "source") {
-      const view = sourceEditorRef.current?.view;
-      if (!view) return;
-      const { from, to } = sourceAiSelectionRef.current ?? view.state.selection.main;
-      sourceAiSelectionRef.current = null;
-      view.dispatch({
-        changes: { from, to, insert: markdown },
-        selection: { anchor: from + markdown.length },
-      });
-      view.focus();
-      return;
-    }
-    editorRef.current?.replaceSelection(markdown);
-  }, [editorMode]);
-
   const startEditing = useCallback(async () => {
-    let currentRevision: {
-      id: string;
-      author: string;
-      created_at: string;
-    } | null;
+    let currentRevision: PageRevisionLike | undefined;
     try {
       // Always refresh on entry. This handles both the initial auto-edit race
       // and a revision written in another tab while this page was open.
-      currentRevision = await refreshLastRevision();
+      currentRevision = (await refreshLastRevision())[0];
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load page history");
       return;
@@ -782,23 +718,23 @@ export function WikiPageView({
                 }}
                 onBlur={() => setRenaming(false)}
                 className="block w-full max-w-md rounded border border-input bg-background px-1 py-0.5 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                aria-label="Rename page file name (Enter to save, Esc to cancel)"
+                aria-label="Rename page (Enter to save, Esc to cancel)"
               />
             ) : onRename && canEdit && !locked ? (
               <button
                 type="button"
                 onClick={startRename}
-                title="Rename page file name"
+                title="Rename this page"
                 className="min-w-0 truncate font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline"
               >
-                {filename}
+                {displayName}
               </button>
             ) : (
               <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-                {filename}
+                {displayName}
               </span>
             )}
-            {lastRevision && onOpenHistory && !isEditing && (
+            {provenance && onOpenHistory && !isEditing && (
               <>
                 <span className="shrink-0 text-[11px] text-muted-foreground/40">·</span>
                 <button
@@ -807,16 +743,40 @@ export function WikiPageView({
                     setChangesSinceOpen(0);
                     onOpenHistory();
                   }}
-                  className="min-w-0 truncate text-left text-[11px] text-muted-foreground hover:text-foreground hover:underline"
-                  title="Open revision history"
+                  className="flex min-w-0 items-center gap-1 truncate text-left text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  // The handle behind the shown name, and the exact instant
+                  // behind the relative one, for anyone who needs them.
+                  title={`${provenance.latest.author} · ${new Date(provenance.latest.at).toLocaleString()} — open revision history`}
+                  data-testid="tome-page-last-update"
                 >
                   {changesSinceOpen > 0 && (
                     <span className="mr-1 inline-block rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white">
                       {changesSinceOpen} new
                     </span>
                   )}
-                  Updated {relativeTime(lastRevision.created_at)} by {lastRevision.author}
+                  <UpdateIcon kind={provenance.latest.kind} />
+                  <span className="min-w-0 truncate">
+                    {provenance.latest.attribution} {provenance.latest.when}
+                  </span>
                 </button>
+                {/* The agent having written last does not mean nobody has
+                    ever edited the page, and a reader deciding whether to
+                    trust it wants both dates. */}
+                {provenance.lastEdit && (
+                  <>
+                    <span className="shrink-0 text-[11px] text-muted-foreground/40">·</span>
+                    <span
+                      className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground"
+                      title={`${provenance.lastEdit.author} · ${new Date(provenance.lastEdit.at).toLocaleString()}`}
+                      data-testid="tome-page-last-edit"
+                    >
+                      <UpdateIcon kind={provenance.lastEdit.kind} />
+                      <span className="min-w-0 truncate">
+                        {provenance.lastEdit.attribution} {provenance.lastEdit.when}
+                      </span>
+                    </span>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -825,32 +785,26 @@ export function WikiPageView({
           className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2"
           data-testid="tome-page-actions"
         >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "cursor-default text-[10px] font-medium normal-case",
-                  templateBinding
-                    ? "border-muted-foreground/30 text-muted-foreground"
-                    : "border-muted-foreground/20 text-muted-foreground/60",
-                )}
-              >
-                {templateBinding ? `template v${templateBinding.version ?? "?"}` : "not from a template"}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-64 whitespace-normal text-[11px]">
-              {templateBinding ? (
-                <>
-                  Seeded from the <code>{templateBinding.scope}</code> template&apos;s{" "}
-                  <code>{templateBinding.templatePath}</code> at version {templateBinding.version ?? "unknown"}.
-                  Run &quot;Check for template drift&quot; (Templates tab) to see whether it&apos;s current.
-                </>
-              ) : (
-                "This page isn't bound to a page template (a manual addition, or it hasn't been re-ingested since template binding shipped)."
-              )}
-            </TooltipContent>
-          </Tooltip>
+          {/* Only the positive case is worth a chip: which template seeded
+              this page. Not being bound to one is the ordinary case and says
+              nothing a reader can act on. */}
+          {templateBinding && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className="cursor-default border-muted-foreground/30 text-[10px] font-medium normal-case text-muted-foreground"
+                >
+                  {`template v${templateBinding.version ?? "?"}`}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-64 whitespace-normal text-[11px]">
+                Seeded from the <code>{templateBinding.scope}</code> template&apos;s{" "}
+                <code>{templateBinding.templatePath}</code> at version {templateBinding.version ?? "unknown"}.
+                Run &quot;Check for template drift&quot; (Templates tab) to see whether it&apos;s current.
+              </TooltipContent>
+            </Tooltip>
+          )}
           {isMirror && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -877,30 +831,16 @@ export function WikiPageView({
               </TooltipContent>
             </Tooltip>
           )}
-          {canEdit && !locked && !isMirror && (
+          {/* Whether the next ingest may overwrite what you are reading is a
+              property of the page, not of your permission to change it — so
+              a reader who cannot flip the kind still sees it. */}
+          {canEdit && !locked && !isMirror && kind !== "report" ? (
             <KindToggle currentKind={kind} onChange={handleChangeKind} />
+          ) : (
+            <KindBadge kind={kind} />
           )}
           {!isEditing && (
             <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => setWideReading((v) => !v)}
-                    aria-pressed={wideReading}
-                    aria-label={wideReading ? "Use narrow reading width" : "Use wide reading width"}
-                    className={cn(
-                      "rounded-md border border-border p-1.5 transition-colors hover:bg-muted hover:text-foreground",
-                      wideReading ? "bg-muted text-foreground" : "text-muted-foreground",
-                    )}
-                  >
-                    <ArrowLeftRight className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  {wideReading ? "Narrow reading width" : "Wide reading width"}
-                </TooltipContent>
-              </Tooltip>
               {/* Watching one page, rather than the whole space, for people
                   who care about a single document. */}
               <WatchToggle slug={slug} pagePath={path} className="h-7 text-xs" />
@@ -922,23 +862,6 @@ export function WikiPageView({
                 ariaLabel="Tome editor mode"
                 testId="tome-editor-mode-toggle"
               />
-              {editorMode !== "preview" && (
-                <AiAssistButton
-                  task="tome-inline-markdown"
-                  label="AI"
-                  getContext={inlineAiContext}
-                  onApply={applyInlineAi}
-                  presets={[
-                    "Continue writing here",
-                    "Make the selection concise",
-                    "Add a supporting bullet list",
-                  ]}
-                  disabled={saving}
-                  triggerTestId="tome-inline-ai"
-                  open={inlineAiOpen}
-                  onOpenChange={handleInlineAiOpenChange}
-                />
-              )}
               {editorMode === "source" && (
                 <Button
                   type="button"
@@ -1012,6 +935,7 @@ export function WikiPageView({
           {error}
         </p>
       )}
+      {isEditing && kind === "dynamic" && <CustomPromptsPanel />}
       {isGlossary && (
         <>
           <GlossaryFields
@@ -1060,10 +984,7 @@ export function WikiPageView({
         )}
       >
         <div
-          className={cn(
-            isEditing && editorMode === "rich" && "tome-rich-editor-full-width",
-            !isEditing && wideReading && "wide-reading",
-          )}
+          className={cn(isEditing && editorMode === "rich" && "tome-rich-editor-full-width")}
         >
           {isEditing && editorMode === "source" ? (
             <div className="h-full min-h-[28rem] p-3">
@@ -1118,7 +1039,6 @@ export function WikiPageView({
               glossaryPreview={glossaryPreview}
               hideHtmlComments
               onInsertMedia={() => setMediaOpen(true)}
-              onEnhanceSelection={() => handleInlineAiOpenChange(true)}
               onMentionQuery={setMentionQuery}
               enableColumns
             />
@@ -1191,18 +1111,17 @@ export function WikiPageView({
   );
 }
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
+/** Whose hand a change came from, said with an icon before the words. */
+function UpdateIcon({ kind }: { kind: PageAuthorKind }) {
+  if (kind === "person") {
+    return <UserRound className="h-3 w-3 shrink-0" aria-hidden="true" />;
+  }
+  return (
+    <Bot
+      className="h-3 w-3 shrink-0 text-sky-600 dark:text-sky-400"
+      aria-hidden="true"
+    />
+  );
 }
 
 /** Popover to flip the page kind among stable / dynamic / hidden. */
@@ -1214,17 +1133,24 @@ function KindToggle({
   onChange: (kind: PageKind) => void;
 }) {
   const [open, setOpen] = useState(false);
-  if (currentKind === "report") return null;
+  const spec = PAGE_KIND_SPECS[currentKind];
+  const { Icon } = spec;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium capitalize text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title="Change page kind"
+          // Wears the kind badge's own colours, so the control that changes
+          // the kind is also the thing that states it.
+          className={cn(
+            "flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors hover:brightness-95",
+            spec.badgeClass,
+          )}
+          title={`${spec.title} page — ${spec.description} Click to change.`}
         >
-          {currentKind}
+          <Icon className={cn("h-3 w-3", spec.iconClass)} aria-hidden="true" />
+          {spec.label}
           <ChevronDown
             className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
           />

@@ -118,11 +118,13 @@ import { IngestRunView } from "@/components/tome/IngestRunView";
 import { DraftReviewView } from "@/components/tome/DraftReviewView";
 import { EngagementPanel } from "@/components/tome/EngagementPanel";
 import { PageHistoryView } from "@/components/tome/PageHistoryView";
+import { pageDisplayName } from "@/lib/tome/page-names";
 import { Breadcrumb, type Crumb } from "@/components/tome/Breadcrumb";
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { FollowMenu } from "@/components/tome/FollowMenu";
 import { isTourRunning } from "@/components/tour/notification-tour";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
+import type { AncestorRow } from "@/components/tome/home/HomePartOf";
 import { ProjectHomeView } from "@/components/tome/home/ProjectHomeView";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import {
@@ -357,7 +359,7 @@ function pageTitleOf(path: string, markdown: string): string {
   const [fm] = parseFrontmatter(markdown);
   return typeof fm.title === "string"
     ? fm.title
-    : (SPEC_BY_PATH.get(path)?.title ?? path);
+    : (SPEC_BY_PATH.get(path)?.title ?? pageDisplayName(path));
 }
 
 export function TomeWiki({ slug }: { slug: string }) {
@@ -1719,42 +1721,45 @@ export function TomeWiki({ slug }: { slug: string }) {
   // badge chips now that the hierarchy is explicit. Only the first tag at
   // each level is shown — a breadcrumb is inherently a single path, unlike
   // the badge cluster which could list every tag.
-  const hierarchyCrumbs = useMemo<Crumb[]>(() => {
-    const out: Crumb[] = [];
+  // Resolved as data first, because Home's "Part of" card reads the same
+  // trail: two walks up one hierarchy are two chances to disagree about it.
+  const ancestors = useMemo<AncestorRow[]>(() => {
+    const out: AncestorRow[] = [];
+    const named = (entity: { slug: string; name?: string; title?: string }) =>
+      entity.title ?? entity.name ?? entity.slug;
     if (isArea) {
       const b = initiatives.length > 0 ? bhagByInitiative.get(initiatives[0]) : undefined;
-      if (b) {
-        out.push({
-          label: b.title ?? b.name ?? b.slug,
-          href: `/projects/${b.slug}/tome`,
-          icon: <Target className="h-3.5 w-3.5 shrink-0 text-primary" />,
-          colorClass: "text-primary",
-        });
-      }
+      if (b) out.push({ slug: b.slug, title: named(b), type: "bhag" });
     } else if (!isBhag) {
       const directBhag =
         initiatives.length > 0 ? bhagByInitiative.get(initiatives[0]) : undefined;
-      const bhagCrumb = directBhag ?? transitiveBhags[0];
-      if (bhagCrumb) {
-        out.push({
-          label: bhagCrumb.title ?? bhagCrumb.name ?? bhagCrumb.slug,
-          href: `/projects/${bhagCrumb.slug}/tome`,
-          icon: <Target className="h-3.5 w-3.5 shrink-0 text-primary" />,
-          colorClass: "text-primary",
-        });
-      }
-      const areaEntity = areaTags.length > 0 ? areaByLabel.get(areaTags[0]) : undefined;
-      if (areaEntity) {
-        out.push({
-          label: areaEntity.title ?? areaEntity.name ?? areaEntity.slug,
-          href: `/projects/${areaEntity.slug}/tome`,
-          icon: <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />,
-          colorClass: "text-sky-600 dark:text-sky-400",
-        });
-      }
+      const bhag = directBhag ?? transitiveBhags[0];
+      if (bhag) out.push({ slug: bhag.slug, title: named(bhag), type: "bhag" });
+      const area = areaTags.length > 0 ? areaByLabel.get(areaTags[0]) : undefined;
+      if (area) out.push({ slug: area.slug, title: named(area), type: "area" });
     }
     return out;
   }, [isArea, isBhag, initiatives, bhagByInitiative, transitiveBhags, areaTags, areaByLabel]);
+
+  const hierarchyCrumbs = useMemo<Crumb[]>(
+    () =>
+      ancestors.map((node) =>
+        node.type === "bhag"
+          ? {
+              label: node.title,
+              href: `/projects/${node.slug}/tome`,
+              icon: <Target className="h-3.5 w-3.5 shrink-0 text-primary" />,
+              colorClass: "text-primary",
+            }
+          : {
+              label: node.title,
+              href: `/projects/${node.slug}/tome`,
+              icon: <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />,
+              colorClass: "text-sky-600 dark:text-sky-400",
+            },
+      ),
+    [ancestors],
+  );
 
   /**
    * Whether this reader has switched to the new rail.
@@ -2851,6 +2856,9 @@ export function TomeWiki({ slug }: { slug: string }) {
                   // the cards reading the curated ones cost nothing.
                   pages={data?.pages}
                   sources={projectMeta.sources}
+                  // The same trail the breadcrumb above walks, left undefined
+                  // until the tags it is read from are in.
+                  ancestors={projectMetaLoading ? undefined : ancestors}
                   onAsk={(question) => {
                     setAgentPrefill(question);
                     navigate({ kind: "agent" });

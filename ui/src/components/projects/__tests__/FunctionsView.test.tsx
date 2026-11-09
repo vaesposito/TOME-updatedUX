@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
 import { FunctionsView } from "@/components/projects/FunctionsView";
+import type { EnrichedProject } from "@/components/projects/ProjectCard";
 import {
   BUILT_IN_FUNCTIONS,
   addCategory,
@@ -17,7 +18,7 @@ function store(build: (base: ReturnType<typeof defaultTaxonomy>) => unknown) {
   );
 }
 
-/** A marketing function divided into one category holding two spaces. */
+/** A marketing function divided into one category holding two projects. */
 function marketingWithEvents() {
   store((base) => {
     const marketing = base.functions.find((fn) => fn.name === "Marketing")!;
@@ -28,90 +29,139 @@ function marketingWithEvents() {
   });
 }
 
-const SPACES = [
-  { slug: "first-example-project", title: "First Example Project", functions: [] },
-  { slug: "second-example-project", title: "Second Example Project", functions: [] },
+function project(
+  slug: string,
+  title: string,
+  functions: string[] = [],
+): EnrichedProject {
+  return {
+    _id: slug,
+    slug,
+    name: slug,
+    title,
+    description: `About ${title}.`,
+    labels: { functions },
+  } as unknown as EnrichedProject;
+}
+
+const PROJECTS = [
+  project("first-example-project", "First Example Project"),
+  project("second-example-project", "Second Example Project"),
 ];
+
+/** The group a name heads, found by the control that opens and closes it. */
+function groupOf(name: string): HTMLElement {
+  const caret = screen.getByRole("button", { name: `Collapse ${name}` });
+  return caret.parentElement!.parentElement!;
+}
 
 describe("FunctionsView", () => {
   beforeEach(() => window.localStorage.clear());
 
-  it("draws the organisation, including the parts holding nothing", () => {
-    render(<FunctionsView spaces={[]} />);
+  it("draws every function as a group that opens and closes, as the catalogue does", () => {
+    render(<FunctionsView projects={[]} />);
 
     for (const name of BUILT_IN_FUNCTIONS) {
-      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: `Collapse ${name}` }),
+      ).toHaveAttribute("aria-expanded", "true");
     }
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
       "5 functions",
     );
   });
 
-  it("names the spaces a category keeps, rather than restating the catalogue", () => {
+  it("nests a category under its function and the projects under the category", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
-    const card = screen
-      .getByRole("heading", { level: 3, name: "Marketing" })
-      .closest("li")!;
+    const marketing = groupOf("Marketing");
+    const category = within(marketing).getByRole("button", {
+      name: "Collapse Field Events",
+    });
+    expect(category).toBeInTheDocument();
+
+    // The same card the catalogue draws, leading to the project itself.
     expect(
-      within(card).getByRole("heading", { level: 4, name: "Field Events" }),
-    ).toBeInTheDocument();
-    expect(
-      within(card).getByRole("link", { name: /First Example Project/ }),
-    ).toHaveAttribute("href", "/projects/first-example-project/tome");
+      within(marketing).getByRole("link", { name: /First Example Project/ }),
+    ).toHaveAttribute("href", "/projects/first-example-project");
   });
 
-  it("still keeps a space that names a function on itself, outside any category", () => {
+  it("closes a function, and closes one category without the rest", () => {
+    marketingWithEvents();
+    render(<FunctionsView projects={PROJECTS} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Field Events" }));
+    expect(
+      screen.queryByRole("link", { name: /First Example Project/ }),
+    ).not.toBeInTheDocument();
+    // The function above it stays open.
+    expect(
+      screen.getByRole("button", { name: "Collapse Marketing" }),
+    ).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Marketing" }));
+    expect(
+      screen.queryByRole("button", { name: /Expand Field Events/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand Marketing" }),
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps a project that names a function on itself, outside any category", () => {
+    marketingWithEvents();
     render(
       <FunctionsView
-        spaces={[
-          // Spelled differently on purpose: one function is one card.
-          { slug: "example-project", title: "Example Project", functions: ["engineering"] },
+        projects={[
+          ...PROJECTS,
+          // Spelled differently on purpose: one function is one group.
+          project("third-example-project", "Third Example Project", ["marketing"]),
         ]}
       />,
     );
 
-    const card = screen
-      .getByRole("heading", { level: 3, name: "Engineering" })
-      .closest("li")!;
-    expect(within(card).getByText("Not in a category")).toBeInTheDocument();
+    const marketing = groupOf("Marketing");
     expect(
-      within(card).getByRole("link", { name: /Example Project/ }),
+      within(marketing).getByText("Tagged directly (no category)"),
+    ).toBeInTheDocument();
+    expect(
+      within(marketing).getByRole("link", { name: /Third Example Project/ }),
     ).toBeInTheDocument();
   });
 
-  it("counts what is in no function as something to fix, not as a function", () => {
-    render(
-      <FunctionsView
-        spaces={[{ slug: "example-project", title: "Example Project", functions: [] }]}
-      />,
-    );
+  it("gathers what is in no function into its own group, as Ungrouped is", () => {
+    render(<FunctionsView projects={PROJECTS} />);
 
-    expect(screen.getByText(/1 space not assigned to one yet/)).toBeInTheDocument();
+    const unassigned = groupOf("Unassigned");
+    expect(
+      within(unassigned).getByRole("link", { name: /First Example Project/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(unassigned).getByRole("link", { name: /Second Example Project/ }),
+    ).toBeInTheDocument();
   });
 
   /** Type into the view's one filter, as the catalogue's own works. */
   function find(text: string) {
     fireEvent.change(
-      screen.getByLabelText("Find a function, category or space"),
+      screen.getByLabelText("Find a function, category or project"),
       { target: { value: text } },
     );
   }
 
   it("narrows to the function a query names, keeping all of it", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
-    // Every function is drawn until one is asked for.
-    expect(screen.getByRole("heading", { level: 3, name: "Engineering" }))
+    expect(screen.getByRole("button", { name: "Collapse Engineering" }))
       .toBeInTheDocument();
 
     find("marketing");
 
-    expect(screen.queryByRole("heading", { level: 3, name: "Engineering" }))
+    expect(screen.queryByRole("button", { name: "Collapse Engineering" }))
       .not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 4, name: "Field Events" }))
+    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Second Example Project/ }))
       .toBeInTheDocument();
@@ -119,13 +169,13 @@ describe("FunctionsView", () => {
 
   it("reaches a category through its own name", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
     find("field");
 
-    expect(screen.getByRole("heading", { level: 3, name: "Marketing" }))
+    expect(screen.getByRole("button", { name: "Collapse Marketing" }))
       .toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 3, name: "SLT" }))
+    expect(screen.queryByRole("button", { name: "Collapse SLT" }))
       .not.toBeInTheDocument();
     // Named outright, so everything under it stays.
     expect(screen.getByRole("link", { name: /First Example Project/ }))
@@ -134,13 +184,13 @@ describe("FunctionsView", () => {
       .toBeInTheDocument();
   });
 
-  it("reaches a space, and keeps only what was reached", () => {
+  it("reaches a project, and keeps only what was reached", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
     find("second");
 
-    expect(screen.getByRole("heading", { level: 4, name: "Field Events" }))
+    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Second Example Project/ }))
       .toBeInTheDocument();
@@ -150,13 +200,13 @@ describe("FunctionsView", () => {
 
   it("narrows on a second word rather than widening, as the catalogue does", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
     // The function's own name counts towards what is under it, so naming
     // both the function and the category reaches the category.
     find("marketing events");
 
-    expect(screen.getByRole("heading", { level: 4, name: "Field Events" }))
+    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
       .toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
       "1 of 5 functions",
@@ -164,13 +214,13 @@ describe("FunctionsView", () => {
 
     find("marketing nowhere");
     expect(
-      screen.getByText(/No function, category or space matches/),
+      screen.getByText(/No function, category or project matches/),
     ).toBeInTheDocument();
   });
 
-  it("reaches a space by its slug too", () => {
+  it("reaches a project by its slug too", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
     find("second-example-project");
 
@@ -180,7 +230,7 @@ describe("FunctionsView", () => {
 
   it("counts what the query left, as the catalogue does", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
       "5 functions",
@@ -191,35 +241,23 @@ describe("FunctionsView", () => {
     );
   });
 
-  it("says so when a query matches nothing at all", () => {
-    marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
-
-    find("nothing by this name");
-
-    expect(
-      screen.getByText(/No function, category or space matches/),
-    ).toBeInTheDocument();
-  });
-
   it("clears the query from the field's own control", () => {
     marketingWithEvents();
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
     find("marketing");
 
     fireEvent.click(screen.getByRole("button", { name: "Clear function search" }));
 
-    expect(screen.getByRole("heading", { level: 3, name: "Engineering" }))
+    expect(screen.getByRole("button", { name: "Collapse Engineering" }))
       .toBeInTheDocument();
   });
 
   it("opens the creation flow on the function whose row was used", () => {
-    render(<FunctionsView spaces={SPACES} />);
+    render(<FunctionsView projects={PROJECTS} />);
 
-    const card = screen
-      .getByRole("heading", { level: 3, name: "Marketing" })
-      .closest("li")!;
-    fireEvent.click(within(card).getByRole("button", { name: "Add category" }));
+    fireEvent.click(
+      within(groupOf("Marketing")).getByRole("button", { name: "Add category" }),
+    );
 
     const dialog = screen.getByRole("dialog");
     expect(
@@ -227,13 +265,12 @@ describe("FunctionsView", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("keeps a category made in the flow, and puts the tagged space under it", () => {
-    render(<FunctionsView spaces={SPACES} />);
+  it("keeps a category made in the flow, and puts the tagged project under it", () => {
+    render(<FunctionsView projects={PROJECTS} />);
 
-    const card = screen
-      .getByRole("heading", { level: 3, name: "Marketing" })
-      .closest("li")!;
-    fireEvent.click(within(card).getByRole("button", { name: "Add category" }));
+    fireEvent.click(
+      within(groupOf("Marketing")).getByRole("button", { name: "Add category" }),
+    );
 
     const dialog = screen.getByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("Name"), {
@@ -244,14 +281,12 @@ describe("FunctionsView", () => {
     );
     fireEvent.click(within(dialog).getByRole("button", { name: /Create category/ }));
 
-    const after = screen
-      .getByRole("heading", { level: 3, name: "Marketing" })
-      .closest("li")!;
+    const marketing = groupOf("Marketing");
     expect(
-      within(after).getByRole("heading", { level: 4, name: "Field Events" }),
+      within(marketing).getByRole("button", { name: "Collapse Field Events" }),
     ).toBeInTheDocument();
     expect(
-      within(after).getByRole("link", { name: /First Example Project/ }),
+      within(marketing).getByRole("link", { name: /First Example Project/ }),
     ).toBeInTheDocument();
     // Stored, so it is still there on the next visit.
     expect(window.localStorage.getItem("tome.function-taxonomy.v1")).toContain(

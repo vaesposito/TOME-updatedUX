@@ -1,49 +1,62 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowRight, Pencil, Plus, Search, Users, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers, Pencil, Plus, Search, Users, X } from "lucide-react";
 import * as React from "react";
-
-import { Button } from "@/components/ui/button";
 
 import {
   FunctionCategoryDialog,
   type CategoryDraft,
+  type TaggableSpace,
 } from "@/components/projects/FunctionCategoryDialog";
+import {
+  ProjectCard,
+  type EnrichedProject,
+} from "@/components/projects/ProjectCard";
+import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useFunctionTaxonomy } from "@/hooks/use-function-taxonomy";
 import {
   spacesInFunction,
+  type FunctionCategory,
   type OrgFunction,
 } from "@/lib/projects/function-taxonomy";
 import { normLabel } from "@/lib/projects/labels";
+import { projectGridClassName } from "@/lib/tome/project-grid";
+import { cn } from "@/lib/utils";
 
 /**
  * The organisation, read as its functions.
  *
- * Not the catalogue under different headings: a reader who picked "by
- * function" is asking what each part of the organisation keeps in TOME, and
- * answering with the same wall of project cards answers the other question.
- * So the functions are the content here, and the spaces inside one are named
- * rather than restated as cards.
- *
- * Below each function are its categories — the divisions that function makes
- * in its own work — and the filter above narrows to one of either, because a
- * reader who came looking for one part of marketing should not have to read
- * the other four functions to find it.
+ * The same projects the catalogue holds, under a different hierarchy: a
+ * function, the categories that function divides its work into, and the
+ * projects tagged into each. Drawn exactly as the catalogue draws its own
+ * hierarchy — the same collapsing groups, the same nesting, the same cards —
+ * because a reader switching between the two readings is looking at one set
+ * of projects and should not have to learn a second way of moving through
+ * them.
  */
 
-/** The little a function needs to say about itself from the outside. */
-export interface FunctionSpace {
+/** A project, as a function's hierarchy needs to see it. */
+interface FunctionProject {
   slug: string;
   title: string;
-  /** Functions named on the space itself, which predate categories. */
+  /** Functions named on the project itself, which predate categories. */
   functions: string[];
+  project: EnrichedProject;
 }
 
-export function FunctionsView({ spaces }: { spaces: FunctionSpace[] }) {
+export function FunctionsView({ projects }: { projects: EnrichedProject[] }) {
   const { taxonomy, update } = useFunctionTaxonomy();
   const [query, setQuery] = React.useState("");
   const [draft, setDraft] = React.useState<CategoryDraft | null>(null);
+
+  const all: FunctionProject[] = projects.map((project) => ({
+    slug: project.slug,
+    title: project.title || project.name || project.slug,
+    functions: project.labels?.functions ?? [],
+    project,
+  }));
+  const bySlug = new Map(all.map((entry) => [entry.slug, entry]));
 
   // Split and matched exactly as the catalogue's own field does it: every
   // word must appear somewhere in the thing, so a second word narrows the
@@ -54,71 +67,58 @@ export function FunctionsView({ spaces }: { spaces: FunctionSpace[] }) {
     return terms.every((term) => haystack.includes(term));
   };
 
-  const titles = new Map(spaces.map((space) => [space.slug, space]));
-
-  /** Spaces naming this function on themselves but tagged into none of its categories. */
+  /** Projects naming this function on themselves but in none of its categories. */
   const looseIn = (fn: OrgFunction) => {
     const held = new Set(spacesInFunction(fn));
-    return spaces.filter(
-      (space) =>
-        !held.has(space.slug) &&
-        space.functions.some((tag) => normLabel(tag) === normLabel(fn.name)),
+    return all.filter(
+      (entry) =>
+        !held.has(entry.slug) &&
+        entry.functions.some((tag) => normLabel(tag) === normLabel(fn.name)),
     );
   };
 
   const countIn = (fn: OrgFunction) =>
     spacesInFunction(fn).length + looseIn(fn).length;
 
-  const placed = new Set(
-    taxonomy.functions.flatMap((fn) => [
-      ...spacesInFunction(fn),
-      ...looseIn(fn).map((space) => space.slug),
-    ]),
-  );
-  const unplaced = spaces.filter((space) => !placed.has(space.slug));
+  const named = (slug: string): FunctionProject | null => bySlug.get(slug) ?? null;
 
   /**
    * What a search leaves of one function.
    *
    * A query reaches all three levels, because a reader typing "events" may
-   * be after the function, the category or the space, and cannot be asked
-   * which before they have found it. Naming the function keeps everything
-   * under it; naming something inside keeps the function and narrows it to
-   * what was named.
+   * be after the function, the category or the project, and cannot be asked
+   * which before they have found it. The function's own name counts towards
+   * everything under it: named outright it keeps all of itself, reached
+   * through something inside it keeps only what was reached.
    */
-  const named = (slug: string): FunctionSpace =>
-    titles.get(slug) ?? { slug, title: slug, functions: [] };
-
   const narrow = (fn: OrgFunction) => {
-    const all = fn.categories.map((category) => ({
+    const held = fn.categories.map((category) => ({
       category,
-      spaces: category.spaces.map(named),
+      projects: category.spaces
+        .map(named)
+        .filter((entry): entry is FunctionProject => entry !== null),
     }));
     if (terms.length === 0) {
-      return { categories: all, loose: looseIn(fn), shown: true };
+      return { categories: held, loose: looseIn(fn), shown: true };
     }
 
-    // The function's own name counts towards everything under it, so
-    // "marketing events" reaches a category only that function has. Named
-    // outright it keeps all of itself; reached through something inside, it
-    // keeps only what was reached.
     const whole = hit(fn.name);
-    const categories = all
-      .map(({ category, spaces }) => {
-        const named = whole || hit(fn.name, category.name);
+    const categories = held
+      .map(({ category, projects: inside }) => {
+        const byName = whole || hit(fn.name, category.name);
         return {
           category,
-          spaces: named
-            ? spaces
-            : spaces.filter((space) =>
-                hit(fn.name, category.name, space.title, space.slug),
+          projects: byName
+            ? inside
+            : inside.filter((entry) =>
+                hit(fn.name, category.name, entry.title, entry.slug),
               ),
-          named,
+          byName,
         };
       })
-      .filter((entry) => entry.named || entry.spaces.length > 0);
+      .filter((entry) => entry.byName || entry.projects.length > 0);
     const loose = looseIn(fn).filter(
-      (space) => whole || hit(fn.name, space.title, space.slug),
+      (entry) => whole || hit(fn.name, entry.title, entry.slug),
     );
     return {
       categories,
@@ -129,11 +129,25 @@ export function FunctionsView({ spaces }: { spaces: FunctionSpace[] }) {
 
   const active = taxonomy.functions.filter((fn) => narrow(fn).shown);
 
+  // Projects in no function at all, drawn last and under their own heading,
+  // as the catalogue draws the ones in no BHAG.
+  const placed = new Set(
+    taxonomy.functions.flatMap((fn) => [
+      ...spacesInFunction(fn),
+      ...looseIn(fn).map((entry) => entry.slug),
+    ]),
+  );
+  const unassigned = all
+    .filter((entry) => !placed.has(entry.slug))
+    .filter((entry) => terms.length === 0 || hit(entry.title, entry.slug));
+
   const openNew = (functionId: string) =>
     setDraft({ functionId, name: "", spaces: [] });
 
+  const taggable: TaggableSpace[] = all.map(({ slug, title }) => ({ slug, title }));
+
   return (
-    <section className="space-y-4">
+    <section className="space-y-6">
       {/* The catalogue's own toolbar, to the letter: a reader moving between
           the two readings of the same thing should not have to learn a second
           way of narrowing it or a second place to add to it. */}
@@ -144,14 +158,6 @@ export function FunctionsView({ spaces }: { spaces: FunctionSpace[] }) {
               ? `${active.length} of ${taxonomy.functions.length} functions`
               : `${taxonomy.functions.length} functions`}
           </h2>
-          {unplaced.length > 0 && (
-            // One line rather than a sixth card: spaces in no function are
-            // something to fix, not a part of the organisation.
-            <p className="text-xs text-muted-foreground">
-              {unplaced.length} space{unplaced.length === 1 ? "" : "s"} not
-              assigned to one yet
-            </p>
-          )}
         </div>
 
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
@@ -162,7 +168,7 @@ export function FunctionsView({ spaces }: { spaces: FunctionSpace[] }) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Find function…"
-              aria-label="Find a function, category or space"
+              aria-label="Find a function, category or project"
               className="h-8 w-full rounded-lg border border-border/60 bg-background/40 pl-8 pr-8 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 hover:border-border focus:border-primary/50 focus:bg-background focus:ring-2 focus:ring-primary/15 [&::-webkit-search-cancel-button]:hidden"
             />
             {query && (
@@ -189,110 +195,48 @@ export function FunctionsView({ spaces }: { spaces: FunctionSpace[] }) {
         </div>
       </div>
 
-      {active.length === 0 && (
+      {active.length === 0 && unassigned.length === 0 && (
         <p className="py-6 text-sm text-muted-foreground">
-          No function, category or space matches “{query.trim()}”.
+          No function, category or project matches “{query.trim()}”.
         </p>
       )}
 
-      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {active.map((fn) => {
-          const { categories, loose } = narrow(fn);
+      {/* The cards inside carry the same hovercards the catalogue's do, so
+          they are given the same delay to open. */}
+      <TooltipProvider>
+        <div className="space-y-8">
+          {active.map((fn) => {
+            const { categories, loose } = narrow(fn);
+            return (
+              <FunctionGroup
+                key={fn.id}
+                fn={fn}
+                count={countIn(fn)}
+                categories={categories}
+                loose={loose}
+                onAddCategory={() => openNew(fn.id)}
+                onEditCategory={(category) =>
+                  setDraft({
+                    functionId: fn.id,
+                    categoryId: category.id,
+                    name: category.name,
+                    spaces: category.spaces,
+                  })
+                }
+              />
+            );
+          })}
 
-          return (
-            <li
-              key={fn.id}
-              className="group/fn rounded-xl border border-border bg-card/40 p-4"
-            >
-              <div className="flex items-center gap-2">
-                <Users
-                  className="h-4 w-4 shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-                <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                  {fn.name}
-                </h3>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {countIn(fn)}
-                </span>
-              </div>
-
-              {categories.length === 0 && loose.length === 0 ? (
-                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  No categories yet. Divide this function&apos;s work to group
-                  its spaces.
-                </p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {categories.map(({ category, spaces: held }) => (
-                    <div key={category.id}>
-                      <div className="group/cat flex items-center gap-1.5">
-                        <h4 className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                          {category.name}
-                        </h4>
-                        <button
-                          type="button"
-                          aria-label={`Edit ${category.name}`}
-                          onClick={() =>
-                            setDraft({
-                              functionId: fn.id,
-                              categoryId: category.id,
-                              name: category.name,
-                              spaces: category.spaces,
-                            })
-                          }
-                          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 group-hover/cat:opacity-100"
-                        >
-                          <Pencil className="h-3 w-3" aria-hidden />
-                        </button>
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {category.spaces.length}
-                        </span>
-                      </div>
-
-                      {held.length === 0 ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Nothing tagged yet.
-                        </p>
-                      ) : (
-                        <SpaceList spaces={held} />
-                      )}
-                    </div>
-                  ))}
-
-                  {loose.length > 0 && (
-                    <div>
-                      <h4 className="text-xs font-medium text-muted-foreground">
-                        Not in a category
-                      </h4>
-                      <SpaceList spaces={loose} />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Beside the function it would belong to, so the form opens
-                  on the right one. Quiet, and quieter still while nothing
-                  is being pointed at. */}
-              <button
-                type="button"
-                onClick={() => openNew(fn.id)}
-                className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 group-hover/fn:opacity-100"
-              >
-                <Plus className="h-3 w-3" aria-hidden />
-                Add category
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+          {unassigned.length > 0 && <UnassignedGroup projects={unassigned} />}
+        </div>
+      </TooltipProvider>
 
       {draft && (
         <FunctionCategoryDialog
           open
           onOpenChange={(open) => !open && setDraft(null)}
           taxonomy={taxonomy}
-          spaces={spaces}
+          spaces={taggable}
           draft={draft}
           onCommit={update}
         />
@@ -301,23 +245,217 @@ export function FunctionsView({ spaces }: { spaces: FunctionSpace[] }) {
   );
 }
 
-function SpaceList({ spaces }: { spaces: FunctionSpace[] }) {
+/** One function and everything under it, as a BHAG group is drawn. */
+function FunctionGroup({
+  fn,
+  count,
+  categories,
+  loose,
+  onAddCategory,
+  onEditCategory,
+}: {
+  fn: OrgFunction;
+  count: number;
+  categories: { category: FunctionCategory; projects: FunctionProject[] }[];
+  loose: FunctionProject[];
+  onAddCategory: () => void;
+  onEditCategory: (category: FunctionCategory) => void;
+}) {
+  const [collapsed, setCollapsed] = React.useState(false);
+
   return (
-    <ul className="mt-1.5 space-y-1.5">
-      {spaces.map((space) => (
-        <li key={space.slug}>
-          <Link
-            href={`/projects/${encodeURIComponent(space.slug)}/tome`}
-            className="group flex items-center gap-1.5 text-xs text-muted-foreground transition hover:text-foreground"
-          >
-            <span className="min-w-0 truncate">{space.title}</span>
-            <ArrowRight
-              className="h-3 w-3 shrink-0 opacity-0 transition group-hover:opacity-100"
-              aria-hidden
+    <div className="group/group relative space-y-3 rounded-xl transition">
+      <div className="flex items-center gap-3">
+        <Caret
+          collapsed={collapsed}
+          label={fn.name}
+          onToggle={() => setCollapsed((c) => !c)}
+        />
+
+        <Users className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+
+        {/* A function has no space of its own to open, so unlike a BHAG its
+            name does what the row does rather than leading somewhere. */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="min-w-0 truncate text-left text-sm font-semibold text-primary"
+        >
+          {fn.name}
+        </button>
+
+        <span className="shrink-0 text-xs text-muted-foreground/50">{count}</span>
+
+        <button
+          type="button"
+          onClick={onAddCategory}
+          className="shrink-0 text-xs text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 group-hover/group:opacity-100"
+        >
+          Add category
+        </button>
+
+        <span className="ml-1 h-px flex-grow bg-border/40" />
+      </div>
+
+      {!collapsed && (
+        <div className="space-y-4">
+          {categories.map(({ category, projects }) => (
+            <CategorySubGroup
+              key={category.id}
+              category={category}
+              projects={projects}
+              onEdit={() => onEditCategory(category)}
             />
-          </Link>
-        </li>
-      ))}
-    </ul>
+          ))}
+
+          {categories.length > 0 && loose.length > 0 && (
+            <p className="pl-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              Tagged directly (no category)
+            </p>
+          )}
+
+          {loose.length > 0 && (
+            <div className={projectGridClassName()}>
+              {loose.map((entry) => (
+                <ProjectCard key={entry.slug} project={entry.project} />
+              ))}
+            </div>
+          )}
+
+          {categories.length === 0 && loose.length === 0 && (
+            <p className="py-1 text-xs text-muted-foreground/70">
+              No categories yet. Divide this function&apos;s work to group its
+              projects.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One category under a function, as an Area is drawn under a BHAG. */
+function CategorySubGroup({
+  category,
+  projects,
+  onEdit,
+}: {
+  category: FunctionCategory;
+  projects: FunctionProject[];
+  onEdit: () => void;
+}) {
+  const [collapsed, setCollapsed] = React.useState(false);
+
+  return (
+    <div className="group/area ml-4 space-y-2 border-l-2 border-sky-500/20 pl-4 sm:ml-6 sm:pl-6">
+      <div className="flex items-center gap-2">
+        <Caret
+          collapsed={collapsed}
+          label={category.name}
+          onToggle={() => setCollapsed((c) => !c)}
+          small
+        />
+
+        <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-hidden />
+
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="min-w-0 truncate text-left text-sm font-semibold text-sky-500"
+        >
+          {category.name}
+        </button>
+
+        <span className="shrink-0 text-xs text-muted-foreground/50">
+          {category.spaces.length}
+        </span>
+
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit ${category.name}`}
+          className="shrink-0 rounded text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 group-hover/area:opacity-100"
+        >
+          <Pencil className="h-3 w-3" aria-hidden />
+        </button>
+
+        <span className="ml-1 h-px flex-grow bg-border/30" />
+      </div>
+
+      {!collapsed && projects.length > 0 && (
+        <div className={projectGridClassName()}>
+          {projects.map((entry) => (
+            <ProjectCard key={entry.slug} project={entry.project} />
+          ))}
+        </div>
+      )}
+      {!collapsed && projects.length === 0 && (
+        <p className="py-1 text-xs text-muted-foreground/70">
+          No projects tagged into this category yet.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Everything in no function, drawn as the catalogue draws Ungrouped. */
+function UnassignedGroup({ projects }: { projects: FunctionProject[] }) {
+  const [collapsed, setCollapsed] = React.useState(false);
+
+  return (
+    <div className="relative space-y-3 rounded-xl transition">
+      <div className="flex items-center gap-3">
+        <Caret
+          collapsed={collapsed}
+          label="Unassigned"
+          onToggle={() => setCollapsed((c) => !c)}
+        />
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="min-w-0 truncate text-left text-sm font-medium text-muted-foreground"
+        >
+          Unassigned
+        </button>
+        <span className="shrink-0 text-xs text-muted-foreground/50">
+          {projects.length}
+        </span>
+        <span className="ml-1 h-px flex-grow bg-border/40" />
+      </div>
+
+      {!collapsed && (
+        <div className={projectGridClassName()}>
+          {projects.map((entry) => (
+            <ProjectCard key={entry.slug} project={entry.project} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The one control that opens and closes a group, at either level. */
+function Caret({
+  collapsed,
+  label,
+  onToggle,
+  small,
+}: {
+  collapsed: boolean;
+  label: string;
+  onToggle: () => void;
+  small?: boolean;
+}) {
+  const Icon = collapsed ? ChevronRight : ChevronDown;
+  return (
+    <button
+      type="button"
+      aria-expanded={!collapsed}
+      aria-label={`${collapsed ? "Expand" : "Collapse"} ${label}`}
+      onClick={onToggle}
+      className="shrink-0 text-muted-foreground transition hover:text-foreground"
+    >
+      <Icon className={cn(small ? "h-3.5 w-3.5" : "h-4 w-4")} />
+    </button>
   );
 }

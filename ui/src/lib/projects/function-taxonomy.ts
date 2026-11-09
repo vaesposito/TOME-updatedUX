@@ -162,6 +162,70 @@ function readCategory(raw: unknown): FunctionCategory | null {
   };
 }
 
+/** A function, and the divisions a deployment says it keeps. */
+export interface ConfiguredFunction {
+  function: string;
+  categories: string[];
+}
+
+/**
+ * Read the categories a deployment ships with.
+ *
+ * Written as `Function: One, Two | Other Function: Three`, because this is
+ * set by whoever runs TOME and an operator editing one line of configuration
+ * should not have to write JSON to do it. Blank, malformed or half-written
+ * entries are dropped rather than refused: a typo in configuration should
+ * cost that one category, not the whole view.
+ */
+export function parseConfiguredCategories(raw: string | undefined | null): ConfiguredFunction[] {
+  if (!raw) return [];
+  const groups: ConfiguredFunction[] = [];
+  for (const chunk of raw.split("|")) {
+    const at = chunk.indexOf(":");
+    if (at < 0) continue;
+    const name = chunk.slice(0, at).trim();
+    if (!name) continue;
+    const categories = chunk
+      .slice(at + 1)
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (categories.length > 0) groups.push({ function: name, categories });
+  }
+  return groups;
+}
+
+/**
+ * Put the configured categories into a taxonomy, adding only what is missing.
+ *
+ * Additive, so a reader keeps their own categories and whatever they tagged
+ * into the configured ones. A function named in configuration that does not
+ * ship is created, since a deployment knows its own organisation better than
+ * the constant does.
+ */
+export function withConfiguredCategories(
+  taxonomy: FunctionTaxonomy,
+  raw: string | undefined | null,
+): FunctionTaxonomy {
+  let next = taxonomy;
+  for (const group of parseConfiguredCategories(raw)) {
+    let target = next.functions.find(
+      (fn) => normLabel(fn.name) === normLabel(group.function),
+    );
+    if (!target) {
+      const made = addFunction(next, group.function);
+      next = made.taxonomy;
+      target = next.functions.find((fn) => fn.id === made.id);
+    }
+    if (!target) continue;
+    for (const name of group.categories) {
+      if (hasCategoryNamed(next, target.id, name)) continue;
+      next = addCategory(next, target.id, name).taxonomy;
+    }
+  }
+  return next;
+}
+
 /** Whether a function of this name already exists, however it was capitalised. */
 export function hasFunctionNamed(taxonomy: FunctionTaxonomy, name: string): boolean {
   return taxonomy.functions.some((fn) => normLabel(fn.name) === normLabel(name));

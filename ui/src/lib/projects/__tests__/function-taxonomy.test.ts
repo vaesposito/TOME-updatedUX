@@ -5,6 +5,7 @@ import {
   defaultTaxonomy,
   hasCategoryNamed,
   normaliseTaxonomy,
+  parseConfiguredCategories,
   placementsOf,
   relatedSpaces,
   removeCategory,
@@ -13,6 +14,7 @@ import {
   setSpaces,
   spacesInFunction,
   toggleSpace,
+  withConfiguredCategories,
   type FunctionTaxonomy,
 } from "@/lib/projects/function-taxonomy";
 
@@ -220,6 +222,68 @@ describe("function taxonomy", () => {
       const added = read.functions.find((f) => f.name === "Developer Relations")!;
       expect(added.categories[0].spaces).toEqual(["a-space"]);
       expect(read.functions).toHaveLength(BUILT_IN_FUNCTIONS.length + 1);
+    });
+  });
+
+  describe("categories a deployment ships with", () => {
+    const CONFIG =
+      "Marketing: Example Campaigns, Example Field Events | Developer Relations: Example Talks";
+
+    it("reads one line of configuration into functions and their categories", () => {
+      expect(parseConfiguredCategories(CONFIG)).toEqual([
+        { function: "Marketing", categories: ["Example Campaigns", "Example Field Events"] },
+        { function: "Developer Relations", categories: ["Example Talks"] },
+      ]);
+    });
+
+    it("reads nothing out of nothing, and out of a line with no function named", () => {
+      expect(parseConfiguredCategories(undefined)).toEqual([]);
+      expect(parseConfiguredCategories("")).toEqual([]);
+      expect(parseConfiguredCategories("no colon here")).toEqual([]);
+      expect(parseConfiguredCategories("Marketing:   ,  ")).toEqual([]);
+    });
+
+    it("puts the configured categories under the function that ships", () => {
+      const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
+      const marketing = seeded.functions.find((fn) => fn.name === "Marketing")!;
+
+      expect(marketing.categories.map((c) => c.name)).toEqual([
+        "Example Campaigns",
+        "Example Field Events",
+      ]);
+      // Each category is addressable on its own, as one made by hand is.
+      expect(new Set(marketing.categories.map((c) => c.id)).size).toBe(2);
+    });
+
+    it("creates a function configuration names that TOME does not ship", () => {
+      const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
+      const added = seeded.functions.find((fn) => fn.name === "Developer Relations")!;
+
+      expect(added.categories.map((c) => c.name)).toEqual(["Example Talks"]);
+      // Added, so it sorts after the five that ship.
+      expect(seeded.functions.map((f) => f.name).at(-1)).toBe("Developer Relations");
+    });
+
+    it("adds only what is missing, keeping what was made and tagged by hand", () => {
+      const base = defaultTaxonomy();
+      const marketingId = idOf(base, "Marketing");
+      const withOwn = addCategory(base, marketingId, "Example Campaigns", [
+        "example-project",
+      ]).taxonomy;
+
+      const seeded = withConfiguredCategories(withOwn, CONFIG);
+      const marketing = seeded.functions.find((fn) => fn.name === "Marketing")!;
+
+      expect(marketing.categories.map((c) => c.name)).toEqual([
+        "Example Campaigns",
+        "Example Field Events",
+      ]);
+      expect(marketing.categories[0].spaces).toEqual(["example-project"]);
+    });
+
+    it("leaves a taxonomy alone when nothing is configured", () => {
+      const base = defaultTaxonomy();
+      expect(withConfiguredCategories(base, undefined)).toBe(base);
     });
   });
 });

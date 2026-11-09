@@ -5,6 +5,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import {
   defaultTaxonomy,
   normaliseTaxonomy,
+  withConfiguredCategories,
   type FunctionTaxonomy,
 } from "@/lib/projects/function-taxonomy";
 
@@ -24,6 +25,21 @@ import {
  */
 
 const STORAGE_KEY = "tome.function-taxonomy.v1";
+
+/** Which configuration this device has already been given. */
+const SEEDED_KEY = "tome.function-taxonomy.seeded.v1";
+
+/**
+ * The categories this deployment ships with, as `Function: One, Two | …`.
+ *
+ * Read from the environment rather than written into the code: what a
+ * function calls its own divisions belongs to whoever runs TOME, not to the
+ * product, and naming one organisation's divisions here would make every
+ * other organisation delete them before making their own.
+ *
+ * Referenced in full so the build can inline it into the browser bundle.
+ */
+const CONFIGURED = process.env.NEXT_PUBLIC_TOME_FUNCTION_CATEGORIES;
 
 /** What the server renders, and what the client hydrates against. */
 const EMPTY = defaultTaxonomy();
@@ -78,6 +94,40 @@ function onStorage(event: StorageEvent): void {
   cached = EMPTY;
   emit();
 }
+
+/**
+ * Give this device the configured categories, once per configuration.
+ *
+ * Marked rather than repeated, so a category deleted here stays deleted,
+ * while a line added to the configuration still reaches a device that has
+ * been using TOME for months. Run at import, before the first snapshot, so
+ * the view never draws the organisation without them and then again with.
+ *
+ * Takes the configuration as an argument so a test can hand it one without
+ * reloading the module, which would give the test a second copy of React.
+ */
+export function applyConfiguredCategories(configured = CONFIGURED): void {
+  try {
+    const marker = configured ?? "";
+    if (window.localStorage.getItem(SEEDED_KEY) === marker) return;
+    window.localStorage.setItem(SEEDED_KEY, marker);
+
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const current = raw ? normaliseTaxonomy(JSON.parse(raw)) : defaultTaxonomy();
+    const seeded = withConfiguredCategories(current, configured);
+    if (seeded === current) return;
+
+    const serialised = JSON.stringify(seeded);
+    window.localStorage.setItem(STORAGE_KEY, serialised);
+    cachedRaw = serialised;
+    cached = seeded;
+  } catch {
+    // A device that will not be written to still reads its own copy; it
+    // simply does not get the configured categories.
+  }
+}
+
+if (typeof window !== "undefined") applyConfiguredCategories();
 
 /** Whether the device's own copy is the one being shown. */
 const subscribeReady = subscribe;

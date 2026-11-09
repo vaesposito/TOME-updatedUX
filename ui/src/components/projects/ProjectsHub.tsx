@@ -39,7 +39,7 @@ import {
   parseHubTab,
   type HubTab,
 } from "@/components/projects/HubTabs";
-import { ORG_FUNCTIONS } from "@/components/projects/navigation";
+import { FunctionsView } from "@/components/projects/FunctionsView";
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 import { WorkspaceOverview } from "@/components/tome/WorkspaceOverview";
 import { Button } from "@/components/ui/button";
@@ -62,7 +62,7 @@ import { cn } from "@/lib/utils";
 import { dataStewardLabel, type ProjectDocument } from "@/types/projects";
 import type { ActiveIngestRun } from "@/types/tome";
 
-type GroupBy = "none" | "initiative" | "area" | "function";
+type GroupBy = "none" | "initiative" | "area";
 
 // Shared with TomeWiki so the first-run walkthrough shows once per browser
 // across the hub and any project's wiki.
@@ -247,9 +247,7 @@ function groupProjects(
     const values =
       groupBy === "initiative"
         ? (p.labels?.initiatives ?? [])
-        : groupBy === "function"
-          ? (p.labels?.functions ?? [])
-          : (p.labels?.areas ?? []);
+        : (p.labels?.areas ?? []);
 
     if (values.length === 0) {
       ungrouped.push(p);
@@ -822,14 +820,10 @@ export function ProjectsHub() {
     }
   }, []);
 
-  // Projects are read by the goal they belong to, so that is the grouping.
-  // By function is the one other grouping a reader asks for by name, and it
-  // is a view of its own rather than a setting; a ?groupBy= link still
-  // serves anyone who wants a flat list or areas.
-  const groupBy: GroupBy =
-    tab === "functions"
-      ? "function"
-      : ((searchParams.get("groupBy") ?? "initiative") as GroupBy);
+  // Projects are read by the goal they belong to, so that is the grouping,
+  // and there is no control offering the other two. A ?groupBy= link still
+  // works for anyone who wants a flat list or areas.
+  const groupBy = (searchParams.get("groupBy") ?? "initiative") as GroupBy;
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
@@ -1085,30 +1079,6 @@ export function ProjectsHub() {
       });
     }
   }
-  // The functions are a fixed list of the organisation's parts, not a set
-  // derived from what happens to be tagged. A function with nothing in TOME
-  // is worth showing as such: drop it and the view says the organisation is
-  // whatever it found, which is the question the reader came to answer.
-  // Held in their own order too, since an order by size would reshuffle the
-  // organisation every time a space was added.
-  if (!normalizedProjectQuery && groupBy === "function") {
-    const found = new Map(groups.map((group) => [normLabel(group.label), group]));
-    const known = ORG_FUNCTIONS.map((name) => {
-      const group = found.get(normLabel(name));
-      // The canonical spelling wins over whatever a tag happened to use, so
-      // the column reads as one list rather than as several conventions.
-      return group ? { ...group, label: name } : { key: name, label: name, items: [] };
-    });
-    const tagged = new Set(ORG_FUNCTIONS.map((name) => normLabel(name)));
-    groups = [
-      ...known,
-      ...groups.filter(
-        (group) =>
-          group.key !== "__ungrouped__" && !tagged.has(normLabel(group.label)),
-      ),
-      ...groups.filter((group) => group.key === "__ungrouped__"),
-    ];
-  }
   if (groupBy === "initiative") {
     const ungrouped = groups.filter((group) => group.key === "__ungrouped__");
     groups = [
@@ -1191,16 +1161,21 @@ export function ProjectsHub() {
           the digest for a moment would be a poor trade. */}
       {tab === "overview" && <WorkspaceOverview />}
       {tab === "digest" && <WorkspaceDigest />}
+      {/* Reads the catalogue the hub already loaded, so moving between the
+          two readings costs nothing, but draws the functions rather than the
+          projects: the reader asked what each part of the organisation
+          keeps, and a wall of project cards answers the other question. */}
+      {tab === "functions" && (
+        <FunctionsView
+          spaces={projects.map((project) => ({
+            slug: project.slug,
+            title: project.title || project.name || project.slug,
+            functions: project.labels?.functions ?? [],
+          }))}
+        />
+      )}
 
-      {/* One catalogue under both of its readings: by project and by function
-          differ in how the list is grouped, not in what is fetched, so
-          switching between them should not cost three requests. */}
-      <section
-        className={cn(
-          "space-y-6",
-          tab !== "projects" && tab !== "functions" && "hidden",
-        )}
-      >
+      <section className={cn("space-y-6", tab !== "projects" && "hidden")}>
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <h2 className="whitespace-nowrap text-xl font-semibold">

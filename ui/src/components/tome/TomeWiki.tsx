@@ -12,6 +12,7 @@ import {
 import {
   Activity,
   ArrowUpRight,
+  BookA,
   BookOpen,
   CalendarDays,
   Eye,
@@ -70,7 +71,8 @@ import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
 import { FeedPanel } from "@/components/tome/FeedPanel";
 import { GistsPanel } from "@/components/tome/GistsPanel";
 import { GistView } from "@/components/tome/GistView";
-import { NavItem, NavSection } from "@/components/tome/RailNav";
+import { GlossaryView } from "@/components/tome/GlossaryView";
+import { NavCount, NavItem, NavSection } from "@/components/tome/RailNav";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import {
   RelatedSpacesBlock,
@@ -196,6 +198,7 @@ type MainView =
   | { kind: "standup" }
   | { kind: "meetings" }
   | { kind: "wiki" }
+  | { kind: "glossary" }
   | { kind: "references" }
   | { kind: "issues"; label?: string }
   | { kind: "feed" }
@@ -232,6 +235,8 @@ function viewToPath(slug: string, view: MainView): string {
       return `${base}/meetings`;
     case "wiki":
       return `${base}/wiki`;
+    case "glossary":
+      return `${base}/glossary`;
     case "references":
       return `${base}/references`;
     case "issues":
@@ -279,6 +284,12 @@ function pathToView(segments: string[]): MainView {
       return { kind: "standup" };
     case "meetings":
       return { kind: "meetings" };
+    case "glossary":
+      // The branch is the vocabulary; a term below it is a page like any
+      // other, and keeps its own path so a link written either way lands.
+      return rest.length
+        ? { kind: "page", path: segments.join("/") }
+        : { kind: "glossary" };
     case "issues":
       return rest[0] === "label" && rest.length > 1
         ? { kind: "issues", label: rest.slice(1).join("/") }
@@ -1525,6 +1536,11 @@ export function TomeWiki({ slug }: { slug: string }) {
         return [{ label: "Meetings" }];
       case "wiki":
         return [{ label: "Wiki" }];
+      case "glossary":
+        return [
+          { label: "Wiki", onClick: () => navigate({ kind: "wiki" }) },
+          { label: "Glossary" },
+        ];
       case "references":
         return [{ label: "Connections" }];
       case "issues": {
@@ -1727,6 +1743,17 @@ export function TomeWiki({ slug }: { slug: string }) {
     () => splitWikiTree(data?.tree ?? []),
     [data?.tree],
   );
+  // The terms themselves, not the folder holding them: the rail's figures
+  // say how much is behind a row, and "1" for a glossary of forty words
+  // would be a lie told in the same column as every honest count.
+  const glossaryTerms = useMemo(
+    () =>
+      wikiSplit.glossary.reduce(
+        (total, node) => total + (node.kind === "folder" ? node.children.length : 1),
+        0,
+      ),
+    [wikiSplit.glossary],
+  );
   // Open by default: the pages are the point of the place. Reference material
   // is not, so it starts folded away and stays however the reader left it.
   const [wikiOpen, setWikiOpen] = usePersistentDisclosure(
@@ -1757,6 +1784,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     feed: view.kind === "feed",
     gists: view.kind === "gists" || view.kind === "newGist" || view.kind === "gist",
     wiki: view.kind === "wiki",
+    glossary: view.kind === "glossary",
     references: view.kind === "references",
     settings: view.kind === "settings",
     templates: view.kind === "templates",
@@ -2312,17 +2340,55 @@ export function TomeWiki({ slug }: { slug: string }) {
                     <NavSection
                       icon={<BookOpen className="h-4 w-4" />}
                       label="Wiki"
-                      active={navActive.wiki || Boolean(navActive.page ?? navActive.folder)}
+                      active={
+                        navActive.wiki ||
+                        navActive.glossary ||
+                        Boolean(navActive.page ?? navActive.folder)
+                      }
                       expanded={wikiOpen}
                       onToggle={() => setWikiOpen(!wikiOpen)}
                       onClick={() => navigate({ kind: "wiki" })}
-                      count={loading ? undefined : wikiSplit.authored.length}
+                      count={
+                        loading
+                          ? undefined
+                          : wikiSplit.authored.length + 1
+                      }
                       controlsId={`tome-v2-wiki-${slug}`}
                     >
                       {renderWikiTree(wikiSplit.authored, {
                             editable: false,
                             showMeta: false,
                           })}
+
+                      {/* Below the pages rather than among them: the pages
+                          are what this space wrote, and the glossary is the
+                          vocabulary they are written in. A fixed row, so it
+                          is there to be opened before any term exists. */}
+                      <button
+                        type="button"
+                        onClick={() => navigate({ kind: "glossary" })}
+                        className={cn(
+                          // Measured against the rows above rather than
+                          // copied from one of them: this row sits directly
+                          // under the section while the tree's rows sit
+                          // inside it, so matching their padding would not
+                          // have matched their figures. Eight pixels puts
+                          // this one in the same column as the rest.
+                          "mt-1 flex w-full items-center gap-1.5 rounded py-1 pl-1.5 pr-2 text-left text-sm transition-colors hover:bg-muted",
+                          navActive.glossary && "bg-muted font-medium text-primary",
+                        )}
+                      >
+                        <BookA className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate">Glossary</span>
+                        {/* The caret's width, kept empty: this row has
+                            nothing to open, and without it its figure would
+                            stand alone outside the column every other row's
+                            figure sits in. */}
+                        <span className="flex shrink-0 items-center">
+                          <NavCount count={loading ? undefined : glossaryTerms} />
+                          <span aria-hidden className="h-3.5 w-3.5 shrink-0" />
+                        </span>
+                      </button>
                     </NavSection>
 
                     <NavItem
@@ -2956,6 +3022,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                     </Button>
                   ) : undefined}
                 />
+              </div>
+            ) : view.kind === "glossary" ? (
+              <div className="min-h-0 min-w-0 flex-1">
+                <GlossaryView slug={slug} onOpenPage={openPage} />
               </div>
             ) : view.kind === "references" ? (
               <div className="min-h-0 min-w-0 flex-1">

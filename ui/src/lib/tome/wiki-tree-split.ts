@@ -26,10 +26,19 @@ export const REFERENCE_ROOTS: readonly string[] = [
   "confluence",
   "webex",
   "sharepoint",
-  "glossary",
 ];
 
 const REFERENCE = new Set(REFERENCE_ROOTS);
+
+/**
+ * Where the space keeps its own vocabulary.
+ *
+ * Neither authored prose nor mirrored material. The terms are written here,
+ * mostly by the agent, but they are read as a list of words rather than as
+ * pages, so they get a destination of their own instead of a folder in the
+ * tree.
+ */
+export const GLOSSARY_ROOT = "glossary";
 
 /** The first segment of a path, which is the root folder it sits in. */
 function rootOf(node: PageTreeNode): string {
@@ -41,6 +50,8 @@ export interface WikiTreeSplit {
   authored: PageTreeNode[];
   /** Material mirrored from a source, read rather than edited. */
   reference: PageTreeNode[];
+  /** Term entries, kept out of both so they can be shown as a vocabulary. */
+  glossary: PageTreeNode[];
 }
 
 /**
@@ -54,13 +65,22 @@ export interface WikiTreeSplit {
 export function splitWikiTree(tree: readonly PageTreeNode[]): WikiTreeSplit {
   const authored: PageTreeNode[] = [];
   const reference: PageTreeNode[] = [];
+  const glossary: PageTreeNode[] = [];
   for (const node of tree) {
-    (REFERENCE.has(rootOf(node)) ? reference : authored).push(node);
+    const root = rootOf(node);
+    if (root === GLOSSARY_ROOT) glossary.push(node);
+    else if (REFERENCE.has(root)) reference.push(node);
+    else authored.push(node);
   }
-  return { authored, reference };
+  return { authored, reference, glossary };
 }
 
 /** Whether a path belongs to the reference side, for deciding which tree owns a selection. */
 export function isReferencePath(path: string): boolean {
   return REFERENCE.has(path.split("/")[0] ?? "");
+}
+
+/** Whether a path is a term entry, for the same reason. */
+export function isGlossaryPath(path: string): boolean {
+  return (path.split("/")[0] ?? "") === GLOSSARY_ROOT;
 }

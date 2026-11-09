@@ -1,4 +1,8 @@
-import { isReferencePath, splitWikiTree } from "@/lib/tome/wiki-tree-split";
+import {
+  isGlossaryPath,
+  isReferencePath,
+  splitWikiTree,
+} from "@/lib/tome/wiki-tree-split";
 import type { PageTreeNode } from "@/types/tome";
 
 function node(path: string, children: PageTreeNode[] = []): PageTreeNode {
@@ -18,10 +22,26 @@ describe("splitWikiTree", () => {
       node("repos", [node("repos/example-service")]),
       node("decisions", [node("decisions/0001-pick-a-queue")]),
       node("confluence", [node("confluence/handbook")]),
-      node("glossary"),
     ]);
     expect(authored.map((n) => n.path)).toEqual(["charter", "decisions"]);
-    expect(reference.map((n) => n.path)).toEqual(["repos", "confluence", "glossary"]);
+    expect(reference.map((n) => n.path)).toEqual(["repos", "confluence"]);
+  });
+
+  it("keeps the vocabulary out of both, having a place of its own", () => {
+    const { authored, reference, glossary } = splitWikiTree([
+      node("charter"),
+      node("repos"),
+      node("glossary", [node("glossary/slo.md"), node("glossary/bhag.md")]),
+    ]);
+
+    // Not mirrored material, though it was read out of some, and not a page
+    // of prose either: the terms are shown as a vocabulary.
+    expect(authored.map((n) => n.path)).toEqual(["charter"]);
+    expect(reference.map((n) => n.path)).toEqual(["repos"]);
+    expect(glossary[0]?.children.map((n) => n.path)).toEqual([
+      "glossary/slo.md",
+      "glossary/bhag.md",
+    ]);
   });
 
   it("keeps a reference root's own children under it", () => {
@@ -41,8 +61,12 @@ describe("splitWikiTree", () => {
     expect(reference).toEqual([]);
   });
 
-  it("returns two empty lists for an empty wiki", () => {
-    expect(splitWikiTree([])).toEqual({ authored: [], reference: [] });
+  it("returns empty lists for an empty wiki", () => {
+    expect(splitWikiTree([])).toEqual({
+      authored: [],
+      reference: [],
+      glossary: [],
+    });
   });
 
   it("leaves the source list untouched", () => {
@@ -55,10 +79,21 @@ describe("splitWikiTree", () => {
 describe("isReferencePath", () => {
   it("judges a page by the root it sits under", () => {
     expect(isReferencePath("repos/example-service/readme")).toBe(true);
-    expect(isReferencePath("glossary")).toBe(true);
     expect(isReferencePath("charter")).toBe(false);
     // An agent drafted it, but the decision it records is the team's.
     expect(isReferencePath("decisions/0001-pick-a-queue")).toBe(false);
     expect(isReferencePath("")).toBe(false);
+    // The vocabulary is neither side's.
+    expect(isReferencePath("glossary/slo.md")).toBe(false);
+  });
+});
+
+describe("isGlossaryPath", () => {
+  it("judges a term by the root it sits under", () => {
+    expect(isGlossaryPath("glossary")).toBe(true);
+    expect(isGlossaryPath("glossary/slo.md")).toBe(true);
+    expect(isGlossaryPath("charter")).toBe(false);
+    // Named after it rather than in it.
+    expect(isGlossaryPath("glossary-conventions")).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import {
   normaliseTaxonomy,
   parseConfiguredCategories,
   placementsOf,
+  reconcileConfiguredCategories,
   relatedSpaces,
   removeCategory,
   removeFunction,
@@ -284,6 +285,61 @@ describe("function taxonomy", () => {
     it("leaves a taxonomy alone when nothing is configured", () => {
       const base = defaultTaxonomy();
       expect(withConfiguredCategories(base, undefined)).toBe(base);
+    });
+
+    it("reads a rename in configuration as a rename, not as one more", () => {
+      const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
+      const renamed = reconcileConfiguredCategories(
+        seeded,
+        CONFIG,
+        "Marketing: Campaigns, Field Events | Developer Relations: Example Talks",
+      );
+
+      expect(
+        renamed.functions.find((fn) => fn.name === "Marketing")!.categories.map((c) => c.name),
+      ).toEqual(["Campaigns", "Field Events"]);
+    });
+
+    it("keeps a retired category once a space has been tagged into it", () => {
+      const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
+      const marketingId = idOf(seeded, "Marketing");
+      const used = addCategory(seeded, marketingId, "Example Campaigns", [
+        "example-project",
+      ]).taxonomy;
+
+      const renamed = reconcileConfiguredCategories(
+        used,
+        CONFIG,
+        "Marketing: Campaigns, Example Field Events",
+      );
+      const marketing = renamed.functions.find((fn) => fn.name === "Marketing")!;
+
+      // Still named by nothing in configuration, but someone is using it.
+      expect(marketing.categories.map((c) => c.name)).toEqual([
+        "Example Campaigns",
+        "Example Field Events",
+        "Campaigns",
+      ]);
+    });
+
+    it("takes out everything when configuration stops naming any of it", () => {
+      const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
+      const emptied = reconcileConfiguredCategories(seeded, CONFIG, undefined);
+
+      expect(
+        emptied.functions.find((fn) => fn.name === "Marketing")!.categories,
+      ).toEqual([]);
+    });
+
+    it("leaves categories made by hand out of it entirely", () => {
+      const base = defaultTaxonomy();
+      const own = addCategory(base, idOf(base, "Engineering"), "Example Platform").taxonomy;
+
+      const reconciled = reconcileConfiguredCategories(own, CONFIG, undefined);
+
+      expect(
+        reconciled.functions.find((fn) => fn.name === "Engineering")!.categories.map((c) => c.name),
+      ).toEqual(["Example Platform"]);
     });
   });
 });

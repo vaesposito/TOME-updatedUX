@@ -5,7 +5,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import {
   defaultTaxonomy,
   normaliseTaxonomy,
-  withConfiguredCategories,
+  reconcileConfiguredCategories,
   type FunctionTaxonomy,
 } from "@/lib/projects/function-taxonomy";
 
@@ -109,12 +109,13 @@ function onStorage(event: StorageEvent): void {
 export function applyConfiguredCategories(configured = CONFIGURED): void {
   try {
     const marker = configured ?? "";
-    if (window.localStorage.getItem(SEEDED_KEY) === marker) return;
+    const previous = window.localStorage.getItem(SEEDED_KEY);
+    if (previous === marker) return;
     window.localStorage.setItem(SEEDED_KEY, marker);
 
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const current = raw ? normaliseTaxonomy(JSON.parse(raw)) : defaultTaxonomy();
-    const seeded = withConfiguredCategories(current, configured);
+    const seeded = reconcileConfiguredCategories(current, previous, configured);
     if (seeded === current) return;
 
     const serialised = JSON.stringify(seeded);

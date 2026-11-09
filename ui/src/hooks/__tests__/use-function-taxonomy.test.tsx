@@ -87,6 +87,16 @@ describe("useFunctionTaxonomy", () => {
     expect(categories[0].spaces).toEqual(["example-project"]);
   });
 
+  it("renames rather than doubles when configuration renames a category", () => {
+    arrive(CONFIG);
+
+    const renamed = arrive("Marketing: Campaigns, Field Events");
+
+    expect(
+      marketingIn(renamed.result.current.taxonomy).categories.map((c) => c.name),
+    ).toEqual(["Campaigns", "Field Events"]);
+  });
+
   it("remembers which configuration this browser has been given", () => {
     arrive(CONFIG);
 

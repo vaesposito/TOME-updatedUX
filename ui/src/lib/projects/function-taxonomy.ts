@@ -226,6 +226,48 @@ export function withConfiguredCategories(
   return next;
 }
 
+/**
+ * Bring a taxonomy from one configuration to the next.
+ *
+ * A category the configuration has stopped naming is taken out, so renaming
+ * one in configuration reads as a rename rather than leaving the old name
+ * beside the new. Only while it is empty, though: once someone has tagged a
+ * space into it, it is theirs, and configuration no longer gets to delete it.
+ */
+export function reconcileConfiguredCategories(
+  taxonomy: FunctionTaxonomy,
+  previous: string | undefined | null,
+  current: string | undefined | null,
+): FunctionTaxonomy {
+  const named = new Map<string, Set<string>>();
+  for (const group of parseConfiguredCategories(current)) {
+    const key = normLabel(group.function);
+    const set = named.get(key) ?? new Set<string>();
+    for (const name of group.categories) set.add(normLabel(name));
+    named.set(key, set);
+  }
+
+  let next = taxonomy;
+  for (const group of parseConfiguredCategories(previous)) {
+    const stillNamed = named.get(normLabel(group.function)) ?? new Set<string>();
+    for (const name of group.categories) {
+      if (stillNamed.has(normLabel(name))) continue;
+      // Looked up afresh each time, since the one before may have gone.
+      const fn = next.functions.find(
+        (candidate) => normLabel(candidate.name) === normLabel(group.function),
+      );
+      const retired = fn?.categories.find(
+        (category) =>
+          normLabel(category.name) === normLabel(name) &&
+          category.spaces.length === 0,
+      );
+      if (retired) next = removeCategory(next, retired.id);
+    }
+  }
+
+  return withConfiguredCategories(next, current);
+}
+
 /** Whether a function of this name already exists, however it was capitalised. */
 export function hasFunctionNamed(taxonomy: FunctionTaxonomy, name: string): boolean {
   return taxonomy.functions.some((fn) => normLabel(fn.name) === normLabel(name));

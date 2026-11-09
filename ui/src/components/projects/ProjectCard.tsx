@@ -139,8 +139,40 @@ export function ProjectCard({ project }: { project: EnrichedProject }) {
       href={`/projects/${project.slug}`}
       className="group flex flex-col rounded-2xl border border-border/60 bg-card/50 p-5 transition hover:border-primary/40 hover:shadow-md"
     >
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-semibold leading-snug group-hover:text-primary">{project.title}</h3>
+      <h3 className="font-semibold leading-snug group-hover:text-primary">{project.title}</h3>
+
+      {/* Who keeps it and when it last moved, read together as one line:
+          the title then has the width to wrap into. */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+              {steward ? (
+                <>
+                  <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[8px] font-semibold text-primary">
+                    {stewardInitials(steward)}
+                  </span>
+                  <span className="truncate max-w-[100px]">{steward.split("@")[0]}</span>
+                </>
+              ) : (
+                <>
+                  <UserX className="h-3 w-3" />
+                  <span>No data steward</span>
+                </>
+              )}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {steward
+              ? `Data steward: ${steward}`
+              : "No data steward assigned. Set one in project settings."}
+          </TooltipContent>
+        </Tooltip>
+
+        <span className="text-[11px] text-muted-foreground/40" aria-hidden>
+          ·
+        </span>
+
         {activeRun ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -168,30 +200,6 @@ export function ProjectCard({ project }: { project: EnrichedProject }) {
           </Tooltip>
         )}
       </div>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-            {steward ? (
-              <>
-                <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[8px] font-semibold text-primary">
-                  {stewardInitials(steward)}
-                </span>
-                <span className="truncate max-w-[100px]">{steward.split("@")[0]}</span>
-              </>
-            ) : (
-              <>
-                <UserX className="h-3 w-3" />
-                <span>No data steward</span>
-              </>
-            )}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          {steward
-            ? `Data steward: ${steward}`
-            : "No data steward assigned. Set one in project settings."}
-        </TooltipContent>
-      </Tooltip>
 
       <p className="mt-2 line-clamp-2 flex-grow text-sm text-muted-foreground">
         {project.description}

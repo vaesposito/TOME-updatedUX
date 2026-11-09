@@ -1149,7 +1149,7 @@ export function ProjectsHub() {
           readings of the same thing and none of them is a section of the
           catalogue. Outside the band, so the band stays a greeting. */}
       <div className="flex justify-center">
-        <HubTabs value={tab} onChange={setTab} />
+        <HubTabs value={tab} onChange={setTab} settingsHref="/projects/admin" />
       </div>
 
       {isTomeAdmin && <OpenFgaModelRepairBanner />}

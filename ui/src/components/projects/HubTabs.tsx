@@ -18,7 +18,8 @@
  * catalogue and the overview both fetching on every visit.
  */
 
-import { FolderKanban, LayoutGrid, Newspaper, Users } from "lucide-react";
+import { FolderKanban, LayoutGrid, Newspaper, Settings, Users } from "lucide-react";
+import Link from "next/link";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -44,21 +45,30 @@ const LABELS: Record<HubTab, { label: string; icon: React.ReactNode }> = {
 export function HubTabs({
   value,
   onChange,
+  settingsHref,
   className,
 }: {
   value: HubTab;
   onChange: (tab: HubTab) => void;
+  /**
+   * Where TOME's own settings live.
+   *
+   * Kept beside the tabs rather than among them: it is a page of its own
+   * rather than another reading of what is below, so it leaves rather than
+   * switches. Drawn inside the same control all the same, because the rail
+   * lists it with the rest and a reader should find the same set here.
+   */
+  settingsHref?: string;
   className?: string;
 }) {
   return (
     <div
-      role="tablist"
-      aria-label="TOME views"
       className={cn(
         "inline-flex items-center gap-1 rounded-xl border border-border/60 bg-background/60 p-1 backdrop-blur",
         className,
       )}
     >
+      <div role="tablist" aria-label="TOME views" className="inline-flex items-center gap-1">
       {HUB_TABS.map((tab) => {
         const active = tab === value;
         return (
@@ -80,6 +90,22 @@ export function HubTabs({
           </button>
         );
       })}
+      </div>
+
+      {settingsHref && (
+        <>
+          {/* A rule, not a gap: without it the link reads as a fifth tab
+              that simply happens not to be selected. */}
+          <span aria-hidden className="mx-0.5 h-5 w-px bg-border" />
+          <Link
+            href={settingsHref}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            Settings
+          </Link>
+        </>
+      )}
     </div>
   );
 }

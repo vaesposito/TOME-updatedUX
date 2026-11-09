@@ -38,13 +38,32 @@ describe("HubTabs", () => {
 
   it("matches the rail's wording, so the two read as one navigation", () => {
     render(<HubTabs value="projects" onChange={jest.fn()} />);
-    // Settings is the one entry the rail has and this does not: it is a page
-    // of its own, not a reading of the catalogue, and the hero already
-    // carries it.
+    // Settings is the one entry the rail has that is not a tab here: it is a
+    // page of its own rather than a reading of the catalogue, so it leaves
+    // rather than switches.
     const labels = TOME_GROUPS.flatMap((group) => group.items)
       .map((item) => item.label)
       .filter((label) => label !== "Settings");
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(labels);
+  });
+
+  it("carries settings beside the tabs, so the rail's whole set is here", () => {
+    render(
+      <HubTabs value="projects" onChange={jest.fn()} settingsHref="/projects/admin" />,
+    );
+
+    expect(screen.getByRole("link", { name: /Settings/ })).toHaveAttribute(
+      "href",
+      "/projects/admin",
+    );
+    // Beside them, not among them: a tab promises a panel below, and this
+    // one goes to a page instead.
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
+  });
+
+  it("leaves the settings link out where no destination is given", () => {
+    render(<HubTabs value="projects" onChange={jest.fn()} />);
+    expect(screen.queryByRole("link", { name: /Settings/ })).not.toBeInTheDocument();
   });
 
   it("marks only the open one as selected", () => {

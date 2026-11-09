@@ -16,7 +16,6 @@ import {
   History,
   Layers,
   ListOrdered,
-  Plus,
   RotateCcw,
   Search,
   Settings,
@@ -458,45 +457,61 @@ function AreaSubGroup({
   const displayName = hierarchyDisplayName(area, label);
 
   return (
-    <div className="ml-4 space-y-2 border-l-2 border-sky-500/20 pl-4 sm:ml-6 sm:pl-6">
+    <div className="group/area ml-4 space-y-2 border-l-2 border-sky-500/20 pl-4 sm:ml-6 sm:pl-6">
       <div className="flex items-center gap-2">
         <button
           type="button"
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} ${displayName}`}
           onClick={() => setCollapsed((c) => !c)}
-          className="flex flex-grow items-center gap-2 text-left"
+          className="shrink-0 text-muted-foreground transition hover:text-foreground"
         >
           {collapsed ? (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <ChevronRight className="h-3.5 w-3.5" />
           ) : (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <ChevronDown className="h-3.5 w-3.5" />
           )}
-          <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />
-          <span className="text-sm font-semibold text-sky-500">{displayName}</span>
-          <span className="text-xs text-muted-foreground/50">{items.length}</span>
-          <span className="ml-1 h-px flex-grow bg-border/30" />
         </button>
 
+        <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />
+
+        {/* As on the group above: the name is the way into the area, rather
+            than a second control beside it repeating the name. */}
         {area ? (
           <Link
             href={`/projects/${area.slug}`}
-            title={`Open ${displayName} wiki`}
-            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-600 transition hover:border-sky-500 hover:bg-sky-500/20 dark:text-sky-400"
+            className="group/name inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-sky-500 hover:underline"
           >
-            <BookOpen className="h-3 w-3 shrink-0" />
-            <span className="truncate">Open {displayName} wiki</span>
-            <ArrowRight className="h-3 w-3 shrink-0" />
+            <span className="truncate">{displayName}</span>
+            <ArrowRight
+              className="h-3 w-3 shrink-0 opacity-0 transition group-hover/name:opacity-100"
+              aria-hidden
+            />
           </Link>
-        ) : onCreateArea ? (
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className="min-w-0 truncate text-left text-sm font-semibold text-sky-500"
+          >
+            {displayName}
+          </button>
+        )}
+
+        <span className="shrink-0 text-xs text-muted-foreground/50">{items.length}</span>
+
+        {!area && onCreateArea && (
           <button
             type="button"
             onClick={() => onCreateArea?.(label, items)}
             disabled={creating}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-dashed border-sky-500/40 px-2.5 py-1 text-xs font-medium text-sky-500/80 transition hover:border-sky-500 hover:bg-sky-500/10 disabled:opacity-50"
+            className="shrink-0 text-xs text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 disabled:opacity-50 group-hover/area:opacity-100"
           >
-            <Plus className="h-3 w-3" />
-            {creating ? "Creating…" : "Create area wiki"}
+            {creating ? "Creating…" : "Create wiki"}
           </button>
-        ) : null}
+        )}
+
+        <span className="ml-1 h-px flex-grow bg-border/30" />
       </div>
 
       {!collapsed && items.length > 0 && (
@@ -576,6 +591,16 @@ function ProjectGroup({
     : isAreaGroup
       ? hierarchyDisplayName(area, label)
       : label;
+  // The space this group is, where it is one: a BHAG group may have been
+  // promoted into a BHAG, an Area group into an Area. Where it has, the
+  // group's name leads to it.
+  const hierarchyEntity = isBhagGroup ? bhag : isAreaGroup ? area : undefined;
+  const createGroupWiki =
+    isBhagGroup && onCreateBhag
+      ? () => onCreateBhag(label, items)
+      : isAreaGroup && onCreateArea
+        ? () => onCreateArea(label, items)
+        : undefined;
   // Nested Area sub-accordions live only under a BHAG group, so this group's
   // own `label` is their parent BHAG's name.
   const handleAreaCreate = useCallback(
@@ -592,7 +617,7 @@ function ProjectGroup({
   return (
     <div
       className={cn(
-        "relative space-y-3 rounded-xl transition",
+        "group/group relative space-y-3 rounded-xl transition",
         dragging && "scale-[0.995] bg-primary/5 opacity-60",
       )}
       onDragOver={
@@ -639,77 +664,78 @@ function ProjectGroup({
         )}
         <button
           type="button"
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} ${displayLabel}`}
           onClick={() => setCollapsed((c) => !c)}
-          className="flex flex-grow items-center gap-2 text-left"
+          className="shrink-0 text-muted-foreground transition hover:text-foreground"
         >
           {collapsed ? (
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <ChevronRight className="h-4 w-4" />
           ) : (
-            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <ChevronDown className="h-4 w-4" />
           )}
-          {isBhagGroup && <Target className="h-4 w-4 shrink-0 text-primary" />}
-          {isAreaGroup && <Layers className="h-4 w-4 shrink-0 text-sky-500" />}
-          <span className={labelClass}>{displayLabel}</span>
-          {/* Breadcrumb: show which BHAG this area belongs to */}
-          {isAreaGroup && parentBhagName && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-primary/70">
-              <Target className="h-2.5 w-2.5" />
-              {parentBhagName}
-            </span>
-          )}
-          <span className="text-xs text-muted-foreground/50">{items.length}</span>
-          <span className="ml-1 h-px flex-grow bg-border/40" />
         </button>
 
-        {/* BHAG front door: open the strategic-goal wiki, or promote this
-            initiative into one. Kept prominent so it's clear and apparent. */}
-        {isBhagGroup &&
-          (bhag ? (
-            <Link
-              href={`/projects/${bhag.slug}`}
-              title={`Open ${hierarchyDisplayName(bhag, label)} BHAG wiki`}
-              className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition hover:border-primary hover:bg-primary/20"
-            >
-              <BookOpen className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">
-                Open {hierarchyDisplayName(bhag, label)} BHAG wiki
-              </span>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-            </Link>
-          ) : onCreateBhag ? (
-            <button
-              type="button"
-              onClick={() => onCreateBhag?.(label, items)}
-              disabled={creating}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-1.5 text-xs font-medium text-primary/80 transition hover:border-primary hover:bg-primary/10 disabled:opacity-50"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {creating ? "Creating…" : "Create BHAG wiki"}
-            </button>
-          ) : null)}
+        {isBhagGroup && <Target className="h-4 w-4 shrink-0 text-primary" />}
+        {isAreaGroup && <Layers className="h-4 w-4 shrink-0 text-sky-500" />}
 
-        {/* Area front door: open the area wiki, or promote this area label into one. */}
-        {isAreaGroup &&
-          (area ? (
-            <Link
-              href={`/projects/${area.slug}`}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-600 transition hover:border-sky-500 hover:bg-sky-500/20 dark:text-sky-400"
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              Open {hierarchyDisplayName(area, label)} wiki
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          ) : onCreateArea ? (
-            <button
-              type="button"
-              onClick={() => onCreateArea?.(label, items)}
-              disabled={creating}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-dashed border-sky-500/40 px-3 py-1.5 text-xs font-medium text-sky-500/80 transition hover:border-sky-500 hover:bg-sky-500/10 disabled:opacity-50"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {creating ? "Creating…" : "Create area wiki"}
-            </button>
-          ) : null)}
+        {/* The name is the way in.
+            A group that has a wiki of its own used to say so with a second
+            control beside this one, which repeated the name, repeated the
+            kind the icon already gave, and said "clickable" three times over
+            in a border, a fill and a colour. The name is the thing a reader
+            would open; making it the link says all of that and draws
+            nothing. */}
+        {hierarchyEntity ? (
+          <Link
+            href={`/projects/${hierarchyEntity.slug}`}
+            className={cn(
+              "group/name inline-flex min-w-0 items-center gap-1 hover:underline",
+              labelClass,
+            )}
+          >
+            <span className="truncate">{displayLabel}</span>
+            <ArrowRight
+              className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover/name:opacity-100"
+              aria-hidden
+            />
+          </Link>
+        ) : (
+          // Without one, the name does what the whole row used to do.
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className={cn("min-w-0 truncate text-left", labelClass)}
+          >
+            {displayLabel}
+          </button>
+        )}
+
+        {/* Breadcrumb: show which BHAG this area belongs to */}
+        {isAreaGroup && parentBhagName && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-primary/70">
+            <Target className="h-2.5 w-2.5" />
+            {parentBhagName}
+          </span>
+        )}
+        <span className="shrink-0 text-xs text-muted-foreground/50">{items.length}</span>
+
+        {/* Only on hover: promoting a group into a wiki of its own is a rare
+            thing to do, and an offer standing permanently beside every
+            group that lacks one is an offer made mostly to people who did
+            not come to make it. */}
+        {!hierarchyEntity && createGroupWiki && (
+          <button
+            type="button"
+            onClick={createGroupWiki}
+            disabled={creating}
+            className="shrink-0 text-xs text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 disabled:opacity-50 group-hover/group:opacity-100"
+          >
+            {creating ? "Creating…" : "Create wiki"}
+          </button>
+        )}
+
+        <span className="ml-1 h-px flex-grow bg-border/40" />
       </div>
 
       {!collapsed && (

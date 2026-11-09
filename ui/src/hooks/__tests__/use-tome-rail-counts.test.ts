@@ -14,11 +14,13 @@ describe("useTomeRailCounts", () => {
     global.fetch = fetchMock as unknown as typeof fetch;
   });
 
-  it("counts the notes and the issues behind their rows", async () => {
+  it("counts the notes, the issues and the meetings behind their rows", async () => {
     fetchMock.mockImplementation((url: string) =>
       url.includes("github-issues")
         ? reply({ data: { issues: [{ id: 1 }, { id: 2 }, { id: 3 }] } })
-        : reply({ data: { gists: [{ id: "a" }] } }),
+        : url.includes("webex-meeting-series")
+          ? reply({ data: { subscriptions: [{ id: "s1" }, { id: "s2" }] } })
+          : reply({ data: { gists: [{ id: "a" }] } }),
     );
 
     const { result } = renderHook(() =>
@@ -30,14 +32,17 @@ describe("useTomeRailCounts", () => {
     await waitFor(() => {
       expect(result.current.notes).toBe(1);
       expect(result.current.issues).toBe(3);
+      expect(result.current.meetings).toBe(2);
     });
   });
 
-  it("reports nought for a space with neither, rather than nothing", async () => {
+  it("reports nought for a space with none of them, rather than nothing", async () => {
     fetchMock.mockImplementation((url: string) =>
       url.includes("github-issues")
         ? reply({ data: { issues: [] } })
-        : reply({ data: { gists: [] } }),
+        : url.includes("webex-meeting-series")
+          ? reply({ data: { subscriptions: [] } })
+          : reply({ data: { gists: [] } }),
     );
 
     const { result } = renderHook(() =>
@@ -47,6 +52,7 @@ describe("useTomeRailCounts", () => {
     await waitFor(() => {
       expect(result.current.notes).toBe(0);
       expect(result.current.issues).toBe(0);
+      expect(result.current.meetings).toBe(0);
     });
   });
 
@@ -61,21 +67,27 @@ describe("useTomeRailCounts", () => {
       useTomeRailCounts("example-project", { issues: true }),
     );
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(result.current.notes).toBeUndefined();
     expect(result.current.issues).toBeUndefined();
+    expect(result.current.meetings).toBeUndefined();
   });
 
   it("does not reach GitHub for a rail with no Issues row", async () => {
-    fetchMock.mockImplementation(() => reply({ data: { gists: [] } }));
+    fetchMock.mockImplementation((url: string) =>
+      url.includes("webex-meeting-series")
+        ? reply({ data: { subscriptions: [] } })
+        : reply({ data: { gists: [] } }),
+    );
 
     const { result } = renderHook(() =>
       useTomeRailCounts("example-project", { issues: false }),
     );
 
     await waitFor(() => expect(result.current.notes).toBe(0));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain("/gists");
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes("github-issues")),
+    ).toBe(false);
   });
 
   it("drops the last space's figures on the way to the next", async () => {

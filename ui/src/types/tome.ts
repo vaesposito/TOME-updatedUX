@@ -567,6 +567,7 @@ export const TOME_USAGE_VIEW_KINDS = [
   "summary",
   "agent",
   "standup",
+  "meetings",
   "wiki",
   "references",
   "issues",

@@ -13,6 +13,7 @@ import {
   Activity,
   ArrowUpRight,
   BookOpen,
+  CalendarDays,
   Eye,
   EyeOff,
   FilePlus2,
@@ -39,7 +40,6 @@ import {
   RefreshCw,
   NotebookPen,
   Settings,
-  Users,
   Sparkles,
   Target,
   Upload,
@@ -95,6 +95,7 @@ import type { GlossaryPreview } from "@/components/tome/CrepeEditor";
 import { parseTomeHref } from "@/lib/tome/tome-links";
 import { useTomeViewTracking } from "@/lib/tome/usage-tracking";
 import { ReportsDisclosure } from "@/components/tome/ReportsDisclosure";
+import { MeetingsView } from "@/components/tome/MeetingsView";
 import { StandupView } from "@/components/tome/StandupView";
 import { GithubIssuesPanel } from "@/components/tome/GithubIssuesPanel";
 import { IssueLabelDisclosure } from "@/components/tome/IssueLabelDisclosure";
@@ -188,6 +189,7 @@ type MainView =
   | { kind: "summary" }
   | { kind: "agent" }
   | { kind: "standup" }
+  | { kind: "meetings" }
   | { kind: "wiki" }
   | { kind: "references" }
   | { kind: "issues"; label?: string }
@@ -221,6 +223,8 @@ function viewToPath(slug: string, view: MainView): string {
       return `${base}/agent`;
     case "standup":
       return `${base}/standup`;
+    case "meetings":
+      return `${base}/meetings`;
     case "wiki":
       return `${base}/wiki`;
     case "references":
@@ -268,6 +272,8 @@ function pathToView(segments: string[]): MainView {
       return { kind: "agent" };
     case "standup":
       return { kind: "standup" };
+    case "meetings":
+      return { kind: "meetings" };
     case "issues":
       return rest[0] === "label" && rest.length > 1
         ? { kind: "issues", label: rest.slice(1).join("/") }
@@ -1510,6 +1516,8 @@ export function TomeWiki({ slug }: { slug: string }) {
         return [{ label: "Agent" }];
       case "standup":
         return [{ label: "Standup" }];
+      case "meetings":
+        return [{ label: "Meetings" }];
       case "wiki":
         return [{ label: "Wiki" }];
       case "references":
@@ -1734,6 +1742,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     summary: view.kind === "summary",
     agent: view.kind === "agent",
     standup: view.kind === "standup",
+    meetings: view.kind === "meetings",
     issues: view.kind === "issues" && !view.label,
     feed: view.kind === "feed",
     gists: view.kind === "gists" || view.kind === "newGist" || view.kind === "gist",
@@ -2306,17 +2315,16 @@ export function TomeWiki({ slug }: { slug: string }) {
                           })}
                     </NavSection>
 
-                    {showStandupReport && (
-                      <NavItem
-                        icon={<Users className="h-4 w-4" />}
-                        label="Standup"
-                        active={navActive.standup}
-                        onClick={() => navigate({ kind: "standup" })}
-                        tipTitle="Standup"
-                        tipDescription="The project's report card: headline, blockers, and what's next. Rewritten by the agent on every ingest."
-                        reserveCaret
-                      />
-                    )}
+                    <NavItem
+                      icon={<CalendarDays className="h-4 w-4" />}
+                      label="Meetings"
+                      active={navActive.meetings}
+                      onClick={() => navigate({ kind: "meetings" })}
+                      count={railCounts.meetings}
+                      tipTitle="Meetings"
+                      tipDescription="The recurring calls this space listens to, and what came of each one. Transcripts become pages once a meeting ends."
+                      reserveCaret
+                    />
 
                     {/* One destination, not one per label. A tracked label
                         narrows the issues; it is not a place with contents of
@@ -2716,6 +2724,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                   </div>
                 )}
               </>
+            ) : view.kind === "meetings" ? (
+              <div className="min-h-0 min-w-0 flex-1">
+                <MeetingsView slug={slug} />
+              </div>
             ) : view.kind === "standup" ? (
               <div className="min-h-0 min-w-0 flex-1">
                 <StandupView

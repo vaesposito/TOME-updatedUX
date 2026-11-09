@@ -40,6 +40,7 @@ import {
   type HubTab,
 } from "@/components/projects/HubTabs";
 import { FunctionsView } from "@/components/projects/FunctionsView";
+import { TomeVersionNote } from "@/components/projects/TomeVersionNote";
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 import { WorkspaceOverview } from "@/components/tome/WorkspaceOverview";
 import { Button } from "@/components/ui/button";
@@ -1122,6 +1123,10 @@ export function ProjectsHub() {
               <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight md:text-3xl">
                 <FolderKanban className="h-7 w-7 shrink-0 text-primary md:h-8 md:w-8" />
                 {hero.title}
+                {/* Against the name, since what it reports is which TOME
+                    this is. Outside the heading's own weight, so it stays a
+                    mark beside the title rather than part of it. */}
+                <TomeVersionNote className="self-center" />
               </h1>
               <p className="max-w-lg text-sm leading-6 text-muted-foreground">
                 {hero.description}

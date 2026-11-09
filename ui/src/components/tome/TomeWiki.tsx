@@ -72,6 +72,10 @@ import { GistsPanel } from "@/components/tome/GistsPanel";
 import { GistView } from "@/components/tome/GistView";
 import { NavItem, NavSection } from "@/components/tome/RailNav";
 import { TomeLoading } from "@/components/tome/TomeLoading";
+import {
+  RelatedSpacesBlock,
+  RelatedSpacesRail,
+} from "@/components/tome/RelatedSpaces";
 import { TreeIndex } from "@/components/tome/TreeIndex";
 import { ProjectSettingsPanel } from "@/components/tome/ProjectSettingsPanel";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
@@ -138,6 +142,7 @@ import {
   DEFAULT_TOME_REPORT_VISIBILITY,
   resolveTomeReportVisibility,
 } from "@/lib/tome/report-visibility";
+import { useRelatedSpaces } from "@/hooks/use-related-spaces";
 import { useTomeRailCounts } from "@/hooks/use-tome-rail-counts";
 import { useWikiUnread } from "@/hooks/use-wiki-unread";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
@@ -1521,7 +1526,7 @@ export function TomeWiki({ slug }: { slug: string }) {
       case "wiki":
         return [{ label: "Wiki" }];
       case "references":
-        return [{ label: "Referencing Projects" }];
+        return [{ label: "Connections" }];
       case "issues": {
         if (!view.label) return [{ label: "Issues" }];
         return [
@@ -1737,6 +1742,11 @@ export function TomeWiki({ slug }: { slug: string }) {
   const railCounts = useTomeRailCounts(slug, {
     issues: navV2 && showIssuesReport,
   });
+
+  // Spaces tagged into the same category as this one. They sit in
+  // Connections beside the sources, both being things this space is attached
+  // to rather than things inside it.
+  const { related } = useRelatedSpaces(slug);
 
   const navActive = {
     summary: view.kind === "summary",
@@ -2361,16 +2371,21 @@ export function TomeWiki({ slug }: { slug: string }) {
 
                     <NavSection
                       icon={<FileSymlink className="h-4 w-4" />}
-                      label="Referencing Projects"
+                      label="Connections"
                       active={navActive.references || Boolean(
                         navActive.page && isReferencePath(navActive.page),
                       )}
                       expanded={referencesOpen}
                       onToggle={() => setReferencesOpen(!referencesOpen)}
                       onClick={() => navigate({ kind: "references" })}
-                      count={loading ? undefined : wikiSplit.reference.length}
+                      count={
+                        loading
+                          ? undefined
+                          : wikiSplit.reference.length + related.length
+                      }
                       controlsId={`tome-v2-references-${slug}`}
                     >
+                      <RelatedSpacesRail related={related} />
                       {renderWikiTree(wikiSplit.reference, {
                         editable: false,
                         emptyNote:
@@ -2946,9 +2961,11 @@ export function TomeWiki({ slug }: { slug: string }) {
               <div className="min-h-0 min-w-0 flex-1">
                 <TreeIndex
                   icon={<FileSymlink className="h-4 w-4" />}
-                  title="Referencing Projects"
-                  description="Everything this space reads from, mirrored page by page: repositories, Confluence spaces and Webex rooms."
+                  title="Connections"
+                  description="What this space is attached to: the spaces tagged into the same categories, and everything it mirrors page by page — repositories, Confluence spaces and Webex rooms."
                   nodes={wikiSplit.reference}
+                  lead={<RelatedSpacesBlock related={related} />}
+                  leadCount={related.length}
                   emptyNote="A repository, a Confluence space or a Webex room lands here once it has been read."
                   emptyAction={canEdit
                     ? { label: "Connect a source", onClick: () => navigate({ kind: "ingest" }) }

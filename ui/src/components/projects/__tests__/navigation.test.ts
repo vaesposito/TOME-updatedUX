@@ -1,6 +1,5 @@
 import {
   activeTomeNavigationId,
-  ORG_FUNCTIONS,
   TOME_GROUPS,
 } from "@/components/projects/navigation";
 
@@ -46,10 +45,5 @@ describe("TOME application navigation", () => {
       expect(activeTomeNavigationId("/skills", {})).toBe("");
       expect(activeTomeNavigationId(null, {})).toBe("");
     });
-  });
-
-  it("names the organisation's functions, not whatever has been tagged", () => {
-    expect(ORG_FUNCTIONS).toHaveLength(5);
-    expect(ORG_FUNCTIONS[0]).toBe("SLT");
   });
 });

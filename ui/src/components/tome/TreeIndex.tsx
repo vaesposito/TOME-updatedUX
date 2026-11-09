@@ -26,6 +26,8 @@ export function TreeIndex({
   emptyNote,
   emptyAction,
   actions,
+  lead,
+  leadCount = 0,
   onOpenPage,
   onOpenFolder,
 }: {
@@ -41,6 +43,16 @@ export function TreeIndex({
   emptyAction?: TomeEmptyAction;
   /** Buttons for the header, e.g. New page. */
   actions?: React.ReactNode;
+  /**
+   * Something this branch holds that is not a page, drawn above the tree.
+   *
+   * Connections holds both the spaces tagged alongside this one and the
+   * sources it mirrors. They are unlike enough to need their own heading and
+   * alike enough to belong on one page.
+   */
+  lead?: React.ReactNode;
+  /** How much `lead` holds, so the heading counts everything on the page. */
+  leadCount?: number;
   onOpenPage: (path: string) => void;
   onOpenFolder: (folderId: string) => void;
 }) {
@@ -50,18 +62,27 @@ export function TreeIndex({
       description={description}
       titleAccessory={
         <span className="text-xs font-normal text-muted-foreground">
-          {countLabel(nodes.length)}
+          {countLabel(nodes.length + leadCount)}
         </span>
       }
       action={actions && <div className="flex items-center gap-2">{actions}</div>}
     >
+      {lead}
+
       {nodes.length === 0 ? (
-        <TomeEmpty
-          icon={icon}
-          headline={`Nothing in ${title} yet`}
-          hint={emptyNote}
-          action={emptyAction}
-        />
+        // The full empty state only when the page would otherwise be blank:
+        // a branch already showing something has been arrived at, and an
+        // illustration under it would read as the page having failed.
+        leadCount > 0 ? (
+          <p className="px-2 py-4 text-xs text-muted-foreground">{emptyNote}</p>
+        ) : (
+          <TomeEmpty
+            icon={icon}
+            headline={`Nothing in ${title} yet`}
+            hint={emptyNote}
+            action={emptyAction}
+          />
+        )
       ) : (
         <div className="divide-y">
           {nodes.map((node) => (

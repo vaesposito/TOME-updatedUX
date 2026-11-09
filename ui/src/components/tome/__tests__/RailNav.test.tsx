@@ -105,7 +105,7 @@ describe("NavSection", () => {
     renderRail(
       <NavSection
         icon={<span />}
-        label="Referencing Projects"
+        label="Connections"
         active={false}
         expanded={false}
         count={0}
@@ -126,7 +126,7 @@ describe("NavSection", () => {
     // The row still goes somewhere, because its landing view explains itself
     // — but it does not claim to open, which is the one thing it has just
     // said it cannot do.
-    const row = screen.getByRole("button", { name: "Referencing Projects" });
+    const row = screen.getByRole("button", { name: "Connections" });
     expect(row).not.toHaveAttribute("aria-expanded");
     fireEvent.click(row);
     expect(onToggle).not.toHaveBeenCalled();

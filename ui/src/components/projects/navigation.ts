@@ -2,22 +2,6 @@ import type { WorkspaceNavigationGroup } from "@/components/layout/WorkspaceNavi
 import { FolderKanban, LayoutGrid, Newspaper, Settings, Users } from "lucide-react";
 
 /**
- * The organisation's functions, as a space may be grouped by.
- *
- * Fixed rather than derived from whatever projects happen to be tagged: the
- * point of the view is to show the whole organisation, including the parts
- * that have nothing in TOME yet, since an absent function and an empty one
- * read identically once the list is only what was found.
- */
-export const ORG_FUNCTIONS = [
-  "SLT",
-  "Engineering",
-  "Marketing",
-  "Product Design",
-  "Business Development",
-] as const;
-
-/**
  * TOME's own destinations, shown under it in the application navigation.
  *
  * The first two are the catalogue read two ways, then the two summary views

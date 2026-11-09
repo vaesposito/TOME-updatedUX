@@ -38,7 +38,7 @@ export const TOME_GROUPS: WorkspaceNavigationGroup[] = [{
     {
       id: "functions",
       label: "By function",
-      href: "/projects?groupBy=function",
+      href: "/projects?tab=functions",
       icon: Users,
       description: "Every space, grouped by the function that owns it",
     },
@@ -83,5 +83,10 @@ export function activeTomeNavigationId(
   if (pathname !== "/projects") return "projects";
   if (params.tab === "overview") return "overview";
   if (params.tab === "digest") return "digest";
-  return params.groupBy === "function" ? "functions" : "projects";
+  // groupBy predates the tab, and a link written against it still has to
+  // mark the row the reader ends up looking at.
+  if (params.tab === "functions" || params.groupBy === "function") {
+    return "functions";
+  }
+  return "projects";
 }

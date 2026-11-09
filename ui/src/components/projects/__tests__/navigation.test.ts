@@ -24,10 +24,14 @@ describe("TOME application navigation", () => {
   describe("activeTomeNavigationId", () => {
     it("tells the four views of one route apart by their query", () => {
       expect(activeTomeNavigationId("/projects", {})).toBe("projects");
-      expect(activeTomeNavigationId("/projects", { groupBy: "function" })).toBe("functions");
+      expect(activeTomeNavigationId("/projects", { tab: "functions" })).toBe("functions");
       expect(activeTomeNavigationId("/projects", { tab: "overview" })).toBe("overview");
       expect(activeTomeNavigationId("/projects", { tab: "digest" })).toBe("digest");
       expect(activeTomeNavigationId("/projects/admin", {})).toBe("settings");
+    });
+
+    it("still marks the function view for a link written before it was one", () => {
+      expect(activeTomeNavigationId("/projects", { groupBy: "function" })).toBe("functions");
     });
 
     it("keeps the catalogue marked while the reader is inside a space", () => {

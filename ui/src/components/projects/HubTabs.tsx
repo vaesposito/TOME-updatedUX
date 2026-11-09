@@ -1,25 +1,29 @@
 "use client";
 
 /**
- * The three ways into TOME from the top: the catalogue, the digest and the
- * written week.
+ * The ways into TOME from the top: the catalogue read two ways, the overview
+ * and the written week.
  *
  * A segmented control rather than the underlined tabs used inside a project,
- * because these are not sections of one page but three answers to "what is
- * going on" at three lengths — a list, a set of cards, and prose. Which one a
+ * because these are not sections of one page but answers to "what is going
+ * on" at different lengths — a list, a set of cards, and prose. Which one a
  * reader wants is a matter of how much time they have.
  *
+ * The same set the application navigation lists under TOME, and deliberately
+ * so: a reader who found a view in the rail should find it here, and one who
+ * collapsed the rail should not thereby lose a view.
+ *
  * Plain buttons over the Tabs primitive: the panels below are whole pages of
- * their own, and mounting all three so one can be shown would have the
+ * their own, and mounting all of them so one can be shown would have the
  * catalogue and the overview both fetching on every visit.
  */
 
-import { FolderKanban, LayoutGrid, Newspaper } from "lucide-react";
+import { FolderKanban, LayoutGrid, Newspaper, Users } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-export const HUB_TABS = ["projects", "overview", "digest"] as const;
+export const HUB_TABS = ["projects", "functions", "overview", "digest"] as const;
 
 export type HubTab = (typeof HUB_TABS)[number];
 
@@ -28,8 +32,11 @@ export function parseHubTab(value: string | null | undefined): HubTab {
   return HUB_TABS.includes(value as HubTab) ? (value as HubTab) : "projects";
 }
 
+// Worded as the rail words them, so the two read as one navigation rather
+// than as two that happen to overlap.
 const LABELS: Record<HubTab, { label: string; icon: React.ReactNode }> = {
-  projects: { label: "Projects", icon: <FolderKanban className="h-3.5 w-3.5" /> },
+  projects: { label: "By project", icon: <FolderKanban className="h-3.5 w-3.5" /> },
+  functions: { label: "By function", icon: <Users className="h-3.5 w-3.5" /> },
   overview: { label: "Overview", icon: <LayoutGrid className="h-3.5 w-3.5" /> },
   digest: { label: "Digest", icon: <Newspaper className="h-3.5 w-3.5" /> },
 };

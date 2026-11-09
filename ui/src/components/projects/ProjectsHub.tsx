@@ -775,7 +775,13 @@ export function ProjectsHub() {
    * refresh. Read on every render rather than copied into state, because the
    * query string is the one record of it.
    */
-  const tab = parseHubTab(searchParams.get("tab"));
+  // A ?groupBy=function link predates the tab and still has to land on it,
+  // or the view would open with the catalogue grouped one way and the tab
+  // bar claiming the other.
+  const tab = parseHubTab(
+    searchParams.get("tab")
+      ?? (searchParams.get("groupBy") === "function" ? "functions" : null),
+  );
   const setTab = useCallback(
     (next: HubTab) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -817,10 +823,13 @@ export function ProjectsHub() {
   }, []);
 
   // Projects are read by the goal they belong to, so that is the grouping.
-  // The application navigation offers the one other grouping a reader asks
-  // for by name, by function; a ?groupBy= link still serves anyone who wants
-  // a flat list or areas.
-  const groupBy = (searchParams.get("groupBy") ?? "initiative") as GroupBy;
+  // By function is the one other grouping a reader asks for by name, and it
+  // is a view of its own rather than a setting; a ?groupBy= link still
+  // serves anyone who wants a flat list or areas.
+  const groupBy: GroupBy =
+    tab === "functions"
+      ? "function"
+      : ((searchParams.get("groupBy") ?? "initiative") as GroupBy);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
@@ -1183,7 +1192,15 @@ export function ProjectsHub() {
       {tab === "overview" && <WorkspaceOverview />}
       {tab === "digest" && <WorkspaceDigest />}
 
-      <section className={cn("space-y-6", tab !== "projects" && "hidden")}>
+      {/* One catalogue under both of its readings: by project and by function
+          differ in how the list is grouped, not in what is fetched, so
+          switching between them should not cost three requests. */}
+      <section
+        className={cn(
+          "space-y-6",
+          tab !== "projects" && tab !== "functions" && "hidden",
+        )}
+      >
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <h2 className="whitespace-nowrap text-xl font-semibold">

@@ -4,10 +4,12 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import * as React from "react";
 
 import { HubTabs, parseHubTab } from "@/components/projects/HubTabs";
+import { TOME_GROUPS } from "@/components/projects/navigation";
 
 describe("parseHubTab", () => {
-  it("reads the three it knows", () => {
+  it("reads the four it knows", () => {
     expect(parseHubTab("projects")).toBe("projects");
+    expect(parseHubTab("functions")).toBe("functions");
     expect(parseHubTab("overview")).toBe("overview");
     expect(parseHubTab("digest")).toBe("digest");
   });
@@ -24,12 +26,25 @@ describe("parseHubTab", () => {
 });
 
 describe("HubTabs", () => {
-  it("offers the three views", () => {
+  it("offers the same views the application navigation lists", () => {
     render(<HubTabs value="projects" onChange={jest.fn()} />);
-    expect(screen.getAllByRole("tab")).toHaveLength(3);
-    expect(screen.getByRole("tab", { name: /Projects/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Overview/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Digest/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "By project",
+      "By function",
+      "Overview",
+      "Digest",
+    ]);
+  });
+
+  it("matches the rail's wording, so the two read as one navigation", () => {
+    render(<HubTabs value="projects" onChange={jest.fn()} />);
+    // Settings is the one entry the rail has and this does not: it is a page
+    // of its own, not a reading of the catalogue, and the hero already
+    // carries it.
+    const labels = TOME_GROUPS.flatMap((group) => group.items)
+      .map((item) => item.label)
+      .filter((label) => label !== "Settings");
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(labels);
   });
 
   it("marks only the open one as selected", () => {

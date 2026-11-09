@@ -34,6 +34,7 @@ describe("visibleWidgets", () => {
       "tagged",
       "updates",
       "children",
+      "partof",
       "glance",
       "milestones",
       "sources",
@@ -219,9 +220,28 @@ describe("kinds", () => {
     );
   });
 
-  it("applies every other card to every kind", () => {
+  it("gives a BHAG nothing about what is above it, there being nothing", () => {
+    expect(visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "bhag")).not.toContain(
+      "partof",
+    );
+    for (const kind of ["project", "area"] as const) {
+      expect(visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, kind)).toContain(
+        "partof",
+      );
+    }
+  });
+
+  it("applies every card but the hierarchy ones to every kind", () => {
+    // The two that depend on where a space sits in the tree are the only
+    // cards a kind of space can be without. Anything else absent somewhere is
+    // a card that forgot to say so.
+    expect(
+      TOME_HOME_WIDGETS.filter((widget) => widget.kinds).map(
+        (widget) => widget.id,
+      ),
+    ).toEqual(["children", "partof"]);
     for (const widget of TOME_HOME_WIDGETS) {
-      if (widget.id === "children") continue;
+      if (widget.kinds) continue;
       expect(widgetAppliesTo(widget.id, "project")).toBe(true);
       expect(widgetAppliesTo(widget.id, "bhag")).toBe(true);
     }
@@ -229,15 +249,25 @@ describe("kinds", () => {
 });
 
 describe("the workspace scope", () => {
-  it("shows only the cards made of rows", () => {
-    // What is waiting, what named the reader, what happened, and where. The
-    // rest need one wiki to be about.
+  it("shows the cards made of rows, and the two that roll up", () => {
+    // What is waiting, what named the reader, what happened, and where —
+    // plus what the work reads from and who answers for it, both of which are
+    // roll-ups of the spaces below wherever they are read. The rest need one
+    // wiki to be about.
     expect(visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "workspace")).toEqual([
       "attention",
       "tagged",
       "updates",
       "children",
+      "team",
+      "sources",
     ]);
+  });
+
+  it("keeps what is above out of it, there being nothing above every space", () => {
+    expect(visibleWidgets(DEFAULT_TOME_HOME_LAYOUT, "workspace")).not.toContain(
+      "partof",
+    );
   });
 
   it("requires a card to say so rather than inheriting it", () => {

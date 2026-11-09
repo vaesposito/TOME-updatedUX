@@ -23,6 +23,7 @@ import {
 import { isMongoDBConfigured } from "@/lib/mongodb";
 import { listReadableTomeProjects } from "@/lib/tome/access";
 import { sessionSub } from "@/lib/tome/agent-proxy";
+import { childRollupFacts } from "@/lib/tome/child-rollup";
 import { stateByProjectId } from "@/lib/tome/child-state.server";
 import { isTomeAdmin, type TomeAdminSession } from "@/lib/rbac/tome-admin";
 import { getEntitySummary } from "@/lib/tome/entity-summary.server";
@@ -154,6 +155,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         last_ingested_at: own?.last_ingested_at ?? null,
         last_edited_at: own?.last_edited_at ?? null,
         ingesting: own?.ingesting ?? null,
+        ...childRollupFacts(row),
       };
     }),
     total: ordered.length,

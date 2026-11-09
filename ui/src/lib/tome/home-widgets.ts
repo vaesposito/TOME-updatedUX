@@ -29,6 +29,7 @@ export type TomeHomeWidgetId =
   | "tagged"
   | "updates"
   | "children"
+  | "partof"
   | "glance"
   | "milestones"
   | "team"
@@ -54,9 +55,11 @@ export interface TomeHomeWidget {
    * Whether this card also means something with no single space in view.
    *
    * Opt-in rather than inherited from `kinds`, because most of these cards
-   * are about one wiki — its roadmap, its stewards, its sources, a question
-   * put to its agent — and have no answer at all when "this space" is every
-   * space. The ones that survive the move up are the ones made of rows.
+   * are about one wiki — its roadmap, a question put to its agent — and have
+   * no answer at all when "this space" is every space. The ones that survive
+   * the move up are the ones made of rows, and the two that are roll-ups of
+   * the spaces below wherever they are read: what the work reads from, and
+   * who answers for it.
    */
   workspace?: boolean;
 }
@@ -80,10 +83,21 @@ export const TOME_HOME_WIDGETS: readonly TomeHomeWidget[] = [
     kinds: ["bhag", "area"],
     workspace: true,
   },
+  // Beside the card for what is below, because the two are one question read
+  // in opposite directions. Left out at the top of the tree: there is nothing
+  // above a BHAG, and a permanently empty card reads as something broken
+  // rather than something inapplicable.
+  //
+  // Whole-width, as every card that only some kinds of space get has to be:
+  // the page is three columns and the shipped set fills whole rows of them,
+  // so a card present for two kinds and absent for the third can only leave
+  // that true if it is a row of its own. It reads across anyway — a trail is
+  // a path, not a list.
+  { id: "partof", label: "Part of", width: 3, kinds: ["project", "area"] },
   { id: "glance", label: "At a glance", width: 2 },
   { id: "milestones", label: "Milestones", width: 1 },
-  { id: "team", label: "Team", width: 1 },
-  { id: "sources", label: "Sources", width: 1 },
+  { id: "team", label: "Team", width: 1, workspace: true },
+  { id: "sources", label: "Sources", width: 1, workspace: true },
   { id: "kpis", label: "KPIs", width: 1 },
 ];
 

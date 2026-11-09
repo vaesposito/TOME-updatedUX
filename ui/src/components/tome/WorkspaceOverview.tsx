@@ -3,13 +3,15 @@
 /**
  * The hub's Overview tab: a space's home page, read across every space at once.
  *
- * Four cards, not all nine. A card that puts a question to this space's
- * agent, or reads its roadmap page, or names its stewards, has no answer when
- * "this space" is all of them; what survives the move up is everything made
- * of rows — what is waiting, what named the reader, what happened, and where.
- * Which four is not decided here but declared on the cards themselves, so
- * adding a card to a project's home is also the moment to say whether it
- * means anything from up here.
+ * Some of the cards, not all of them. A card that puts a question to this
+ * space's agent, or reads its roadmap page, has no answer when "this space"
+ * is all of them; what survives the move up is everything made of rows — what
+ * is waiting, what named the reader, what happened, and where — together with
+ * the two that are roll-ups of the spaces below wherever they are read, being
+ * what the work reads from and who answers for it. Which cards those are is
+ * not decided here but declared on the cards themselves, so adding one to a
+ * project's home is also the moment to say whether it means anything from up
+ * here.
  *
  * The arrangement is the reader's own, shared with every project home: the
  * cards mean the same thing at either altitude, so hiding one in a project
@@ -43,6 +45,8 @@ import {
 } from "@/components/tome/home/HomeChildren";
 import { HomeCustomizeBar } from "@/components/tome/home/HomeCustomizeBar";
 import { HomeNotificationList } from "@/components/tome/home/HomeNotificationRow";
+import { HomeSources } from "@/components/tome/home/HomeSources";
+import { HomeTeam } from "@/components/tome/home/HomeTeam";
 import { HomeWidgetFrame } from "@/components/tome/home/HomeWidgetFrame";
 import { splitHomeFeeds } from "@/components/tome/home/home-feeds";
 import { computeReorder } from "@/lib/reorder";
@@ -67,6 +71,9 @@ interface OverviewResponse {
 const ROWS = 4;
 
 const INBOX = "/notifications";
+
+/** The catalogue, which is the only "settings" an altitude above every space has. */
+const SPACES = "/projects";
 
 export function WorkspaceOverview() {
   const [data, setData] = React.useState<OverviewResponse | null>(null);
@@ -260,6 +267,32 @@ export function WorkspaceOverview() {
           />
         )}
       </HomeCard>
+    ),
+
+    /*
+      The two roll-ups, read off the same rows as the card below. Both answer
+      the question a space's own home asks — what the work reads from, and who
+      is answerable for it — with the whole readable workspace as the subject,
+      which is the only altitude at which "every source we have" is a thing
+      anyone can see. Neither has a panel to act on from up here, so the way
+      on is the catalogue rather than a space's own ingest or settings.
+    */
+    sources: (
+      <HomeSources
+        sources={null}
+        rollup={data?.spaces ?? null}
+        container
+        ingestHref={SPACES}
+        actionLabel="All spaces"
+      />
+    ),
+
+    team: (
+      <HomeTeam
+        rollup={data?.spaces ?? null}
+        settingsHref={SPACES}
+        actionLabel="All spaces"
+      />
     ),
 
     /*

@@ -19,6 +19,7 @@ import { NextRequest } from "next/server";
 import { successResponse, withErrorHandler } from "@/lib/api-middleware";
 import { getCollection } from "@/lib/mongodb";
 import { sessionSub } from "@/lib/tome/agent-proxy";
+import { childRollupFacts } from "@/lib/tome/child-rollup";
 import { stateByProjectId } from "@/lib/tome/child-state.server";
 import { filterReadableTomeProjects } from "@/lib/tome/access";
 import { resolveEntitySubtree, sortHierarchy } from "@/lib/tome/entity-hierarchy";
@@ -51,7 +52,22 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
   const projects = await getCollection<ProjectDocument>("projects");
   const rows = await projects
     .find({ slug: { $in: descendants.map((node) => node.slug) } })
-    .project<ProjectDocument>({ slug: 1, title: 1, name: 1, type: 1, labels: 1, status: 1 })
+    // Sources and the people answerable for a child come back too: the
+    // container's Sources and People cards are roll-ups of its children, and
+    // reading each child again from those cards would be one request per row.
+    .project<ProjectDocument>({
+      slug: 1,
+      title: 1,
+      name: 1,
+      type: 1,
+      labels: 1,
+      status: 1,
+      sources: 1,
+      data_steward: 1,
+      owner_id: 1,
+      team_slug: 1,
+      team_name: 1,
+    })
     .toArray();
 
   const readable = await filterReadableTomeProjects(sessionSub(session), rows, {
@@ -87,6 +103,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         last_ingested_at: own?.last_ingested_at ?? null,
         last_edited_at: own?.last_edited_at ?? null,
         ingesting: own?.ingesting ?? null,
+        ...childRollupFacts(row),
       };
     }),
     total: ordered.length,

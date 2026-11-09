@@ -143,13 +143,21 @@ describe("WorkspaceOverview", () => {
   it("leaves behind the cards that need one wiki to be about", async () => {
     render(<WorkspaceOverview />);
     await screen.findByText("Needs attention");
-    // Asking this space's agent, reading its roadmap or naming its stewards
-    // has no answer when the space is all of them.
+    // Asking this space's agent or reading its roadmap has no answer when
+    // the space is all of them, and nothing sits above every space.
     expect(screen.queryByText("Ask the agent")).not.toBeInTheDocument();
     expect(screen.queryByText("Milestones")).not.toBeInTheDocument();
     expect(screen.queryByText("At a glance")).not.toBeInTheDocument();
+    expect(screen.queryByText("Part of")).not.toBeInTheDocument();
+    // A roster is not the answer here either: nobody is a member of a
+    // workspace, so the card names who answers for the spaces in it.
     expect(screen.queryByText("Team")).not.toBeInTheDocument();
-    expect(screen.queryByText("Sources")).not.toBeInTheDocument();
+  });
+
+  it("rolls up what every space reads from, and who answers for it", async () => {
+    render(<WorkspaceOverview />);
+    expect(await screen.findByText("Sources")).toBeInTheDocument();
+    expect(screen.getByText("People")).toBeInTheDocument();
   });
 
   it("divides the rows between the cards", async () => {

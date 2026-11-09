@@ -18,7 +18,10 @@ import { AtSign, CircleAlert, Newspaper, WifiOff } from "lucide-react";
 import * as React from "react";
 
 import { HomeAskAgent } from "@/components/tome/home/HomeAskAgent";
-import { HomeChildren } from "@/components/tome/home/HomeChildren";
+import {
+  HomeChildren,
+  type ChildrenResponse,
+} from "@/components/tome/home/HomeChildren";
 import { HomeCustomizeBar } from "@/components/tome/home/HomeCustomizeBar";
 import {
   HomeCard,
@@ -29,6 +32,10 @@ import { HomeGlance } from "@/components/tome/home/HomeGlance";
 import { HomeKpis } from "@/components/tome/home/HomeKpis";
 import { HomeMilestones } from "@/components/tome/home/HomeMilestones";
 import { HomeNotificationList } from "@/components/tome/home/HomeNotificationRow";
+import {
+  HomePartOf,
+  type AncestorRow,
+} from "@/components/tome/home/HomePartOf";
 import { HomeSources } from "@/components/tome/home/HomeSources";
 import { HomeTeam } from "@/components/tome/home/HomeTeam";
 import { HomeWidgetFrame } from "@/components/tome/home/HomeWidgetFrame";
@@ -95,6 +102,7 @@ export function ProjectHomeView({
   kind,
   pages,
   sources,
+  ancestors,
   onAsk,
   onOpenPage,
   onOpenStandup,
@@ -120,6 +128,14 @@ export function ProjectHomeView({
   /** Every page's markdown, as the wiki beside this already holds it. */
   pages?: Record<string, string>;
   sources: Record<string, unknown> | null;
+  /**
+   * The spaces above this one, furthest first, as the breadcrumb reads them.
+   *
+   * Passed down rather than fetched: the shell around this has already
+   * resolved the trail for its own crumb, and two readings of one hierarchy
+   * are two chances to disagree about it.
+   */
+  ancestors?: readonly AncestorRow[];
   onAsk: (question: string) => void;
   onOpenPage?: (path: string) => void;
   onOpenStandup?: () => void;
@@ -217,6 +233,38 @@ export function ProjectHomeView({
   const container = kind === "bhag" || kind === "area";
   /** The entity's own record, which decides which cards exist and how they read. */
   const metaLoading = kind === undefined;
+
+  /**
+   * The spaces below this one, read once for the three cards that are about
+   * them: what is below, where the knowledge comes from, and who answers for
+   * it. A container connects almost nothing itself, so Sources and People
+   * have to be roll-ups or they describe an empty goal over a full portfolio.
+   */
+  const [children, setChildren] = React.useState<ChildrenResponse | null>(null);
+  const [childrenFailed, setChildrenFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!container) return;
+    let cancelled = false;
+    setChildren(null);
+    setChildrenFailed(false);
+    fetch(`/api/tome/projects/${encodeURIComponent(slug)}/children`, {
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((body) => {
+        if (!cancelled) setChildren((body?.data ?? body) as ChildrenResponse);
+      })
+      .catch(() => {
+        if (!cancelled) setChildrenFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, container]);
+
+  /** `undefined` where there is nothing below to roll up, `null` until it is in. */
+  const rollup = container ? (children?.children ?? null) : undefined;
   /** The wiki's pages, which three of the cards are entirely made of. */
   const pagesLoading = pages === undefined;
   const shown = React.useMemo(
@@ -259,7 +307,7 @@ export function ProjectHomeView({
    * Building a hidden card costs a little render and buys a lot: nothing here
    * fetches on its own except the roster, and keeping one record of the lot
    * means the arrangement decides the order in one place rather than the JSX
-   * deciding it in nine.
+   * deciding it once per card.
    */
   const cards: Record<TomeHomeWidgetId, React.ReactNode> = {
     ask: <HomeAskAgent title={title} onAsk={onAsk} />,
@@ -354,12 +402,29 @@ export function ProjectHomeView({
 
     children: container ? (
       <HomeChildren
-        slug={slug}
         kind={kind === "bhag" ? "bhag" : "area"}
         entities={summary?.scope_entities}
         settingsHref={settingsHref}
+        // Handed the rows this page already read. The slug goes instead only
+        // when that read failed, which is this card fetching once for itself
+        // so that it owns the error and the retry it offers for it.
+        {...(children
+          ? { rows: children }
+          : childrenFailed
+            ? { slug }
+            : {})}
       />
     ) : null,
+
+    partof: (
+      <HomePartOf
+        ancestors={ancestors ?? []}
+        // The trail arrives with the kind, from the same record.
+        loading={metaLoading || ancestors === undefined}
+        settingsHref={settingsHref}
+        onOpenSettings={onOpenSettings}
+      />
+    ),
 
     glance: (
       <HomeGlance
@@ -386,6 +451,7 @@ export function ProjectHomeView({
     team: (
       <HomeTeam
         slug={slug}
+        rollup={rollup}
         settingsHref={settingsHref}
         onOpenSettings={onOpenSettings}
       />
@@ -394,6 +460,7 @@ export function ProjectHomeView({
     sources: (
       <HomeSources
         sources={sources}
+        rollup={rollup}
         loading={metaLoading}
         container={container}
         ingestHref={ingestHref}

@@ -33,6 +33,20 @@ export interface ChildRow {
   last_ingested_at: string | null;
   last_edited_at: string | null;
   ingesting: "queued" | "running" | null;
+  /**
+   * What this space reads from, as Ingest stores it.
+   *
+   * Never shown on the row — a row says only what would make someone open
+   * the space. It travels with the row because the cards that answer "where
+   * does the knowledge come from" and "who is answerable for it" are
+   * roll-ups of these same children, and one read serves all three.
+   */
+  sources?: Record<string, unknown> | null;
+  /** The one person or team who may change this space, as a display label. */
+  steward?: string | null;
+  /** Whoever created the space, which is who to ask when there is no steward. */
+  owner?: string | null;
+  team?: { slug: string; name: string } | null;
 }
 
 export interface ChildrenResponse {
@@ -189,7 +203,7 @@ export function HomeChildren({
             <p className="mt-2 text-[11px] text-muted-foreground">
               Showing {rows.length} of {shown.total}
               {shown.withheld > 0
-                ? `, and ${data.withheld} not shared with you`
+                ? `, and ${shown.withheld} not shared with you`
                 : ""}
               .
             </p>

@@ -218,7 +218,7 @@ describe("what a container is told to do", () => {
     home({ kind: "bhag" });
     expect(await screen.findByText("Nothing connected yet")).toBeInTheDocument();
     expect(
-      screen.getByText(/Sources usually sit on the projects below this one/),
+      screen.getByText(/Nothing below this reads from a repository/),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Connect a source" }),

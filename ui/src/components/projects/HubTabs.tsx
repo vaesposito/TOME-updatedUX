@@ -93,18 +93,13 @@ export function HubTabs({
       </div>
 
       {settingsHref && (
-        <>
-          {/* A rule, not a gap: without it the link reads as a fifth tab
-              that simply happens not to be selected. */}
-          <span aria-hidden className="mx-0.5 h-5 w-px bg-border" />
-          <Link
-            href={settingsHref}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
-          >
-            <Settings className="h-3.5 w-3.5" />
-            Settings
-          </Link>
-        </>
+        <Link
+          href={settingsHref}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Settings
+        </Link>
       )}
     </div>
   );

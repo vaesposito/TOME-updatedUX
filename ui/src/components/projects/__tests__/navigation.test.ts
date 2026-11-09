@@ -33,6 +33,12 @@ describe("TOME application navigation", () => {
       expect(activeTomeNavigationId("/projects", { groupBy: "function" })).toBe("functions");
     });
 
+    it("marks the function view while the reader is inside one of its categories", () => {
+      expect(
+        activeTomeNavigationId("/projects/functions/marketing--marketing-events", {}),
+      ).toBe("functions");
+    });
+
     it("keeps the catalogue marked while the reader is inside a space", () => {
       // The catalogue is how they got there, so leaving every row unmarked
       // would say TOME is not where they are.

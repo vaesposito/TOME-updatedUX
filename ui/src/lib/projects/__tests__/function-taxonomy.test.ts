@@ -2,7 +2,9 @@ import {
   BUILT_IN_FUNCTIONS,
   addCategory,
   addFunction,
+  categorySlug,
   defaultTaxonomy,
+  findCategoryBySlug,
   hasCategoryNamed,
   normaliseTaxonomy,
   parseConfiguredCategories,
@@ -453,6 +455,53 @@ describe("function taxonomy", () => {
 
       expect(marketing.categories.map((c) => c.name)).toEqual(["Campaigns"]);
       expect(marketing.categories[0].spaces).toEqual(["first-example-project"]);
+    });
+  });
+
+  describe("addressing a category", () => {
+    /** A marketing function divided once, as a view would divide it. */
+    function divided() {
+      const base = defaultTaxonomy();
+      return addCategory(base, idOf(base, "Marketing"), "Field Events", [
+        "first-example-project",
+      ]).taxonomy;
+    }
+
+    function only(taxonomy: FunctionTaxonomy) {
+      const fn = taxonomy.functions.find((f) => f.categories.length > 0)!;
+      return { fn, category: fn.categories[0] };
+    }
+
+    it("names the function as well as the category, so a link says which", () => {
+      const { fn, category } = only(divided());
+
+      expect(categorySlug(fn, category)).toBe(`${fn.id}--${category.id}`);
+      // Neither id can hold a double dash, so the pair stays separable.
+      expect(fn.id).not.toContain("--");
+      expect(category.id).not.toContain("--");
+    });
+
+    it("finds the category a slug names, and the function it belongs to", () => {
+      const taxonomy = divided();
+      const { fn, category } = only(taxonomy);
+
+      const found = findCategoryBySlug(taxonomy, categorySlug(fn, category));
+
+      expect(found?.fn.name).toBe("Marketing");
+      expect(found?.category.name).toBe("Field Events");
+      expect(found?.category.spaces).toEqual(["first-example-project"]);
+    });
+
+    it("finds nothing for a slug this taxonomy does not hold", () => {
+      const taxonomy = divided();
+
+      expect(findCategoryBySlug(taxonomy, "marketing--nothing")).toBeNull();
+      expect(findCategoryBySlug(taxonomy, "")).toBeNull();
+      // The same category under a function that does not own it.
+      const { category } = only(taxonomy);
+      expect(
+        findCategoryBySlug(taxonomy, `engineering--${category.id}`),
+      ).toBeNull();
     });
   });
 });

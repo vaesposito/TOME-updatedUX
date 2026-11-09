@@ -71,25 +71,58 @@ describe("FunctionsView", () => {
     );
   });
 
-  it("draws a category where the catalogue draws a project, one level down", () => {
+  it("draws a category where the catalogue draws an area: a group of its own under the function", () => {
     marketingWithEvents();
     render(<FunctionsView projects={PROJECTS} />);
 
+    // A group rather than a card, so it has the caret an area has.
     const marketing = groupOf("Marketing");
-    // The category is the card, so it is a heading rather than a second
-    // group with its own caret.
     expect(
-      within(marketing).getByRole("heading", { level: 3, name: /Field Events/ }),
-    ).toBeInTheDocument();
-    expect(
-      within(marketing).queryByRole("button", { name: /Collapse Field Events/ }),
-    ).not.toBeInTheDocument();
-    expect(within(marketing).getByText("2 projects")).toBeInTheDocument();
+      within(marketing).getByRole("button", { name: "Collapse Field Events" }),
+    ).toHaveAttribute("aria-expanded", "true");
 
-    // What it holds is named inside it, and still reached in one click.
+    // And under it the catalogue's own project cards, not a list of names.
+    const events = groupOf("Field Events");
     expect(
-      within(marketing).getByRole("link", { name: /First Example Project/ }),
+      within(events).getByRole("link", { name: /First Example Project/ }),
     ).toHaveAttribute("href", "/projects/first-example-project");
+    expect(
+      within(events).getByRole("link", { name: /Second Example Project/ }),
+    ).toHaveAttribute("href", "/projects/second-example-project");
+    expect(
+      within(events).getByRole("heading", {
+        level: 3,
+        name: "Second Example Project",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("leads from a category's name to its own page, as an area's leads to its wiki", () => {
+    marketingWithEvents();
+    render(<FunctionsView projects={PROJECTS} />);
+
+    expect(
+      within(groupOf("Field Events")).getByRole("link", { name: "Field Events" }),
+    ).toHaveAttribute(
+      "href",
+      "/projects/functions/marketing--marketing-field-events",
+    );
+  });
+
+  it("counts the projects a function keeps, and those each category holds", () => {
+    marketingWithEvents();
+    render(
+      <FunctionsView
+        projects={[
+          ...PROJECTS,
+          project("third-example-project", "Third Example Project", ["Marketing"]),
+        ]}
+      />,
+    );
+
+    // The function counts everything under it; the category counts its own.
+    expect(within(groupOf("Marketing")).getAllByText("3")[0]).toBeInTheDocument();
+    expect(within(groupOf("Field Events")).getByText("2")).toBeInTheDocument();
   });
 
   it("closes a function, taking its categories with it", () => {
@@ -99,11 +132,27 @@ describe("FunctionsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Collapse Marketing" }));
 
     expect(
-      screen.queryByRole("heading", { level: 3, name: /Field Events/ }),
+      screen.queryByRole("button", { name: /Collapse Field Events/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Expand Marketing" }),
     ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes one category without closing the function it sits under", () => {
+    marketingWithEvents();
+    render(<FunctionsView projects={PROJECTS} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse Field Events" }),
+    );
+
+    expect(
+      screen.queryByRole("link", { name: /First Example Project/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collapse Marketing" }),
+    ).toHaveAttribute("aria-expanded", "true");
   });
 
   it("keeps a project that names a function on itself, outside any category", () => {
@@ -118,14 +167,21 @@ describe("FunctionsView", () => {
       />,
     );
 
-    // Beside the categories, at the level both of them belong to.
+    // At the function's own level, under the heading the catalogue gives the
+    // same case, and outside the category's group.
     const marketing = groupOf("Marketing");
     expect(
-      within(marketing).getByRole("heading", { level: 3, name: /Field Events/ }),
+      within(marketing).getByText("Tagged directly (no category)"),
     ).toBeInTheDocument();
     expect(
       within(marketing).getByRole("heading", { level: 3, name: "Third Example Project" }),
     ).toBeInTheDocument();
+    expect(
+      within(groupOf("Field Events")).queryByRole("heading", {
+        level: 3,
+        name: "Third Example Project",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("gathers what is in no function into its own group, as Ungrouped is", () => {
@@ -137,6 +193,20 @@ describe("FunctionsView", () => {
     ).toBeInTheDocument();
     expect(
       within(unassigned).getByRole("link", { name: /Second Example Project/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("says a category holds nothing yet rather than drawing an empty grid", () => {
+    store((base) => {
+      const marketing = base.functions.find((fn) => fn.name === "Marketing")!;
+      return addCategory(base, marketing.id, "Field Events").taxonomy;
+    });
+    render(<FunctionsView projects={PROJECTS} />);
+
+    expect(
+      within(groupOf("Field Events")).getByText(
+        "No projects tagged into this category yet.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -159,7 +229,7 @@ describe("FunctionsView", () => {
 
     expect(screen.queryByRole("button", { name: "Collapse Engineering" }))
       .not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: /Field Events/ }))
+    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Second Example Project/ }))
       .toBeInTheDocument();
@@ -188,7 +258,7 @@ describe("FunctionsView", () => {
 
     find("second");
 
-    expect(screen.getByRole("heading", { level: 3, name: /Field Events/ }))
+    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Second Example Project/ }))
       .toBeInTheDocument();
@@ -204,7 +274,7 @@ describe("FunctionsView", () => {
     // both the function and the category reaches the category.
     find("marketing events");
 
-    expect(screen.getByRole("heading", { level: 3, name: /Field Events/ }))
+    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
       .toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
       "1 of 5 functions",
@@ -263,6 +333,20 @@ describe("FunctionsView", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("opens the change flow from the category's own row", () => {
+    marketingWithEvents();
+    render(<FunctionsView projects={PROJECTS} />);
+
+    fireEvent.click(
+      within(groupOf("Field Events")).getByRole("button", {
+        name: "Edit category",
+      }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("Field Events");
+  });
+
   it("keeps a category made in the flow, and puts the tagged project under it", () => {
     render(<FunctionsView projects={PROJECTS} />);
 
@@ -279,12 +363,9 @@ describe("FunctionsView", () => {
     );
     fireEvent.click(within(dialog).getByRole("button", { name: /Create category/ }));
 
-    const marketing = groupOf("Marketing");
+    const events = groupOf("Field Events");
     expect(
-      within(marketing).getByRole("heading", { level: 3, name: /Field Events/ }),
-    ).toBeInTheDocument();
-    expect(
-      within(marketing).getByRole("link", { name: /First Example Project/ }),
+      within(events).getByRole("link", { name: /First Example Project/ }),
     ).toBeInTheDocument();
     // Stored, so it is still there on the next visit.
     expect(window.localStorage.getItem("tome.function-taxonomy.v1")).toContain(

@@ -6,9 +6,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
-  ArrowRight,
-  ChevronDown,
-  ChevronRight,
   FolderKanban,
   GripVertical,
   HelpCircle,
@@ -18,7 +15,6 @@ import {
   Search,
   Settings,
   Target,
-  X,
 } from "lucide-react";
 
 import { ProjectOnboardingWizard } from "@/components/projects/ProjectOnboardingWizard";
@@ -34,6 +30,12 @@ import {
   parseHubTab,
   type HubTab,
 } from "@/components/projects/HubTabs";
+import {
+  HubHeading,
+  HubSearchField,
+  HubToolbar,
+} from "@/components/projects/HubToolbar";
+import { HubGroup } from "@/components/projects/HubGroup";
 import { FunctionsView } from "@/components/projects/FunctionsView";
 import {
   ProjectCard,
@@ -223,78 +225,36 @@ function AreaSubGroup({
   onCreateArea?: (label: string, items: EnrichedProject[]) => void;
   creating?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const displayName = hierarchyDisplayName(area, label);
 
   return (
-    <div className="group/area ml-4 space-y-2 border-l-2 border-sky-500/20 pl-4 sm:ml-6 sm:pl-6">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          aria-label={`${collapsed ? "Expand" : "Collapse"} ${displayName}`}
-          onClick={() => setCollapsed((c) => !c)}
-          className="shrink-0 text-muted-foreground transition hover:text-foreground"
-        >
-          {collapsed ? (
-            <ChevronRight className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5" />
-          )}
-        </button>
-
-        <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />
-
-        {/* As on the group above: the name is the way into the area, rather
-            than a second control beside it repeating the name. */}
-        {area ? (
-          <Link
-            href={`/projects/${area.slug}`}
-            className="group/name inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-sky-500 hover:underline"
-          >
-            <span className="truncate">{displayName}</span>
-            <ArrowRight
-              className="h-3 w-3 shrink-0 opacity-0 transition group-hover/name:opacity-100"
-              aria-hidden
-            />
-          </Link>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            className="min-w-0 truncate text-left text-sm font-semibold text-sky-500"
-          >
-            {displayName}
-          </button>
-        )}
-
-        <span className="shrink-0 text-xs text-muted-foreground/50">{items.length}</span>
-
-        {!area && onCreateArea && (
-          <button
-            type="button"
-            onClick={() => onCreateArea?.(label, items)}
-            disabled={creating}
-            className="shrink-0 text-xs text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 disabled:opacity-50 group-hover/area:opacity-100"
-          >
-            {creating ? "Creating…" : "Create wiki"}
-          </button>
-        )}
-
-        <span className="ml-1 h-px flex-grow bg-border/30" />
-      </div>
-
-      {!collapsed && items.length > 0 && (
+    <HubGroup
+      level="nested"
+      name={displayName}
+      href={area ? `/projects/${area.slug}` : undefined}
+      labelClassName="text-sm font-semibold text-sky-500"
+      icon={<Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />}
+      count={items.length}
+      action={
+        !area && onCreateArea
+          ? {
+              label: creating ? "Creating…" : "Create wiki",
+              onClick: () => onCreateArea(label, items),
+              disabled: creating,
+            }
+          : undefined
+      }
+    >
+      {items.length > 0 ? (
         <div className={projectGridClassName()}>
           {items.map((p) => (
             <ProjectCard key={String(p._id)} project={p} />
           ))}
         </div>
-      )}
-      {!collapsed && items.length === 0 && (
+      ) : (
         <p className="py-1 text-xs text-muted-foreground/70">No projects tagged to this area yet.</p>
       )}
-    </div>
+    </HubGroup>
   );
 }
 
@@ -352,7 +312,6 @@ function ProjectGroup({
   onDragOverGroup?: (placement: "before" | "after") => void;
   onDrop?: (placement: "before" | "after") => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const isUngrouped = label === "Ungrouped";
   const isBhagGroup = groupBy === "initiative" && !isUngrouped;
   const isAreaGroup = groupBy === "area" && !isUngrouped;
@@ -385,11 +344,70 @@ function ProjectGroup({
       : "text-sm font-semibold text-sky-500";
 
   return (
-    <div
-      className={cn(
-        "group/group relative space-y-3 rounded-xl transition",
-        dragging && "scale-[0.995] bg-primary/5 opacity-60",
-      )}
+    <HubGroup
+      name={displayLabel}
+      href={hierarchyEntity ? `/projects/${hierarchyEntity.slug}` : undefined}
+      labelClassName={labelClass}
+      icon={
+        isBhagGroup ? (
+          <Target className="h-4 w-4 shrink-0 text-primary" />
+        ) : isAreaGroup ? (
+          <Layers className="h-4 w-4 shrink-0 text-sky-500" />
+        ) : undefined
+      }
+      count={items.length}
+      /* Breadcrumb: show which BHAG this area belongs to */
+      meta={
+        isAreaGroup && parentBhagName ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-primary/70">
+            <Target className="h-2.5 w-2.5" />
+            {parentBhagName}
+          </span>
+        ) : undefined
+      }
+      /* Only on hover: promoting a group into a wiki of its own is a rare
+         thing to do, and an offer standing permanently beside every group
+         that lacks one is an offer made mostly to people who did not come
+         to make it. */
+      action={
+        !hierarchyEntity && createGroupWiki
+          ? {
+              label: creating ? "Creating…" : "Create wiki",
+              onClick: createGroupWiki,
+              disabled: creating,
+            }
+          : undefined
+      }
+      className={cn(dragging && "scale-[0.995] bg-primary/5 opacity-60")}
+      before={
+        isBhagGroup && reordering ? (
+          <div
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", normLabel(label));
+              onDragStart?.();
+            }}
+            onDragEnd={onDragEnd}
+            className="flex cursor-grab items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
+            aria-label={`Drag to reorder BHAG ${displayLabel}`}
+            title="Drag to reorder BHAG"
+          >
+            <GripVertical className="h-4 w-4" />
+            <span className="hidden sm:inline">Move</span>
+          </div>
+        ) : undefined
+      }
+      overlay={
+        <>
+          {dropIndicatorPlacement === "before" && (
+            <div className="absolute -top-1.5 left-0 right-0 h-0.5 rounded-full bg-primary" />
+          )}
+          {dropIndicatorPlacement === "after" && (
+            <div className="absolute -bottom-1.5 left-0 right-0 h-0.5 rounded-full bg-primary" />
+          )}
+        </>
+      }
       onDragOver={
         reordering
           ? (event) => {
@@ -411,139 +429,37 @@ function ProjectGroup({
           : undefined
       }
     >
-      {dropIndicatorPlacement === "before" && (
-        <div className="absolute -top-1.5 left-0 right-0 h-0.5 rounded-full bg-primary" />
-      )}
-      <div className="flex items-center gap-3">
-        {isBhagGroup && reordering && (
-          <div
-            draggable
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", normLabel(label));
-              onDragStart?.();
-            }}
-            onDragEnd={onDragEnd}
-            className="flex cursor-grab items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
-            aria-label={`Drag to reorder BHAG ${displayLabel}`}
-            title="Drag to reorder BHAG"
-          >
-            <GripVertical className="h-4 w-4" />
-            <span className="hidden sm:inline">Move</span>
+      <div className="space-y-4">
+        {isBhagGroup && childAreas && childAreas.length > 0 && (
+          <div className="space-y-3">
+            {childAreas.map((ca) => (
+              <AreaSubGroup
+                key={ca.label}
+                label={ca.label}
+                items={ca.items}
+                area={ca.area}
+                onCreateArea={onCreateArea ? handleAreaCreate : undefined}
+                creating={creatingArea === normLabel(ca.label)}
+              />
+            ))}
           </div>
         )}
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          aria-label={`${collapsed ? "Expand" : "Collapse"} ${displayLabel}`}
-          onClick={() => setCollapsed((c) => !c)}
-          className="shrink-0 text-muted-foreground transition hover:text-foreground"
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronDown className="h-4 w-4" />
-          )}
-        </button>
 
-        {isBhagGroup && <Target className="h-4 w-4 shrink-0 text-primary" />}
-        {isAreaGroup && <Layers className="h-4 w-4 shrink-0 text-sky-500" />}
-
-        {/* The name is the way in.
-            A group that has a wiki of its own used to say so with a second
-            control beside this one, which repeated the name, repeated the
-            kind the icon already gave, and said "clickable" three times over
-            in a border, a fill and a colour. The name is the thing a reader
-            would open; making it the link says all of that and draws
-            nothing. */}
-        {hierarchyEntity ? (
-          <Link
-            href={`/projects/${hierarchyEntity.slug}`}
-            className={cn(
-              "group/name inline-flex min-w-0 items-center gap-1 hover:underline",
-              labelClass,
-            )}
-          >
-            <span className="truncate">{displayLabel}</span>
-            <ArrowRight
-              className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover/name:opacity-100"
-              aria-hidden
-            />
-          </Link>
-        ) : (
-          // Without one, the name does what the whole row used to do.
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            className={cn("min-w-0 truncate text-left", labelClass)}
-          >
-            {displayLabel}
-          </button>
+        {isBhagGroup && childAreas && childAreas.length > 0 && items.length > 0 && (
+          <p className="pl-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Tagged directly (no area)
+          </p>
         )}
 
-        {/* Breadcrumb: show which BHAG this area belongs to */}
-        {isAreaGroup && parentBhagName && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-primary/70">
-            <Target className="h-2.5 w-2.5" />
-            {parentBhagName}
-          </span>
+        {items.length > 0 && (
+          <div className={projectGridClassName()}>
+            {items.map((p) => (
+              <ProjectCard key={String(p._id)} project={p} />
+            ))}
+          </div>
         )}
-        <span className="shrink-0 text-xs text-muted-foreground/50">{items.length}</span>
-
-        {/* Only on hover: promoting a group into a wiki of its own is a rare
-            thing to do, and an offer standing permanently beside every
-            group that lacks one is an offer made mostly to people who did
-            not come to make it. */}
-        {!hierarchyEntity && createGroupWiki && (
-          <button
-            type="button"
-            onClick={createGroupWiki}
-            disabled={creating}
-            className="shrink-0 text-xs text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 disabled:opacity-50 group-hover/group:opacity-100"
-          >
-            {creating ? "Creating…" : "Create wiki"}
-          </button>
-        )}
-
-        <span className="ml-1 h-px flex-grow bg-border/40" />
       </div>
-
-      {!collapsed && (
-        <div className="space-y-4">
-          {isBhagGroup && childAreas && childAreas.length > 0 && (
-            <div className="space-y-3">
-              {childAreas.map((ca) => (
-                <AreaSubGroup
-                  key={ca.label}
-                  label={ca.label}
-                  items={ca.items}
-                  area={ca.area}
-                  onCreateArea={onCreateArea ? handleAreaCreate : undefined}
-                  creating={creatingArea === normLabel(ca.label)}
-                />
-              ))}
-            </div>
-          )}
-
-          {isBhagGroup && childAreas && childAreas.length > 0 && items.length > 0 && (
-            <p className="pl-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-              Tagged directly (no area)
-            </p>
-          )}
-
-          {items.length > 0 && (
-            <div className={projectGridClassName()}>
-              {items.map((p) => (
-                <ProjectCard key={String(p._id)} project={p} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {dropIndicatorPlacement === "after" && (
-        <div className="absolute -bottom-1.5 left-0 right-0 h-0.5 rounded-full bg-primary" />
-      )}
-    </div>
+    </HubGroup>
   );
 }
 
@@ -969,88 +885,75 @@ export function ProjectsHub() {
       {tab === "functions" && <FunctionsView projects={projects} />}
 
       <section className={cn("space-y-6", tab !== "projects" && "hidden")}>
-        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="whitespace-nowrap text-xl font-semibold">
-              {loading
-                ? "Your projects"
-                : normalizedProjectQuery
-                  ? `${filteredProjects.length} of ${projects.length} projects`
-                  : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
-            </h2>
-            <ActiveIngestsIndicator runs={activeIngests} />
-          </div>
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-            <div className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="search"
-                value={projectQuery}
-                onChange={(event) => setProjectQuery(event.target.value)}
-                placeholder="Find project…"
-                aria-label="Find a TOME project"
-                className="h-8 w-full rounded-lg border border-border/60 bg-background/40 pl-8 pr-8 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 hover:border-border focus:border-primary/50 focus:bg-background focus:ring-2 focus:ring-primary/15 [&::-webkit-search-cancel-button]:hidden"
-              />
-              {projectQuery && (
-                <button
-                  type="button"
-                  onClick={() => setProjectQuery("")}
-                  aria-label="Clear project search"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground"
-                    onClick={() => setOnboardingOpen(true)}
-                    aria-label="What is TOME?"
-                  >
-                    <HelpCircle className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">What is TOME?</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <ProjectOnboardingWizard
-              onComplete={() => void load()}
-              initialOpen={searchParams.get("onboard") === "1"}
-            />
-            <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
-            {isTomeAdmin && groupBy === "initiative" && (
-              <>
+        <HubToolbar
+          heading={
+            <>
+              <HubHeading>
+                {loading
+                  ? "Your projects"
+                  : normalizedProjectQuery
+                    ? `${filteredProjects.length} of ${projects.length} projects`
+                    : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
+              </HubHeading>
+              <ActiveIngestsIndicator runs={activeIngests} />
+            </>
+          }
+        >
+          <HubSearchField
+            value={projectQuery}
+            onChange={setProjectQuery}
+            placeholder="Find project…"
+            label="Find a TOME project"
+            clearLabel="Clear project search"
+          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button
-                  variant={reordering ? "secondary" : "outline"}
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={loading || visibleBhagOrder.length < 2 || orderSaving}
-                  onClick={() => setReordering((current) => !current)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground"
+                  onClick={() => setOnboardingOpen(true)}
+                  aria-label="What is TOME?"
                 >
-                  <ListOrdered className="h-3.5 w-3.5" />
-                  {orderSaving ? "Saving…" : reordering ? "Done" : "Reorder BHAGs"}
+                  <HelpCircle className="h-4 w-4" />
                 </Button>
-                {reordering && bhagOrder.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1.5 text-muted-foreground"
-                    disabled={orderSaving}
-                    onClick={resetBhagOrder}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Reset
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">What is TOME?</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <ProjectOnboardingWizard
+            onComplete={() => void load()}
+            initialOpen={searchParams.get("onboard") === "1"}
+          />
+          <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
+          {isTomeAdmin && groupBy === "initiative" && (
+            <>
+              <Button
+                variant={reordering ? "secondary" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                disabled={loading || visibleBhagOrder.length < 2 || orderSaving}
+                onClick={() => setReordering((current) => !current)}
+              >
+                <ListOrdered className="h-3.5 w-3.5" />
+                {orderSaving ? "Saving…" : reordering ? "Done" : "Reorder BHAGs"}
+              </Button>
+              {reordering && bhagOrder.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-muted-foreground"
+                  disabled={orderSaving}
+                  onClick={resetBhagOrder}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset
+                </Button>
+              )}
+            </>
+          )}
+        </HubToolbar>
 
         {loading && <p className="text-sm text-muted-foreground">Loading projects…</p>}
         {error && (

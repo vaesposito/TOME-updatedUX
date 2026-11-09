@@ -543,6 +543,34 @@ export function spacesInFunction(fn: OrgFunction): string[] {
   return [...new Set(fn.categories.flatMap((c) => c.spaces))];
 }
 
+/**
+ * A category's address.
+ *
+ * Both ids, because a category id is unique only inside the taxonomy that
+ * made it and a link has to say which function's division it means. Neither
+ * id can hold a double dash — ids are built from `[a-z0-9]` runs joined by
+ * single dashes — so the pair splits back apart unambiguously.
+ */
+export function categorySlug(
+  fn: Pick<OrgFunction, "id">,
+  category: Pick<FunctionCategory, "id">,
+): string {
+  return `${fn.id}--${category.id}`;
+}
+
+/** The function and category a slug names, if this taxonomy holds them. */
+export function findCategoryBySlug(
+  taxonomy: FunctionTaxonomy,
+  slug: string,
+): { fn: OrgFunction; category: FunctionCategory } | null {
+  for (const fn of taxonomy.functions) {
+    for (const category of fn.categories) {
+      if (categorySlug(fn, category) === slug) return { fn, category };
+    }
+  }
+  return null;
+}
+
 /** Where one space was tagged, named so it can be said aloud. */
 export interface SpacePlacement {
   functionId: string;

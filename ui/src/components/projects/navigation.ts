@@ -62,6 +62,9 @@ export function activeTomeNavigationId(
 ): string {
   if (!pathname?.startsWith("/projects")) return "";
   if (pathname.startsWith("/projects/admin")) return "settings";
+  // A category is one function's division of its own work, so reading one is
+  // still being in the function view rather than in the catalogue.
+  if (pathname.startsWith("/projects/functions")) return "functions";
   // A space of its own is somewhere below the catalogue, and the catalogue is
   // how a reader got there.
   if (pathname !== "/projects") return "projects";

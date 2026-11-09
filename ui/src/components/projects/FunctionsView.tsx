@@ -1,17 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import {
-  ArrowRight,
-  ChevronDown,
-  ChevronRight,
-  Layers,
-  Pencil,
-  Plus,
-  Search,
-  Users,
-  X,
-} from "lucide-react";
+import { Layers, Plus, Users } from "lucide-react";
 import * as React from "react";
 
 import {
@@ -19,6 +8,12 @@ import {
   type CategoryDraft,
   type TaggableSpace,
 } from "@/components/projects/FunctionCategoryDialog";
+import { HubGroup } from "@/components/projects/HubGroup";
+import {
+  HubHeading,
+  HubSearchField,
+  HubToolbar,
+} from "@/components/projects/HubToolbar";
 import {
   ProjectCard,
   type EnrichedProject,
@@ -27,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useFunctionTaxonomy } from "@/hooks/use-function-taxonomy";
 import {
+  categorySlug,
   spacesInFunction,
   type FunctionCategory,
   type OrgFunction,
@@ -37,15 +33,15 @@ import { projectGridClassName } from "@/lib/tome/project-grid";
 /**
  * The organisation, read as its functions.
  *
- * Two levels, not three: a function where the catalogue puts a group, and
- * its categories where the catalogue puts the project cards. A category is
- * the thing a reader came here for, so it is the card, and the projects it
- * holds are named inside it rather than given a level of their own.
+ * The catalogue's own hierarchy with one vocabulary swapped for another:
+ * where it reads BHAG → Area → Project, this reads Function → Category →
+ * Project. A category is therefore the level an area is — a group with its
+ * own page, holding project cards — and not a card of its own.
  *
- * Everything else is the catalogue's own — the same collapsing group, the
- * same grid, the same card — because a reader switching between the two
- * readings is looking at one set of projects and should not have to learn a
- * second way of moving through them.
+ * Everything that draws it is the catalogue's own: the same collapsing
+ * group, the same nested group under it, the same grid, the same card.
+ * A reader switching between the two readings is looking at one set of
+ * projects and should not have to learn a second way of moving through them.
  */
 
 /** A project, as a function's hierarchy needs to see it. */
@@ -157,52 +153,36 @@ export function FunctionsView({ projects }: { projects: EnrichedProject[] }) {
 
   return (
     <section className="space-y-6">
-      {/* The catalogue's own toolbar, to the letter: a reader moving between
-          the two readings of the same thing should not have to learn a second
-          way of narrowing it or a second place to add to it. */}
-      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="whitespace-nowrap text-xl font-semibold">
+      {/* The catalogue's own toolbar, the same component: a reader moving
+          between the two readings of the same thing should not have to learn
+          a second way of narrowing it or a second place to add to it. */}
+      <HubToolbar
+        heading={
+          <HubHeading>
             {terms.length > 0
               ? `${active.length} of ${taxonomy.functions.length} functions`
               : `${taxonomy.functions.length} functions`}
-          </h2>
-        </div>
+          </HubHeading>
+        }
+      >
+        <HubSearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Find function…"
+          label="Find a function, category or project"
+          clearLabel="Clear function search"
+        />
 
-        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-          <div className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Find function…"
-              aria-label="Find a function, category or project"
-              className="h-8 w-full rounded-lg border border-border/60 bg-background/40 pl-8 pr-8 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 hover:border-border focus:border-primary/50 focus:bg-background focus:ring-2 focus:ring-primary/15 [&::-webkit-search-cancel-button]:hidden"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                aria-label="Clear function search"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => openNew(taxonomy.functions[0]?.id ?? "")}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add category
-          </Button>
-        </div>
-      </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => openNew(taxonomy.functions[0]?.id ?? "")}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add category
+        </Button>
+      </HubToolbar>
 
       {active.length === 0 && unassigned.length === 0 && (
         <p className="py-6 text-sm text-muted-foreground">
@@ -219,10 +199,18 @@ export function FunctionsView({ projects }: { projects: EnrichedProject[] }) {
             return (
               <FunctionGroup
                 key={fn.id}
-                // What sits directly under it, as the catalogue counts a
-                // group: the cards a reader will see when it opens.
+                // The projects under it, counted once however many of its
+                // categories hold them: the whole of what the function
+                // keeps, rather than how many groups it keeps them in.
                 fn={fn}
-                count={categories.length + loose.length}
+                count={
+                  new Set([
+                    ...categories.flatMap(({ projects }) =>
+                      projects.map((entry) => entry.slug),
+                    ),
+                    ...loose.map((entry) => entry.slug),
+                  ]).size
+                }
                 categories={categories}
                 loose={loose}
                 onAddCategory={() => openNew(fn.id)}
@@ -272,199 +260,120 @@ function FunctionGroup({
   onAddCategory: () => void;
   onEditCategory: (category: FunctionCategory) => void;
 }) {
-  const [collapsed, setCollapsed] = React.useState(false);
-
   return (
-    <div className="group/group relative space-y-3 rounded-xl transition">
-      <div className="flex items-center gap-3">
-        <Caret
-          collapsed={collapsed}
-          label={fn.name}
-          onToggle={() => setCollapsed((c) => !c)}
-        />
+    <HubGroup
+      name={fn.name}
+      /* A function has no space of its own to open, so unlike a BHAG its
+         name does what the row does rather than leading somewhere. */
+      labelClassName="text-sm font-semibold text-primary"
+      icon={<Users className="h-4 w-4 shrink-0 text-primary" aria-hidden />}
+      count={count}
+      action={{ label: "Add category", onClick: onAddCategory }}
+    >
+      <div className="space-y-4">
+        {/* Categories sit where areas sit in the catalogue: a level of their
+            own between the function and the projects, each holding the same
+            cards the catalogue draws. */}
+        {categories.length > 0 && (
+          <div className="space-y-3">
+            {categories.map(({ category, projects }) => (
+              <CategorySubGroup
+                key={category.id}
+                category={category}
+                projects={projects}
+                href={`/projects/functions/${categorySlug(fn, category)}`}
+                onEdit={() => onEditCategory(category)}
+              />
+            ))}
+          </div>
+        )}
 
-        <Users className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+        {categories.length > 0 && loose.length > 0 && (
+          <p className="pl-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Tagged directly (no category)
+          </p>
+        )}
 
-        {/* A function has no space of its own to open, so unlike a BHAG its
-            name does what the row does rather than leading somewhere. */}
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="min-w-0 truncate text-left text-sm font-semibold text-primary"
-        >
-          {fn.name}
-        </button>
+        {/* A project its function claims but no category does sits at the
+            function's own level, as a project tagged to a BHAG and no area
+            does in the catalogue. */}
+        {loose.length > 0 && (
+          <div className={projectGridClassName()}>
+            {loose.map((entry) => (
+              <ProjectCard key={entry.slug} project={entry.project} />
+            ))}
+          </div>
+        )}
 
-        <span className="shrink-0 text-xs text-muted-foreground/50">{count}</span>
-
-        <button
-          type="button"
-          onClick={onAddCategory}
-          className="shrink-0 text-xs text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 group-hover/group:opacity-100"
-        >
-          Add category
-        </button>
-
-        <span className="ml-1 h-px flex-grow bg-border/40" />
+        {categories.length === 0 && loose.length === 0 && (
+          <p className="py-1 text-xs text-muted-foreground/70">
+            No categories yet. Divide this function&apos;s work to group its
+            projects.
+          </p>
+        )}
       </div>
-
-      {!collapsed && (
-        <div className="space-y-4">
-          {/* Categories sit where projects sit in the catalogue: one level
-              under the group, as cards, rather than as a second set of
-              headings with cards under those. What a category holds is
-              named inside it, which is as deep as this needs to go. */}
-          {(categories.length > 0 || loose.length > 0) && (
-            <div className={projectGridClassName()}>
-              {categories.map(({ category, projects }) => (
-                <CategoryCard
-                  key={category.id}
-                  category={category}
-                  projects={projects}
-                  onEdit={() => onEditCategory(category)}
-                />
-              ))}
-
-              {/* A project its function claims but no category does belongs
-                  at this level too, as itself. */}
-              {loose.map((entry) => (
-                <ProjectCard key={entry.slug} project={entry.project} />
-              ))}
-            </div>
-          )}
-
-          {categories.length === 0 && loose.length === 0 && (
-            <p className="py-1 text-xs text-muted-foreground/70">
-              No categories yet. Divide this function&apos;s work to group its
-              projects.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
+    </HubGroup>
   );
 }
 
 /**
- * One category, drawn where the catalogue draws a project.
+ * One category, drawn where the catalogue draws an area.
  *
- * The same card, carrying what a category is instead of what a project is:
- * its name, how much it holds, and the projects themselves named inside it
- * so they can still be reached in one click.
+ * The same nested group: the same indentation and rule down its left side,
+ * the same icon, its own count, and under it the projects tagged into it as
+ * the cards every other list of projects draws them. Its name leads to its
+ * own page, as an area's leads to its wiki.
  */
-function CategoryCard({
+function CategorySubGroup({
   category,
   projects,
+  href,
   onEdit,
 }: {
   category: FunctionCategory;
   projects: FunctionProject[];
+  /** The category's own page, read as the catalogue's projects are read. */
+  href: string;
   onEdit: () => void;
 }) {
   return (
-    <div className="group/cat flex flex-col rounded-2xl border border-border/60 bg-card/50 p-5 transition hover:border-primary/40 hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="inline-flex min-w-0 items-center gap-2 font-semibold leading-snug">
-          <Layers className="h-4 w-4 shrink-0 text-sky-500" aria-hidden />
-          <span className="truncate">{category.name}</span>
-        </h3>
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Edit ${category.name}`}
-          className="shrink-0 rounded text-muted-foreground opacity-0 transition hover:text-foreground focus:opacity-100 group-hover/cat:opacity-100"
-        >
-          <Pencil className="h-3.5 w-3.5" aria-hidden />
-        </button>
-      </div>
-
-      <span className="mt-0.5 text-[11px] text-muted-foreground">
-        {category.spaces.length}{" "}
-        {category.spaces.length === 1 ? "project" : "projects"}
-      </span>
-
-      {projects.length === 0 ? (
-        <p className="mt-3 flex-grow text-sm text-muted-foreground">
-          Nothing tagged into it yet.
-        </p>
-      ) : (
-        <ul className="mt-3 flex-grow space-y-1.5">
-          {projects.map((entry) => (
-            <li key={entry.slug}>
-              <Link
-                href={`/projects/${encodeURIComponent(entry.slug)}`}
-                className="group/row flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-              >
-                <span className="min-w-0 truncate">{entry.title}</span>
-                <ArrowRight
-                  className="h-3 w-3 shrink-0 opacity-0 transition group-hover/row:opacity-100"
-                  aria-hidden
-                />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/** Everything in no function, drawn as the catalogue draws Ungrouped. */
-function UnassignedGroup({ projects }: { projects: FunctionProject[] }) {
-  const [collapsed, setCollapsed] = React.useState(false);
-
-  return (
-    <div className="relative space-y-3 rounded-xl transition">
-      <div className="flex items-center gap-3">
-        <Caret
-          collapsed={collapsed}
-          label="Unassigned"
-          onToggle={() => setCollapsed((c) => !c)}
-        />
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="min-w-0 truncate text-left text-sm font-medium text-muted-foreground"
-        >
-          Unassigned
-        </button>
-        <span className="shrink-0 text-xs text-muted-foreground/50">
-          {projects.length}
-        </span>
-        <span className="ml-1 h-px flex-grow bg-border/40" />
-      </div>
-
-      {!collapsed && (
+    <HubGroup
+      level="nested"
+      name={category.name}
+      href={href}
+      labelClassName="text-sm font-semibold text-sky-500"
+      icon={<Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-hidden />}
+      count={projects.length}
+      action={{ label: "Edit category", onClick: onEdit }}
+    >
+      {projects.length > 0 ? (
         <div className={projectGridClassName()}>
           {projects.map((entry) => (
             <ProjectCard key={entry.slug} project={entry.project} />
           ))}
         </div>
+      ) : (
+        <p className="py-1 text-xs text-muted-foreground/70">
+          No projects tagged into this category yet.
+        </p>
       )}
-    </div>
+    </HubGroup>
   );
 }
 
-/** The one control that opens and closes a function. */
-function Caret({
-  collapsed,
-  label,
-  onToggle,
-}: {
-  collapsed: boolean;
-  label: string;
-  onToggle: () => void;
-}) {
-  const Icon = collapsed ? ChevronRight : ChevronDown;
+/** Everything in no function, drawn as the catalogue draws Ungrouped. */
+function UnassignedGroup({ projects }: { projects: FunctionProject[] }) {
   return (
-    <button
-      type="button"
-      aria-expanded={!collapsed}
-      aria-label={`${collapsed ? "Expand" : "Collapse"} ${label}`}
-      onClick={onToggle}
-      className="shrink-0 text-muted-foreground transition hover:text-foreground"
+    <HubGroup
+      name="Unassigned"
+      labelClassName="text-sm font-medium text-muted-foreground"
+      count={projects.length}
     >
-      <Icon className="h-4 w-4" />
-    </button>
+      <div className={projectGridClassName()}>
+        {projects.map((entry) => (
+          <ProjectCard key={entry.slug} project={entry.project} />
+        ))}
+      </div>
+    </HubGroup>
   );
 }

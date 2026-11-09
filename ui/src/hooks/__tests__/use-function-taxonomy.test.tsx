@@ -11,8 +11,8 @@ const SEEDED_KEY = "tome.function-taxonomy.seeded.v1";
 const CONFIG = "Marketing: Example Campaigns, Example Field Events";
 
 /** The browser arriving at TOME with this deployment's configuration. */
-function arrive(configured: string | undefined) {
-  applyConfiguredCategories(configured);
+function arrive(categories: string | undefined, tags?: string) {
+  applyConfiguredCategories({ categories, tags });
   return renderHook(() => useFunctionTaxonomy());
 }
 
@@ -100,7 +100,7 @@ describe("useFunctionTaxonomy", () => {
   it("remembers which configuration this browser has been given", () => {
     arrive(CONFIG);
 
-    expect(window.localStorage.getItem(SEEDED_KEY)).toBe(CONFIG);
+    expect(window.localStorage.getItem(SEEDED_KEY)).toContain(CONFIG);
     expect(window.localStorage.getItem(STORAGE_KEY)).toContain(
       "Example Campaigns",
     );

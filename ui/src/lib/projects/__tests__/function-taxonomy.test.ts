@@ -6,7 +6,9 @@ import {
   hasCategoryNamed,
   normaliseTaxonomy,
   parseConfiguredCategories,
+  parseConfiguredTags,
   placementsOf,
+  reconcileConfiguration,
   reconcileConfiguredCategories,
   relatedSpaces,
   removeCategory,
@@ -16,6 +18,7 @@ import {
   spacesInFunction,
   toggleSpace,
   withConfiguredCategories,
+  withConfiguredTags,
   type FunctionTaxonomy,
 } from "@/lib/projects/function-taxonomy";
 
@@ -340,6 +343,116 @@ describe("function taxonomy", () => {
       expect(
         reconciled.functions.find((fn) => fn.name === "Engineering")!.categories.map((c) => c.name),
       ).toEqual(["Example Platform"]);
+    });
+  });
+
+  describe("projects a deployment puts in its categories", () => {
+    const CATEGORIES = "Marketing: Example Campaigns | Engineering: Example Campaigns";
+    const TAGS =
+      "Marketing > Example Campaigns: first-example-project, second-example-project";
+
+    function seeded(tags = TAGS) {
+      return withConfiguredTags(
+        withConfiguredCategories(defaultTaxonomy(), CATEGORIES),
+        tags,
+      );
+    }
+
+    function categoryIn(taxonomy: FunctionTaxonomy, fnName: string) {
+      return taxonomy.functions.find((fn) => fn.name === fnName)!.categories[0];
+    }
+
+    it("reads a tagging line into a function, a category and its projects", () => {
+      expect(parseConfiguredTags(TAGS)).toEqual([
+        {
+          function: "Marketing",
+          category: "Example Campaigns",
+          spaces: ["first-example-project", "second-example-project"],
+        },
+      ]);
+    });
+
+    it("reads nothing out of a line missing the function or the projects", () => {
+      expect(parseConfiguredTags(undefined)).toEqual([]);
+      expect(parseConfiguredTags("Example Campaigns: a-project")).toEqual([]);
+      expect(parseConfiguredTags("Marketing > Example Campaigns:")).toEqual([]);
+    });
+
+    it("puts the projects in the named function's category, not the other's", () => {
+      const taxonomy = seeded();
+
+      expect(categoryIn(taxonomy, "Marketing").spaces).toEqual([
+        "first-example-project",
+        "second-example-project",
+      ]);
+      // Same category name under another function means something else.
+      expect(categoryIn(taxonomy, "Engineering").spaces).toEqual([]);
+    });
+
+    it("ignores a tag naming a category that does not exist", () => {
+      const taxonomy = withConfiguredTags(
+        withConfiguredCategories(defaultTaxonomy(), CATEGORIES),
+        "Marketing > Not A Category: first-example-project",
+      );
+
+      expect(categoryIn(taxonomy, "Marketing").spaces).toEqual([]);
+    });
+
+    it("keeps what someone tagged by hand beside what is configured", () => {
+      const base = withConfiguredCategories(defaultTaxonomy(), CATEGORIES);
+      const byHand = toggleSpace(
+        base,
+        categoryIn(base, "Marketing").id,
+        "third-example-project",
+      );
+
+      const taxonomy = withConfiguredTags(byHand, TAGS);
+
+      expect(categoryIn(taxonomy, "Marketing").spaces).toEqual([
+        "third-example-project",
+        "first-example-project",
+        "second-example-project",
+      ]);
+    });
+
+    it("takes out a project configuration has stopped naming, and only that one", () => {
+      const before = seeded();
+      const byHand = toggleSpace(
+        before,
+        categoryIn(before, "Marketing").id,
+        "third-example-project",
+      );
+
+      const after = reconcileConfiguration(
+        byHand,
+        { categories: CATEGORIES, tags: TAGS },
+        {
+          categories: CATEGORIES,
+          tags: "Marketing > Example Campaigns: first-example-project",
+        },
+      );
+
+      expect(categoryIn(after, "Marketing").spaces).toEqual([
+        "first-example-project",
+        "third-example-project",
+      ]);
+    });
+
+    it("empties a category first, so renaming both reads as a rename", () => {
+      const before = seeded();
+
+      const after = reconcileConfiguration(
+        before,
+        { categories: CATEGORIES, tags: TAGS },
+        {
+          categories: "Marketing: Campaigns | Engineering: Example Campaigns",
+          tags: "Marketing > Campaigns: first-example-project",
+        },
+      );
+      const marketing = after.functions.find((fn) => fn.name === "Marketing")!;
+
+      expect(marketing.categories.map((c) => c.name)).toEqual(["Campaigns"]);
+      expect(marketing.categories[0].spaces).toEqual(["first-example-project"]);
     });
   });
 });

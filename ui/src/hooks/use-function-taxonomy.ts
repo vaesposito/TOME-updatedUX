@@ -5,8 +5,9 @@ import { useCallback, useSyncExternalStore } from "react";
 import {
   defaultTaxonomy,
   normaliseTaxonomy,
-  reconcileConfiguredCategories,
+  reconcileConfiguration,
   type FunctionTaxonomy,
+  type TaxonomyConfig,
 } from "@/lib/projects/function-taxonomy";
 
 /**
@@ -30,16 +31,20 @@ const STORAGE_KEY = "tome.function-taxonomy.v1";
 const SEEDED_KEY = "tome.function-taxonomy.seeded.v1";
 
 /**
- * The categories this deployment ships with, as `Function: One, Two | …`.
+ * What this deployment says about its own organisation: the categories each
+ * function keeps, and which projects sit in them.
  *
- * Read from the environment rather than written into the code: what a
- * function calls its own divisions belongs to whoever runs TOME, not to the
- * product, and naming one organisation's divisions here would make every
- * other organisation delete them before making their own.
+ * Read from the environment rather than written into the code, because an
+ * organisation's divisions and the projects inside them belong to whoever
+ * runs TOME, not to the product. Naming one organisation's here would make
+ * every other organisation delete them before making their own.
  *
- * Referenced in full so the build can inline it into the browser bundle.
+ * Referenced in full so the build can inline them into the browser bundle.
  */
-const CONFIGURED = process.env.NEXT_PUBLIC_TOME_FUNCTION_CATEGORIES;
+const CONFIGURED: TaxonomyConfig = {
+  categories: process.env.NEXT_PUBLIC_TOME_FUNCTION_CATEGORIES,
+  tags: process.env.NEXT_PUBLIC_TOME_FUNCTION_TAGS,
+};
 
 /** What the server renders, and what the client hydrates against. */
 const EMPTY = defaultTaxonomy();
@@ -95,27 +100,42 @@ function onStorage(event: StorageEvent): void {
   emit();
 }
 
+/** The two lines as one string, so either changing counts as a change. */
+function markerFor(configured: TaxonomyConfig): string {
+  return `${configured.categories ?? ""}\n${configured.tags ?? ""}`;
+}
+
+/** What a marker was written from, so the change can be read as a change. */
+function configFromMarker(marker: string | null): TaxonomyConfig {
+  const [categories = "", tags = ""] = (marker ?? "").split("\n");
+  return { categories, tags };
+}
+
 /**
- * Give this device the configured categories, once per configuration.
+ * Give this device the configured organisation, once per configuration.
  *
  * Marked rather than repeated, so a category deleted here stays deleted,
  * while a line added to the configuration still reaches a device that has
  * been using TOME for months. Run at import, before the first snapshot, so
- * the view never draws the organisation without them and then again with.
+ * the view never draws the organisation without it and then again with it.
  *
  * Takes the configuration as an argument so a test can hand it one without
  * reloading the module, which would give the test a second copy of React.
  */
 export function applyConfiguredCategories(configured = CONFIGURED): void {
   try {
-    const marker = configured ?? "";
+    const marker = markerFor(configured);
     const previous = window.localStorage.getItem(SEEDED_KEY);
     if (previous === marker) return;
     window.localStorage.setItem(SEEDED_KEY, marker);
 
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const current = raw ? normaliseTaxonomy(JSON.parse(raw)) : defaultTaxonomy();
-    const seeded = reconcileConfiguredCategories(current, previous, configured);
+    const seeded = reconcileConfiguration(
+      current,
+      configFromMarker(previous),
+      configured,
+    );
     if (seeded === current) return;
 
     const serialised = JSON.stringify(seeded);

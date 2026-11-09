@@ -226,6 +226,73 @@ export function withConfiguredCategories(
   return next;
 }
 
+/** One category, and the projects a deployment says sit in it. */
+export interface ConfiguredTag {
+  function: string;
+  category: string;
+  spaces: string[];
+}
+
+/**
+ * Read which projects a deployment puts in which category.
+ *
+ * Written as `Function > Category: slug, other-slug | …`. The function is
+ * named as well as the category because two functions may divide their work
+ * by the same word and mean different things by it.
+ */
+export function parseConfiguredTags(raw: string | undefined | null): ConfiguredTag[] {
+  if (!raw) return [];
+  const tags: ConfiguredTag[] = [];
+  for (const chunk of raw.split("|")) {
+    const at = chunk.indexOf(":");
+    if (at < 0) continue;
+    const [fn, category] = chunk.slice(0, at).split(">").map((part) => part.trim());
+    if (!fn || !category) continue;
+    const spaces = chunk
+      .slice(at + 1)
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (spaces.length > 0) tags.push({ function: fn, category, spaces });
+  }
+  return tags;
+}
+
+/** The category this tag names, if the taxonomy has it. */
+function categoryFor(
+  taxonomy: FunctionTaxonomy,
+  tag: { function: string; category: string },
+): FunctionCategory | undefined {
+  const fn = taxonomy.functions.find(
+    (candidate) => normLabel(candidate.name) === normLabel(tag.function),
+  );
+  return fn?.categories.find(
+    (category) => normLabel(category.name) === normLabel(tag.category),
+  );
+}
+
+/**
+ * Put the configured projects into their categories, keeping what is there.
+ *
+ * A tag naming a category that does not exist is ignored rather than
+ * creating one: the categories line says what exists, and a typo in a tag
+ * should not quietly invent a division of the work.
+ */
+export function withConfiguredTags(
+  taxonomy: FunctionTaxonomy,
+  raw: string | undefined | null,
+): FunctionTaxonomy {
+  let next = taxonomy;
+  for (const tag of parseConfiguredTags(raw)) {
+    const category = categoryFor(next, tag);
+    if (!category) continue;
+    const wanted = tag.spaces.filter((slug) => !category.spaces.includes(slug));
+    if (wanted.length === 0) continue;
+    next = setSpaces(next, category.id, [...category.spaces, ...wanted]);
+  }
+  return next;
+}
+
 /**
  * Bring a taxonomy from one configuration to the next.
  *
@@ -266,6 +333,52 @@ export function reconcileConfiguredCategories(
   }
 
   return withConfiguredCategories(next, current);
+}
+
+/** Everything a deployment says about the organisation, in two lines. */
+export interface TaxonomyConfig {
+  categories?: string | null;
+  tags?: string | null;
+}
+
+/**
+ * Bring a taxonomy from one whole configuration to the next.
+ *
+ * Tags are retired before categories, so a category emptied by the change is
+ * free to be retired itself and a rename of both reads as a rename. Only
+ * pairs the previous configuration named are taken out: a project someone
+ * tagged by hand was never configuration's to remove.
+ */
+export function reconcileConfiguration(
+  taxonomy: FunctionTaxonomy,
+  previous: TaxonomyConfig,
+  current: TaxonomyConfig,
+): FunctionTaxonomy {
+  const stillTagged = new Map<string, Set<string>>();
+  for (const tag of parseConfiguredTags(current.tags)) {
+    const key = `${normLabel(tag.function)}>${normLabel(tag.category)}`;
+    const set = stillTagged.get(key) ?? new Set<string>();
+    for (const slug of tag.spaces) set.add(slug);
+    stillTagged.set(key, set);
+  }
+
+  let next = taxonomy;
+  for (const tag of parseConfiguredTags(previous.tags)) {
+    const key = `${normLabel(tag.function)}>${normLabel(tag.category)}`;
+    const keep = stillTagged.get(key) ?? new Set<string>();
+    const retired = tag.spaces.filter((slug) => !keep.has(slug));
+    if (retired.length === 0) continue;
+    const category = categoryFor(next, tag);
+    if (!category) continue;
+    next = setSpaces(
+      next,
+      category.id,
+      category.spaces.filter((slug) => !retired.includes(slug)),
+    );
+  }
+
+  next = reconcileConfiguredCategories(next, previous.categories, current.categories);
+  return withConfiguredTags(next, current.tags);
 }
 
 /** Whether a function of this name already exists, however it was capitalised. */

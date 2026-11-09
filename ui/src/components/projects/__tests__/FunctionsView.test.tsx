@@ -91,7 +91,15 @@ describe("FunctionsView", () => {
     expect(screen.getByText(/1 space not assigned to one yet/)).toBeInTheDocument();
   });
 
-  it("narrows to one function, and then to one of its categories", () => {
+  /** Type into the view's one filter, as the catalogue's own works. */
+  function find(text: string) {
+    fireEvent.change(
+      screen.getByLabelText("Find a function, category or space"),
+      { target: { value: text } },
+    );
+  }
+
+  it("narrows to the function a query names, keeping all of it", () => {
     marketingWithEvents();
     render(<FunctionsView spaces={SPACES} />);
 
@@ -99,48 +107,110 @@ describe("FunctionsView", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Engineering" }))
       .toBeInTheDocument();
 
-    const functions = screen.getByRole("group", { name: "Filter by function" });
-    fireEvent.click(within(functions).getByRole("button", { name: /Marketing/ }));
+    find("marketing");
 
     expect(screen.queryByRole("heading", { level: 3, name: "Engineering" }))
       .not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 4, name: "Field Events" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Second Example Project/ }))
+      .toBeInTheDocument();
+  });
+
+  it("reaches a category through its own name", () => {
+    marketingWithEvents();
+    render(<FunctionsView spaces={SPACES} />);
+
+    find("field");
+
     expect(screen.getByRole("heading", { level: 3, name: "Marketing" }))
       .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "SLT" }))
+      .not.toBeInTheDocument();
+    // Named outright, so everything under it stays.
+    expect(screen.getByRole("link", { name: /First Example Project/ }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Second Example Project/ }))
+      .toBeInTheDocument();
+  });
 
-    // The categories of the chosen function only, since two functions can
-    // divide their work by the same word and mean different things.
-    const categories = screen.getByRole("group", {
-      name: "Filter by category in Marketing",
-    });
-    fireEvent.click(within(categories).getByRole("button", { name: /Field Events/ }));
+  it("reaches a space, and keeps only what was reached", () => {
+    marketingWithEvents();
+    render(<FunctionsView spaces={SPACES} />);
+
+    find("second");
 
     expect(screen.getByRole("heading", { level: 4, name: "Field Events" }))
       .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Second Example Project/ }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /First Example Project/ }))
+      .not.toBeInTheDocument();
+  });
+
+  it("narrows on a second word rather than widening, as the catalogue does", () => {
+    marketingWithEvents();
+    render(<FunctionsView spaces={SPACES} />);
+
+    // The function's own name counts towards what is under it, so naming
+    // both the function and the category reaches the category.
+    find("marketing events");
+
+    expect(screen.getByRole("heading", { level: 4, name: "Field Events" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "1 of 5 functions",
+    );
+
+    find("marketing nowhere");
     expect(
-      screen.getByRole("link", { name: /Second Example Project/ }),
+      screen.getByText(/No function, category or space matches/),
     ).toBeInTheDocument();
   });
 
-  it("offers no category filter until a function is chosen", () => {
+  it("reaches a space by its slug too", () => {
     marketingWithEvents();
     render(<FunctionsView spaces={SPACES} />);
 
-    expect(
-      screen.queryByRole("group", { name: /Filter by category/ }),
-    ).not.toBeInTheDocument();
+    find("second-example-project");
+
+    expect(screen.getByRole("link", { name: /Second Example Project/ }))
+      .toBeInTheDocument();
   });
 
-  it("says what each filter holds, so a reader need not open an empty one", () => {
+  it("counts what the query left, as the catalogue does", () => {
     marketingWithEvents();
     render(<FunctionsView spaces={SPACES} />);
 
-    const functions = screen.getByRole("group", { name: "Filter by function" });
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "5 functions",
+    );
+    find("marketing");
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "1 of 5 functions",
+    );
+  });
+
+  it("says so when a query matches nothing at all", () => {
+    marketingWithEvents();
+    render(<FunctionsView spaces={SPACES} />);
+
+    find("nothing by this name");
+
     expect(
-      within(functions).getByRole("button", { name: /Marketing/ }),
-    ).toHaveTextContent("Marketing2");
-    expect(
-      within(functions).getByRole("button", { name: /^SLT/ }),
-    ).toHaveTextContent("SLT0");
+      screen.getByText(/No function, category or space matches/),
+    ).toBeInTheDocument();
+  });
+
+  it("clears the query from the field's own control", () => {
+    marketingWithEvents();
+    render(<FunctionsView spaces={SPACES} />);
+    find("marketing");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear function search" }));
+
+    expect(screen.getByRole("heading", { level: 3, name: "Engineering" }))
+      .toBeInTheDocument();
   });
 
   it("opens the creation flow on the function whose row was used", () => {

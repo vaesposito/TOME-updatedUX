@@ -71,38 +71,35 @@ describe("FunctionsView", () => {
     );
   });
 
-  it("nests a category under its function and the projects under the category", () => {
+  it("draws a category where the catalogue draws a project, one level down", () => {
     marketingWithEvents();
     render(<FunctionsView projects={PROJECTS} />);
 
     const marketing = groupOf("Marketing");
-    const category = within(marketing).getByRole("button", {
-      name: "Collapse Field Events",
-    });
-    expect(category).toBeInTheDocument();
+    // The category is the card, so it is a heading rather than a second
+    // group with its own caret.
+    expect(
+      within(marketing).getByRole("heading", { level: 3, name: /Field Events/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(marketing).queryByRole("button", { name: /Collapse Field Events/ }),
+    ).not.toBeInTheDocument();
+    expect(within(marketing).getByText("2 projects")).toBeInTheDocument();
 
-    // The same card the catalogue draws, leading to the project itself.
+    // What it holds is named inside it, and still reached in one click.
     expect(
       within(marketing).getByRole("link", { name: /First Example Project/ }),
     ).toHaveAttribute("href", "/projects/first-example-project");
   });
 
-  it("closes a function, and closes one category without the rest", () => {
+  it("closes a function, taking its categories with it", () => {
     marketingWithEvents();
     render(<FunctionsView projects={PROJECTS} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse Field Events" }));
-    expect(
-      screen.queryByRole("link", { name: /First Example Project/ }),
-    ).not.toBeInTheDocument();
-    // The function above it stays open.
-    expect(
-      screen.getByRole("button", { name: "Collapse Marketing" }),
-    ).toHaveAttribute("aria-expanded", "true");
-
     fireEvent.click(screen.getByRole("button", { name: "Collapse Marketing" }));
+
     expect(
-      screen.queryByRole("button", { name: /Expand Field Events/ }),
+      screen.queryByRole("heading", { level: 3, name: /Field Events/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Expand Marketing" }),
@@ -121,12 +118,13 @@ describe("FunctionsView", () => {
       />,
     );
 
+    // Beside the categories, at the level both of them belong to.
     const marketing = groupOf("Marketing");
     expect(
-      within(marketing).getByText("Tagged directly (no category)"),
+      within(marketing).getByRole("heading", { level: 3, name: /Field Events/ }),
     ).toBeInTheDocument();
     expect(
-      within(marketing).getByRole("link", { name: /Third Example Project/ }),
+      within(marketing).getByRole("heading", { level: 3, name: "Third Example Project" }),
     ).toBeInTheDocument();
   });
 
@@ -161,7 +159,7 @@ describe("FunctionsView", () => {
 
     expect(screen.queryByRole("button", { name: "Collapse Engineering" }))
       .not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
+    expect(screen.getByRole("heading", { level: 3, name: /Field Events/ }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Second Example Project/ }))
       .toBeInTheDocument();
@@ -190,7 +188,7 @@ describe("FunctionsView", () => {
 
     find("second");
 
-    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
+    expect(screen.getByRole("heading", { level: 3, name: /Field Events/ }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Second Example Project/ }))
       .toBeInTheDocument();
@@ -206,7 +204,7 @@ describe("FunctionsView", () => {
     // both the function and the category reaches the category.
     find("marketing events");
 
-    expect(screen.getByRole("button", { name: "Collapse Field Events" }))
+    expect(screen.getByRole("heading", { level: 3, name: /Field Events/ }))
       .toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
       "1 of 5 functions",
@@ -283,7 +281,7 @@ describe("FunctionsView", () => {
 
     const marketing = groupOf("Marketing");
     expect(
-      within(marketing).getByRole("button", { name: "Collapse Field Events" }),
+      within(marketing).getByRole("heading", { level: 3, name: /Field Events/ }),
     ).toBeInTheDocument();
     expect(
       within(marketing).getByRole("link", { name: /First Example Project/ }),

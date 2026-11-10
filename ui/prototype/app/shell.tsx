@@ -84,26 +84,31 @@ export function PrototypeShell({ children }: { children: React.ReactNode }) {
         <ToastProvider>
           <ApplicationNavigationProvider initialCollapsed={false}>
             <HeaderBreadcrumbSlotProvider>
-              <div className="app-shell-canvas flex h-dvh overflow-hidden bg-background noise-overlay">
-                <ApplicationNavigationRail />
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                  <AppHeader />
-                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                    {/* Screens read the query to know which tab or page they
-                        are showing. The application answers that per request;
-                        an exported file cannot, so the whole screen waits for
-                        the browser. */}
-                    <React.Suspense fallback={null}>{children}</React.Suspense>
+              {/* The whole shell waits for the browser, not just the screen
+                  inside it.
+
+                  Screens, the navigation rail, the header and the
+                  walkthrough all read the query to know what they are
+                  showing. The application answers that per request; an
+                  exported file cannot, so anything reading it has to be
+                  behind a boundary, and drawing the line around the shell
+                  rather than around each reader means the next one does not
+                  break the export. Nothing is lost by it: every screen here
+                  is client-rendered anyway, and the theme is already settled
+                  by the head script before this mounts. */}
+              <React.Suspense fallback={null}>
+                <div className="app-shell-canvas flex h-dvh overflow-hidden bg-background noise-overlay">
+                  <ApplicationNavigationRail />
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                    <AppHeader />
+                    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                      {children}
+                    </div>
                   </div>
-                </div>
-                <ApplicationNavigationDrawer />
-                {/* The runner reads the query to know which step it is on,
-                    which an exported page cannot answer until it is in the
-                    browser. */}
-                <React.Suspense fallback={null}>
+                  <ApplicationNavigationDrawer />
                   <TourRunner />
-                </React.Suspense>
-              </div>
+                </div>
+              </React.Suspense>
             </HeaderBreadcrumbSlotProvider>
           </ApplicationNavigationProvider>
         </ToastProvider>

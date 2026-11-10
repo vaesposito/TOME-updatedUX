@@ -136,7 +136,6 @@ import { FollowMenu } from "@/components/tome/FollowMenu";
 import { isTourRunning } from "@/components/tour/notification-tour";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
 import { ProjectHomeView } from "@/components/tome/home/ProjectHomeView";
-import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import {
   DeleteFolderDialog,
   DeletePageDialog,
@@ -2078,29 +2077,15 @@ export function TomeWiki({ slug }: { slug: string }) {
             No pages or folders match “{wikiQuery.trim()}”.
           </p>
         );
-      // Only the tree that owns the wiki offers to fill it. Without this a
-      // space with nothing in it would offer an ingest twice, once under each
-      // heading, as though they were two different things to do.
-      if (emptyNote)
-        return (
-          <p className="px-2 py-2 text-xs leading-relaxed text-muted-foreground">
-            {emptyNote}
-          </p>
-        );
-      return (
-        <div className="px-2 py-2 text-xs text-muted-foreground">
-          <p className="mb-2">No wiki pages yet.</p>
-          <ViewOnlyTooltip viewOnly={!canEdit}>
-            <Button
-              size="sm"
-              onClick={() => navigate({ kind: "ingest" })}
-              disabled={!canEdit}
-            >
-              {isSynthesized ? "Ingest & synthesize" : "Run an ingest"}
-            </Button>
-          </ViewOnlyTooltip>
-        </div>
-      );
+      // Only the tree that owns the wiki says anything about being empty, and
+      // only what it was given to say. A tree with nothing in it and nothing
+      // to say draws nothing: the offer to run an ingest is made where a
+      // reader is looking for it, not under every empty heading in the rail.
+      return emptyNote ? (
+        <p className="px-2 py-2 text-xs leading-relaxed text-muted-foreground">
+          {emptyNote}
+        </p>
+      ) : null;
     }
     if (!data) return null;
     return (

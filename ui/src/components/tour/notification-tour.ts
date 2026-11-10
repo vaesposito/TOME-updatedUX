@@ -29,6 +29,7 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
   {
     id: "bell",
     anchor: "notifications-bell",
+    opens: ["notifications-bell"],
     title: "The bell is where they arrive",
     body:
       "It counts what you have not read yet. Open it for the most recent few, grouped by the project they came from, and to mark the lot as read.",
@@ -43,10 +44,11 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
   },
   {
     id: "watching",
-    // The tree is the subject, and it only exists once the tab is open, so
-    // the step points at the tab until the reader opens it.
+    // The tree is the subject and only exists once the tab is open, so the
+    // step opens it. The hint is what is left if the tab cannot be pressed.
     anchor: "notifications-watching-tree",
     waitingAnchor: "notifications-watching",
+    opens: ["notifications-watching"],
     hint: "Open Following to choose what reaches you.",
     route: () => "/notifications",
     title: "Following decides what you are sent",
@@ -67,6 +69,10 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
     id: "notify",
     anchor: "page-notify",
     waitingAnchor: "page-edit",
+    // Edit is the reader's to press — there is no way out of it the runner
+    // can reach, and a tour must not leave a page half-edited. The menu it
+    // reveals is opened for them as soon as it appears.
+    opens: ["page-notify"],
     route: (subject) =>
       subject.slug && subject.pagePath
         ? `/projects/${subject.slug}/tome/wiki/${subject.pagePath

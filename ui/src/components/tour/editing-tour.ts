@@ -55,6 +55,9 @@ export const EDITING_TOUR: readonly TourStep[] = [
     id: "notify",
     anchor: "page-notify",
     waitingAnchor: "page-edit",
+    // See the same step in the notifications tour: Edit stays the reader's,
+    // the menu behind it is opened for them.
+    opens: ["page-notify"],
     hint: "Choose Edit — the Notifications button appears beside Save.",
     route: pageRoute,
     title: "Saying who should hear about the edit",

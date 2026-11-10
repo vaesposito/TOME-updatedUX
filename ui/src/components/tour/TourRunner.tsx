@@ -123,6 +123,159 @@ function anchorNode(anchor: TourAnchor): Element | null {
   return onScreen ?? drawn.at(0) ?? null;
 }
 
+/**
+ * A control the runner may press, or null if it cannot press it yet.
+ *
+ * Disabled is not "not yet": a page the reader may not edit, or a menu held
+ * while a save is in flight, is a control the step has to wait for or do
+ * without, and pressing it would do nothing anyway.
+ */
+function openable(anchor: TourAnchor): HTMLElement | null {
+  const node = anchorNode(anchor);
+  if (!(node instanceof HTMLElement)) return null;
+  if (node.hasAttribute("disabled") || node.getAttribute("aria-disabled") === "true") {
+    return null;
+  }
+  return node;
+}
+
+/** Whether a control says it is already showing what it opens. */
+function isOpen(node: HTMLElement): boolean {
+  return (
+    node.getAttribute("aria-expanded") === "true" ||
+    node.getAttribute("aria-selected") === "true"
+  );
+}
+
+/**
+ * What puts a control back: the tab that was chosen before it, or itself.
+ *
+ * Pressing a button twice shuts what it opened, but pressing a tab twice
+ * only chooses it again — so a step that opened Following would hand the
+ * reader back a page they had not asked to be on.
+ */
+function undoOf(node: HTMLElement): HTMLElement {
+  const list = node.closest('[role="tablist"]');
+  const chosen = list?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+  return chosen && chosen !== node ? chosen : node;
+}
+
+/**
+ * Press a control the way a mouse does, whatever it listens for.
+ *
+ * `click()` on its own is not a press. Radix's tabs and menus act on the
+ * pointer going down and never see a bare click, which is why the step about
+ * Following rang the tab and left the reader looking at the inbox. Our own
+ * popovers act on the click and ignore the pointer.
+ *
+ * So: the pointer first, then a click only if the control did not already
+ * answer it — otherwise anything listening to both would be opened and shut
+ * again in a single press.
+ */
+function press(node: HTMLElement): void {
+  const mouse = { bubbles: true, cancelable: true, button: 0 };
+  if (typeof PointerEvent === "function") {
+    node.dispatchEvent(new PointerEvent("pointerdown", { ...mouse, isPrimary: true }));
+  }
+  const before = isOpen(node);
+  node.dispatchEvent(new MouseEvent("mousedown", mouse));
+  node.dispatchEvent(new MouseEvent("mouseup", mouse));
+  if (isOpen(node) === before) node.click();
+}
+
+/** Whether all of this box is already in the window. */
+function inView(rect: DOMRect): boolean {
+  return (
+    rect.top >= 0 &&
+    rect.left >= 0 &&
+    rect.top + rect.height <= window.innerHeight &&
+    rect.left + rect.width <= window.innerWidth
+  );
+}
+
+/** Room left above a control brought to the top of its panel. */
+const SCROLL_MARGIN = 12;
+
+/**
+ * The nearest thing the reader could scroll themselves, or null for the page.
+ *
+ * `scrollIntoView` moves every scrollable ancestor, and an `overflow: hidden`
+ * box is scrollable to a script even though it has no scrollbar and ignores a
+ * wheel. The application shell is one of those: a step that scrolled it left
+ * the whole product sitting a hundred pixels up, under its own header, with
+ * nothing the reader could do to put it back.
+ */
+function scroller(node: Element): Element | null {
+  let parent = node.parentElement;
+  while (parent) {
+    const overflow = window.getComputedStyle(parent).overflowY;
+    if (
+      (overflow === "auto" || overflow === "scroll") &&
+      parent.scrollHeight > parent.clientHeight
+    ) {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return null;
+}
+
+/** Bring a control into view, moving only what the reader could move. */
+function scrollToAnchor(node: Element, block: "start" | "center"): void {
+  const box = node.getBoundingClientRect();
+  const container = scroller(node);
+  const view = container?.getBoundingClientRect();
+  const top = view?.top ?? 0;
+  const height = view?.height ?? window.innerHeight;
+  const by =
+    block === "start"
+      ? box.top - top - SCROLL_MARGIN
+      : box.top - top - (height - box.height) / 2;
+  (container ?? window).scrollBy({ top: by, behavior: "smooth" });
+}
+
+/**
+ * The box the card has to keep clear of: the ring, and what the step opened.
+ *
+ * A step that opens a panel is explaining what is inside it, so a card put
+ * under the control lands on top of the explanation. Measured rather than
+ * assumed, since a menu may open below its control, above it, or to either
+ * side — the bell's drops down and to the left, the agent's rises.
+ *
+ * Only panels touching the control count, so a tooltip somewhere else on the
+ * page, or something the reader left open, does not drag the card across the
+ * window.
+ */
+const PANEL_REACH = 24;
+
+function clearOf(ring: Rect): Rect {
+  let top = ring.top;
+  let left = ring.left;
+  let bottom = ring.top + ring.height;
+  let right = ring.left + ring.width;
+  const panels = document.querySelectorAll(
+    "[data-popover-content],[data-radix-popper-content-wrapper]",
+  );
+  for (const panel of panels) {
+    // The walkthrough's own card is drawn by the same popover, and a card
+    // placed to clear itself would walk off the screen.
+    if (panel.querySelector("[data-tour-card]")) continue;
+    const box = panel.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) continue;
+    const touching =
+      box.left < right + PANEL_REACH &&
+      box.left + box.width > left - PANEL_REACH &&
+      box.top < bottom + PANEL_REACH &&
+      box.top + box.height > top - PANEL_REACH;
+    if (!touching) continue;
+    top = Math.min(top, box.top);
+    left = Math.min(left, box.left);
+    bottom = Math.max(bottom, box.top + box.height);
+    right = Math.max(right, box.left + box.width);
+  }
+  return { top, left, width: right - left, height: bottom - top };
+}
+
 function measure(anchor: TourAnchor): Rect | null {
   const node = anchorNode(anchor);
   if (!node) return null;
@@ -151,12 +304,24 @@ function measure(anchor: TourAnchor): Rect | null {
 }
 
 /**
- * How many projects are asked for their pages before settling.
+ * How many projects are asked for their pages at a time.
+ *
+ * In parallel rather than one after another: this runs while the reader is
+ * on the first step, and sequential page listings were still going when they
+ * reached the fourth.
+ */
+const PROBE_BATCH = 4;
+
+/**
+ * How many projects are asked at all before settling for one without pages.
  *
  * A cap rather than the whole catalogue: listing a project's pages is not a
- * free read, and the tour only needs one project that has any.
+ * free read, and the tour only needs one project that has any. It used to be
+ * a single batch, which is why the tour about writing a page would not open
+ * one — a deployment whose first four projects are empty has the tour
+ * announce there is no page to borrow while holding a list full of them.
  */
-const MAX_PROBES = 4;
+const MAX_PROBES = 24;
 
 /** The shallowest page in a project, or null if it has none. */
 async function firstPage(slug: string): Promise<string | null> {
@@ -191,10 +356,13 @@ async function followedSlugs(): Promise<string[]> {
     });
     if (!response.ok) return [];
     const body = await response.json();
-    const nodes: Array<{ type?: string; slug?: string }> =
+    const nodes: Array<{ type?: string; slug?: string; following?: boolean }> =
       body?.data?.nodes ?? [];
+    // The endpoint lists everything the reader could watch, each marked with
+    // whether they do. Taking the lot made "the projects they watch" mean
+    // "every project, alphabetically", which is not a preference at all.
     return nodes
-      .filter((node) => node.type === "project" && node.slug)
+      .filter((node) => node.type === "project" && node.following && node.slug)
       .map((node) => node.slug as string);
   } catch {
     return [];
@@ -242,17 +410,20 @@ async function lookUpSubject(preferred: string | null): Promise<TourSubject> {
     ...new Set([...(preferred ? [preferred] : []), ...followed, ...readable]),
   ];
 
-  // Asked all at once rather than one after another: this runs while the
-  // reader is on the first step, and four sequential page listings took long
-  // enough to still be going when they reached the fourth.
+  // A batch at a time, stopping at the first project with a page in it: the
+  // usual answer is in the first batch, and a deployment where it is not
+  // should still get a page rather than an apology. See MAX_PROBES.
   const candidates = slugs.slice(0, MAX_PROBES);
-  const pages = await Promise.all(candidates.map(firstPage));
-  const found = pages.findIndex((path) => path !== null);
-  if (found >= 0) {
-    return {
-      slug: candidates[found] as string,
-      pagePath: pages[found] as string,
-    };
+  for (let from = 0; from < candidates.length; from += PROBE_BATCH) {
+    const batch = candidates.slice(from, from + PROBE_BATCH);
+    const pages = await Promise.all(batch.map(firstPage));
+    const found = pages.findIndex((path) => path !== null);
+    if (found >= 0) {
+      return {
+        slug: batch[found] as string,
+        pagePath: pages[found] as string,
+      };
+    }
   }
   // Nothing with a page: the first readable project still serves the steps
   // that only need a project, and the page steps say what is missing.
@@ -359,6 +530,11 @@ export function TourRunner() {
    * moment, so where it is matters less than that it does not move.
    */
   const [rect, setRect] = React.useState<Rect | null>(null);
+  /**
+   * Where the card hangs from: the ring, grown to take in whatever the step
+   * opened, so the card sits clear of it rather than over it.
+   */
+  const [avoid, setAvoid] = React.useState<Rect | null>(null);
   /** Whether the current step's anchor is on the page right now. */
   const [found, setFound] = React.useState(false);
   /** True while the step's own anchor is absent and the hint is showing. */
@@ -413,6 +589,7 @@ export function TourRunner() {
   const stop = React.useCallback(() => {
     setState(null);
     setRect(null);
+    setAvoid(null);
     try {
       window.sessionStorage.removeItem(TOUR_STATE_KEY);
     } catch {
@@ -496,9 +673,13 @@ export function TourRunner() {
       if (pending !== null) go(pending);
       return;
     }
+    // Nowhere to go is a reason to wait or to say the step cannot be shown,
+    // never a reason to go somewhere else: a page the lookup has not found
+    // must not become the wiki's index.
+    if (!wantRoute) return;
     if (pushed.current === wantRoute) return;
     pushed.current = wantRoute;
-    router.push(wantRoute as string);
+    router.push(wantRoute);
   }, [arrived, go, pending, router, state, wantRoute]);
 
   // Never leave the reader on a step whose page refused to load.
@@ -531,7 +712,10 @@ export function TourRunner() {
         own ?? (step.waitingAnchor ? measure(step.waitingAnchor) : null);
       setWaiting(!own);
       setFound(next !== null);
-      if (next) setRect((current) => (sameRect(current, next) ? current : next));
+      if (!next) return;
+      setRect((current) => (sameRect(current, next) ? current : next));
+      const clear = step.opens?.length ? clearOf(next) : next;
+      setAvoid((current) => (sameRect(current, clear) ? current : clear));
     };
 
     resync.current = sync;
@@ -569,13 +753,16 @@ export function TourRunner() {
     scrolled.current = key;
     const node = anchorNode(step.anchor);
     if (!node) return;
+    const box = node.getBoundingClientRect();
+    // A control already in front of the reader is left where it is.
+    // `scrollIntoView` moves every scrollable ancestor to obey `block`, so
+    // asking it to centre something that was already in view pulled the page
+    // out from under whoever had just arrived on it.
+    if (inView(box)) return;
     // Centring a region taller than the window scrolls past its beginning:
     // the reader is put half way down a panel they have not seen the top of.
     // Those are brought to the top instead, where their heading is.
-    node.scrollIntoView({
-      block: isTall(node.getBoundingClientRect().height) ? "start" : "center",
-      behavior: "smooth",
-    });
+    scrollToAnchor(node, isTall(box.height) ? "start" : "center");
 
     // Then follow it to its rest. A smooth scroll stops firing `scroll`
     // before its last frame is painted, so the box is re-read until it
@@ -594,6 +781,50 @@ export function TourRunner() {
     frame = window.requestAnimationFrame(settle);
     return () => window.cancelAnimationFrame(frame);
   }, [found, location, stale, state?.tour, step]);
+
+  /**
+   * Open what the step is about, and close it again on the way out.
+   *
+   * A step whose subject is behind a button used to ring the shut button and
+   * tell the reader to press it, which is a poor way to show someone what a
+   * thing is. The controls are named by the step rather than by this effect,
+   * so a tour is still only data. See `TourStep.opens`.
+   *
+   * On a timer rather than once, because the control a step opens may arrive
+   * long after the step does: the Notifications menu exists only once the
+   * reader has chosen Edit, which they are asked to do and may take a while
+   * over.
+   */
+  React.useEffect(() => {
+    const opens = step?.opens;
+    if (!opens?.length || stale) return;
+    /** What to press to undo each one, worked out before it is pressed. */
+    const undo: HTMLElement[] = [];
+    let next = 0;
+    const openNext = () => {
+      if (next >= opens.length) return;
+      const node = openable(opens[next]);
+      if (!node) return;
+      // Already showing what it opens — the reader got there first, and
+      // pressing it now would shut the thing the step is about.
+      if (!isOpen(node)) {
+        undo.push(undoOf(node));
+        press(node);
+      }
+      next += 1;
+    };
+    openNext();
+    const timer = window.setInterval(openNext, POLL_MS);
+    return () => {
+      window.clearInterval(timer);
+      // Put back in the reverse of the order they were opened, so the page
+      // is left as it was found. A control that has gone with its page is
+      // left alone: there is nothing of it to put back.
+      for (const node of undo.reverse()) {
+        if (node.isConnected) press(node);
+      }
+    };
+  }, [location, stale, step]);
 
   React.useEffect(() => {
     if (!state) return;
@@ -632,6 +863,7 @@ export function TourRunner() {
     <div
       role="dialog"
       aria-label={`${tour?.name ?? "TOME"} walkthrough`}
+      data-tour-card=""
       className="w-80 space-y-3 p-4"
     >
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -721,35 +953,51 @@ export function TourRunner() {
 
   // Still looking, with nowhere yet to have been. Lasts one poll at most.
   if (!rect) return null;
+  const hang = avoid ?? rect;
 
   return (
     <Popover open onOpenChange={() => {}} className="fixed left-0 top-0 h-0 w-0">
-      <PopoverTrigger asChild>
-        {/* The highlight itself, and the bubble's anchor. Fixed to the
-            element's own box so one node does both jobs, and transparent to
-            the pointer so the control underneath still works. The very wide
-            shadow is what dims the rest of the window.
+      {/* The highlight. Fixed to the element's own box, and transparent to
+          the pointer so the control underneath still works. The very wide
+          shadow is what dims the rest of the window.
 
-            Position changes are not animated: between pages the two boxes
-            have nothing to do with each other, and a ring sliding across the
-            window to a control on a different page read as a glitch. */}
+          Position changes are not animated: between pages the two boxes
+          have nothing to do with each other, and a ring sliding across the
+          window to a control on a different page read as a glitch. */}
+      <span
+        aria-hidden="true"
+        data-testid="tour-spotlight"
+        style={{
+          position: "fixed",
+          top: rect.top - 4,
+          left: rect.left - 4,
+          width: rect.width + 8,
+          height: rect.height + 8,
+          opacity: dimmed ? 0 : 1,
+          pointerEvents: "none",
+          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.6)",
+        }}
+        className={cn(
+          "z-[55] rounded-lg ring-2 ring-primary",
+          !dimmed && "transition-opacity duration-200",
+        )}
+      />
+      <PopoverTrigger asChild>
+        {/* What the card hangs from, which is the ring plus anything the
+            step opened. A separate node from the ring because the two want
+            different boxes: the ring says "this control", the card only has
+            to land somewhere that is not on top of it. */}
         <span
           aria-hidden="true"
-          data-testid="tour-spotlight"
+          data-testid="tour-card-anchor"
           style={{
             position: "fixed",
-            top: rect.top - 4,
-            left: rect.left - 4,
-            width: rect.width + 8,
-            height: rect.height + 8,
-            opacity: dimmed ? 0 : 1,
+            top: hang.top,
+            left: hang.left,
+            width: hang.width,
+            height: hang.height,
             pointerEvents: "none",
-            boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.6)",
           }}
-          className={cn(
-            "z-[55] rounded-lg ring-2 ring-primary",
-            !dimmed && "transition-opacity duration-200",
-          )}
         />
       </PopoverTrigger>
       <PopoverContent

@@ -44,26 +44,37 @@ interface Box {
 
 const planted: HTMLElement[] = [];
 
-/**
- * A control for a step to point at, with the box it occupies.
- *
- * jsdom lays nothing out, so every element it has is zero by zero and the
- * runner would rightly refuse to ring any of them.
- */
-function plant(anchor: string, box: Box): HTMLElement {
-  const node = document.createElement("div");
-  node.setAttribute("data-tour", anchor);
-  node.scrollIntoView = jest.fn();
+/** Give an element a box, which jsdom lays out as zero by zero otherwise. */
+function size(node: HTMLElement, box: Box): HTMLElement {
   node.getBoundingClientRect = () =>
     ({
       ...box,
       right: box.left + box.width,
       bottom: box.top + box.height,
     }) as DOMRect;
+  return node;
+}
+
+/**
+ * A control for a step to point at, with the box it occupies.
+ *
+ * jsdom lays nothing out, so every element it has is zero by zero and the
+ * runner would rightly refuse to ring any of them.
+ */
+function plant(anchor: string, box: Box, tag = "div"): HTMLElement {
+  const node = document.createElement(tag);
+  node.setAttribute("data-tour", anchor);
+  size(node, box);
   document.body.append(node);
   planted.push(node);
   return node;
 }
+
+/** How far the page has been asked to scroll, since jsdom does not scroll. */
+let scrolledBy: jest.Mock;
+
+/** The other way to scroll, which jsdom has no implementation of at all. */
+let scrolledInto: jest.Mock;
 
 afterEach(() => {
   for (const node of planted.splice(0)) node.remove();
@@ -74,6 +85,11 @@ beforeEach(() => {
   pathname = "/projects";
   query = "";
   window.sessionStorage.clear();
+  scrolledBy = jest.fn();
+  window.scrollBy = scrolledBy as unknown as typeof window.scrollBy;
+  scrolledInto = jest.fn();
+  Element.prototype.scrollIntoView =
+    scrolledInto as unknown as typeof Element.prototype.scrollIntoView;
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ data: { nodes: [] } }),
@@ -218,9 +234,10 @@ describe("the borrowed project", () => {
 describe("a step about a whole panel", () => {
   it("rings the top of it and brings that to the top of the window", async () => {
     query = "tab=functions";
-    // Taller than the window, as a view behind a tab is.
-    const panel = plant("hub-tab-functions", {
-      top: 0,
+    // Taller than the window, as a view behind a tab is, and starting below
+    // the fold so there is something to scroll.
+    plant("hub-tab-functions", {
+      top: 200,
       left: 0,
       width: 900,
       height: 4000,
@@ -237,9 +254,11 @@ describe("a step about a whole panel", () => {
 
     render(<TourRunner />);
 
-    await waitFor(() => expect(panel.scrollIntoView).toHaveBeenCalled());
-    expect(panel.scrollIntoView).toHaveBeenCalledWith(
-      expect.objectContaining({ block: "start" }),
+    // To its top, not to its middle: 200 down less the margin a heading is
+    // given, rather than far enough to put the reader inside it.
+    await waitFor(() => expect(scrolledBy).toHaveBeenCalled());
+    expect(scrolledBy).toHaveBeenCalledWith(
+      expect.objectContaining({ top: 188 }),
     );
     const spotlight = await screen.findByTestId("tour-spotlight");
     expect(spotlight.style.height).not.toBe("4000px");
@@ -312,8 +331,8 @@ describe("the scroll a step makes to reach its anchor", () => {
         return 0;
       });
     const box = { top: 900, left: 48, width: 224, height: 32 };
-    const field = plant("hub-search", box);
-    field.scrollIntoView = jest.fn(() => {
+    plant("hub-search", box);
+    scrolledBy.mockImplementation(() => {
       box.top = 300;
     });
 
@@ -329,11 +348,389 @@ describe("the scroll a step makes to reach its anchor", () => {
     render(<TourRunner />);
     await act(async () => {});
 
-    expect(field.scrollIntoView).toHaveBeenCalled();
+    expect(scrolledBy).toHaveBeenCalled();
     expect(screen.getByTestId("tour-spotlight").style.top).toBe("296px");
 
     frames.mockRestore();
     jest.useRealTimers();
+  });
+});
+
+describe("the scroll a step makes to reach its anchor", () => {
+  /** A panel between the anchor and the page, with its own scroll state. */
+  function wrap(
+    child: HTMLElement,
+    overflow: string,
+    box: Box,
+    content: number,
+  ): HTMLElement {
+    const panel = size(document.createElement("div"), box);
+    panel.style.overflowY = overflow;
+    Object.defineProperty(panel, "scrollHeight", { value: content });
+    Object.defineProperty(panel, "clientHeight", { value: box.height });
+    panel.scrollBy = jest.fn();
+    child.replaceWith(panel);
+    panel.append(child);
+    planted.push(panel);
+    return panel;
+  }
+
+  it("moves only what the reader could move themselves", async () => {
+    // The application shell is `overflow: hidden` and taller than the
+    // window, which makes it scrollable to a script and immovable to a
+    // wheel. A step that scrolled it left the whole product sitting under
+    // its own header with no way for the reader to put it back.
+    const field = plant("hub-search", {
+      top: 900,
+      left: 48,
+      width: 224,
+      height: 32,
+    });
+    const inner = wrap(
+      field,
+      "auto",
+      { top: 100, left: 0, width: 1024, height: 600 },
+      2000,
+    );
+    const shell = wrap(
+      inner,
+      "hidden",
+      { top: 0, left: 0, width: 1024, height: 768 },
+      2000,
+    );
+
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "general",
+        index: stepPointingAt("hub-search"),
+        subject: null,
+      }),
+    );
+
+    render(<TourRunner />);
+
+    await waitFor(() => expect(inner.scrollBy).toHaveBeenCalled());
+    expect(inner.scrollBy).toHaveBeenCalledWith(
+      expect.objectContaining({ top: 516 }),
+    );
+    expect(shell.scrollBy).not.toHaveBeenCalled();
+    expect(scrolledBy).not.toHaveBeenCalled();
+    // `scrollIntoView` is what moved every one of them at once.
+    expect(scrolledInto).not.toHaveBeenCalled();
+  });
+
+  it("is not made at all for a control already in front of the reader", async () => {
+    plant("hub-search", { top: 220, left: 48, width: 224, height: 32 });
+
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "general",
+        index: stepPointingAt("hub-search"),
+        subject: null,
+      }),
+    );
+
+    render(<TourRunner />);
+
+    await screen.findByTestId("tour-spotlight");
+    expect(scrolledBy).not.toHaveBeenCalled();
+    expect(scrolledInto).not.toHaveBeenCalled();
+  });
+});
+
+describe("a step whose subject is behind a button", () => {
+  /** The bell, which the first notifications step both opens and rings. */
+  function bell(): HTMLElement {
+    return plant(
+      "notifications-bell",
+      { top: 8, left: 900, width: 32, height: 32 },
+      "button",
+    );
+  }
+
+  function startAtTheBell(): void {
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({ tour: "notifications", index: 0, subject: null }),
+    );
+  }
+
+  it("presses it, so the step describes something on the screen", async () => {
+    const button = bell();
+    const clicks = jest.fn();
+    button.addEventListener("click", clicks);
+    startAtTheBell();
+
+    render(<TourRunner />);
+
+    await waitFor(() => expect(clicks).toHaveBeenCalledTimes(1));
+  });
+
+  it("leaves it alone when the reader has already opened it", async () => {
+    const button = bell();
+    button.setAttribute("aria-expanded", "true");
+    const clicks = jest.fn();
+    button.addEventListener("click", clicks);
+    startAtTheBell();
+
+    render(<TourRunner />);
+
+    await screen.findByTestId("tour-spotlight");
+    expect(clicks).not.toHaveBeenCalled();
+  });
+
+  it("presses it again when the tour ends, so the page is as it was", async () => {
+    const button = bell();
+    const clicks = jest.fn();
+    button.addEventListener("click", clicks);
+    startAtTheBell();
+
+    render(<TourRunner />);
+    await waitFor(() => expect(clicks).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    await waitFor(() => expect(clicks).toHaveBeenCalledTimes(2));
+  });
+
+  it("presses a tab the way a mouse does, and only once", async () => {
+    // Radix's tabs answer the pointer going down and never see a bare
+    // click, so the step about Following used to ring the tab and leave the
+    // reader looking at the inbox. Pressing both ways would open the tab
+    // and shut it again.
+    pathname = "/notifications";
+    const tab = plant(
+      "notifications-watching",
+      { top: 60, left: 300, width: 96, height: 32 },
+      "button",
+    );
+    tab.setAttribute("aria-selected", "false");
+    tab.addEventListener("mousedown", () =>
+      tab.setAttribute("aria-selected", "true"),
+    );
+    const clicks = jest.fn();
+    tab.addEventListener("click", clicks);
+
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({ tour: "notifications", index: 2, subject: null }),
+    );
+
+    render(<TourRunner />);
+
+    await waitFor(() =>
+      expect(tab.getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(clicks).not.toHaveBeenCalled();
+  });
+
+  it("gives the tab the reader was on back when the tour ends", async () => {
+    // Pressing a tab a second time only chooses it again, so a step that
+    // opened Following would hand back a page nobody asked to be on.
+    pathname = "/notifications";
+    const list = document.createElement("div");
+    list.setAttribute("role", "tablist");
+    document.body.append(list);
+    planted.push(list);
+
+    const inbox = size(document.createElement("button"), {
+      top: 60,
+      left: 200,
+      width: 80,
+      height: 32,
+    });
+    inbox.setAttribute("role", "tab");
+    inbox.setAttribute("aria-selected", "true");
+    const following = plant(
+      "notifications-watching",
+      { top: 60, left: 300, width: 96, height: 32 },
+      "button",
+    );
+    following.setAttribute("role", "tab");
+    following.setAttribute("aria-selected", "false");
+    // A tab bar, as Radix builds one: chosen by the pointer going down.
+    for (const [tab, other] of [
+      [inbox, following],
+      [following, inbox],
+    ]) {
+      tab.addEventListener("mousedown", () => {
+        tab.setAttribute("aria-selected", "true");
+        other.setAttribute("aria-selected", "false");
+      });
+    }
+    list.append(inbox, following);
+
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({ tour: "notifications", index: 2, subject: null }),
+    );
+
+    render(<TourRunner />);
+    await waitFor(() =>
+      expect(following.getAttribute("aria-selected")).toBe("true"),
+    );
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(inbox.getAttribute("aria-selected")).toBe("true"),
+    );
+  });
+
+  it("hangs its card clear of what it opened", async () => {
+    const button = bell();
+    button.addEventListener("click", () => {
+      const panel = size(document.createElement("div"), {
+        top: 48,
+        left: 600,
+        width: 360,
+        height: 400,
+      });
+      panel.setAttribute("data-popover-content", "");
+      document.body.append(panel);
+      planted.push(panel);
+    });
+    startAtTheBell();
+
+    render(<TourRunner />);
+
+    // The ring stays on the bell; the card is given the pair of them to
+    // hang from, so it cannot land on top of the list being explained.
+    const anchor = await screen.findByTestId("tour-card-anchor");
+    await waitFor(() => expect(anchor.style.left).toBe("600px"));
+    expect(anchor.style.width).toBe("360px");
+    expect(anchor.style.height).toBe("440px");
+    expect(screen.getByTestId("tour-spotlight").style.left).toBe("896px");
+  });
+});
+
+describe("a page the lookup could not find", () => {
+  it("is waited for rather than navigated to anyway", async () => {
+    // Started from inside a project, both because that is where a reader
+    // would be and because what the lookup found is remembered against it.
+    pathname = "/projects/example-caller-a/tome";
+    // A lookup still in flight. The first step of the tour about writing a
+    // page has a route it cannot work out yet, which is a reason to wait —
+    // never a reason to navigate to whatever that comes out as.
+    global.fetch = jest.fn(
+      () => new Promise(() => {}),
+    ) as unknown as typeof fetch;
+
+    render(<TourRunner />);
+    act(() => {
+      startTour("editing");
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("dialog")).toHaveTextContent(/Finding a project/),
+    );
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("is looked for past the first handful of projects", async () => {
+    // A deployment whose first few projects are empty still has a page to
+    // borrow, and a single batch of probes used to decide it did not.
+    pathname = "/projects/example-caller-b/tome";
+    const slugs = Array.from({ length: 9 }, (_, index) => `project-${index}`);
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const payload = url.includes("/api/notifications/following")
+        ? { data: { nodes: [] } }
+        : url.includes("/api/projects")
+          ? { data: { projects: slugs.map((slug) => ({ slug })) } }
+          : {
+              data: {
+                pages: url.includes("project-8") ? { "charter.md": "" } : {},
+              },
+            };
+      return { ok: true, json: async () => payload };
+    }) as unknown as typeof fetch;
+
+    render(<TourRunner />);
+    act(() => {
+      startTour("editing");
+    });
+
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/projects/project-8/tome/wiki/charter.md",
+      ),
+    );
+  });
+});
+
+describe("the projects the reader watches", () => {
+  it("are the ones they watch, not everything they were offered", async () => {
+    // The endpoint lists the whole tree with a flag on each row. Reading it
+    // as a list of followed projects put an unwatched one first.
+    pathname = "/projects/example-caller-c/tome";
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const payload = url.includes("/api/notifications/following")
+        ? {
+            data: {
+              nodes: [
+                { type: "project", slug: "example-other", following: false },
+                { type: "project", slug: "example-watched", following: true },
+              ],
+            },
+          }
+        : url.includes("/api/projects")
+          ? { data: { projects: [{ slug: "example-other" }] } }
+          : {
+              data: {
+                pages: url.includes("example-caller-c")
+                  ? {}
+                  : { "charter.md": "" },
+              },
+            };
+      return { ok: true, json: async () => payload };
+    }) as unknown as typeof fetch;
+
+    render(<TourRunner />);
+    act(() => {
+      startTour("editing");
+    });
+
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/projects/example-watched/tome/wiki/charter.md",
+      ),
+    );
+  });
+});
+
+describe("a card for a control that never moves", () => {
+  it("is placed on arrival rather than at the first thing that stirs", async () => {
+    // The card is positioned from a measurement taken once the popover has
+    // rendered. Taking it before meant the card stayed hidden until the
+    // ring happened to move, which on a static control is never.
+    plant("hub-search", { top: 220, left: 48, width: 224, height: 32 });
+
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "general",
+        index: stepPointingAt("hub-search"),
+        subject: null,
+      }),
+    );
+
+    render(<TourRunner />);
+
+    const card = await screen.findByRole("dialog");
+    const panel = card.closest("[data-popover-content]") as HTMLElement;
+    await waitFor(() => expect(panel.style.visibility).toBe("visible"));
   });
 });
 

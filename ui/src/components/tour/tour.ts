@@ -68,6 +68,23 @@ export interface TourStep {
   /** What to do to bring `anchor` into existence. */
   hint?: string;
   /**
+   * Controls the runner presses on arrival, in the order given.
+   *
+   * A step whose subject is a panel behind a button — the bell's list, the
+   * Notifications menu, the agent — used to ring the closed button and ask
+   * the reader to open it. It opens it for them, so what the step describes
+   * is on the screen while they read about it. The last one is usually the
+   * step's own `anchor`, since what is being explained is what it opens.
+   *
+   * Only name a control the runner can undo: it puts each of these back when
+   * the step is left, by pressing the button again or by choosing the tab
+   * that was chosen before, so a tour must not be able to change the
+   * reader's pages by being walked. That rules out Edit, which has no way
+   * back the runner can reach — steps behind it keep `waitingAnchor` and
+   * `hint` and wait for the reader.
+   */
+  opens?: readonly TourAnchor[];
+  /**
    * Where the anchor lives, or null when it is on every page.
    *
    * A query string counts: the catalogue's four readings are one path with

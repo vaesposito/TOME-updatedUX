@@ -16,6 +16,7 @@ export const AGENT_TOUR: readonly TourStep[] = [
   {
     id: "ask",
     anchor: "ask-tome",
+    opens: ["ask-tome"],
     route: () => "/projects",
     title: "Ask TOME from anywhere",
     body:

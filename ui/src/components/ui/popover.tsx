@@ -310,7 +310,12 @@ export function PopoverContent({
       resizeObserver?.disconnect();
       moveObserver?.disconnect();
     };
-  }, [open,computeCoords,triggerRef]);
+    // `mounted` is a dependency because the content does not exist until the
+    // portal does. A popover that was open on its first render measured a
+    // trigger with no content, gave up, and was never asked again unless
+    // something moved — which is how a walkthrough step about a control that
+    // never moves ended up with no card at all.
+  }, [open,computeCoords,mounted,triggerRef]);
 
   React.useEffect(() => {
     if (!open) return;

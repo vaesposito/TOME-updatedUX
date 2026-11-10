@@ -223,14 +223,18 @@ describe("HomeMilestones", () => {
   ].join("\n");
 
   it("shows each milestone with its target, owner and status", () => {
-    render(<HomeMilestones markdown={ROADMAP} roadmapHref="/roadmap" />);
+    render(
+      <HomeMilestones markdown={ROADMAP} roadmapHref="/roadmap" ingestHref="/ingest" />,
+    );
     expect(screen.getByText("Public beta")).toBeInTheDocument();
     expect(screen.getByText("Q2 FY26 · Platform Guild")).toBeInTheDocument();
     expect(screen.getByText("In progress")).toBeInTheDocument();
   });
 
   it("leads with what has not landed", () => {
-    render(<HomeMilestones markdown={ROADMAP} roadmapHref="/roadmap" />);
+    render(
+      <HomeMilestones markdown={ROADMAP} roadmapHref="/roadmap" ingestHref="/ingest" />,
+    );
     const titles = screen
       .getAllByRole("listitem")
       .map((row) => row.textContent ?? "");
@@ -239,20 +243,47 @@ describe("HomeMilestones", () => {
 
   it("distinguishes a page that is missing from one that is unfilled", () => {
     const { unmount } = render(
-      <HomeMilestones markdown={null} roadmapHref="/roadmap" />,
+      <HomeMilestones markdown={null} roadmapHref="/roadmap" ingestHref="/ingest" />,
     );
     expect(screen.getByText("No roadmap page yet")).toBeInTheDocument();
     unmount();
 
-    render(<HomeMilestones markdown="## Milestones" roadmapHref="/roadmap" />);
+    render(
+      <HomeMilestones
+        markdown="## Milestones"
+        roadmapHref="/roadmap"
+        ingestHref="/ingest"
+      />,
+    );
     expect(screen.getByText("No milestones filled in yet")).toBeInTheDocument();
   });
 
-  it("offers the page that would fill it", () => {
-    render(<HomeMilestones markdown={null} roadmapHref="/roadmap" />);
+  it("offers the page that would fill it, where the page exists", () => {
+    render(
+      <HomeMilestones
+        markdown="## Milestones"
+        roadmapHref="/roadmap"
+        ingestHref="/ingest"
+      />,
+    );
     expect(
       screen.getByRole("link", { name: "Open the roadmap" }),
     ).toHaveAttribute("href", "/roadmap");
+  });
+
+  it("sends a space with no roadmap at all to what would write one", () => {
+    // A space is founded on one agent-written page, so the roadmap is absent
+    // rather than present-and-empty: offering its address would land the
+    // reader on a page that does not exist.
+    render(<HomeMilestones markdown={null} roadmapHref="/roadmap" ingestHref="/ingest" />);
+    expect(
+      screen.queryByRole("link", { name: "Open the roadmap" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Run an ingest" })).toHaveAttribute(
+      "href",
+      "/ingest",
+    );
+    expect(screen.queryByRole("link", { name: "Roadmap" })).not.toBeInTheDocument();
   });
 });
 
@@ -264,26 +295,40 @@ describe("HomeKpis", () => {
       "| --- | --- | --- | --- |",
       "| Weekly active teams | 12 | 80 | Q4 FY26 |",
     ].join("\n");
-    render(<HomeKpis markdown={charter} charterHref="/charter" />);
+    render(<HomeKpis markdown={charter} charterHref="/charter" ingestHref="/ingest" />);
     expect(screen.getByText("Weekly active teams")).toBeInTheDocument();
     expect(screen.getByText("80")).toBeInTheDocument();
     expect(screen.getByText("from 12 · by Q4 FY26")).toBeInTheDocument();
   });
 
   it("distinguishes a page that is missing from one that is unfilled", () => {
-    const { unmount } = render(<HomeKpis markdown={null} charterHref="/charter" />);
+    const { unmount } = render(
+      <HomeKpis markdown={null} charterHref="/charter" ingestHref="/ingest" />,
+    );
     expect(screen.getByText("No charter page yet")).toBeInTheDocument();
     unmount();
 
-    render(<HomeKpis markdown="## KPIs" charterHref="/charter" />);
+    render(<HomeKpis markdown="## KPIs" charterHref="/charter" ingestHref="/ingest" />);
     expect(screen.getByText("No KPIs filled in yet")).toBeInTheDocument();
   });
 
-  it("offers the page that would fill it", () => {
-    render(<HomeKpis markdown={null} charterHref="/charter" />);
+  it("offers the page that would fill it, where the page exists", () => {
+    render(<HomeKpis markdown="## KPIs" charterHref="/charter" ingestHref="/ingest" />);
     expect(
       screen.getByRole("link", { name: "Open the charter" }),
     ).toHaveAttribute("href", "/charter");
+  });
+
+  it("sends a space with no charter at all to what would write one", () => {
+    render(<HomeKpis markdown={null} charterHref="/charter" ingestHref="/ingest" />);
+    expect(
+      screen.queryByRole("link", { name: "Open the charter" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Run an ingest" })).toHaveAttribute(
+      "href",
+      "/ingest",
+    );
+    expect(screen.queryByRole("link", { name: "Charter" })).not.toBeInTheDocument();
   });
 });
 

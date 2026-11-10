@@ -553,9 +553,12 @@ export function ProjectHomeView({
     milestones: (
       <HomeMilestones
         markdown={page(ROADMAP_PAGE)}
-        loading={pagesLoading}
+        loading={pagesLoading || metaLoading}
         roadmapHref={wikiPageHref(slug, ROADMAP_PAGE)}
         onOpenRoadmap={openPage(ROADMAP_PAGE)}
+        container={container}
+        ingestHref={ingestHref}
+        onOpenIngest={onOpenIngest}
       />
     ),
 
@@ -585,9 +588,12 @@ export function ProjectHomeView({
     kpis: (
       <HomeKpis
         markdown={page(CHARTER_PAGE)}
-        loading={pagesLoading}
+        loading={pagesLoading || metaLoading}
         charterHref={wikiPageHref(slug, CHARTER_PAGE)}
         onOpenCharter={openPage(CHARTER_PAGE)}
+        container={container}
+        ingestHref={ingestHref}
+        onOpenIngest={onOpenIngest}
       />
     ),
   };

@@ -26,6 +26,9 @@ export function HomeKpis({
   markdown,
   charterHref,
   onOpenCharter,
+  ingestHref,
+  onOpenIngest,
+  container = false,
   className,
   loading = false,
 }: {
@@ -33,6 +36,18 @@ export function HomeKpis({
   markdown: string | null;
   charterHref: string;
   onOpenCharter?: () => void;
+  /**
+   * Where a space without a charter at all is sent.
+   *
+   * A space is founded on one agent-written page now, so a charter is a page
+   * that has to be written rather than one that arrives empty — and an
+   * ingest is what writes it. Offering the page's own address instead would
+   * send a reader to a wiki page that does not exist.
+   */
+  ingestHref: string;
+  onOpenIngest?: () => void;
+  /** Whether this space holds other spaces, which changes only the wording. */
+  container?: boolean;
   className?: string;
   /**
    * Whether the page this reads is still on its way.
@@ -54,7 +69,11 @@ export function HomeKpis({
       icon={<Target className="h-4 w-4" />}
       count={kpis.length}
       className={className}
-      action={homeAction("Charter", charterHref, onOpenCharter)}
+      // Only where there is a page to open. A corner link to a page nobody
+      // has written yet is a dead end dressed as a way through.
+      action={
+        markdown ? homeAction("Charter", charterHref, onOpenCharter) : undefined
+      }
     >
       {loading ? (
         <HomeSkeleton />
@@ -62,8 +81,20 @@ export function HomeKpis({
         <HomeEmpty
           icon={<Target />}
           headline={markdown ? "No KPIs filled in yet" : "No charter page yet"}
-          hint="The charter's KPI table holds the baseline and the target this project measures itself against."
-          action={homeAction("Open the charter", charterHref, onOpenCharter)}
+          hint={
+            markdown
+              ? "The charter's KPI table holds the baseline and the target this project measures itself against."
+              : "A charter is written when there is something to put in it. The agent drafts one from what it reads, and the KPIs live in its table."
+          }
+          action={
+            markdown
+              ? homeAction("Open the charter", charterHref, onOpenCharter)
+              : homeAction(
+                  container ? "Ingest & synthesize" : "Run an ingest",
+                  ingestHref,
+                  onOpenIngest,
+                )
+          }
         />
       ) : (
         <ul className="flex flex-col gap-2.5">

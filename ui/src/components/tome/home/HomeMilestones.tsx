@@ -42,6 +42,9 @@ export function HomeMilestones({
   markdown,
   roadmapHref,
   onOpenRoadmap,
+  ingestHref,
+  onOpenIngest,
+  container = false,
   className,
   loading = false,
 }: {
@@ -49,6 +52,18 @@ export function HomeMilestones({
   markdown: string | null;
   roadmapHref: string;
   onOpenRoadmap?: () => void;
+  /**
+   * Where a space without a roadmap at all is sent.
+   *
+   * A space is founded on one agent-written page now, so a roadmap is a page
+   * that has to be written rather than one that arrives empty — and an
+   * ingest is what writes it. Offering the page's own address instead would
+   * send a reader to a wiki page that does not exist.
+   */
+  ingestHref: string;
+  onOpenIngest?: () => void;
+  /** Whether this space holds other spaces, which changes only the wording. */
+  container?: boolean;
   className?: string;
   /**
    * Whether the page this reads is still on its way.
@@ -74,7 +89,11 @@ export function HomeMilestones({
       icon={<Flag className="h-4 w-4" />}
       count={milestones.length}
       className={className}
-      action={homeAction("Roadmap", roadmapHref, onOpenRoadmap)}
+      // Only where there is a page to open. A corner link to a page nobody
+      // has written yet is a dead end dressed as a way through.
+      action={
+        markdown ? homeAction("Roadmap", roadmapHref, onOpenRoadmap) : undefined
+      }
     >
       {loading ? (
         <HomeSkeleton />
@@ -84,8 +103,20 @@ export function HomeMilestones({
           headline={
             markdown ? "No milestones filled in yet" : "No roadmap page yet"
           }
-          hint="Milestones live in the roadmap's own table, each with the target it was agreed for and who owns it."
-          action={homeAction("Open the roadmap", roadmapHref, onOpenRoadmap)}
+          hint={
+            markdown
+              ? "Milestones live in the roadmap's own table, each with the target it was agreed for and who owns it."
+              : "A roadmap is written when there is something to put in it. The agent drafts one from what it reads, and milestones live in its table."
+          }
+          action={
+            markdown
+              ? homeAction("Open the roadmap", roadmapHref, onOpenRoadmap)
+              : homeAction(
+                  container ? "Ingest & synthesize" : "Run an ingest",
+                  ingestHref,
+                  onOpenIngest,
+                )
+          }
         />
       ) : (
         <ul className="flex flex-col gap-2.5">

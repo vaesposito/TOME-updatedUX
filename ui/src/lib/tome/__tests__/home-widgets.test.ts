@@ -27,19 +27,11 @@ describe("visibleWidgets", () => {
   });
 
   it("keeps the order a reader chose", () => {
-    const chosen: TomeHomeWidgetId[] = [
-      "team",
-      "ask",
-      "attention",
-      "tagged",
-      "updates",
-      "children",
-      "partof",
-      "glance",
-      "milestones",
-      "sources",
-      "kpis",
-    ];
+    // Their order is the shipped one with a card dragged to the front, read
+    // off the registry rather than written out: an arrangement that names
+    // every card by hand stops being a test about order the moment a release
+    // adds one, and starts being a test about which cards exist.
+    const chosen = ["team", ...DEFAULTS.filter((id) => id !== "team")];
     expect(visibleWidgets(layout(chosen))).toEqual(chosen);
   });
 
@@ -64,9 +56,13 @@ describe("visibleWidgets", () => {
     expect(shown[shown.indexOf("milestones") - 1]).toBe("glance");
   });
 
-  it("puts a new first card first rather than last", () => {
-    const arranged = DEFAULTS.filter((id) => id !== "ask");
-    expect(visibleWidgets(layout(arranged))[0]).toBe("ask");
+  it("puts a card with nothing shipped ahead of it at the front, not the back", () => {
+    // The leading card, whichever it is, read off the registry: naming it
+    // would make this a test about which card leads rather than about where
+    // an unplaced one lands, and the two change for different reasons.
+    const [first] = DEFAULTS;
+    const arranged = DEFAULTS.filter((id) => id !== first);
+    expect(visibleWidgets(layout(arranged))[0]).toBe(first);
   });
 
   it("ignores a card listed twice", () => {
@@ -152,6 +148,13 @@ describe("parseLayout", () => {
 });
 
 describe("the registry", () => {
+  it("leads with what the space is, which every other card assumes", () => {
+    // A reader who has not been told what this space is cannot read a word
+    // of what follows, so the description goes before the activity, the
+    // roster and the rest.
+    expect(TOME_HOME_WIDGETS[0].id).toBe("about");
+  });
+
   it("names every card for the controls that move it", () => {
     for (const widget of TOME_HOME_WIDGETS) {
       expect(widgetLabel(widget.id)).toBe(widget.label);

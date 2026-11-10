@@ -163,11 +163,14 @@ export function McpConnectDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {/* Shaped like the rest of the catalogue's welcome band — Settings,
-            the tour, Provide feedback — which is the row this sits in. */}
+            the tour, Provide feedback — which is the row this sits in. A
+            stated height rather than one grown from the padding: beside a
+            button that sets its own, text and padding alone came up two
+            pixels short, which reads as a misalignment rather than a size. */}
         <Button
           variant="outline"
           size="sm"
-          className="h-auto gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          className="h-8 gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
           data-tour="hub-mcp"
         >
           <Plug className="h-3.5 w-3.5" />

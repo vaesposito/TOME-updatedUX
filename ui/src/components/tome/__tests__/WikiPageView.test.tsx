@@ -275,7 +275,7 @@ describe("WikiPageView", () => {
 
     const history = await screen.findByTestId("tome-page-last-update");
     expect(screen.getByTestId("tome-page-metadata-row")).toHaveClass("overflow-hidden");
-    expect(history).toHaveClass("min-w-0", "truncate", "text-left");
+    expect(history).toHaveClass("min-w-0", "overflow-hidden", "text-left");
     expect(screen.getByTestId("tome-page-actions")).toHaveClass("max-w-full", "flex-wrap");
 
     expect(screen.queryByRole("button", { name: /reading width/ })).toBeNull();
@@ -307,6 +307,12 @@ describe("WikiPageView", () => {
       "title",
       expect.stringContaining("test.user@example.com"),
     );
+    // Who wrote it reads as one sentence with its own icon. `truncate` would
+    // carry a global `display: block` that puts the icon on a line of its
+    // own, so only the text inside the row may wear it.
+    expect(update).toHaveClass("flex", "items-center");
+    expect(update).not.toHaveClass("truncate");
+    expect(update.querySelector("svg")).not.toBeNull();
 
     unmount();
     jest.useRealTimers();
@@ -433,9 +439,7 @@ describe("WikiPageView", () => {
     ).not.toBeNull();
   });
 
-  it("names and renames the page without its file extension", async () => {
-    const onRename = jest.fn().mockResolvedValue(undefined);
-
+  it("names the page once, in its title", () => {
     render(
       <WikiPageView
         slug="example-project"
@@ -443,29 +447,15 @@ describe("WikiPageView", () => {
         markdown={"---\ntitle: Example meeting\nkind: stable\n---\nMeeting notes"}
         onWrite={jest.fn().mockResolvedValue(undefined)}
         onReload={jest.fn()}
-        onRename={onRename}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "17.08.2026" })).toBeInTheDocument();
+    expect(screen.getByText("Example meeting")).toBeInTheDocument();
+    // The stored path is the store's business, not the reader's: neither the
+    // extension nor a second copy of the name belongs under the title.
     expect(screen.queryByText("meetings/17.08.2026.md")).not.toBeInTheDocument();
+    expect(screen.queryByText("17.08.2026")).not.toBeInTheDocument();
     expect(screen.queryByText(/\.md/)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "17.08.2026" }));
-    const nameInput = screen.getByRole("textbox", {
-      name: "Rename page (Enter to save, Esc to cancel)",
-    });
-    expect(nameInput).toHaveValue("17.08.2026");
-    fireEvent.change(nameInput, { target: { value: "18.08.2026" } });
-    fireEvent.keyDown(nameInput, { key: "Enter" });
-
-    // The stored path keeps the extension the reader never sees.
-    await waitFor(() =>
-      expect(onRename).toHaveBeenCalledWith(
-        "meetings/17.08.2026.md",
-        "meetings/18.08.2026.md",
-      ),
-    );
   });
 
   it("opens a newly created page directly in the editor", async () => {

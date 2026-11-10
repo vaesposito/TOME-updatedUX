@@ -1468,33 +1468,6 @@ export function TomeWiki({ slug }: { slug: string }) {
     [bulkBusy, checkedNodes, clearChecked, load, slug],
   );
 
-  // Rename a page: write its markdown to the new path, then tombstone the old
-  // one (there's no move endpoint). History starts fresh on the new path.
-  const renamePage = useCallback(
-    async (oldPath: string, rawNew: string) => {
-      let next = rawNew.trim().replace(/^\/+/, "");
-      if (!next) return;
-      if (!/\.(md|mdx)$/i.test(next)) next += ".md";
-      if (next === oldPath) return;
-      if (data?.pages[next] !== undefined) {
-        throw new Error(`A page already exists at ${next}`);
-      }
-      const md = data?.pages[oldPath];
-      if (md === undefined) throw new Error("Page not found");
-      await writeMarkdown(next, md, `rename ${oldPath} to ${next}`);
-      const res = await fetch(`/api/tome/projects/${slug}/pages/${oldPath}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`rename failed to remove old page (${res.status})`);
-      await load();
-      if (view.kind === "page" && view.path === oldPath) {
-        navigate({ kind: "page", path: next });
-      }
-      setArtifactPath((p) => (p === oldPath ? next : p));
-    },
-    [data, slug, writeMarkdown, load, navigate, view],
-  );
-
   // Import supported documents through the server converter. Nested layout is
   // preserved via webkitRelativePath when a folder is selected/dropped.
   const uploadPages = useCallback(
@@ -2905,7 +2878,6 @@ export function TomeWiki({ slug }: { slug: string }) {
                         awaitingReview={awaitingReview}
                         onNavigate={openArtifact}
                         glossaryPreview={glossaryPreview}
-                        onRename={canEdit ? renamePage : undefined}
                         canEdit={canEdit}
                         knownPaths={knownPagePaths}
                         teamName={projectMeta.teamName}
@@ -3256,7 +3228,6 @@ export function TomeWiki({ slug }: { slug: string }) {
                     awaitingReview={awaitingReview}
                     onNavigate={(path) => navigate({ kind: "page", path })}
                     glossaryPreview={glossaryPreview}
-                    onRename={canEdit ? renamePage : undefined}
                     canEdit={canEdit}
                     knownPaths={knownPagePaths}
                     teamName={projectMeta.teamName}

@@ -68,7 +68,7 @@ import {
   type PageAuthorKind,
   type PageRevisionLike,
 } from "@/lib/tome/page-provenance";
-import { asPagePath, pageDisplayName } from "@/lib/tome/page-names";
+import { pageDisplayName } from "@/lib/tome/page-names";
 import { WatchToggle } from "@/components/tome/WatchToggle";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
@@ -189,8 +189,6 @@ interface Props {
   onNavigate?: (path: string) => void;
   /** Resolve a glossary term slug to its definition for the hover card. */
   glossaryPreview?: GlossaryResolver;
-  /** Rename this page to a new path. When provided, the header path is editable. */
-  onRename?: (oldPath: string, newPath: string) => Promise<void>;
   /** OpenFGA steward/admin decision for all write affordances. */
   canEdit?: boolean;
   /** Current project paths used to flag broken wiki links in source mode. */
@@ -222,7 +220,6 @@ export function WikiPageView({
   awaitingReview = false,
   onNavigate,
   glossaryPreview,
-  onRename,
   canEdit = true,
   knownPaths,
   teamName,
@@ -248,8 +245,6 @@ export function WikiPageView({
     currentAuthor: string | null;
     currentCreatedAt: string | null;
   } | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  const [pathDraft, setPathDraft] = useState(path);
   // Who to tell about this edit. Reset after each save so the next edit starts
   // from a deliberate choice rather than inheriting the last one.
   const [notify, setNotify] = useState<PageNotifySelection>(DEFAULT_NOTIFY);
@@ -336,7 +331,6 @@ export function WikiPageView({
   );
   const taggableSpaces = useTaggableSpaces({ enabled: isEditing });
   // Named for a reader, so the stored `.md` never reaches the header.
-  const displayName = useMemo(() => pageDisplayName(path), [path]);
   const provenance = useMemo(() => readPageProvenance(liveHistory), [liveHistory]);
 
   // Template binding (#488/#508): passive, zero-extra-fetch badge read
@@ -384,7 +378,6 @@ export function WikiPageView({
     setIsEditing(false);
     setEditorMode("rich");
     setError(null);
-    setRenaming(false);
     setDraftStatus(null);
     setDraftSavedAt(null);
   }, [path]);
@@ -433,27 +426,6 @@ export function WikiPageView({
       setChangesSinceOpen((n) => n + 1);
     }
   }, [markdown]);
-
-  const startRename = useCallback(() => {
-    setPathDraft(displayName);
-    setRenaming(true);
-  }, [displayName]);
-
-  const commitRename = useCallback(async () => {
-    // The field holds a name, not a path: the extension the store requires
-    // is put back here rather than asked of whoever is renaming the page.
-    const typed = pathDraft.trim().split(/[\\/]/).pop()?.trim() ?? "";
-    const nextFilename = asPagePath(typed);
-    const parentPath = path.slice(0, path.lastIndexOf("/") + 1);
-    const next = `${parentPath}${nextFilename}`;
-    setRenaming(false);
-    if (!nextFilename || next === path || !onRename) return;
-    try {
-      await onRename(path, next);
-    } catch (e) {
-      setError(String((e as Error)?.message ?? e));
-    }
-  }, [pathDraft, path, onRename]);
 
   // External change (agent edit) while not editing → remount to show it live.
   useEffect(() => {
@@ -731,48 +703,18 @@ export function WikiPageView({
             className="flex min-w-0 items-center gap-1.5 overflow-hidden"
             data-testid="tome-page-metadata-row"
           >
-            {renaming ? (
-              <input
-                autoFocus
-                value={pathDraft}
-                onChange={(e) => setPathDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void commitRename();
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    setRenaming(false);
-                  }
-                }}
-                onBlur={() => setRenaming(false)}
-                className="block w-full max-w-md rounded border border-input bg-background px-1 py-0.5 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                aria-label="Rename page (Enter to save, Esc to cancel)"
-              />
-            ) : onRename && canEdit && !locked ? (
-              <button
-                type="button"
-                onClick={startRename}
-                title="Rename this page"
-                className="min-w-0 truncate font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline"
-              >
-                {displayName}
-              </button>
-            ) : (
-              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-                {displayName}
-              </span>
-            )}
             {provenance && onOpenHistory && !isEditing && (
               <>
-                <span className="shrink-0 text-[11px] text-muted-foreground/40">·</span>
                 <button
                   type="button"
                   onClick={() => {
                     setChangesSinceOpen(0);
                     onOpenHistory();
                   }}
-                  className="flex min-w-0 items-center gap-1 truncate text-left text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  // `truncate` belongs on the text alone: a global rule forces
+                  // anything wearing it to `display: block`, which would drop
+                  // the icon onto a line of its own above its own sentence.
+                  className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-left text-[11px] text-muted-foreground hover:text-foreground hover:underline"
                   // The handle behind the shown name, and the exact instant
                   // behind the relative one, for anyone who needs them.
                   title={`${provenance.latest.author} · ${new Date(provenance.latest.at).toLocaleString()} — open revision history`}
@@ -795,7 +737,7 @@ export function WikiPageView({
                   <>
                     <span className="shrink-0 text-[11px] text-muted-foreground/40">·</span>
                     <span
-                      className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground"
+                      className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-[11px] text-muted-foreground"
                       title={`${provenance.lastEdit.author} · ${new Date(provenance.lastEdit.at).toLocaleString()}`}
                       data-testid="tome-page-last-edit"
                     >

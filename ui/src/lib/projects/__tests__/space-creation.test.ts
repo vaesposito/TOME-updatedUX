@@ -5,6 +5,7 @@ import {
   emptyDraft,
   invitationsToSend,
   kindsFor,
+  stewardChoices,
   stewardFor,
   type FunctionOption,
   type SpaceDraft,
@@ -203,6 +204,41 @@ describe("who ends up running the space", () => {
     expect(stewardFor(draft({ invitations }))).toEqual({
       type: "user",
       email: "second@example.com",
+    });
+  });
+
+  it("offers the owning team and everyone invited by name", () => {
+    // Only parties the step knows: a group invitation is not a steward, and
+    // an address still being typed is not a person yet.
+    const invitations = [
+      { id: "1", kind: "group" as const, subject: "other-team", role: "member" as const },
+      { id: "2", kind: "user" as const, subject: "first@example.com", role: "member" as const },
+      { id: "3", kind: "user" as const, subject: "  ", role: "admin" as const },
+    ];
+
+    expect(stewardChoices(draft({ invitations }))).toEqual([
+      "team:example-team",
+      "user:first@example.com",
+    ]);
+  });
+
+  it("stewards to the reader's own pick over the first admin", () => {
+    const invitations = [
+      { id: "1", kind: "user" as const, subject: "admin@example.com", role: "admin" as const },
+    ];
+
+    expect(stewardFor(draft({ invitations, steward: "team:example-team" }))).toEqual({
+      type: "team",
+      team_id: "example-team",
+    });
+  });
+
+  it("drops a pick whose person is no longer on the step", () => {
+    // An address that was edited after it was picked names nobody now, so the
+    // default stands rather than the space being handed to a stale one.
+    expect(stewardFor(draft({ steward: "user:gone@example.com" }))).toEqual({
+      type: "team",
+      team_id: "example-team",
     });
   });
 

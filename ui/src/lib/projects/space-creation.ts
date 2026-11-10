@@ -13,6 +13,7 @@ import {
   scheduleToCron,
   type ScheduleFormState,
 } from "@/lib/tome/auto-ingest/schedule-presets";
+import type { DataStewardInput } from "@/types/projects";
 
 /** A function and the divisions it keeps, for choosing a subject's place. */
 export interface FunctionOption {
@@ -160,19 +161,64 @@ export interface SpaceDraft {
   scheduleEnabled: boolean;
   schedule: ScheduleFormState;
   invitations: Invitation[];
+  /**
+   * Who runs the space, named as `team:<slug>` or `user:<email>`. Empty until
+   * the reader chooses, which is when the default below stands.
+   */
+  steward: string;
+}
+
+/** A steward written as one string, so one list can offer both kinds. */
+export function stewardRef(steward: DataStewardInput): string {
+  return steward.type === "team" ? `team:${steward.team_id}` : `user:${steward.email}`;
+}
+
+/** The same, read back. Null for anything that names neither kind. */
+export function parseStewardRef(ref: string): DataStewardInput | null {
+  const team = ref.startsWith("team:") ? ref.slice(5).trim() : "";
+  if (team) return { type: "team", team_id: team };
+  const email = ref.startsWith("user:") ? ref.slice(5).trim() : "";
+  if (email) return { type: "user", email };
+  return null;
+}
+
+/**
+ * Who the third step can offer as steward: the owning team, and the people
+ * invited there.
+ *
+ * Only those, because they are the only parties the step knows to be real. An
+ * address typed in free-hand is one the reader cannot check and the endpoint
+ * may well refuse — someone who has never signed in cannot hold the writer
+ * relation a steward is.
+ */
+export function stewardChoices(draft: SpaceDraft): string[] {
+  const refs = draft.teamSlug ? [`team:${draft.teamSlug}`] : [];
+  for (const invite of draft.invitations) {
+    if (invite.kind !== "user") continue;
+    const subject = invite.subject.trim();
+    if (subject && !refs.includes(`user:${subject}`)) refs.push(`user:${subject}`);
+  }
+  return refs;
 }
 
 /**
  * The person who may write to this space, as the endpoint wants it told.
  *
- * The first person invited as an admin, because naming someone an admin of a
- * space one is making is the plainest statement that they are to run it. With
- * nobody named, the owning team: a space has to have a steward that resolves,
- * and a team always does, where a single person may not have signed in yet.
+ * The reader's own pick, while it is still one of the choices: editing or
+ * removing the person named drops it rather than sending an address nobody is
+ * at any more.
+ *
+ * Unpicked, the first person invited as an admin, because naming someone an
+ * admin of a space one is making is the plainest statement that they are to
+ * run it. With nobody named, the owning team: a space has to have a steward
+ * that resolves, and a team always does, where a single person may not have
+ * signed in yet.
  */
-export function stewardFor(draft: SpaceDraft):
-  | { type: "user"; email: string }
-  | { type: "team"; team_id: string } {
+export function stewardFor(draft: SpaceDraft): DataStewardInput {
+  if (draft.steward && stewardChoices(draft).includes(draft.steward)) {
+    const picked = parseStewardRef(draft.steward);
+    if (picked) return picked;
+  }
   const admin = draft.invitations.find(
     (invite) => invite.kind === "user" && invite.role === "admin" && invite.subject.trim(),
   );
@@ -257,5 +303,6 @@ export function emptyDraft(placement?: SpacePlacement): SpaceDraft {
     scheduleEnabled: true,
     schedule: WEEKLY_SCHEDULE,
     invitations: [],
+    steward: "",
   };
 }

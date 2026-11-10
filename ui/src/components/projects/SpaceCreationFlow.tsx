@@ -34,7 +34,11 @@ import {
   emptyDraft,
   invitationsToSend,
   kindsFor,
+  parseStewardRef,
   sentSources,
+  stewardChoices,
+  stewardFor,
+  stewardRef,
   type FunctionOption,
   type Invitation,
   type SourceKind,
@@ -885,6 +889,21 @@ function SourcesStep({
   );
 }
 
+/**
+ * A steward choice as a reader should read it.
+ *
+ * Which kind it is has to be said out loud: one list offers a team beside a
+ * person, and a team's bare name sitting next to an address does not say that
+ * choosing it hands the space to everybody in it.
+ */
+function stewardChoiceLabel(ref: string, teams: TeamPickerOption[]): string {
+  const steward = parseStewardRef(ref);
+  if (!steward) return ref;
+  if (steward.type === "user") return steward.email;
+  const team = teams.find((option) => option.slug === steward.team_id);
+  return `Everyone in ${team?.name ?? steward.team_id}`;
+}
+
 function InviteStep({
   draft,
   teams,
@@ -923,6 +942,14 @@ function InviteStep({
     onChange({
       invitations: draft.invitations.filter((invite) => invite.id !== id),
     });
+
+  // The steward as the control has to say it: who it would be if the space
+  // were made now, and whether that is still one of the choices. A pick that
+  // is not — the person it named has been edited or taken off the step — is
+  // shown as no pick rather than as a choice nobody can see.
+  const choices = stewardChoices(draft);
+  const standing = stewardRef(stewardFor(draft));
+  const steward = choices.includes(standing) ? standing : "";
 
   return (
     <div className="space-y-4">
@@ -1008,12 +1035,40 @@ function InviteStep({
         </Button>
       </div>
 
+      {/* Asked rather than inferred. Who runs the space used to be whoever
+          happened to be the first admin invited, which is a rule nobody can
+          see from a form. The choices are the parties this step knows: the
+          owning team, and the people invited above. */}
+      <div className="space-y-1">
+        <Label htmlFor="data-steward">Data steward</Label>
+        <Select
+          id="data-steward"
+          value={steward}
+          disabled={choices.length === 0}
+          onChange={(e) => onChange({ steward: e.target.value })}
+        >
+          {/* Nothing to choose is said, not left blank: an empty list reads
+              as a broken control rather than as a question not yet answerable. */}
+          {steward === "" && <option value="">Choose an owning team first</option>}
+          {choices.map((ref) => (
+            <option key={ref} value={ref}>
+              {stewardChoiceLabel(ref, teams)}
+            </option>
+          ))}
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          The steward answers for the space: they write its wiki, run its
+          ingests and review what the agent writes. Name a team and every
+          member of it can.
+        </p>
+      </div>
+
       {/* Said before the form rather than after it. Inviting adds someone to
           the owning team, which only that team's admins may do, and a reader
           who learns that at the end has filled in a form to be refused. */}
       <p className="text-xs text-muted-foreground">
         {canInvite
-          ? "The first admin becomes this space's data steward, who can write to it and run its ingests. Everyone else is added to the owning team with the role given."
+          ? "Invited people are added to the owning team with the role given."
           : "You do not administer this team, so you cannot invite to it. The space will be made and shared with the team; ask one of its admins to add anyone else."}
       </p>
     </div>

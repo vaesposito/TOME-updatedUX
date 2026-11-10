@@ -522,9 +522,31 @@ Nothing has been read from this space's sources yet in the prototype.
   };
 }
 
-export const FOLDERS: Record<string, { id: string; name: string; parent_id: string | null; order: number }[]> = {
+/**
+ * Folders someone made, as the store keeps them.
+ *
+ * `source_path` is what ties a folder record to the directory its pages are
+ * written under; without it the tree shows the record and the directory as
+ * two folders of the same name.
+ */
+export const FOLDERS: Record<
+  string,
+  {
+    id: string;
+    name: string;
+    parent_id: string | null;
+    order: number;
+    source_path: string | null;
+  }[]
+> = {
   "build-pipeline": [
-    { id: "folder-decisions", name: "Decisions", parent_id: null, order: 0 },
+    {
+      id: "folder-decisions",
+      name: "Decisions",
+      parent_id: null,
+      order: 0,
+      source_path: "decisions",
+    },
   ],
 };
 

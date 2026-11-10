@@ -38,7 +38,7 @@ type Json = Record<string, unknown>;
 /** What the session has changed, for as long as the tab is open. */
 const session = {
   pages: new Map<string, Record<string, string>>(),
-  folders: new Map<string, { id: string; name: string; parent_id: string | null; order: number }[]>(),
+  folders: new Map<string, SessionFolder[]>(),
   following: new Set<string>(FOLLOWED),
   read: new Set<string>(),
 };
@@ -48,14 +48,19 @@ function pages(slug: string): Record<string, string> {
   return session.pages.get(slug) as Record<string, string>;
 }
 
-function folders(slug: string) {
+/** A folder as the store keeps it, before the tree is derived from it. */
+interface SessionFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  order: number;
+  /** The directory its pages are written under, where it has one. */
+  source_path: string | null;
+}
+
+function folders(slug: string): SessionFolder[] {
   if (!session.folders.has(slug)) session.folders.set(slug, [...(FOLDERS[slug] ?? [])]);
-  return session.folders.get(slug) as {
-    id: string;
-    name: string;
-    parent_id: string | null;
-    order: number;
-  }[];
+  return session.folders.get(slug) as SessionFolder[];
 }
 
 function wiki(slug: string) {
@@ -64,7 +69,6 @@ function wiki(slug: string) {
     ...folder,
     project_id: `space-${slug}`,
     name_key: folder.name.toLowerCase(),
-    source_path: null,
     owner_subject: USER.sub,
     permission_scope: "project",
     created_at: new Date(),
@@ -251,6 +255,8 @@ const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) =>
           name: String(body.name ?? "New folder"),
           parent_id: (body.parent_id as string | null) ?? null,
           order: folders(slug).length,
+          // Nothing is written under a folder that was only just made.
+          source_path: null,
         });
         return { folder: { id, name: body.name } };
       }

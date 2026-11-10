@@ -528,7 +528,13 @@ function ApplicationNavigationContents({
             item.disabled
               ? "cursor-help text-muted-foreground opacity-55"
               : active
-                ? "bg-muted/60 font-medium text-foreground"
+                // Where you are has to read louder than where the pointer
+                // happens to be: both were bg-muted/60, so hovering a row
+                // drew it exactly as strongly as the selected one, and the
+                // hover also lifts the icon tile. Full strength for the
+                // selection, the lighter wash for the hover — the same
+                // scale the navigation search results use.
+                ? "bg-muted font-medium text-foreground"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
           );
 

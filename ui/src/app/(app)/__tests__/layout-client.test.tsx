@@ -32,6 +32,10 @@ jest.mock("@/components/tour/NotificationTour", () => ({
   NotificationTour: () => <div data-testid="notification-tour" />,
 }));
 
+jest.mock("@/components/tour/FeatureTour", () => ({
+  FeatureTour: () => <div data-testid="feature-tour" />,
+}));
+
 jest.mock("@/hooks/use-user-init", () => ({
   useUserInit: jest.fn(),
 }));

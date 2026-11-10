@@ -492,7 +492,7 @@ describe("WikiPageView", () => {
     );
   };
 
-  it("names the spaces a saved page is tagged with", () => {
+  it("names the spaces a saved page is tagged with", async () => {
     mockSpaces({ slug: "other-space", title: "Other Space", type: "project" });
 
     render(
@@ -506,12 +506,11 @@ describe("WikiPageView", () => {
     );
 
     const tags = screen.getByTestId("tome-page-space-tags");
-    // Named rather than slugged, and followable: the tag is the reader's way
-    // into the space whose related content now holds this page.
-    expect(within(tags).getByRole("link")).toHaveAttribute(
-      "href",
-      "/projects/other-space/tome",
-    );
+    const link = within(tags).getByRole("link");
+    // Followable, and named rather than slugged: the page stores the slug, so
+    // a reader only learns which space this is once the catalogue answers.
+    expect(link).toHaveAttribute("href", "/projects/other-space/tome");
+    await waitFor(() => expect(link).toHaveTextContent("Other Space"));
   });
 
   it("tags a whole page with a space and saves the tag into its frontmatter", async () => {

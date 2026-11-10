@@ -329,7 +329,11 @@ export function WikiPageView({
     () => frontmatterSpaceTags(isEditing ? draftFrontmatter : frontmatter),
     [draftFrontmatter, frontmatter, isEditing],
   );
-  const taggableSpaces = useTaggableSpaces({ enabled: isEditing });
+  // Also fetched while reading when the page carries tags: a tag names the
+  // space it points at, and the page stores only the slug.
+  const taggableSpaces = useTaggableSpaces({
+    enabled: isEditing || spaceTags.length > 0,
+  });
   // Named for a reader, so the stored `.md` never reaches the header.
   const provenance = useMemo(() => readPageProvenance(liveHistory), [liveHistory]);
 

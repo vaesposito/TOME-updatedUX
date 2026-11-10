@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 /**
@@ -31,6 +31,8 @@ export function LabelComboBox({
   multi = false,
   onType,
   ariaLabel,
+  id,
+  container,
   inputClassName = "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
 }: {
   value: string;
@@ -40,11 +42,23 @@ export function LabelComboBox({
   multi?: boolean;
   onType?: (v: string) => void;
   ariaLabel?: string;
+  id?: string;
+  /**
+   * Where the list is portalled. Inside a modal dialog it has to land within
+   * the dialog's own node: a list hanging off `body` sits outside the layer
+   * that watches for clicks elsewhere, so choosing from it would be read as
+   * clicking away and would shut the dialog. Defaults to `body`, which is
+   * right everywhere else.
+   */
+  container?: HTMLElement | null;
   inputClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Whether the list is narrowed yet. Opening a field that already holds a
+  // value would otherwise show only that value back, which hides every other
+  // choice behind deleting the one already there.
+  const [narrowing, setNarrowing] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const listboxId = useId();
@@ -58,19 +72,50 @@ export function LabelComboBox({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  useLayoutEffect(() => {
-    if (!open || !wrapRef.current) return;
-    const rect = wrapRef.current.getBoundingClientRect();
-    setDropdownStyle({
-      position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
-      zIndex: 9999,
-    });
+  /**
+   * Put the list under its field as it mounts.
+   *
+   * Measured onto the node rather than into state: the anchor cannot be known
+   * before there is a node to measure against, and a render spent carrying
+   * the numbers back buys nothing when nothing else reads them.
+   *
+   * Viewport coordinates only hold while the list hangs off `body`. A
+   * container that is itself positioned — a dialog, which is fixed and
+   * centred by a transform — becomes what `fixed` resolves against, so inside
+   * one the offsets are measured from the container instead.
+   */
+  const place = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node || !wrapRef.current) return;
+      const rect = wrapRef.current.getBoundingClientRect();
+      const base = container?.getBoundingClientRect();
+      if (base) {
+        node.style.position = "absolute";
+        node.style.top = `${rect.bottom - base.top - container.clientTop + 4}px`;
+        node.style.left = `${rect.left - base.left - container.clientLeft}px`;
+      } else {
+        node.style.position = "fixed";
+        node.style.top = `${rect.bottom + 4}px`;
+        node.style.left = `${rect.left}px`;
+      }
+      node.style.width = `${rect.width}px`;
+      node.style.zIndex = "9999";
+    },
+    [container],
+  );
+
+  // The list is placed once and does not follow its field, so scrolling with
+  // it open would leave it behind. Closing is both cheaper and less startling
+  // than watching it drift.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
   }, [open]);
 
-  const lastToken = (multi ? (value.split(/[\n,]/).pop() ?? "") : value).trim().toLowerCase();
+  const typed = (multi ? (value.split(/[\n,]/).pop() ?? "") : value).trim().toLowerCase();
+  const lastToken = narrowing ? typed : "";
   const filtered = options
     .filter(
       (o) =>
@@ -98,6 +143,7 @@ export function LabelComboBox({
   const selectItem = (o: { value: string; label: string }) => {
     onChange(applyComboSelection(value, o.value, multi));
     onType?.("");
+    setNarrowing(false);
     setOpen(false);
   };
 
@@ -126,9 +172,9 @@ export function LabelComboBox({
       ? createPortal(
           <div
             id={listboxId}
+            ref={place}
             role="listbox"
-            style={dropdownStyle}
-            className="max-h-56 overflow-auto rounded-xl border border-border/60 bg-card shadow-xl"
+            className="pointer-events-auto max-h-56 overflow-auto rounded-xl border border-border/60 bg-card shadow-xl"
           >
             {filtered.map((o, i) => (
               <button
@@ -152,13 +198,14 @@ export function LabelComboBox({
               </button>
             ))}
           </div>,
-          document.body,
+          container ?? document.body,
         )
       : null;
 
   return (
     <div ref={wrapRef} className="relative">
       <input
+        id={id}
         aria-label={ariaLabel}
         aria-expanded={open && filtered.length > 0}
         aria-controls={open && filtered.length > 0 ? listboxId : undefined}
@@ -170,9 +217,13 @@ export function LabelComboBox({
         onChange={(e) => {
           onChange(e.target.value);
           onType?.(e.target.value);
+          setNarrowing(true);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setNarrowing(false);
+          setOpen(true);
+        }}
         onKeyDown={handleKeyDown}
         className={inputClassName}
       />

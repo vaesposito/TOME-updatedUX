@@ -7,6 +7,7 @@
  * tested without driving a dialog.
  */
 
+import { normLabel } from "@/lib/projects/labels";
 import {
   DEFAULT_SCHEDULE,
   scheduleToCron,
@@ -51,6 +52,51 @@ export interface SpacePlacement {
  */
 export function kindsFor(placement: SpacePlacement | undefined): SpaceKind[] {
   return placement?.function ? ["subject"] : ["project", "area", "bhag"];
+}
+
+/**
+ * The spelling already in use for a typed name, if there is one.
+ *
+ * A function and a category are not records: they exist because a subject
+ * names them, and two subjects naming "Platform" and "platform" end up in two
+ * groups that read as one. So a typed name that differs from an existing one
+ * only in case or spacing is that existing name, and takes its spelling.
+ *
+ * Returns null when the name is genuinely new, which is also what tells the
+ * form it has something to say to the writer.
+ */
+export function canonicalLabel(
+  typed: string,
+  existing: readonly string[],
+): string | null {
+  const key = normLabel(typed);
+  if (!key) return null;
+  return existing.find((name) => normLabel(name) === key) ?? null;
+}
+
+/**
+ * The draft with its function and category settled against the vocabulary.
+ *
+ * Done at submit rather than while typing: rewriting the field under someone
+ * mid-word is how you stop them reaching the name they meant.
+ */
+export function canonicalPlacement(
+  draft: SpaceDraft,
+  functionOptions: readonly FunctionOption[],
+): SpaceDraft {
+  const typedFunction = draft.placement?.function?.trim();
+  if (!typedFunction) return draft;
+
+  const names = functionOptions.map((option) => option.name);
+  const fn = canonicalLabel(typedFunction, names) ?? typedFunction;
+
+  const typedCategory = draft.placement?.category?.trim();
+  const known = functionOptions.find((option) => normLabel(option.name) === normLabel(fn));
+  const category = typedCategory
+    ? (canonicalLabel(typedCategory, known?.categories ?? []) ?? typedCategory)
+    : undefined;
+
+  return { ...draft, placement: { ...draft.placement, function: fn, category } };
 }
 
 /** What a reader can name as a source here. */

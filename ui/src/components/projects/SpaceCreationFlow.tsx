@@ -5,6 +5,7 @@ import * as React from "react";
 
 import { ProviderLogo } from "@/components/credentials/provider-logo";
 import { CheckboxMark } from "@/components/notifications/SelectionCheckbox";
+import { LabelComboBox } from "@/components/projects/LabelComboBox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +26,10 @@ import {
   type HierarchyOption,
   type HierarchyProject,
 } from "@/lib/projects/hierarchy-options";
+import { normLabel } from "@/lib/projects/labels";
 import {
+  canonicalLabel,
+  canonicalPlacement,
   createRequestFrom,
   emptyDraft,
   invitationsToSend,
@@ -122,6 +126,10 @@ export function SpaceCreationFlow({
   const [teamsLoading, setTeamsLoading] = React.useState(true);
   // Which teams this reader administers, as the teams list already reports.
   const [adminOf, setAdminOf] = React.useState<Set<string>>(new Set());
+  // The dialog's own node, so a list portalled out of a field still counts
+  // as inside it. Held in state rather than a bare ref so the first render
+  // after it mounts actually passes it down.
+  const [content, setContent] = React.useState<HTMLDivElement | null>(null);
   const [bhags, setBhags] = React.useState<HierarchyOption[]>([]);
   const [areas, setAreas] = React.useState<HierarchyOption[]>([]);
   const [saving, setSaving] = React.useState(false);
@@ -241,7 +249,9 @@ export function SpaceCreationFlow({
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(createRequestFrom(draft)),
+        body: JSON.stringify(
+          createRequestFrom(canonicalPlacement(draft, functionOptions ?? [])),
+        ),
       });
       const body = await res.json();
       if (!res.ok || !body.data?.project) {
@@ -331,7 +341,7 @@ export function SpaceCreationFlow({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent ref={setContent} className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{outcomes ? "Created" : step.title}</DialogTitle>
           <DialogDescription>
@@ -355,6 +365,7 @@ export function SpaceCreationFlow({
               areas={areas}
               teams={teams}
               teamsLoading={teamsLoading}
+              container={content}
               onChange={edit}
             />
           ) : stepIndex === 1 ? (
@@ -485,6 +496,7 @@ function GeneralStep({
   areas,
   teams,
   teamsLoading,
+  container,
   onChange,
 }: {
   draft: SpaceDraft;
@@ -494,6 +506,7 @@ function GeneralStep({
   areas: HierarchyOption[];
   teams: TeamPickerOption[];
   teamsLoading: boolean;
+  container: HTMLElement | null;
   onChange: (patch: Partial<SpaceDraft>) => void;
 }) {
   const place = (patch: Partial<SpacePlacement>) =>
@@ -529,6 +542,7 @@ function GeneralStep({
         functionOptions={functionOptions}
         bhags={bhags}
         areas={areas}
+        container={container}
         onPlace={place}
       />
 
@@ -579,60 +593,99 @@ function GeneralStep({
  * its own axis's pair and only its own: a project never sees a function, and
  * a subject never sees a BHAG.
  */
+/**
+ * The combo box wearing the same clothes as every other field in the flow.
+ * `Input`'s own classes, so a control that happens to be built differently
+ * is not a control that looks different.
+ */
+const FIELD_CLASS =
+  "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+
+/**
+ * Says when a name is a new one.
+ *
+ * The field accepts either, and the two are worth telling apart: picking an
+ * existing function files the subject beside what is already there, while
+ * naming a new one makes a group that exists because this subject is in it.
+ */
+function NewNameHint({
+  typed,
+  existing,
+  what,
+}: {
+  typed: string;
+  existing: readonly string[];
+  what: "function" | "category";
+}) {
+  if (!typed.trim() || canonicalLabel(typed, existing)) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      New {what}. It will exist once this subject is filed under it.
+    </p>
+  );
+}
+
 function Placement({
   draft,
   functionOptions,
   bhags,
   areas,
+  container,
   onPlace,
 }: {
   draft: SpaceDraft;
   functionOptions?: FunctionOption[];
   bhags: HierarchyOption[];
   areas: HierarchyOption[];
+  container: HTMLElement | null;
   onPlace: (patch: Partial<SpacePlacement>) => void;
 }) {
   if (draft.kind === "bhag") return null;
 
   if (draft.kind === "subject") {
     if (!functionOptions?.length) return null;
+    const typedFunction = draft.placement?.function ?? "";
+    const functionNames = functionOptions.map((option) => option.name);
     const chosen = functionOptions.find(
-      (option) => option.name === draft.placement?.function,
+      (option) => normLabel(option.name) === normLabel(typedFunction),
     );
+    const typedCategory = draft.placement?.category ?? "";
+    const categoryNames = chosen?.categories ?? [];
+
     return (
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor="space-function">Function</Label>
-          <Select
+          <LabelComboBox
             id="space-function"
-            value={draft.placement?.function ?? ""}
-            onChange={(e) =>
+            ariaLabel="Function"
+            value={typedFunction}
+            options={functionNames.map((name) => ({ value: name, label: name }))}
+            container={container}
+            inputClassName={FIELD_CLASS}
+            placeholder="Choose or name a function"
+            onChange={(next) =>
               // A category belongs to one function, so changing the function
-              // drops the category rather than carrying a stale one over.
-              onPlace({ function: e.target.value, category: undefined })
+              // drops the category rather than carrying a stale one over —
+              // the same whether the function was picked or typed.
+              onPlace({ function: next, category: undefined })
             }
-          >
-            {functionOptions.map((option) => (
-              <option key={option.name} value={option.name}>
-                {option.name}
-              </option>
-            ))}
-          </Select>
+          />
+          <NewNameHint typed={typedFunction} existing={functionNames} what="function" />
         </div>
         <div className="space-y-1">
           <Label htmlFor="space-category">Category</Label>
-          <Select
+          <LabelComboBox
             id="space-category"
-            value={draft.placement?.category ?? ""}
-            onChange={(e) => onPlace({ category: e.target.value || undefined })}
-          >
-            <option value="">No category</option>
-            {(chosen?.categories ?? []).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </Select>
+            ariaLabel="Category"
+            value={typedCategory}
+            options={categoryNames.map((name) => ({ value: name, label: name }))}
+            container={container}
+            inputClassName={FIELD_CLASS}
+            placeholder="No category"
+            onChange={(next) => onPlace({ category: next || undefined })}
+          />
+          <NewNameHint typed={typedCategory} existing={categoryNames} what="category" />
         </div>
       </div>
     );

@@ -1,9 +1,12 @@
 import {
+  canonicalLabel,
+  canonicalPlacement,
   createRequestFrom,
   emptyDraft,
   invitationsToSend,
   kindsFor,
   stewardFor,
+  type FunctionOption,
   type SpaceDraft,
 } from "@/lib/projects/space-creation";
 
@@ -68,6 +71,20 @@ describe("what the three steps ask the endpoint for", () => {
 
     expect(body.type).toBe("bhag");
     expect(body).not.toHaveProperty("functions");
+  });
+
+  it("files a subject under a function nobody has used yet", () => {
+    // The vocabulary is widened by the subjects themselves, so a name that
+    // exists nowhere else arrives as a group once this subject carries it.
+    const body = createRequestFrom(
+      draft({
+        kind: "subject",
+        placement: { function: "Example Function", category: "Example Category" },
+      }),
+    );
+
+    expect(body.functions).toEqual(["Example Function"]);
+    expect(body.categories).toEqual(["Example Category"]);
   });
 
   it("places a project under both its BHAG and its area", () => {
@@ -202,5 +219,75 @@ describe("who ends up running the space", () => {
       "other-team",
       "reader@example.com",
     ]);
+  });
+});
+
+describe("naming a function or category that does not exist yet", () => {
+  const vocabulary: FunctionOption[] = [
+    { name: "Example Function", categories: ["Example Category"] },
+    { name: "Other Function", categories: [] },
+  ];
+
+  it("takes the spelling already in use when only case or spacing differs", () => {
+    expect(canonicalLabel("example  function", ["Example Function"])).toBe("Example Function");
+    expect(canonicalLabel("  EXAMPLE FUNCTION ", ["Example Function"])).toBe("Example Function");
+  });
+
+  it("reports a genuinely new name as new", () => {
+    expect(canonicalLabel("Third Function", ["Example Function"])).toBeNull();
+    expect(canonicalLabel("   ", ["Example Function"])).toBeNull();
+  });
+
+  it("settles a typed function and category onto the existing spellings", () => {
+    const settled = canonicalPlacement(
+      draft({
+        kind: "subject",
+        placement: { function: "example function", category: "example category" },
+      }),
+      vocabulary,
+    );
+
+    expect(settled.placement).toMatchObject({
+      function: "Example Function",
+      category: "Example Category",
+    });
+  });
+
+  it("keeps a new name exactly as it was written", () => {
+    const settled = canonicalPlacement(
+      draft({
+        kind: "subject",
+        placement: { function: "Third Function", category: "Fresh Category" },
+      }),
+      vocabulary,
+    );
+
+    expect(settled.placement).toMatchObject({
+      function: "Third Function",
+      category: "Fresh Category",
+    });
+  });
+
+  it("does not match a category against a function that does not own it", () => {
+    // "Example Category" belongs to Example Function; under Other Function
+    // the same words are a new category, not that one.
+    const settled = canonicalPlacement(
+      draft({
+        kind: "subject",
+        placement: { function: "Other Function", category: "example category" },
+      }),
+      vocabulary,
+    );
+
+    expect(settled.placement?.category).toBe("example category");
+  });
+
+  it("leaves the hierarchy axis alone", () => {
+    const original = draft({
+      kind: "project",
+      placement: { initiative: "example-bhag", area: "example-area" },
+    });
+
+    expect(canonicalPlacement(original, vocabulary)).toBe(original);
   });
 });

@@ -2377,9 +2377,22 @@ export function TomeWiki({ slug }: { slug: string }) {
                 the catalogue header. */}
             {canEdit && (
               <Button
-                variant="outline"
                 size="sm"
-                className="h-auto gap-1.5 px-2 py-1"
+                // The app's own green for a go action, a fixed hue rather
+                // than a themed one so it reads the same in both themes.
+                //
+                // In flight it darkens and keeps its strength instead of
+                // taking the usual disabled fade: this button spends a whole
+                // run disabled while reporting what that run is doing, and a
+                // faded white label on the light theme is hard to read for a
+                // state worth watching. The spinner and the label say it is
+                // working; the colour does not have to say it is off.
+                className={cn(
+                  "h-auto gap-1.5 px-2 py-1 text-white",
+                  inFlightRun || startingSync
+                    ? "bg-emerald-700 hover:bg-emerald-700 disabled:opacity-100"
+                    : "bg-emerald-600 hover:bg-emerald-700",
+                )}
                 onClick={() => void syncNow()}
                 disabled={startingSync || inFlightRun !== null}
                 title={
@@ -2395,7 +2408,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                 ) : (
                   <Play className="h-3.5 w-3.5" />
                 )}
-                {inFlightRun ? inFlightLabel(inFlightRun.status) : "Sync now"}
+                {inFlightRun ? inFlightLabel(inFlightRun.status) : "Run ingest"}
               </Button>
             )}
             {!navV2 && (

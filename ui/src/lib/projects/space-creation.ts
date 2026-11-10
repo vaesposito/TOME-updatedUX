@@ -22,12 +22,23 @@ export interface FunctionOption {
 /** The kinds of space the flow can make. */
 export type SpaceKind = "project" | "area" | "bhag" | "subject";
 
-/** Where the flow was opened from, which decides what it can make. */
+/**
+ * Where a space lives.
+ *
+ * One concern, two axes, and a record only ever carries one of them: a
+ * subject names a function and perhaps a category, a project names a BHAG
+ * and perhaps an area. Which pair is in play is decided by the entry point,
+ * so nothing here ever has to choose between them.
+ */
 export interface SpacePlacement {
   /** The function a subject will belong to. Absent on the hierarchy axis. */
   function?: string;
   /** The division of that function's work, when one was named. */
   category?: string;
+  /** The BHAG a project or area sits under. Absent on the function axis. */
+  initiative?: string;
+  /** The area under that BHAG, when the project sits in one. */
+  area?: string;
 }
 
 /**
@@ -160,9 +171,21 @@ export function createRequestFrom(draft: SpaceDraft): Record<string, unknown> {
     github_repos: repos,
   };
 
-  if (draft.kind === "subject" && draft.placement?.function) {
-    body.functions = [draft.placement.function];
-    if (draft.placement.category) body.categories = [draft.placement.category];
+  if (draft.kind === "subject") {
+    if (draft.placement?.function) {
+      body.functions = [draft.placement.function];
+      if (draft.placement.category) body.categories = [draft.placement.category];
+    }
+  } else if (draft.kind !== "bhag" && draft.placement?.initiative) {
+    // The BHAG is named on the space itself even when an area is too, never
+    // left to be inferred from the area: an area is not guaranteed to name
+    // its own parent, and a project whose BHAG can only be reached through
+    // one that does not is a project with no BHAG at all.
+    body.initiatives = [draft.placement.initiative];
+    // Only a project sits in an area. An area is one.
+    if (draft.kind === "project" && draft.placement.area) {
+      body.areas = [draft.placement.area];
+    }
   }
 
   // A schedule only means something over something to read.

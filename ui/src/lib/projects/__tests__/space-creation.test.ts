@@ -70,6 +70,49 @@ describe("what the three steps ask the endpoint for", () => {
     expect(body).not.toHaveProperty("functions");
   });
 
+  it("places a project under both its BHAG and its area", () => {
+    // Both named on the project itself: an area is not guaranteed to name
+    // its own parent, so inferring the BHAG through it can lose it.
+    const body = createRequestFrom(
+      draft({
+        kind: "project",
+        placement: { initiative: "example-bhag", area: "example-area" },
+      }),
+    );
+
+    expect(body.initiatives).toEqual(["example-bhag"]);
+    expect(body.areas).toEqual(["example-area"]);
+    expect(body).not.toHaveProperty("functions");
+  });
+
+  it("places an area under its BHAG, and gives it no area of its own", () => {
+    const body = createRequestFrom(
+      draft({
+        kind: "area",
+        placement: { initiative: "example-bhag", area: "example-area" },
+      }),
+    );
+
+    expect(body.initiatives).toEqual(["example-bhag"]);
+    expect(body).not.toHaveProperty("areas");
+  });
+
+  it("gives a BHAG no parent, because it has none", () => {
+    const body = createRequestFrom(
+      draft({ kind: "bhag", placement: { initiative: "example-bhag" } }),
+    );
+
+    expect(body).not.toHaveProperty("initiatives");
+    expect(body).not.toHaveProperty("areas");
+  });
+
+  it("leaves an unplaced project unplaced rather than guessing", () => {
+    const body = createRequestFrom(draft({ kind: "project" }));
+
+    expect(body).not.toHaveProperty("initiatives");
+    expect(body).not.toHaveProperty("areas");
+  });
+
   it("schedules weekly by default once something is attached", () => {
     const body = createRequestFrom(draft({ sources: [REPO] }));
 

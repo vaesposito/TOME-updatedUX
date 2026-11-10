@@ -3,7 +3,7 @@
 import { Layers, Plus, Users } from "lucide-react";
 import * as React from "react";
 
-import { HubGroup } from "@/components/projects/HubGroup";
+import { HubGroup, HubGroupRun } from "@/components/projects/HubGroup";
 import {
   HubHeading,
   HubSearchField,
@@ -223,7 +223,7 @@ function FunctionGroup({
             own between the function and the subjects, each holding the same
             cards the catalogue draws. */}
         {categories.length > 0 && (
-          <div className="space-y-3">
+          <HubGroupRun className="space-y-3">
             {categories.map(({ category, subjects }) => (
               <CategorySubGroup
                 key={category.id}
@@ -232,7 +232,7 @@ function FunctionGroup({
                 href={`/projects/functions/${categorySlug(fn, category)}`}
               />
             ))}
-          </div>
+          </HubGroupRun>
         )}
 
         {categories.length > 0 && loose.length > 0 && (

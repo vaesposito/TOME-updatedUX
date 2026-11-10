@@ -15,9 +15,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { TeamPicker, type TeamPickerOption } from "@/components/ui/team-picker";
 import { UserEmailPicker } from "@/components/ui/user-email-picker";
 import { getConfig } from "@/lib/config";
+import {
+  toHierarchyOptions,
+  type HierarchyOption,
+  type HierarchyProject,
+} from "@/lib/projects/hierarchy-options";
 import {
   createRequestFrom,
   emptyDraft,
@@ -113,6 +119,10 @@ export function SpaceCreationFlow({
   const [draft, setDraft] = React.useState<SpaceDraft>(() => emptyDraft(placement));
   const [teams, setTeams] = React.useState<TeamPickerOption[]>([]);
   const [teamsLoading, setTeamsLoading] = React.useState(true);
+  // Which teams this reader administers, as the teams list already reports.
+  const [adminOf, setAdminOf] = React.useState<Set<string>>(new Set());
+  const [bhags, setBhags] = React.useState<HierarchyOption[]>([]);
+  const [areas, setAreas] = React.useState<HierarchyOption[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [outcomes, setOutcomes] = React.useState<InviteOutcome[] | null>(null);
@@ -145,7 +155,15 @@ export function SpaceCreationFlow({
           _id: string;
           name: string;
           slug?: string;
+          user_role?: string;
         }>;
+        setAdminOf(
+          new Set(
+            list
+              .filter((team) => team.user_role === "admin" || team.user_role === "owner")
+              .map((team) => team.slug ?? team._id),
+          ),
+        );
         setTeams(
           list.map((team) => ({
             slug: team.slug ?? team._id,
@@ -175,6 +193,45 @@ export function SpaceCreationFlow({
       live = false;
     };
   }, [open, defaultTeamSlug]);
+
+  // The BHAGs a project or area could sit under. Not fetched on the function
+  // axis, where there is no hierarchy to offer.
+  const onFunctionAxis = Boolean(placement?.function);
+  React.useEffect(() => {
+    if (!open || onFunctionAxis) return;
+    let live = true;
+    fetch("/api/projects?type=bhag")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!live) return;
+        setBhags(toHierarchyOptions((body?.data?.projects ?? []) as HierarchyProject[]));
+      })
+      .catch(() => live && setBhags([]));
+    return () => {
+      live = false;
+    };
+  }, [open, onFunctionAxis]);
+
+  // The areas inside the chosen BHAG, and only those: an area belongs to one
+  // BHAG, so offering all of them would offer most of them wrongly.
+  const initiative = draft.placement?.initiative;
+  React.useEffect(() => {
+    if (!open || !initiative) {
+      setAreas([]);
+      return;
+    }
+    let live = true;
+    fetch(`/api/projects?type=area&initiative=${encodeURIComponent(initiative)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!live) return;
+        setAreas(toHierarchyOptions((body?.data?.projects ?? []) as HierarchyProject[]));
+      })
+      .catch(() => live && setAreas([]));
+    return () => {
+      live = false;
+    };
+  }, [open, initiative]);
 
   async function create() {
     setError(null);
@@ -283,25 +340,9 @@ export function SpaceCreationFlow({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Where you are, in a rule rather than a row of decorated circles. */}
-        {!outcomes && (
-          <div className="flex items-center gap-2">
-            {STEPS.map((entry, index) => (
-              <span
-                key={entry.title}
-                className={cn(
-                  "h-0.5 flex-1 rounded-full transition",
-                  index <= stepIndex ? "bg-primary" : "bg-border",
-                )}
-              />
-            ))}
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {stepIndex + 1} of {STEPS.length}
-            </span>
-          </div>
-        )}
+        {!outcomes && <Stepper at={stepIndex} />}
 
-        <div className="max-h-[55vh] space-y-5 overflow-y-auto">
+        <div className="max-h-[55vh] space-y-4 overflow-y-auto px-1">
           {outcomes ? (
             <Outcomes outcomes={outcomes} />
           ) : stepIndex === 0 ? (
@@ -309,6 +350,8 @@ export function SpaceCreationFlow({
               draft={draft}
               kinds={kinds}
               functionOptions={functionOptions}
+              bhags={bhags}
+              areas={areas}
               teams={teams}
               teamsLoading={teamsLoading}
               onChange={edit}
@@ -320,6 +363,7 @@ export function SpaceCreationFlow({
               draft={draft}
               teams={teams}
               teamsLoading={teamsLoading}
+              canInvite={adminOf.has(draft.teamSlug)}
               onChange={edit}
             />
           )}
@@ -381,10 +425,63 @@ export function SpaceCreationFlow({
   );
 }
 
+/**
+ * The three steps, named, with the current one marked.
+ *
+ * The skill builder's own wizard stepper: a numbered bubble per step, its
+ * title beside it, hairline connectors between. Three states and nothing
+ * more — the one you are on, the ones you have done, and the ones ahead —
+ * because a stepper that decorates further is decorating the chrome rather
+ * than saying where you are.
+ */
+function Stepper({ at }: { at: number }) {
+  return (
+    <ol className="flex items-center gap-2">
+      {STEPS.map((entry, index) => {
+        const current = index === at;
+        const done = index < at;
+        return (
+          <React.Fragment key={entry.title}>
+            <li className="flex shrink-0 items-center gap-2">
+              <span
+                aria-hidden
+                className={cn(
+                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors",
+                  current
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : done
+                      ? "border-primary/60 bg-primary/15 text-primary"
+                      : "border-border bg-background text-muted-foreground",
+                )}
+              >
+                {index + 1}
+              </span>
+              <span
+                aria-current={current ? "step" : undefined}
+                className={cn(
+                  "whitespace-nowrap text-[11px] font-medium",
+                  current ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {entry.title}
+              </span>
+            </li>
+            {index < STEPS.length - 1 && (
+              <span aria-hidden className="h-px min-w-2 flex-1 bg-border" />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </ol>
+  );
+}
+
 function GeneralStep({
   draft,
   kinds,
   functionOptions,
+  bhags,
+  areas,
   teams,
   teamsLoading,
   onChange,
@@ -392,81 +489,49 @@ function GeneralStep({
   draft: SpaceDraft;
   kinds: SpaceKind[];
   functionOptions?: FunctionOption[];
+  bhags: HierarchyOption[];
+  areas: HierarchyOption[];
   teams: TeamPickerOption[];
   teamsLoading: boolean;
   onChange: (patch: Partial<SpaceDraft>) => void;
 }) {
-  const chosen = functionOptions?.find(
-    (option) => option.name === draft.placement?.function,
-  );
-  const placing = draft.kind === "subject" && (functionOptions?.length ?? 0) > 0;
+  const place = (patch: Partial<SpacePlacement>) =>
+    onChange({ placement: { ...draft.placement, ...patch } });
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2">
+    <div className="space-y-4">
+      <div className="space-y-1">
         <Label htmlFor="space-type">Type</Label>
         {kinds.length > 1 ? (
           <Select
             id="space-type"
             value={draft.kind}
-            onChange={(kind) => onChange({ kind: kind as SpaceKind })}
-            options={kinds.map((kind) => ({ value: kind, label: KIND_LABEL[kind] }))}
-          />
+            onChange={(e) => onChange({ kind: e.target.value as SpaceKind })}
+          >
+            {kinds.map((kind) => (
+              <option key={kind} value={kind}>
+                {KIND_LABEL[kind]}
+              </option>
+            ))}
+          </Select>
         ) : (
           // One kind means no choice to offer, only a fact to state.
-          <p className="text-sm text-muted-foreground">
-            {KIND_LABEL[draft.kind]}
-            {draft.placement?.category
-              ? `, in ${draft.placement.category}`
-              : draft.placement?.function
-                ? `, in ${draft.placement.function}`
-                : ""}
-          </p>
+          <p className="text-sm text-muted-foreground">{KIND_LABEL[draft.kind]}</p>
         )}
       </div>
 
-      {/* Where it goes, asked here because the button that opened this no
-          longer hangs off the row that would have said. */}
-      {placing && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="space-function">Function</Label>
-            <Select
-              id="space-function"
-              value={draft.placement?.function ?? ""}
-              onChange={(name) => onChange({ placement: { function: name } })}
-              options={(functionOptions ?? []).map((option) => ({
-                value: option.name,
-                label: option.name,
-              }))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="space-category">Category</Label>
-            <Select
-              id="space-category"
-              value={draft.placement?.category ?? ""}
-              onChange={(name) =>
-                onChange({
-                  placement: {
-                    function: draft.placement?.function ?? "",
-                    ...(name ? { category: name } : {}),
-                  },
-                })
-              }
-              options={[
-                { value: "", label: "No category" },
-                ...(chosen?.categories ?? []).map((name) => ({
-                  value: name,
-                  label: name,
-                })),
-              ]}
-            />
-          </div>
-        </div>
-      )}
+      {/* Where it lives: one concern, read the same way on either axis, and
+          never showing the other axis's options. Asked here because the
+          button that opened this no longer hangs off the row that said. */}
+      <Placement
+        draft={draft}
+        functionOptions={functionOptions}
+        bhags={bhags}
+        areas={areas}
+        onPlace={place}
+      />
 
-      <div className="space-y-2">
+      <div className="space-y-1">
         <Label htmlFor="space-name">Name</Label>
         <Input
           id="space-name"
@@ -477,7 +542,7 @@ function GeneralStep({
         />
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1">
         <Label htmlFor="space-description">Description</Label>
         <Input
           id="space-description"
@@ -490,7 +555,7 @@ function GeneralStep({
       {/* Not a fourth question: shown because the endpoint needs one and a
           reader should see which, but answered from the spaces around it. */}
       {!teamsLoading && !draft.teamSlug && (
-        <div className="space-y-2">
+        <div className="space-y-1">
           <Label htmlFor="space-team">Team</Label>
           <TeamPicker
             id="space-team"
@@ -500,6 +565,117 @@ function GeneralStep({
             onChange={(teamSlug) => onChange({ teamSlug })}
             placeholder="Choose a team"
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The two levels a space can be placed at, whichever axis it is on.
+ *
+ * A BHAG has no parent, so it is offered none. Everything else is offered
+ * its own axis's pair and only its own: a project never sees a function, and
+ * a subject never sees a BHAG.
+ */
+function Placement({
+  draft,
+  functionOptions,
+  bhags,
+  areas,
+  onPlace,
+}: {
+  draft: SpaceDraft;
+  functionOptions?: FunctionOption[];
+  bhags: HierarchyOption[];
+  areas: HierarchyOption[];
+  onPlace: (patch: Partial<SpacePlacement>) => void;
+}) {
+  if (draft.kind === "bhag") return null;
+
+  if (draft.kind === "subject") {
+    if (!functionOptions?.length) return null;
+    const chosen = functionOptions.find(
+      (option) => option.name === draft.placement?.function,
+    );
+    return (
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="space-function">Function</Label>
+          <Select
+            id="space-function"
+            value={draft.placement?.function ?? ""}
+            onChange={(e) =>
+              // A category belongs to one function, so changing the function
+              // drops the category rather than carrying a stale one over.
+              onPlace({ function: e.target.value, category: undefined })
+            }
+          >
+            {functionOptions.map((option) => (
+              <option key={option.name} value={option.name}>
+                {option.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="space-category">Category</Label>
+          <Select
+            id="space-category"
+            value={draft.placement?.category ?? ""}
+            onChange={(e) => onPlace({ category: e.target.value || undefined })}
+          >
+            <option value="">No category</option>
+            {(chosen?.categories ?? []).map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-1">
+        <Label htmlFor="space-bhag">BHAG</Label>
+        <Select
+          id="space-bhag"
+          value={draft.placement?.initiative ?? ""}
+          onChange={(e) =>
+            onPlace({ initiative: e.target.value || undefined, area: undefined })
+          }
+        >
+          {/* Unplaced is a real answer, so it is offered rather than left as
+              what happens when nothing is chosen. */}
+          <option value="">Not placed yet</option>
+          {bhags.map((option) => (
+            <option key={option.slug} value={option.slug}>
+              {option.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {draft.kind === "project" && (
+        <div className="space-y-1">
+          <Label htmlFor="space-area">Area</Label>
+          <Select
+            id="space-area"
+            value={draft.placement?.area ?? ""}
+            disabled={!draft.placement?.initiative}
+            onChange={(e) => onPlace({ area: e.target.value || undefined })}
+          >
+            <option value="">
+              {draft.placement?.initiative ? "No area" : "Choose a BHAG first"}
+            </option>
+            {areas.map((option) => (
+              <option key={option.slug} value={option.slug}>
+                {option.name}
+              </option>
+            ))}
+          </Select>
         </div>
       )}
     </div>
@@ -530,20 +706,22 @@ function SourcesStep({
   };
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2">
+    <div className="space-y-4">
+      <div className="space-y-1">
         <Label htmlFor="source-kind">Add a source</Label>
         <div className="flex gap-2">
           <Select
             id="source-kind"
             value={kind}
-            onChange={(next) => setKind(next as SourceKind)}
-            options={SOURCE_KINDS.map((entry) => ({
-              value: entry.kind,
-              label: entry.label,
-            }))}
+            onChange={(e) => setKind(e.target.value as SourceKind)}
             className="w-36 shrink-0"
-          />
+          >
+            {SOURCE_KINDS.map((entry) => (
+              <option key={entry.kind} value={entry.kind}>
+                {entry.label}
+              </option>
+            ))}
+          </Select>
           <Input
             aria-label="Source"
             value={value}
@@ -609,7 +787,7 @@ function SourcesStep({
         </p>
       )}
 
-      <div className="space-y-2 border-t border-border/60 pt-4">
+      <div className="space-y-1 border-t border-border/60 pt-4">
         <button
           type="button"
           onClick={() => onChange({ scheduleEnabled: !draft.scheduleEnabled })}
@@ -657,11 +835,14 @@ function InviteStep({
   draft,
   teams,
   teamsLoading,
+  canInvite,
   onChange,
 }: {
   draft: SpaceDraft;
   teams: TeamPickerOption[];
   teamsLoading: boolean;
+  /** Whether this reader administers the owning team, which inviting needs. */
+  canInvite: boolean;
   onChange: (patch: Partial<SpaceDraft>) => void;
 }) {
   const add = (kind: Invitation["kind"]) =>
@@ -690,8 +871,8 @@ function InviteStep({
     });
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2">
+    <div className="space-y-4">
+      <div className="space-y-1">
         <Label htmlFor="owning-team">Owning team</Label>
         <TeamPicker
           id="owning-team"
@@ -729,15 +910,16 @@ function InviteStep({
             )}
           </div>
           <Select
+            aria-label="Role"
             value={invite.role}
-            onChange={(role) => patch(invite.id, { role: role as Invitation["role"] })}
-            options={[
-              { value: "member", label: "Non-admin" },
-              { value: "admin", label: "Admin" },
-            ]}
+            onChange={(e) =>
+              patch(invite.id, { role: e.target.value as Invitation["role"] })
+            }
             className="w-32 shrink-0"
-            ariaLabel="Role"
-          />
+          >
+            <option value="member">Non-admin</option>
+            <option value="admin">Admin</option>
+          </Select>
           <button
             type="button"
             aria-label="Remove"
@@ -750,20 +932,35 @@ function InviteStep({
       ))}
 
       <div className="flex gap-2">
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => add("group")}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={!canInvite}
+          onClick={() => add("group")}
+        >
           <Plus className="h-3.5 w-3.5" />
           Add group
         </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => add("user")}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={!canInvite}
+          onClick={() => add("user")}
+        >
           <Plus className="h-3.5 w-3.5" />
           Add person
         </Button>
       </div>
 
+      {/* Said before the form rather than after it. Inviting adds someone to
+          the owning team, which only that team's admins may do, and a reader
+          who learns that at the end has filled in a form to be refused. */}
       <p className="text-xs text-muted-foreground">
-        The first admin becomes this space&apos;s data steward, who can write
-        to it and run its ingests. Everyone else is added to the owning team
-        with the role given, which needs you to administer that team.
+        {canInvite
+          ? "The first admin becomes this space's data steward, who can write to it and run its ingests. Everyone else is added to the owning team with the role given."
+          : "You do not administer this team, so you cannot invite to it. The space will be made and shared with the team; ask one of its admins to add anyone else."}
       </p>
     </div>
   );
@@ -789,38 +986,3 @@ function Outcomes({ outcomes }: { outcomes: InviteOutcome[] }) {
   );
 }
 
-/** The app's input, worn as a select: one control, two kinds of answer. */
-function Select({
-  id,
-  value,
-  onChange,
-  options,
-  className,
-  ariaLabel,
-}: {
-  id?: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  className?: string;
-  ariaLabel?: string;
-}) {
-  return (
-    <select
-      id={id}
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(
-        "h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        className,
-      )}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
-}

@@ -36,7 +36,7 @@ import {
   HubSearchField,
   HubToolbar,
 } from "@/components/projects/HubToolbar";
-import { HubGroup } from "@/components/projects/HubGroup";
+import { HubGroup, HubGroupRun } from "@/components/projects/HubGroup";
 import { FunctionsView } from "@/components/projects/FunctionsView";
 import {
   ProjectCard,
@@ -433,7 +433,7 @@ function ProjectGroup({
     >
       <div className="space-y-4">
         {isBhagGroup && childAreas && childAreas.length > 0 && (
-          <div className="space-y-3">
+          <HubGroupRun className="space-y-3">
             {childAreas.map((ca) => (
               <AreaSubGroup
                 key={ca.label}
@@ -444,7 +444,7 @@ function ProjectGroup({
                 creating={creatingArea === normLabel(ca.label)}
               />
             ))}
-          </div>
+          </HubGroupRun>
         )}
 
         {isBhagGroup && childAreas && childAreas.length > 0 && items.length > 0 && (

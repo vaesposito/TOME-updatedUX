@@ -45,6 +45,38 @@ export function GroupCaret({
 
 export type HubGroupLevel = "top" | "nested";
 
+/**
+ * The run of nested groups under one parent, and the line that guides it.
+ *
+ * The guide belongs to the run rather than to each group in it. Drawn per
+ * group it stops at every group's last child and starts again at the next
+ * one's first, so a parent with three areas under it reads as three lines
+ * with gaps rather than one line down the set. Here it spans the children
+ * and the space between them, which is what one line means.
+ *
+ * The indentation is the same to the pixel — the same margin, the same
+ * two-pixel rule, the same padding — only moved out one level.
+ */
+export function HubGroupRun({
+  className,
+  children,
+}: {
+  /** The run's own vertical rhythm, which differs between the two tabs. */
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "ml-4 border-l-2 border-sky-500/20 pl-4 sm:ml-6 sm:pl-6",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** Something rare enough to offer only on hover, beside the group's name. */
 export interface HubGroupAction {
   label: string;
@@ -96,7 +128,7 @@ export function HubGroup({
     <div
       className={cn(
         nested
-          ? "group/area ml-4 space-y-2 border-l-2 border-sky-500/20 pl-4 sm:ml-6 sm:pl-6"
+          ? "group/area space-y-2"
           : "group/group relative space-y-3 rounded-xl transition",
         className,
       )}

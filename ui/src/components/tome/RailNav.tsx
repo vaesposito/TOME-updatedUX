@@ -178,6 +178,10 @@ export function NavItem({
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors hover:bg-muted",
+        // Lighter while it leads nowhere, so the rail can be read down its
+        // column for what is worth opening. The nought stays beside it: the
+        // colour is the glance, the figure is the answer.
+        count === 0 && "text-muted-foreground/60",
         active && "bg-muted text-primary",
       )}
     >

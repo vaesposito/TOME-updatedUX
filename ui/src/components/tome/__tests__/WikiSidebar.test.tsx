@@ -430,3 +430,41 @@ describe("WikiSidebar empty folders", () => {
     expect(onSelectFolder).toHaveBeenCalledWith("decisions");
   });
 });
+
+describe("WikiSidebar folder colour", () => {
+  it("gives a folder the pages' own colour, and lightens only an empty one", () => {
+    const full: PageTreeNode = {
+      path: "notes",
+      title: "Notes",
+      kind: "folder",
+      order: 0,
+      folderId: "notes",
+      children: [
+        { path: "notes/alpha.md", title: "Alpha", kind: "stable", order: 0, children: [] },
+      ],
+    };
+    const bare: PageTreeNode = {
+      path: "archive",
+      title: "Archive",
+      kind: "folder",
+      order: 1,
+      folderId: "archive",
+      children: [],
+    };
+
+    render(
+      <WikiSidebar
+        tree={[full, bare]}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+      />,
+    );
+
+    const row = (name: string) =>
+      screen.getByText(name).closest("div[class*='group']")?.className ?? "";
+    expect(row("Notes")).toContain("text-foreground");
+    expect(row("Notes")).not.toContain("text-muted-foreground/60");
+    expect(row("Archive")).toContain("text-muted-foreground/60");
+  });
+});

@@ -218,6 +218,8 @@ function TreeNode({
   onDraggingChange: (dragging: boolean) => void;
 } & Omit<Props, "tree">) {
   const hasChildren = node.children.length > 0;
+  /** A folder leading nowhere, which the rail says in colour rather than words. */
+  const empty = node.kind === "folder" && !hasChildren;
   const leaf = node.path.split("/").pop() ?? node.path;
   // Holds whatever page is open, however deep. Folders start closed, so
   // without this the rail would hide the reader's own position: they would
@@ -330,7 +332,12 @@ function TreeNode({
             // the folder's own title one step in, which is where the pages
             // inside it sit — so a branch reads as a title with its contents
             // ranged under it.
-            "group mt-2 flex w-full items-center gap-1 rounded pr-1 py-1 font-semibold text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground",
+            //
+            // Carries the pages' own colour. Dimness is reserved for saying
+            // a row leads nowhere, so spending it on every folder would
+            // leave nothing to say that with.
+            "group mt-2 flex w-full items-center gap-1 rounded pr-1 py-1 font-semibold transition-colors hover:bg-muted hover:text-foreground",
+            empty ? "text-muted-foreground/60" : "text-foreground",
             selected && "bg-muted text-primary",
             dropZone === "inside" && "bg-primary/15 text-primary ring-1 ring-inset ring-primary/50",
             dropZone === "before" && "border-t-2 border-primary",

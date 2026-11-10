@@ -368,4 +368,29 @@ describe("NavItem", () => {
     );
     expect(sectionFigure.nextElementSibling?.className).not.toContain("pl-1");
   });
+  it("lightens a row that leads nowhere, and leaves a filled one alone", () => {
+    render(
+      <>
+        <NavItem
+          icon={<span />}
+          label="Notes"
+          active={false}
+          onClick={jest.fn()}
+          count={0}
+        />
+        <NavItem
+          icon={<span />}
+          label="Meetings"
+          active={false}
+          onClick={jest.fn()}
+          count={2}
+        />
+      </>,
+    );
+
+    const nowhere = screen.getByText("Notes").closest("button");
+    const filled = screen.getByText("Meetings").closest("button");
+    expect(nowhere?.className).toContain("text-muted-foreground/60");
+    expect(filled?.className).not.toContain("text-muted-foreground/60");
+  });
 });

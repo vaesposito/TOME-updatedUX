@@ -133,33 +133,65 @@ async function firstPage(slug: string): Promise<string | null> {
   }
 }
 
-/**
- * The project the last three steps borrow, and a page inside it.
- *
- * From the reader's own readable set rather than a fixture, so the tour works
- * in any deployment and never points at something they would get a 403 from.
- *
- * One project for all three steps, and preferably one with a page in it: a
- * walkthrough that hopped between projects between steps would read as three
- * unrelated screenshots, and the first project someone can see is quite
- * often an empty one.
- */
-async function resolveSubject(): Promise<TourSubject> {
-  let slugs: string[] = [];
+/** The projects the reader watches, which a tour prefers to borrow. */
+async function followedSlugs(): Promise<string[]> {
   try {
     const response = await fetch("/api/notifications/following", {
       cache: "no-store",
     });
-    if (!response.ok) return { slug: null, pagePath: null };
+    if (!response.ok) return [];
     const body = await response.json();
     const nodes: Array<{ type?: string; slug?: string }> =
       body?.data?.nodes ?? [];
-    slugs = nodes
+    return nodes
       .filter((node) => node.type === "project" && node.slug)
       .map((node) => node.slug as string);
   } catch {
-    return { slug: null, pagePath: null };
+    return [];
   }
+}
+
+/** Every project the reader can open at all. */
+async function readableSlugs(): Promise<string[]> {
+  try {
+    const response = await fetch("/api/projects", { cache: "no-store" });
+    if (!response.ok) return [];
+    const body = await response.json();
+    const projects: Array<{ slug?: string }> = body?.data?.projects ?? [];
+    return projects.filter((project) => project.slug).map((p) => p.slug as string);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The project the project-bound steps borrow, and a page inside it.
+ *
+ * From the reader's own readable set rather than a fixture, so the tour works
+ * in any deployment and never points at something they would get a 403 from.
+ *
+ * One project for all of them, and preferably one with a page in it: a
+ * walkthrough that hopped between projects between steps would read as
+ * unrelated screenshots, and the first project someone can see is quite
+ * often an empty one.
+ *
+ * Three sources, in the order a reader would expect: the project they are
+ * standing in, then the ones they watch, then anything they can read at all.
+ * Watching alone was not enough — someone on their first day watches nothing,
+ * and every step about a page told them there was no page to show, in a
+ * deployment full of them.
+ */
+async function resolveSubject(preferred: string | null): Promise<TourSubject> {
+  const followed = await followedSlugs();
+  const slugs = [
+    ...new Set([
+      ...(preferred ? [preferred] : []),
+      ...followed,
+      // Only when there is room left to probe: a reader who watches four
+      // projects has given the tour all the subjects it can use.
+      ...(followed.length < MAX_PROBES ? await readableSlugs() : []),
+    ]),
+  ];
 
   // Asked all at once rather than one after another: this runs while the
   // reader is on the first step, and four sequential page listings took long
@@ -173,8 +205,8 @@ async function resolveSubject(): Promise<TourSubject> {
       pagePath: pages[found] as string,
     };
   }
-  // Nothing with a page: the first readable project still serves the two
-  // steps that only need a project, and the page step says what is missing.
+  // Nothing with a page: the first readable project still serves the steps
+  // that only need a project, and the page steps say what is missing.
   return { slug: slugs.at(0) ?? null, pagePath: null };
 }
 
@@ -266,7 +298,15 @@ export function TourRunner() {
     return () => window.removeEventListener(TOUR_START_EVENT, onStart);
   }, []);
 
-  // Find the project the last three steps borrow, in the background. Also
+  /** The project the reader is standing in, if they started from one. */
+  const here = React.useMemo(() => {
+    const match = /^\/projects\/([^/]+)/.exec(pathname ?? "");
+    const slug = match?.[1];
+    // Not a project: `/projects/admin` is TOME's own settings page.
+    return slug && slug !== "admin" ? decodeURIComponent(slug) : null;
+  }, [pathname]);
+
+  // Find the project the project-bound steps borrow, in the background. Also
   // covers resuming after a reload, which restores the place but not the
   // lookup.
   const looking = React.useRef(false);
@@ -274,11 +314,15 @@ export function TourRunner() {
     if (!state || state.subject || looking.current) return;
     looking.current = true;
     const look = async () => {
-      const subject = await resolveSubject();
+      const subject = await resolveSubject(here);
       setState((current) => (current ? { ...current, subject } : current));
       looking.current = false;
     };
     void look();
+    // `here` is read once per lookup rather than watched: a tour that is
+    // already walking has its subject, and re-running this as it navigates
+    // into that subject would be chasing its own tail.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   const stop = React.useCallback(() => {

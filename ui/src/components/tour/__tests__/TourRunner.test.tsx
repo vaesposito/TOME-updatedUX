@@ -115,6 +115,32 @@ describe("a step that asks for a tab", () => {
   });
 });
 
+describe("borrowing something to show", () => {
+  it("opens a page from a project the reader can read but does not watch", async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const payload = url.includes("/api/notifications/following")
+        ? { data: { nodes: [] } }
+        : url.includes("/api/projects")
+          ? { data: { projects: [{ slug: "example-project" }] } }
+          : { data: { pages: { "charter.md": "" } } };
+      return { ok: true, json: async () => payload };
+    }) as unknown as typeof fetch;
+
+    render(<TourRunner />);
+
+    act(() => {
+      startTour("editing");
+    });
+
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/projects/example-project/tome/wiki/charter.md",
+      ),
+    );
+  });
+});
+
 describe("a step about a whole panel", () => {
   it("rings the top of it and brings that to the top of the window", async () => {
     query = "tab=functions";

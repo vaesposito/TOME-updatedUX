@@ -491,9 +491,15 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
     });
 
     expect(await screen.findByText("Recurring Webex meetings")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: "Enable scheduled auto-ingest" }),
-    ).not.toBeInTheDocument();
+    // A roll-up carries the schedule too. Its scheduled run is a synthesis of
+    // the child wikis rather than a source ingest, so it offers the same
+    // presets a project does — hourly among them. The Webex series above keeps
+    // its own calendar either way.
+    const toggle = await screen.findByRole("checkbox", {
+      name: "Enable scheduled auto-ingest",
+    });
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "hourly" })).toBeInTheDocument();
   });
 
   it("shows recurring Webex auto-ingest settings for a BHAG", async () => {
@@ -507,9 +513,13 @@ describe("ProjectSettingsPanel hierarchy hydration", () => {
     });
 
     expect(await screen.findByText("Recurring Webex meetings")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: "Enable scheduled auto-ingest" }),
-    ).not.toBeInTheDocument();
+    // As for an Area: a BHAG's scheduled run synthesizes its child Area and
+    // project wikis, and reaches the same presets.
+    const toggle = await screen.findByRole("checkbox", {
+      name: "Enable scheduled auto-ingest",
+    });
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "hourly" })).toBeInTheDocument();
   });
 
   it("leaves the settings form standing when sending the reader to the connections", async () => {

@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   FolderKanban,
   GripVertical,
-  HelpCircle,
   Layers,
   ListOrdered,
   Plus,
@@ -49,12 +48,7 @@ import { TomeVersionNote } from "@/components/projects/TomeVersionNote";
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 import { WorkspaceOverview } from "@/components/tome/WorkspaceOverview";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/toast";
 import { normLabel } from "@/lib/projects/labels";
 import { partitionSpaces } from "@/lib/projects/placement";
@@ -923,22 +917,6 @@ export function ProjectsHub() {
             label="Find a TOME project"
             clearLabel="Clear project search"
           />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground"
-                  onClick={() => setOnboardingOpen(true)}
-                  aria-label="What is TOME?"
-                >
-                  <HelpCircle className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">What is TOME?</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
           {/* The same flow By function opens, carrying no placement: what
               differs between the two tabs is which axis the result lands on,
               not how it is made. */}

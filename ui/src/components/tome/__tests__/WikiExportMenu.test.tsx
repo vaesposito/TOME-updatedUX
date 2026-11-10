@@ -15,6 +15,31 @@ describe("WikiExportMenu", () => {
     );
   });
 
+  it("wears a word on rows that have room for one", () => {
+    render(
+      <ToastProvider>
+        <WikiExportMenu slug="example-project" triggerLabel="Export" />
+      </ToastProvider>,
+    );
+
+    // The word is for the eye; the full sentence stays for the tooltip and
+    // for anyone reading the button by its name.
+    const trigger = screen.getByRole("button", { name: "Export complete wiki" });
+    expect(trigger).toHaveTextContent("Export");
+  });
+
+  it("stays an icon where there is no room, as in a cluster of icons", () => {
+    render(
+      <ToastProvider>
+        <WikiExportMenu slug="example-project" />
+      </ToastProvider>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Export complete wiki" }),
+    ).toHaveTextContent("");
+  });
+
   it("shows all formats for the selected page", () => {
     render(
       <ToastProvider>

@@ -51,7 +51,7 @@ import {
 } from "lucide-react";
 
 import { HeaderBreadcrumbPortal } from "@/components/layout/HeaderBreadcrumbSlot";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -2850,19 +2850,6 @@ export function TomeWiki({ slug }: { slug: string }) {
                 )}
                 </div>
 
-                <input
-                  ref={uploadInputRef}
-                  type="file"
-                  accept={TOME_IMPORT_ACCEPT}
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const files = e.target.files;
-                    if (files && files.length > 0) void uploadPages(files);
-                    e.target.value = "";
-                  }}
-                />
-
                 {!navV2 && renderWikiTree(filteredWikiTree, { editable: true })}
 
                 {/* Synthesized-type down-links: the projects tagged to this
@@ -3257,15 +3244,47 @@ export function TomeWiki({ slug }: { slug: string }) {
                     : undefined}
                   onOpenPage={openPage}
                   onOpenFolder={openFolder}
-                  actions={canEdit ? (
-                    // Filled, like New note on Notes: the one thing a reader
-                    // comes to an empty branch to do looks the same whichever
-                    // branch they came to.
-                    <Button onClick={() => openNewPage(null)}>
-                      <FilePlus2 className="h-4 w-4" />
-                      New page
-                    </Button>
-                  ) : undefined}
+                  actions={
+                    <>
+                      {/* Getting the wiki out is not an edit, so it is offered
+                          to anyone who can read it — but only once there is
+                          something to get out. */}
+                      {!isEmpty && !loading && (
+                        <WikiExportMenu
+                          slug={slug}
+                          triggerLabel="Export"
+                          triggerClassName={buttonVariants({ variant: "outline" })}
+                        />
+                      )}
+                      {canEdit && (
+                        <>
+                          <Button
+                            variant="outline"
+                            onClick={() => uploadInputRef.current?.click()}
+                            disabled={importing}
+                          >
+                            {importing ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4" />
+                            )}
+                            Import
+                          </Button>
+                          <Button variant="outline" onClick={() => openCreateFolder(null)}>
+                            <FolderPlus className="h-4 w-4" />
+                            New folder
+                          </Button>
+                          {/* Filled, like New note on Notes: the one thing a
+                              reader comes to an empty branch to do looks the
+                              same whichever branch they came to. */}
+                          <Button onClick={() => openNewPage(null)}>
+                            <FilePlus2 className="h-4 w-4" />
+                            New page
+                          </Button>
+                        </>
+                      )}
+                    </>
+                  }
                 />
               </div>
             ) : view.kind === "glossary" ? (
@@ -3510,6 +3529,22 @@ export function TomeWiki({ slug }: { slug: string }) {
       </Dialog>
 
       {newPageDialog}
+
+      {/* One input for every Import button there is: the buttons sit on the
+          wiki surface and in Settings, and a second input would be a second
+          thing to keep in step with what the converter accepts. */}
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept={TOME_IMPORT_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = e.target.files;
+          if (files && files.length > 0) void uploadPages(files);
+          e.target.value = "";
+        }}
+      />
 
       <DeletePageDialog
         path={pagePendingDelete}

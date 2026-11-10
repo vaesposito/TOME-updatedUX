@@ -119,6 +119,29 @@
   color-scheme: light;
 }
 
+/*
+ * The dropdown indicator on a <select>, drawn by us rather than by the
+ * browser. The browser paints its own arrow hard against the inline edge,
+ * inside whatever padding the control has, so it sits on the border and the
+ * focus ring traces the radius right behind it.
+ *
+ * It lives here rather than in a Tailwind arbitrary value because a data URI
+ * cannot read a custom property: the stroke has to be written twice, once per
+ * palette, and a stylesheet is the place that already does that. The two
+ * greys clear 4.5:1 against the surfaces `bg-background` resolves to in every
+ * palette, so the arrow stays legible wherever it is used.
+ */
+.select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
+}
+
+:root:is([data-theme="light"], [data-theme="legacy-light"]) .select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
 /* Preserve Next.js client transitions while giving immediate route feedback. */
 html[data-navigation-pending="true"],
 html[data-navigation-pending="true"] * {

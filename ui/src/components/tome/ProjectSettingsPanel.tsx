@@ -1623,8 +1623,8 @@ export function ProjectSettingsPanel({
 
                         {autoIngestEnabled && (
                           <>
-                            <div className="grid grid-cols-3 gap-2">
-                              {(["daily", "weekly", "advanced"] as const).map((preset) => (
+                            <div className="grid grid-cols-4 gap-2">
+                              {(["hourly", "daily", "weekly", "advanced"] as const).map((preset) => (
                                 <button
                                   key={preset}
                                   type="button"
@@ -1666,24 +1666,52 @@ export function ProjectSettingsPanel({
                                     )}
                                   </select>
                                 )}
-                                <input
-                                  type="time"
-                                  disabled={!canEdit}
-                                  value={`${String(autoIngestSchedule.hour).padStart(2, "0")}:${String(
-                                    autoIngestSchedule.minute,
-                                  ).padStart(2, "0")}`}
-                                  onChange={(e) => {
-                                    const [h, m] = e.target.value.split(":").map(Number);
-                                    setAutoIngestSchedule((prev) => ({
-                                      ...prev,
-                                      hour: h ?? prev.hour,
-                                      minute: m ?? prev.minute,
-                                    }));
-                                  }}
-                                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                                />
+                                {/* Hourly names no hour, so it asks for the
+                                    minute alone rather than a time of day. */}
+                                {autoIngestSchedule.preset === "hourly" ? (
+                                  <label className="flex items-center gap-2 text-sm">
+                                    <span className="text-muted-foreground">At minute</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={59}
+                                      disabled={!canEdit}
+                                      value={autoIngestSchedule.minute}
+                                      onChange={(e) =>
+                                        setAutoIngestSchedule((prev) => ({
+                                          ...prev,
+                                          minute: Math.min(
+                                            59,
+                                            Math.max(0, Number(e.target.value) || 0),
+                                          ),
+                                        }))
+                                      }
+                                      className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                                    />
+                                    <span className="text-muted-foreground">past the hour</span>
+                                  </label>
+                                ) : (
+                                  <input
+                                    type="time"
+                                    disabled={!canEdit}
+                                    value={`${String(autoIngestSchedule.hour).padStart(2, "0")}:${String(
+                                      autoIngestSchedule.minute,
+                                    ).padStart(2, "0")}`}
+                                    onChange={(e) => {
+                                      const [h, m] = e.target.value.split(":").map(Number);
+                                      setAutoIngestSchedule((prev) => ({
+                                        ...prev,
+                                        hour: h ?? prev.hour,
+                                        minute: m ?? prev.minute,
+                                      }));
+                                    }}
+                                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                                  />
+                                )}
                                 <div className="flex flex-col text-xs text-muted-foreground">
-                                  <span>your local time</span>
+                                  {autoIngestSchedule.preset !== "hourly" && (
+                                    <span>your local time</span>
+                                  )}
                                   {nextRunLabel && <span>{nextRunLabel}</span>}
                                 </div>
                               </div>

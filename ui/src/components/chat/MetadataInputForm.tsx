@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { AlertCircle,ChevronDown,Send } from "lucide-react";
+import { AlertCircle,Send } from "lucide-react";
 import React,{ useCallback,useState } from "react";
 
 // Dynamic agent input field metadata.
@@ -230,7 +230,7 @@ export function MetadataInputForm({
                     onChange={(e) => handleFieldChange(field.field_name, e.target.value)}
                     disabled={disabled || isSubmitting}
                     className={cn(
-                      "w-full px-3 py-2 pr-8 rounded-lg text-sm appearance-none",
+                      "w-full py-2 rounded-lg text-sm",
                       "bg-background border transition-colors",
                       "focus:outline-none focus:ring-2 focus:ring-primary/50",
                       errors[field.field_name]
@@ -245,7 +245,6 @@ export function MetadataInputForm({
                       </option>
                     ))}
                   </Select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 </div>
               ) : fieldType === "boolean" ? (
                 <div className="flex items-center gap-3 pt-1">

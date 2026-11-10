@@ -1,7 +1,7 @@
 // Human-readable <-> cron conversion for the auto-ingest schedule UI (GH
 // #437). The UI never asks a user to type raw cron syntax directly — it
-// offers "daily"/"weekly" presets that compile to a cron string, with an
-// "advanced" escape hatch for anything else. Client-safe (no Mongo/Node
+// offers "hourly"/"daily"/"weekly" presets that compile to a cron string,
+// with an "advanced" escape hatch for anything else. Client-safe (no Mongo/Node
 // imports) so it can run in the browser for the next-run preview.
 //
 // Form state (`hour`/`minute`/`weekday`) is in the BROWSER's local time —
@@ -13,12 +13,12 @@
 
 import { cronMatches, isValidCron } from "@/lib/rbac/cron";
 
-export type SchedulePreset = "daily" | "weekly" | "advanced";
+export type SchedulePreset = "hourly" | "daily" | "weekly" | "advanced";
 
 export interface ScheduleFormState {
   preset: SchedulePreset;
-  hour: number; // 0-23, browser-local
-  minute: number; // 0-59
+  hour: number; // 0-23, browser-local; unused by "hourly"
+  minute: number; // 0-59, the same number in every zone this app serves
   weekday: number; // 0-6 (Sun=0), browser-local, weekly only
   advancedCron: string; // raw cron, always UTC
 }
@@ -53,6 +53,10 @@ function utcToLocal(hour: number, minute: number, weekday: number) {
 /** Compile a preset form (local time) into the UTC cron string that gets persisted. */
 export function scheduleToCron(form: ScheduleFormState): string {
   if (form.preset === "advanced") return form.advancedCron.trim();
+  // Hourly is the one preset with no local-to-UTC step, because it names no
+  // hour to shift: every hour is already included, and the minute within the
+  // hour is the same number in UTC as it is locally for whole-hour offsets.
+  if (form.preset === "hourly") return `${form.minute} * * * *`;
   if (form.preset === "weekly") {
     const utc = localToUtc(form.hour, form.minute, form.weekday);
     return `${utc.minute} ${utc.hour} * * ${utc.weekday}`;
@@ -68,6 +72,15 @@ export function cronToSchedule(cron: string): ScheduleFormState {
   const fields = cron.trim().split(/\s+/);
   if (fields.length === 5) {
     const [minute, hour, dom, month, dow] = fields;
+    if (
+      dom === "*" &&
+      month === "*" &&
+      dow === "*" &&
+      hour === "*" &&
+      /^\d+$/.test(minute)
+    ) {
+      return { ...DEFAULT_SCHEDULE, preset: "hourly", minute: Number(minute) };
+    }
     if (dom === "*" && month === "*" && /^\d+$/.test(minute) && /^\d+$/.test(hour)) {
       if (dow === "*") {
         const local = utcToLocal(Number(hour), Number(minute), 0);
@@ -92,6 +105,9 @@ const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "
 
 /** Plain-English summary in local time, e.g. "Daily at 9:00 AM" / "Weekly on Monday at 9:00 AM". */
 export function describeSchedule(form: ScheduleFormState): string {
+  if (form.preset === "hourly") {
+    return `Hourly at ${String(form.minute).padStart(2, "0")} past`;
+  }
   const time = new Date();
   time.setHours(form.hour, form.minute, 0, 0);
   const timeLabel = time.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });

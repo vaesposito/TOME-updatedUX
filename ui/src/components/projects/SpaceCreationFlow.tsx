@@ -4,6 +4,7 @@ import { Loader2, Plus, X } from "lucide-react";
 import * as React from "react";
 
 import { ProviderLogo } from "@/components/credentials/provider-logo";
+import { CheckboxMark } from "@/components/notifications/SelectionCheckbox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -790,16 +791,12 @@ function SourcesStep({
       <div className="space-y-1 border-t border-border/60 pt-4">
         <button
           type="button"
+          role="checkbox"
+          aria-checked={draft.scheduleEnabled}
           onClick={() => onChange({ scheduleEnabled: !draft.scheduleEnabled })}
-          aria-pressed={draft.scheduleEnabled}
-          className="flex w-full items-center gap-2.5 text-left"
+          className="group flex w-full items-center gap-2.5 rounded text-left ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <span
-            className={cn(
-              "h-4 w-4 shrink-0 rounded border transition",
-              draft.scheduleEnabled ? "border-primary bg-primary" : "border-border",
-            )}
-          />
+          <CheckboxMark checked={draft.scheduleEnabled} />
           <span className="text-sm">Scheduled ingests</span>
           <span className="text-xs text-muted-foreground">
             {describeSchedule(draft.schedule)}
@@ -808,7 +805,7 @@ function SourcesStep({
 
         {draft.scheduleEnabled && (
           <div className="flex gap-2 pl-6">
-            {(["weekly", "daily"] as const).map((preset) => (
+            {(["hourly", "daily", "weekly"] as const).map((preset) => (
               <button
                 key={preset}
                 type="button"

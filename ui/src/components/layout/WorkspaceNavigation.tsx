@@ -480,7 +480,7 @@ export function WorkspaceSectionPicker({
       </label>
       <Select
         aria-label={ariaLabel}
-        className="h-12 w-full appearance-none rounded-xl border border-input bg-background px-3 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="h-12 w-full rounded-xl border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         id={id}
         onChange={(event) => {
           const selectedItem = groups
@@ -507,10 +507,6 @@ export function WorkspaceSectionPicker({
           );
         })}
       </Select>
-      <ChevronDown
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-4 right-3 h-4 w-4 text-muted-foreground"
-      />
     </div>
   );
 }

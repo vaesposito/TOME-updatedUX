@@ -2,6 +2,7 @@ import {
   asPagePath,
   pageDisplayName,
   pageDisplayPath,
+  renamedPagePath,
 } from "@/lib/tome/page-names";
 
 describe("pageDisplayName", () => {
@@ -40,5 +41,24 @@ describe("asPagePath", () => {
 
   it("has nothing to make a path out of when nothing was typed", () => {
     expect(asPagePath("   ")).toBe("");
+  });
+});
+
+describe("renamedPagePath", () => {
+  it("keeps the folder and puts back the extension the reader never saw", () => {
+    expect(renamedPagePath("meetings/17.08.2026.md", "18.08.2026")).toBe(
+      "meetings/18.08.2026.md",
+    );
+    expect(renamedPagePath("charter.md", "Charter v2")).toBe("Charter v2.md");
+  });
+
+  it("renames rather than moves when a path is typed into the name", () => {
+    expect(renamedPagePath("meetings/17.08.2026.md", "notes/minutes")).toBe(
+      "meetings/minutes.md",
+    );
+  });
+
+  it("has nowhere to put a page nobody named", () => {
+    expect(renamedPagePath("charter.md", "   ")).toBe("");
   });
 });

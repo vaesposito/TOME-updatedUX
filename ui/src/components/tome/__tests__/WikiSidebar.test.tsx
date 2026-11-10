@@ -468,3 +468,77 @@ describe("WikiSidebar folder colour", () => {
     expect(row("Archive")).toContain("text-muted-foreground/60");
   });
 });
+
+describe("WikiSidebar page actions", () => {
+  const tree: PageTreeNode[] = [
+    {
+      path: "meetings",
+      title: "Meetings",
+      kind: "folder",
+      folderId: "meetings",
+      order: 0,
+      children: [
+        {
+          path: "meetings/17.08.2026.md",
+          title: "17.08.2026",
+          kind: "stable",
+          order: 0,
+          children: [],
+        },
+      ],
+    },
+  ];
+
+  const base = {
+    tree,
+    selectedPath: "meetings/17.08.2026.md",
+    onSelect: jest.fn(),
+    showHidden: false,
+  };
+
+  it("renames a page from its own row", async () => {
+    const onRenamePage = jest.fn();
+    render(<WikiSidebar {...base} onRenamePage={onRenamePage} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for 17.08.2026" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /Rename/ }));
+
+    // The page is named by its path, which is what the rename acts on.
+    expect(onRenamePage).toHaveBeenCalledWith("meetings/17.08.2026.md");
+  });
+
+  it("keeps the menu out of the way until the row is reached", () => {
+    render(<WikiSidebar {...base} onRenamePage={jest.fn()} />);
+
+    // Present for the keyboard, invisible to a reader going down the tree.
+    expect(
+      screen.getByRole("button", { name: "Actions for 17.08.2026" }).className,
+    ).toContain("opacity-0");
+  });
+
+  it("offers no menu where there is nothing to do with a page", () => {
+    render(<WikiSidebar {...base} />);
+
+    expect(
+      screen.queryByRole("button", { name: "Actions for 17.08.2026" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves folders to the edit action their rows already carry", () => {
+    const onEditFolder = jest.fn();
+    render(
+      <WikiSidebar {...base} onRenamePage={jest.fn()} onEditFolder={onEditFolder} />,
+    );
+
+    // A second way to rename a folder would be a second thing to keep in step
+    // with the first.
+    expect(
+      screen.queryByRole("button", { name: "Actions for Meetings" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit Meetings" }),
+    ).toBeInTheDocument();
+  });
+});

@@ -8,10 +8,16 @@ import {
   FolderOpen,
   FolderPlus,
   GripVertical,
+  MoreHorizontal,
   Pencil,
   Trash2,
 } from "lucide-react";
 import { NavCount } from "@/components/tome/RailNav";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
@@ -27,6 +33,13 @@ interface Props {
   showHidden: boolean;
   /** Delete a page (hover-trash on rows). Omitted in read-only contexts. */
   onDelete?: (path: string) => void;
+  /**
+   * Rename a page, from the menu on its own row.
+   *
+   * A page is renamed where the page is. Folders are not here: they are
+   * renamed through the edit action their own rows already carry.
+   */
+  onRenamePage?: (path: string) => void;
   onCreateFolder?: (parentId: string | null) => void;
   onCreatePage?: (folder: PageTreeNode) => void;
   onEditFolder?: (node: PageTreeNode) => void;
@@ -145,6 +158,7 @@ function NodeList({
   onSelectFolder,
   showHidden,
   onDelete,
+  onRenamePage,
   onCreateFolder,
   onCreatePage,
   onEditFolder,
@@ -175,6 +189,7 @@ function NodeList({
               onSelectFolder={onSelectFolder}
               showHidden={showHidden}
               onDelete={onDelete}
+              onRenamePage={onRenamePage}
               onCreateFolder={onCreateFolder}
               onCreatePage={onCreatePage}
               onEditFolder={onEditFolder}
@@ -202,6 +217,7 @@ function TreeNode({
   onSelectFolder,
   showHidden,
   onDelete,
+  onRenamePage,
   onCreateFolder,
   onCreatePage,
   onEditFolder,
@@ -277,6 +293,7 @@ function TreeNode({
       onSelectFolder={onSelectFolder}
       showHidden={showHidden}
       onDelete={onDelete}
+      onRenamePage={onRenamePage}
       onCreateFolder={onCreateFolder}
       onCreatePage={onCreatePage}
       onEditFolder={onEditFolder}
@@ -490,6 +507,12 @@ function TreeNode({
             />
           </span>
         )}
+        {onRenamePage && (
+          <PageRowMenu
+            title={node.title}
+            onRename={() => onRenamePage(node.path)}
+          />
+        )}
         {onDelete && (
           <button
             type="button"
@@ -554,6 +577,64 @@ function DragHandle({
     >
       <GripVertical className="h-3.5 w-3.5" />
     </button>
+  );
+}
+
+/**
+ * What a page row offers beyond going to the page.
+ *
+ * Quiet until the row is hovered or something in it is focused, like the
+ * row's other affordances: the tree is read far more often than it is
+ * rearranged, and a column of menu buttons would make a list of places to go
+ * look like a list of things to administer. Holds its ground while the menu
+ * is open, so the trigger does not fade out from under the pointer on its way
+ * into its own menu.
+ */
+function PageRowMenu({
+  title,
+  onRename,
+}: {
+  title: string;
+  onRename: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = `Actions for ${title}`;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          // The row underneath goes to the page, which is not what opening
+          // the menu is asking for.
+          onClick={(event) => event.stopPropagation()}
+          aria-label={label}
+          title={label}
+          className={cn(
+            "shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100",
+            open && "opacity-100",
+          )}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" side="bottom" className="w-44 p-1">
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            onRename();
+          }}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+        >
+          <Pencil
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          Rename…
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 

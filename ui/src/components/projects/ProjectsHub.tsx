@@ -901,26 +901,13 @@ export function ProjectsHub() {
           hidden instead: it carries a search, a grouping and a reorder mode a
           reader has set, over three requests, and dropping that to look at
           the digest for a moment would be a poor trade. */}
-      {/* Wrapped only so a walkthrough has something to point at: each of
-          these is a reading in its own right, and a tour that stopped at the
-          tab bar would leave the reader to find out what they hold. */}
-      {tab === "overview" && (
-        <div data-tour="hub-overview">
-          <WorkspaceOverview />
-        </div>
-      )}
-      {tab === "digest" && (
-        <div data-tour="hub-digest">
-          <WorkspaceDigest />
-        </div>
-      )}
+      {tab === "overview" && <WorkspaceOverview />}
+      {tab === "digest" && <WorkspaceDigest />}
       {/* The subjects the hub already loaded, so moving between the two axes
           costs nothing. Not the catalogue's projects read another way: a
           subject is its own entity and appears here and nowhere else. */}
       {tab === "functions" && (
-        <div data-tour="hub-functions">
-          <FunctionsView subjects={subjects} onSubjectCreated={() => void load()} />
-        </div>
+        <FunctionsView subjects={subjects} onSubjectCreated={() => void load()} />
       )}
 
       <section className={cn("space-y-6", tab !== "projects" && "hidden")}>

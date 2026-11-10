@@ -77,6 +77,7 @@ export function HubTabs({
             type="button"
             role="tab"
             aria-selected={active}
+            data-tour={`hub-tab-${tab}`}
             onClick={() => onChange(tab)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition",

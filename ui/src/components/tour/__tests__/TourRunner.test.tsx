@@ -115,6 +115,40 @@ describe("a step that asks for a tab", () => {
   });
 });
 
+describe("a step about a whole panel", () => {
+  it("rings the top of it and brings that to the top of the window", async () => {
+    query = "tab=functions";
+    const panel = document.createElement("div");
+    panel.setAttribute("data-tour", "hub-tab-functions");
+    const scrollIntoView = jest.fn();
+    panel.scrollIntoView = scrollIntoView;
+    // Taller than the window, as a view behind a tab is.
+    panel.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, width: 900, height: 4000 }) as DOMRect;
+    document.body.append(panel);
+
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "general",
+        index: stepAsking("/projects?tab=functions"),
+        subject: null,
+      }),
+    );
+
+    render(<TourRunner />);
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ block: "start" }),
+    );
+    const spotlight = await screen.findByTestId("tour-spotlight");
+    expect(spotlight.style.height).not.toBe("4000px");
+
+    panel.remove();
+  });
+});
+
 describe("a saved place", () => {
   it("is dropped when it names a tour we no longer have", () => {
     window.sessionStorage.setItem(

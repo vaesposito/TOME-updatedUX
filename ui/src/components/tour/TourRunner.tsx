@@ -63,6 +63,26 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
   );
 }
 
+/**
+ * How much of the window a spotlight may cover before it is cut down.
+ *
+ * Some anchors are whole panels rather than controls — a project's Home, a
+ * view behind a tab. A ring drawn around one of those runs off the bottom of
+ * the window, leaves the card nowhere to sit, and tells the reader nothing,
+ * since everything they can see is inside it. Past this much, the ring is
+ * put around the top of the region instead: the heading they would read
+ * first, with the rest of it in plain view below.
+ */
+const TALL_ANCHOR_RATIO = 0.8;
+
+/** The band of a too-tall region that gets ringed. */
+const TALL_ANCHOR_BAND = 0.35;
+
+/** Whether this region is too tall to ring whole. See TALL_ANCHOR_RATIO. */
+function isTall(height: number): boolean {
+  return height > window.innerHeight * TALL_ANCHOR_RATIO;
+}
+
 function measure(anchor: TourAnchor): Rect | null {
   const node = document.querySelector(`[data-tour="${anchor}"]`);
   if (!node) return null;
@@ -74,7 +94,9 @@ function measure(anchor: TourAnchor): Rect | null {
     top: rect.top,
     left: rect.left,
     width: rect.width,
-    height: rect.height,
+    height: isTall(rect.height)
+      ? window.innerHeight * TALL_ANCHOR_BAND
+      : rect.height,
   };
 }
 
@@ -395,9 +417,15 @@ export function TourRunner() {
     if (!step?.anchor || !found || stale) return;
     if (scrolled.current === step.id) return;
     scrolled.current = step.id;
-    document
-      .querySelector(`[data-tour="${step.anchor}"]`)
-      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const node = document.querySelector(`[data-tour="${step.anchor}"]`);
+    if (!node) return;
+    // Centring a region taller than the window scrolls past its beginning:
+    // the reader is put half way down a panel they have not seen the top of.
+    // Those are brought to the top instead, where their heading is.
+    node.scrollIntoView({
+      block: isTall(node.getBoundingClientRect().height) ? "start" : "center",
+      behavior: "smooth",
+    });
   }, [found, stale, step]);
 
   React.useEffect(() => {
@@ -540,6 +568,7 @@ export function TourRunner() {
             window to a control on a different page read as a glitch. */}
         <span
           aria-hidden="true"
+          data-testid="tour-spotlight"
           style={{
             position: "fixed",
             top: rect.top - 4,

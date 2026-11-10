@@ -3,6 +3,12 @@ import type { TourStep } from "@/components/tour/tour";
 /**
  * The whole of TOME at a walking pace, pointing at the real controls.
  *
+ * The three readings are anchored on their tabs rather than on the panels
+ * they open: a panel is pages tall, and a spotlight drawn around one rings
+ * far more than the window can hold while centring it scrolls straight past
+ * the thing being named. The tab is where the reader would click anyway,
+ * and the panel it opened is in plain view below it.
+ *
  * The order is the order someone meets the product: the catalogue first and
  * all four readings of it, then what a project holds once they open one, and
  * last the way to take any of it into a coding agent.
@@ -39,7 +45,7 @@ export const GENERAL_TOUR: readonly TourStep[] = [
   },
   {
     id: "functions",
-    anchor: "hub-functions",
+    anchor: "hub-tab-functions",
     route: () => "/projects?tab=functions",
     title: "The same organisation, read by function",
     body:
@@ -47,7 +53,7 @@ export const GENERAL_TOUR: readonly TourStep[] = [
   },
   {
     id: "overview",
-    anchor: "hub-overview",
+    anchor: "hub-tab-overview",
     route: () => "/projects?tab=overview",
     title: "Overview is everything at a glance",
     body:
@@ -55,7 +61,7 @@ export const GENERAL_TOUR: readonly TourStep[] = [
   },
   {
     id: "digest",
-    anchor: "hub-digest",
+    anchor: "hub-tab-digest",
     route: () => "/projects?tab=digest",
     title: "Digest is the week, written out",
     body:

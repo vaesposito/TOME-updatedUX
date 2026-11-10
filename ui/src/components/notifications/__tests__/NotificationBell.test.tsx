@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const mockPush = jest.fn();
 
@@ -165,8 +165,13 @@ it("stays a flat list when only one group has anything in it", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "3 unread notifications" }));
 
   expect(await screen.findByText("Define messaging plan for October")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { expanded: true })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { expanded: false })).not.toBeInTheDocument();
+  // Within the list, since the bell that opened it is itself something that
+  // expands. Nothing in the list is: one group needs no headers to fold.
+  const list = within(
+    screen.getByText("Define messaging plan for October").closest("[data-popover-content]")!,
+  );
+  expect(list.queryByRole("button", { expanded: true })).not.toBeInTheDocument();
+  expect(list.queryByRole("button", { expanded: false })).not.toBeInTheDocument();
 });
 
 it("labels global platform incidents and their resolved lifecycle",async () => {

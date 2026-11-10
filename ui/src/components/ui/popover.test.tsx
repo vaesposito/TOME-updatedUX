@@ -21,6 +21,29 @@ it("renders portaled content as an interactive layer above dialog overlays", () 
   expect(content).toHaveClass("z-[60]");
 });
 
+it("says whether it is open, whoever is asking", () => {
+  // A screen reader reads this, and so does anything outside the popover
+  // that has to tell a shut menu from an open one.
+  render(
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button">Open picker</button>
+      </PopoverTrigger>
+      <PopoverContent>
+        <button type="button">Selectable option</button>
+      </PopoverContent>
+    </Popover>,
+  );
+
+  const trigger = screen.getByRole("button", { name: "Open picker" });
+  expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.click(trigger);
+
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+});
+
 it("remeasures both the trigger and async content while open", () => {
   const originalResizeObserver = global.ResizeObserver;
   const observe = jest.fn();

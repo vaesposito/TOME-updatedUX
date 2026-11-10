@@ -106,7 +106,7 @@ function isTall(height: number): boolean {
  * before it is opened. Taking the first match in document order handed back
  * the invisible copy and rang a control nobody could see.
  */
-function anchorNode(anchor: TourAnchor): Element | null {
+function anchorNode(anchor: string): Element | null {
   const matches = Array.from(document.querySelectorAll(`[data-tour="${anchor}"]`));
   // A node that is present but collapsed is not something to point at — a
   // tab panel that has not opened yet, say.
@@ -130,12 +130,16 @@ function anchorNode(anchor: TourAnchor): Element | null {
  * while a save is in flight, is a control the step has to wait for or do
  * without, and pressing it would do nothing anyway.
  */
-function openable(anchor: TourAnchor): HTMLElement | null {
+function openable(anchor: string): HTMLElement | null {
   const node = anchorNode(anchor);
   if (!(node instanceof HTMLElement)) return null;
   if (node.hasAttribute("disabled") || node.getAttribute("aria-disabled") === "true") {
     return null;
   }
+  // An empty `data-tour-undo` is a control saying it cannot be put back as
+  // things stand. Edit says it when the page has a draft of the reader's,
+  // which Cancel would throw away. See `TourStep.opens`.
+  if (node.getAttribute("data-tour-undo") === "") return null;
   return node;
 }
 
@@ -143,21 +147,82 @@ function openable(anchor: TourAnchor): HTMLElement | null {
 function isOpen(node: HTMLElement): boolean {
   return (
     node.getAttribute("aria-expanded") === "true" ||
-    node.getAttribute("aria-selected") === "true"
+    node.getAttribute("aria-selected") === "true" ||
+    node.getAttribute("aria-pressed") === "true"
   );
 }
 
+/** A control this tour pressed, and what it would take to give it back. */
+interface Held {
+  /** What was pressed, so a step that wants the same thing can keep it. */
+  anchor: string;
+  /** The page it was pressed on. A hold does not survive leaving it. */
+  where: string;
+  undo: () => void;
+}
+
 /**
- * What puts a control back: the tab that was chosen before it, or itself.
+ * How to put a control back, decided before it is pressed.
  *
  * Pressing a button twice shuts what it opened, but pressing a tab twice
  * only chooses it again — so a step that opened Following would hand the
- * reader back a page they had not asked to be on.
+ * reader back a page they had not asked to be on. And some controls have no
+ * second press at all: Edit is replaced by the cluster that ends the edit,
+ * so it names Cancel in `data-tour-undo` instead.
+ *
+ * A function rather than an element, because what undoes a control may not
+ * be on the page until it has been pressed.
  */
-function undoOf(node: HTMLElement): HTMLElement {
+function undoFor(anchor: string, node: HTMLElement): () => void {
+  const named = node.getAttribute("data-tour-undo");
+  if (named) return () => pressWhenReady(named);
   const list = node.closest('[role="tablist"]');
   const chosen = list?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-  return chosen && chosen !== node ? chosen : node;
+  if (chosen && chosen !== node) {
+    return () => {
+      if (chosen.isConnected) press(chosen);
+    };
+  }
+  // Found again rather than kept. A page that re-renders while the step is
+  // being read — the editor does, every time it saves its draft — can hand
+  // back a different element for the same control, and pressing the one we
+  // pressed before would be pressing something no longer on the page.
+  return () => {
+    const again = anchorNode(anchor) ?? (node.isConnected ? node : null);
+    if (!(again instanceof HTMLElement)) return;
+    // Shut already. A menu closes itself when the reader clicks anywhere
+    // else, and pressing Next is clicking somewhere else — so the press
+    // meant to close it would have opened it again. Only a control that
+    // says nothing about itself is pressed on trust.
+    if (again.getAttribute("aria-expanded") === "false") return;
+    press(again);
+  };
+}
+
+/**
+ * How long an undo waits for the control that performs it to turn up.
+ *
+ * Opening the editor is a round trip, so a reader who presses Escape in the
+ * second after a step opened it was leaving before Cancel existed: nothing
+ * was pressed, the editor arrived anyway, and the page was left being
+ * edited. Longer than that round trip, and bounded so a page that never
+ * comes back does not leave something waiting for it forever.
+ */
+const UNDO_WAIT_MS = 3000;
+
+/** Press a control now, or as soon as it exists. See UNDO_WAIT_MS. */
+function pressWhenReady(anchor: string): void {
+  const now = openable(anchor);
+  if (now) {
+    press(now);
+    return;
+  }
+  const deadline = Date.now() + UNDO_WAIT_MS;
+  const timer = window.setInterval(() => {
+    const later = openable(anchor);
+    if (later) press(later);
+    if (later || Date.now() > deadline) window.clearInterval(timer);
+  }, POLL_MS);
 }
 
 /**
@@ -615,6 +680,38 @@ export function TourRunner() {
   /** Ask for a step. What Back and Next do; the arriving is `go`'s job. */
   const request = React.useCallback((index: number) => setPending(index), []);
 
+  /**
+   * What this tour has opened and not yet given back.
+   *
+   * Held out here rather than inside the effect that fills it, because the
+   * one moment it must not be missed is a step that leaves by navigating:
+   * by the time a route change reaches an effect, the page that held the
+   * Cancel button has gone, and with it the chance to press it.
+   */
+  const held = React.useRef<Held[]>([]);
+  /**
+   * Give back what the tour opened, bar anything the next step wants too.
+   *
+   * Four steps in a row are about the editor, and shutting it between each
+   * one would flicker the page and have it write and throw away a draft
+   * four times over. Worse, the step arriving looks for its control while
+   * the one leaving is still closing, and finds the half-shut page.
+   *
+   * Only what was opened here is put back. A hold left on a page the reader
+   * has since left is dropped: there is nothing there to press, and the
+   * page discards its own untouched draft as it goes.
+   */
+  const putBack = React.useCallback(
+    (keep: readonly string[] = []) => {
+      const holds = held.current;
+      held.current = holds.filter((h) => h.where === location && keep.includes(h.anchor));
+      for (const hold of [...holds].reverse()) {
+        if (hold.where === location && !held.current.includes(hold)) hold.undo();
+      }
+    },
+    [location],
+  );
+
   // Persist the opening step, which `go` never sees.
   React.useEffect(() => {
     if (!state) return;
@@ -679,8 +776,11 @@ export function TourRunner() {
     if (!wantRoute) return;
     if (pushed.current === wantRoute) return;
     pushed.current = wantRoute;
+    // Before leaving, not after: the controls this step opened are on the
+    // page we are about to replace.
+    putBack();
     router.push(wantRoute);
-  }, [arrived, go, pending, router, state, wantRoute]);
+  }, [arrived, go, pending, putBack, router, state, wantRoute]);
 
   // Never leave the reader on a step whose page refused to load.
   React.useEffect(() => {
@@ -797,34 +897,61 @@ export function TourRunner() {
    */
   React.useEffect(() => {
     const opens = step?.opens;
-    if (!opens?.length || stale) return;
-    /** What to press to undo each one, worked out before it is pressed. */
-    const undo: HTMLElement[] = [];
+    if (stale) return;
+    // What the step before opened and this one does not want. Done here
+    // rather than in that step's cleanup, because only the step arriving
+    // knows what is worth keeping open.
+    putBack(opens ?? []);
+    if (!opens?.length) return;
     let next = 0;
     const openNext = () => {
-      if (next >= opens.length) return;
-      const node = openable(opens[next]);
-      if (!node) return;
-      // Already showing what it opens — the reader got there first, and
-      // pressing it now would shut the thing the step is about.
-      if (!isOpen(node)) {
-        undo.push(undoOf(node));
-        press(node);
+      while (next < opens.length) {
+        const anchor = opens[next];
+        // Kept open from the step before. Nothing to press, and nothing to
+        // record: it is already down as ours to give back.
+        if (held.current.some((hold) => hold.anchor === anchor)) {
+          next += 1;
+          continue;
+        }
+        const node = openable(anchor);
+        if (node) {
+          // Already showing what it opens — the reader got there first, and
+          // pressing it now would shut the thing the step is about.
+          if (!isOpen(node)) {
+            held.current.push({ anchor, where: location, undo: undoFor(anchor, node) });
+            press(node);
+          }
+          next += 1;
+          return;
+        }
+        // Not there. If something further along the chain is, this one has
+        // already done its job — the reader pressed Edit themselves, and the
+        // button that would do it is gone. Carry on from what is there, and
+        // leave it out of the undoing: we did not open it.
+        const ahead = opens.slice(next + 1).findIndex((later) => openable(later));
+        if (ahead < 0) return;
+        next += 1 + ahead;
       }
-      next += 1;
     };
     openNext();
     const timer = window.setInterval(openNext, POLL_MS);
-    return () => {
-      window.clearInterval(timer);
-      // Put back in the reverse of the order they were opened, so the page
-      // is left as it was found. A control that has gone with its page is
-      // left alone: there is nothing of it to put back.
-      for (const node of undo.reverse()) {
-        if (node.isConnected) press(node);
-      }
-    };
-  }, [location, stale, step]);
+    return () => window.clearInterval(timer);
+  }, [location, putBack, stale, step]);
+
+  // The end of the tour, by Done or by Escape or by the reader closing the
+  // card: everything still open goes back. A step leaving for another page
+  // has already given its own back, before the page it was on went.
+  React.useEffect(() => {
+    if (state) return;
+    putBack();
+  }, [putBack, state]);
+
+  // And if the runner itself goes.
+  const leaving = React.useRef(putBack);
+  React.useEffect(() => {
+    leaving.current = putBack;
+  }, [putBack]);
+  React.useEffect(() => () => leaving.current(), []);
 
   React.useEffect(() => {
     if (!state) return;

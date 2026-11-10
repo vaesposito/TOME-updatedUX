@@ -12,6 +12,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 
 import { TourRunner } from "../TourRunner";
+import { EDITING_TOUR } from "../editing-tour";
 import { GENERAL_TOUR } from "../general-tour";
 import { startTour, TOUR_STATE_KEY } from "../tour";
 
@@ -69,6 +70,9 @@ function plant(anchor: string, box: Box, tag = "div"): HTMLElement {
   planted.push(node);
   return node;
 }
+
+/** How often the runner looks again for something that was not there yet. */
+const POLL = 100;
 
 /** How far the page has been asked to scroll, since jsdom does not scroll. */
 let scrolledBy: jest.Mock;
@@ -611,6 +615,260 @@ describe("a step whose subject is behind a button", () => {
     expect(anchor.style.width).toBe("360px");
     expect(anchor.style.height).toBe("440px");
     expect(screen.getByTestId("tour-spotlight").style.left).toBe("896px");
+  });
+});
+
+describe("a step that opens the editor", () => {
+  /** The notifications step about who hears, which opens Edit and the menu. */
+  const NOTIFY = 4;
+
+  /** The wiki page the notify step borrows, as a saved place. */
+  const onThePage = () => {
+    pathname = "/projects/example-project/tome/wiki/charter.md";
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "notifications",
+        index: NOTIFY,
+        subject: { slug: "example-project", pagePath: "charter.md" },
+      }),
+    );
+  };
+
+  /**
+   * An Edit button that behaves like the page's: it names its way out, and
+   * pressing it replaces it with a Cancel that puts the page back.
+   */
+  function plantEditor(): { press: jest.Mock; cancelled: jest.Mock } {
+    const pressed = jest.fn();
+    const cancelled = jest.fn();
+    const edit = plant(
+      "page-edit",
+      { top: 60, left: 900, width: 44, height: 28 },
+      "button",
+    );
+    edit.setAttribute("data-tour-undo", "page-cancel");
+    edit.addEventListener("click", () => {
+      pressed();
+      edit.style.display = "none";
+      edit.removeAttribute("data-tour");
+      const cancel = plant(
+        "page-cancel",
+        { top: 60, left: 950, width: 60, height: 28 },
+        "button",
+      );
+      cancel.addEventListener("click", () => {
+        cancelled();
+        cancel.remove();
+        edit.style.display = "";
+        edit.setAttribute("data-tour", "page-edit");
+      });
+      plant("page-notify", { top: 60, left: 800, width: 127, height: 28 }, "button");
+    });
+    return { press: pressed, cancelled };
+  }
+
+  it("presses Edit, and presses Cancel on the way out", async () => {
+    const editor = plantEditor();
+    onThePage();
+
+    render(<TourRunner />);
+    await waitFor(() => expect(editor.press).toHaveBeenCalledTimes(1));
+    expect(editor.cancelled).not.toHaveBeenCalled();
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    // Cancel rather than Save, and rather than nothing: the editor writes a
+    // draft half a second after it opens, and only Cancel discards it.
+    await waitFor(() => expect(editor.cancelled).toHaveBeenCalledTimes(1));
+  });
+
+  it("waits for Cancel when the reader leaves before the editor is back", async () => {
+    // Opening a page for editing is a round trip. A reader who presses
+    // Escape in that second was leaving before there was anything to press.
+    jest.useFakeTimers();
+    const cancelled = jest.fn();
+    const edit = plant(
+      "page-edit",
+      { top: 60, left: 900, width: 44, height: 28 },
+      "button",
+    );
+    edit.setAttribute("data-tour-undo", "page-cancel");
+    let opening = false;
+    edit.addEventListener("click", () => {
+      opening = true;
+    });
+    onThePage();
+
+    render(<TourRunner />);
+    await act(async () => {
+      jest.advanceTimersByTime(POLL);
+    });
+    expect(opening).toBe(true);
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    // The editor arrives after the tour has gone, and is still put back.
+    const cancel = plant(
+      "page-cancel",
+      { top: 60, left: 950, width: 60, height: 28 },
+      "button",
+    );
+    cancel.addEventListener("click", cancelled);
+    await act(async () => {
+      jest.advanceTimersByTime(POLL * 2);
+    });
+
+    expect(cancelled).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
+  it("puts the editor back before it navigates, not after", async () => {
+    // A step that leaves by going somewhere else has to press Cancel while
+    // the page holding it is still there. By the time a route change
+    // reaches an effect, it has gone.
+    const editor = plantEditor();
+    onThePage();
+
+    render(<TourRunner />);
+    await waitFor(() => expect(editor.press).toHaveBeenCalled());
+    await screen.findByRole("dialog");
+
+    act(() => {
+      screen.getByRole("button", { name: "Next" }).click();
+    });
+
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    expect(editor.cancelled).toHaveBeenCalledTimes(1);
+    expect(editor.cancelled.mock.invocationCallOrder[0]).toBeLessThan(
+      push.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("leaves alone a control that says it cannot be put back", async () => {
+    // Edit says so when the page holds a draft of the reader's, which
+    // Cancel would throw away.
+    const editor = plantEditor();
+    const edit = document.querySelector('[data-tour="page-edit"]') as HTMLElement;
+    edit.setAttribute("data-tour-undo", "");
+    onThePage();
+
+    render(<TourRunner />);
+
+    // The hint, which is what the step falls back to when its control
+    // cannot be reached for it.
+    await screen.findByText(/Choose Edit/);
+    expect(editor.press).not.toHaveBeenCalled();
+  });
+
+  it("keeps the editor open across the run of steps that are about it", async () => {
+    // Four steps in a row are about the editor. Shutting it after each one
+    // flickered the page, had it write and discard a draft four times, and
+    // left the step arriving looking for its control on a half-shut page.
+    const editor = plantEditor();
+    pathname = "/projects/example-project/tome/wiki/charter.md";
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "editing",
+        index: EDITING_TOUR.findIndex((step) => step.id === "modes"),
+        subject: { slug: "example-project", pagePath: "charter.md" },
+      }),
+    );
+
+    render(<TourRunner />);
+    await waitFor(() => expect(editor.press).toHaveBeenCalledTimes(1));
+    await screen.findByRole("dialog");
+
+    act(() => {
+      screen.getByRole("button", { name: "Next" }).click();
+    });
+    await screen.findByText("Telling the agent what a dynamic page should say");
+
+    expect(editor.cancelled).not.toHaveBeenCalled();
+    expect(editor.press).toHaveBeenCalledTimes(1);
+
+    // And it is still given back at the end.
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await waitFor(() => expect(editor.cancelled).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not press a menu that has already shut itself", async () => {
+    // A menu closes when the reader clicks anywhere else, and pressing Next
+    // is clicking somewhere else. The press meant to close it opened it
+    // again, and the step after this one was read through a menu.
+    const presses: boolean[] = [];
+    const notify = plant(
+      "page-notify",
+      { top: 60, left: 800, width: 127, height: 28 },
+      "button",
+    );
+    notify.setAttribute("aria-expanded", "false");
+    notify.addEventListener("click", () => {
+      const open = notify.getAttribute("aria-expanded") === "true";
+      presses.push(!open);
+      notify.setAttribute("aria-expanded", String(!open));
+    });
+    plant("page-cancel", { top: 60, left: 950, width: 60, height: 28 }, "button");
+    onThePage();
+
+    render(<TourRunner />);
+    await waitFor(() => expect(presses).toEqual([true]));
+
+    // The reader's click elsewhere, which the menu sees for itself.
+    act(() => {
+      notify.setAttribute("aria-expanded", "false");
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    expect(presses).toEqual([true]);
+  });
+
+  it("does not undo what the reader opened themselves", async () => {
+    // Already editing: Edit is gone and the menu it reveals is here. The
+    // step opens the menu and gives back only that.
+    const cancelled = jest.fn();
+    const cancel = plant(
+      "page-cancel",
+      { top: 60, left: 950, width: 60, height: 28 },
+      "button",
+    );
+    cancel.addEventListener("click", cancelled);
+    const notify = plant(
+      "page-notify",
+      { top: 60, left: 800, width: 127, height: 28 },
+      "button",
+    );
+    const opened = jest.fn();
+    notify.addEventListener("click", opened);
+    onThePage();
+
+    render(<TourRunner />);
+    await waitFor(() => expect(opened).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    await waitFor(() => expect(opened).toHaveBeenCalledTimes(2));
+    expect(cancelled).not.toHaveBeenCalled();
   });
 });
 

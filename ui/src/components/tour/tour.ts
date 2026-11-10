@@ -16,6 +16,9 @@ export type TourAnchor =
   | "watch-toggle"
   | "page-notify"
   | "page-edit"
+  | "page-cancel"
+  | "page-delete"
+  | "wiki-arrange"
   | "project-home"
   | "hub-tabs"
   | "hub-search"
@@ -76,12 +79,23 @@ export interface TourStep {
    * is on the screen while they read about it. The last one is usually the
    * step's own `anchor`, since what is being explained is what it opens.
    *
-   * Only name a control the runner can undo: it puts each of these back when
-   * the step is left, by pressing the button again or by choosing the tab
-   * that was chosen before, so a tour must not be able to change the
-   * reader's pages by being walked. That rules out Edit, which has no way
-   * back the runner can reach — steps behind it keep `waitingAnchor` and
-   * `hint` and wait for the reader.
+   * Each is put back when the step is left, however the reader leaves it, so
+   * that a tour cannot change anything by being walked. Three ways, and the
+   * control chooses which by what it says about itself in the DOM:
+   *
+   * - `data-tour-undo="<anchor>"` names what undoes it. Edit says
+   *   `page-cancel`, because pressing Edit again is not a thing you can do:
+   *   the button is replaced by the cluster that ends the edit.
+   * - `data-tour-undo=""` says it cannot be undone right now, and the runner
+   *   does not press it at all. Edit says this when the page has a draft of
+   *   the reader's, which Cancel would throw away.
+   * - Anything else is put back by being pressed again — a popover shuts, a
+   *   tab hands back to the tab that was chosen before it.
+   *
+   * Steps in a row that name the same control keep it open between them
+   * rather than shutting it and pressing it again, and a step that cannot
+   * have its control pressed falls back to `waitingAnchor` and `hint` and
+   * waits for the reader.
    */
   opens?: readonly TourAnchor[];
   /**

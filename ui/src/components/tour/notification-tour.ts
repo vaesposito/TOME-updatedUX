@@ -69,10 +69,11 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
     id: "notify",
     anchor: "page-notify",
     waitingAnchor: "page-edit",
-    // Edit is the reader's to press — there is no way out of it the runner
-    // can reach, and a tour must not leave a page half-edited. The menu it
-    // reveals is opened for them as soon as it appears.
-    opens: ["page-notify"],
+    // The page is opened for editing and the menu with it. Leaving the step
+    // presses Cancel, which discards the draft the editor writes half a
+    // second after it opens, so a page is never left changed by being
+    // walked past. See the same step in the editing tour.
+    opens: ["page-edit", "page-notify"],
     route: (subject) =>
       subject.slug && subject.pagePath
         ? `/projects/${subject.slug}/tome/wiki/${subject.pagePath

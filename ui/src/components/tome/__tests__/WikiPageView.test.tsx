@@ -1153,6 +1153,188 @@ describe("what the editor's toolbar looks like", () => {
   });
 });
 
+describe("a walkthrough that opens the editor itself", () => {
+  const PAGE = "---\ntitle: Roadmap\nkind: stable\n---\n\nRoadmap content\n";
+  const KEY = "tome:draft:example-project:roadmap.md";
+
+  const page = (
+    props: Partial<React.ComponentProps<typeof WikiPageView>> = {},
+  ) => (
+    <WikiPageView
+      slug="example-project"
+      path="roadmap.md"
+      markdown={PAGE}
+      onWrite={jest.fn().mockResolvedValue(undefined)}
+      onReload={jest.fn()}
+      {...props}
+    />
+  );
+
+  const openEdit = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    });
+  };
+
+  /** The draft the editor writes half a second after it opens. */
+  const letTheDraftSave = async () => {
+    await act(async () => {
+      jest.advanceTimersByTime(600);
+    });
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    jest.useFakeTimers({ doNotFake: ["performance"] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    window.localStorage.clear();
+  });
+
+  it("is told what to press to put the editor back", async () => {
+    const { container } = render(page());
+
+    // There is no second press of Edit — it is replaced by the cluster that
+    // ends the edit — so it says which control is the way out.
+    expect(container.querySelector('[data-tour="page-edit"]')).toHaveAttribute(
+      "data-tour-undo",
+      "page-cancel",
+    );
+    await openEdit();
+    expect(container.querySelector('[data-tour="page-cancel"]')).toHaveTextContent(
+      "Cancel",
+    );
+  });
+
+  it("discards the draft it wrote when that way out is taken", async () => {
+    render(page());
+    await openEdit();
+    await letTheDraftSave();
+    expect(window.localStorage.getItem(KEY)).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    });
+
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("is turned away from a page holding a draft of the reader's", async () => {
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ body: `${PAGE}\nSomething they wrote.\n` }),
+    );
+    const { container } = render(page());
+
+    // Empty means "not now": Cancel would throw their draft away, so the
+    // step asks them to press Edit rather than pressing it for them.
+    await act(async () => {});
+    expect(container.querySelector('[data-tour="page-edit"]')).toHaveAttribute(
+      "data-tour-undo",
+      "",
+    );
+  });
+
+  it("is let in when what is stored says only what the page says", async () => {
+    // Written by opening the editor and typing nothing, and differing from
+    // the page by the blank line the frontmatter parser drops. Nothing to
+    // lose, so nothing to refuse.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ body: "---\ntitle: Roadmap\nkind: stable\n---\nRoadmap content\n" }),
+    );
+    const { container } = render(page());
+
+    await act(async () => {});
+    expect(container.querySelector('[data-tour="page-edit"]')).toHaveAttribute(
+      "data-tour-undo",
+      "page-cancel",
+    );
+  });
+
+  it("is turned away from an editor with something typed in it", async () => {
+    const { container } = render(page());
+    await openEdit();
+    await letTheDraftSave();
+    expect(container.querySelector('[data-tour="page-cancel"]')).not.toHaveAttribute(
+      "data-tour-undo",
+    );
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Wiki editor"), {
+        target: { value: "Roadmap content\n\nWords of their own.\n" },
+      });
+    });
+
+    // Leaving the editor open is the lesser harm by a long way.
+    expect(container.querySelector('[data-tour="page-cancel"]')).toHaveAttribute(
+      "data-tour-undo",
+      "",
+    );
+  });
+});
+
+describe("a draft nobody typed into", () => {
+  const PAGE = "---\ntitle: Roadmap\nkind: stable\n---\n\nRoadmap content\n";
+  const KEY = "tome:draft:example-project:roadmap.md";
+
+  const page = () => (
+    <WikiPageView
+      slug="example-project"
+      path="roadmap.md"
+      markdown={PAGE}
+      onWrite={jest.fn().mockResolvedValue(undefined)}
+      onReload={jest.fn()}
+    />
+  );
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    jest.useFakeTimers({ doNotFake: ["performance"] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    window.localStorage.clear();
+  });
+
+  it("does not outlive the page it was opened on", async () => {
+    const { unmount } = render(page());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(600);
+    });
+    expect(window.localStorage.getItem(KEY)).not.toBeNull();
+
+    // Navigating away without cancelling used to leave this behind, and the
+    // page then claimed to have unsaved work that nobody had done.
+    unmount();
+
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("is kept when there is something in it", async () => {
+    const { unmount } = render(page());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Wiki editor"), {
+        target: { value: "Roadmap content\n\nWords of their own.\n" },
+      });
+      jest.advanceTimersByTime(600);
+    });
+
+    unmount();
+
+    expect(window.localStorage.getItem(KEY)).toContain("Words of their own.");
+  });
+});
+
 describe("deleting a page from its own editor", () => {
   const page = (
     props: Partial<React.ComponentProps<typeof WikiPageView>> = {},

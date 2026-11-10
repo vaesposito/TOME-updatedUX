@@ -25,10 +25,12 @@ export const LINKING_TOUR: readonly TourStep[] = [
     id: "connect",
     anchor: "page-tags",
     waitingAnchor: "page-edit",
-    // Edit stays the reader's: the runner has no way to leave it again, and
-    // a walkthrough must not put a page into a state it cannot undo. The
-    // picker it reveals is opened for them.
-    opens: ["page-tags"],
+    // The page is opened for editing and the picker with it, and both are
+    // put back on the way out — Edit by way of Cancel, which discards the
+    // draft that opening the editor leaves behind. The hint is what is left
+    // when Edit cannot be pressed: no permission, or a draft of the
+    // reader's waiting on this page that Cancel would throw away.
+    opens: ["page-edit", "page-tags"],
     hint: "Choose Edit — Connect to a space sits with the page's own details.",
     route: pageRoute,
     title: "Connect a page to another space",

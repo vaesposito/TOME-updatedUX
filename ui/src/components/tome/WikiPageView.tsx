@@ -132,6 +132,24 @@ const DEFAULT_NOTIFY: PageNotifySelection = {
 };
 
 /**
+ * Whether two markdown documents say the same thing.
+ *
+ * Not a byte comparison: the editor's draft has been round-tripped through
+ * the frontmatter parser, which drops the blank line a page usually keeps
+ * after its closing fence. Comparing raw text made an edit nobody typed into
+ * look like a recovered draft, so opening the editor and walking away left
+ * the page wearing a badge for work that was never done.
+ */
+function sameDocument(a: string, b: string): boolean {
+  if (a === b) return true;
+  const settle = (markdown: string) => {
+    const [fm, body] = parseFrontmatter(markdown);
+    return serializeFrontmatter(fm, body);
+  };
+  return settle(a) === settle(b);
+}
+
+/**
  * Phrase a save's notification outcome for the editor, or null when there is
  * nothing worth saying (a quiet save with no watchers).
  *
@@ -423,6 +441,33 @@ export function WikiPageView({
     [path, slug],
   );
 
+  /**
+   * Whether a draft is waiting here that opening the editor would recover.
+   *
+   * The same test `startEditing` makes, so that what this says and what
+   * happens cannot disagree: a stored body identical to the page is a
+   * leftover of opening the editor and not typing, and recovers nothing.
+   *
+   * Read in an effect rather than while rendering, because storage does not
+   * exist on the server and the two renders would not match.
+   */
+  const [recoverableDraft, setRecoverableDraft] = useState(false);
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(draftStorageKey);
+      const body = stored
+        ? (JSON.parse(stored) as { body?: unknown }).body
+        : null;
+      setRecoverableDraft(
+        typeof body === "string" && !sameDocument(body, markdown),
+      );
+    } catch {
+      setRecoverableDraft(false);
+    }
+    // `isEditing` so the answer is re-read after a save or a cancel has
+    // cleared the draft, and the Edit button comes back telling the truth.
+  }, [draftStorageKey, isEditing, markdown]);
+
   useEffect(() => {
     if (!isEditing) return;
     const timer = window.setTimeout(() => {
@@ -440,6 +485,37 @@ export function WikiPageView({
     }, 500);
     return () => window.clearTimeout(timer);
   }, [baseRevisionId, draftBody, draftStorageKey, fmDraft, isEditing]);
+
+  /**
+   * Clear away a draft nobody typed into, when the editor goes with its page.
+   *
+   * One is written half a second after Edit opens, whether or not anything
+   * is written in it. Cancel discards it, but navigating away does not — so
+   * merely opening the editor and leaving left a draft behind that said the
+   * page had unsaved work. Only ever removes one that says what the page
+   * already says; a draft with something in it is the reader's.
+   */
+  const onLeaving = useRef({ editing: isEditing, key: draftStorageKey, markdown });
+  useEffect(() => {
+    onLeaving.current = { editing: isEditing, key: draftStorageKey, markdown };
+  });
+  useEffect(
+    () => () => {
+      const { editing, key, markdown: shown } = onLeaving.current;
+      if (!editing) return;
+      try {
+        const stored = window.localStorage.getItem(key);
+        if (!stored) return;
+        const { body } = JSON.parse(stored) as { body?: unknown };
+        if (typeof body === "string" && sameDocument(body, shown)) {
+          window.localStorage.removeItem(key);
+        }
+      } catch {
+        // No storage to tidy, or nothing readable in it.
+      }
+    },
+    [],
+  );
 
   // Only while there is a draft time to age. Half-minute steps are fine for a
   // phrase measured in minutes, and nothing else on screen depends on it.
@@ -649,7 +725,10 @@ export function WikiPageView({
           baseRevisionId?: unknown;
           updatedAt?: unknown;
         };
-        if (typeof recovered.body === "string" && recovered.body !== markdown) {
+        if (
+          typeof recovered.body === "string" &&
+          !sameDocument(recovered.body, markdown)
+        ) {
           initialMarkdown = recovered.body;
           initialBase = typeof recovered.baseRevisionId === "string" ? recovered.baseRevisionId : initialBase;
           setDraftStatus("Recovered local draft");
@@ -1035,6 +1114,16 @@ export function WikiPageView({
                 )}
                 <button
                   type="button"
+                  data-tour="page-cancel"
+                  // Empty says "do not press me" to the walkthrough, which
+                  // presses Cancel to leave a step that opened the editor.
+                  // Once there is something here that was typed, leaving the
+                  // editor open is the lesser harm by a long way.
+                  data-tour-undo={
+                    sameDocument(serializeFrontmatter(fmDraft, draftBody), markdown)
+                      ? undefined
+                      : ""
+                  }
                   onClick={handleCancel}
                   disabled={saving}
                   className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -1056,6 +1145,12 @@ export function WikiPageView({
               <button
                 type="button"
                 data-tour="page-edit"
+                // What the walkthrough presses to put this back, since there
+                // is no second press of Edit: it is replaced by the cluster
+                // that ends the edit. Empty while a draft of the reader's is
+                // waiting here, because Cancel would discard it — the tour
+                // then asks them to press Edit instead of doing it for them.
+                data-tour-undo={recoverableDraft ? "" : "page-cancel"}
                 onClick={startEditing}
                 disabled={locked || !canEdit || isMirror}
                 title={

@@ -76,6 +76,14 @@ interface PopoverTriggerProps {
   asChild?: boolean;
 }
 
+/**
+ * What opens the popover, and says so.
+ *
+ * `aria-expanded` is what a screen reader is told, and the only way anything
+ * outside can tell a shut menu from an open one — including the walkthrough,
+ * which has to know whether a control it is about to press is already
+ * showing what it opens.
+ */
 export function PopoverTrigger({ children, asChild }: PopoverTriggerProps) {
   const { open, setOpen, triggerRef } = React.useContext(PopoverStateContext);
 
@@ -113,11 +121,19 @@ export function PopoverTrigger({ children, asChild }: PopoverTriggerProps) {
     return React.cloneElement(childWithRef, {
       onClick: handleClick,
       ref: mergedRef,
+      "aria-haspopup": "dialog",
+      "aria-expanded": open,
     } as ChildProps);
   }
 
   return (
-    <button type="button" onClick={handleClick} ref={setRef as React.Ref<HTMLButtonElement>}>
+    <button
+      type="button"
+      onClick={handleClick}
+      ref={setRef as React.Ref<HTMLButtonElement>}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+    >
       {children}
     </button>
   );

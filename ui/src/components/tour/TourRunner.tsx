@@ -487,7 +487,20 @@ export function TourRunner({
   if (homeless) {
     return (
       <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center">
-        <div className="pointer-events-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg">
+        {/* The same dimming an anchored step gets from its spotlight's very
+            wide shadow. Without it a step with nothing to point at was a
+            card floating over a fully lit page, which read as a stray
+            dialog rather than as part of the walkthrough. Transparent to
+            the pointer like the spotlight, so the page underneath still
+            works — on a waiting step that is how the reader reveals what
+            the step is about. */}
+        <div
+          aria-hidden="true"
+          data-testid="tour-backdrop"
+          className="absolute inset-0"
+          style={{ background: "rgba(0, 0, 0, 0.6)" }}
+        />
+        <div className="pointer-events-auto relative rounded-lg border border-border bg-popover text-popover-foreground shadow-lg">
           {card}
         </div>
       </div>

@@ -31,6 +31,7 @@ import {
   TEAM,
   USER,
 } from "./data";
+import { PROTOTYPE_PREFERENCES } from "./browser-state";
 import { FOLLOWED, followTree, inbox, ROWS, summaryFor } from "./notifications";
 
 type Json = Record<string, unknown>;
@@ -139,7 +140,14 @@ const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) =>
   [/^\/api\/auth\/role$/, () => ({ role: "admin" })],
   [/^\/api\/rbac\/permissions$/, () => ({ permissions: [] })],
   [/^\/api\/rbac\/(admin|kb)-tab-gates$/, () => ({ gates: {} })],
-  [/^\/api\/settings(\/preferences)?$/, () => ({ settings: {}, preferences: {} })],
+  // The flag store reads this browser's copy, then takes the account's
+  // answer for anything the reader has not switched themselves — so the
+  // flags here have to match the ones seeded into storage, or the new
+  // navigation would appear and then be replaced by the old one.
+  [
+    /^\/api\/settings(\/preferences|\/notifications|\/defaults)?$/,
+    () => ({ preferences: PROTOTYPE_PREFERENCES, notifications: {}, defaults: {} }),
+  ],
   [/^\/api\/admin\/platform-config$/, () => ({ config: {} })],
   [/^\/api\/platform\/health$/, () => ({ status: "ok", components: [] })],
 

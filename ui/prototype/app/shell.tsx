@@ -25,12 +25,19 @@ import { TourRunner } from "@/components/tour/TourRunner";
 
 import { installMockApi } from "~/mock/api";
 import { USER } from "~/mock/data";
+import {
+  repointRootAbsoluteAssets,
+  seedBrowserState,
+} from "~/mock/browser-state";
+import { PROTOTYPE_THEME } from "~/mock/theme";
 
 // Before the first render rather than in an effect: the screens fetch on
 // mount, and a request that left during the first paint would have gone to a
 // server that is not there.
 if (typeof window !== "undefined") {
   installMockApi();
+  seedBrowserState();
+  repointRootAbsoluteAssets();
   const w = window as unknown as { __APP_CONFIG__?: Record<string, unknown> };
   w.__APP_CONFIG__ = {
     ...(w.__APP_CONFIG__ ?? {}),
@@ -41,6 +48,22 @@ if (typeof window !== "undefined") {
     storageMode: "memory",
     tomeEnabled: true,
     workflowsEnabled: false,
+    // The application reads this object instead of its own defaults rather
+    // than on top of them, so anything left out here comes back undefined.
+    // The appearance keys have to be named: the header's appearance hydrator
+    // runs on every page and falls back to the system preference when it
+    // cannot find a configured theme, which would undo the head script a
+    // moment after the first paint.
+    defaultTheme: PROTOTYPE_THEME,
+    defaultFontFamily: "inter",
+    defaultFontSize: "medium",
+    defaultGradientTheme: "default",
+    // Named from the same place the export's own rendering reads it, so the
+    // two agree: the browser takes this object as it stands, and a mark that
+    // differed from the one already written into the file would be a
+    // mismatch.
+    logoUrl: process.env.NEXT_PUBLIC_LOGO_URL ?? "/logo.svg",
+    logoStyle: "default",
   };
 }
 
@@ -52,7 +75,12 @@ const SESSION = {
 export function PrototypeShell({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider session={SESSION as never} refetchInterval={0}>
-      <ThemeProvider>
+      {/* The head script has normally settled the theme before this mounts,
+          and the provider stands down when it finds it has. Naming the
+          default here too is for the case where the script did not run: the
+          page would otherwise fall back to the system preference of whatever
+          machine it was opened on. */}
+      <ThemeProvider defaultTheme={PROTOTYPE_THEME}>
         <ToastProvider>
           <ApplicationNavigationProvider initialCollapsed={false}>
             <HeaderBreadcrumbSlotProvider>

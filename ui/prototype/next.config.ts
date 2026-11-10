@@ -16,6 +16,21 @@ import type { NextConfig } from "next";
  */
 const basePath = process.env.PROTOTYPE_BASE_PATH ?? "";
 
+// Describe the deployment to the render as well as to the browser.
+//
+// The shell describes it in `window.__APP_CONFIG__`, which does not exist
+// while the pages are being rendered to files. Anything the rendered HTML
+// shows has to be settled here too, or the files carry the stock answer, the
+// browser shows this one, and React throws the first paint away as a
+// hydration failure: the name appears in the brand, and the TOME flag
+// decides which entries the navigation rail has at all.
+//
+// Set as environment variables rather than through `env` below, because the
+// application looks these up under a computed key, which a build-time
+// substitution cannot see.
+process.env.APP_NAME ??= "TOME";
+process.env.TOME_ENABLED ??= "true";
+
 const nextConfig: NextConfig = {
   output: "export",
   // The app lives here but its components live in `../src`, so the root has
@@ -31,6 +46,10 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   env: {
     NEXT_PUBLIC_PROTOTYPE_BASE_PATH: basePath,
+    // Same reasoning for the mark, plus one of its own: it is drawn with a
+    // plain <img>, so nothing prefixes the path for it, and a site published
+    // under a prefix would send the browser looking a directory too high.
+    NEXT_PUBLIC_LOGO_URL: `${basePath}/logo.svg`,
     // The function axis is named by whoever runs TOME, so the prototype
     // configures an organisation the same way a deployment would — here,
     // rather than in the fixtures, because this is the file a deployment

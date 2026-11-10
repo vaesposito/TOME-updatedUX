@@ -66,6 +66,97 @@ describe("WikiSidebar drag and drop", () => {
     expect(screen.queryByRole("button", { name: "Move Planning down" })).not.toBeInTheDocument();
   });
 
+  it("steps a page past the row above it without a pointer", () => {
+    // Dragging is a pointer's way of saying this; a row has to be movable
+    // without one, and both ways have to mean the same move.
+    const onMoveItem = jest.fn();
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        onMoveItem={onMoveItem}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Bravo up" }));
+    expect(onMoveItem).toHaveBeenCalledWith(
+      { kind: "page", id: "bravo.md" },
+      { position: "before", item: { kind: "page", id: "alpha.md" } },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Alpha down" }));
+    expect(onMoveItem).toHaveBeenLastCalledWith(
+      { kind: "page", id: "alpha.md" },
+      { position: "after", item: { kind: "page", id: "bravo.md" } },
+    );
+  });
+
+  it("offers no step towards an edge a row is already against", () => {
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        onMoveItem={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Move Alpha up" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Move Bravo down" })).toBeNull();
+  });
+
+  it("steps a row past the neighbour it can see, not the one it is hiding", () => {
+    // An agent-only page sits between these two in the data. It is not on
+    // screen, so moving Bravo before it would look like nothing happening.
+    const onMoveItem = jest.fn();
+    render(
+      <WikiSidebar
+        tree={[
+          tree[0],
+          { path: "memory.md", title: "Memory", kind: "hidden", order: 1, children: [] },
+          tree[1],
+        ]}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        onMoveItem={onMoveItem}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Bravo up" }));
+    expect(onMoveItem).toHaveBeenCalledWith(
+      { kind: "page", id: "bravo.md" },
+      { position: "before", item: { kind: "page", id: "alpha.md" } },
+    );
+  });
+
+  it("moves a folder by its own identity rather than by a path", () => {
+    const onMoveItem = jest.fn();
+    render(
+      <WikiSidebar
+        tree={[
+          { path: "@folder/folder-1", title: "Planning", kind: "folder", order: 0,
+            folderId: "folder-1", children: [] },
+          { path: "@folder/folder-2", title: "Archive", kind: "folder", order: 1,
+            folderId: "folder-2", children: [] },
+        ]}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        onMoveItem={onMoveItem}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Archive up" }));
+    expect(onMoveItem).toHaveBeenCalledWith(
+      { kind: "folder", id: "folder-2" },
+      { position: "before", item: { kind: "folder", id: "folder-1" } },
+    );
+  });
+
   it("offers a subfolder on a folder given nothing else to do", () => {
     const onCreateFolder = jest.fn();
     const folder: PageTreeNode = {
@@ -88,6 +179,56 @@ describe("WikiSidebar drag and drop", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New folder in Planning" }));
     expect(onCreateFolder).toHaveBeenCalledWith("folder-1");
+  });
+});
+
+describe("WikiSidebar arranging mode", () => {
+  const arrangeable = {
+    tree,
+    selectedPath: null,
+    onSelect: jest.fn(),
+    showHidden: false,
+    onMoveItem: jest.fn(),
+    onDelete: jest.fn(),
+  };
+
+  it("holds every row's controls open, rather than waiting for a pointer", () => {
+    render(<WikiSidebar {...arrangeable} arranging />);
+
+    // Rearranging is the whole of what the tree is for in this mode, so a
+    // control that only appears under the cursor would hide the mode — and
+    // could never be reached by someone working from the keyboard.
+    expect(screen.getByRole("button", { name: "Delete Alpha" })).not.toHaveClass("opacity-0");
+    expect(
+      screen.getByRole("button", { name: "Move Alpha" }).parentElement,
+    ).not.toHaveClass("hidden");
+  });
+
+  it("keeps the same controls behind hover while the tree is being read", () => {
+    render(<WikiSidebar {...arrangeable} />);
+
+    expect(screen.getByRole("button", { name: "Delete Alpha" })).toHaveClass("opacity-0");
+    expect(
+      screen.getByRole("button", { name: "Move Alpha" }).parentElement,
+    ).toHaveClass("hidden");
+  });
+
+  it("offers nothing to rearrange or remove where the reader cannot write", () => {
+    // The handlers are the permission: a reader without them is shown the
+    // same tree as a place to go, not as a thing to tidy.
+    render(
+      <WikiSidebar
+        tree={tree}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        arranging
+      />,
+    );
+
+    for (const withheld of ["Move Alpha", "Move Alpha down", "Delete Alpha"]) {
+      expect(screen.queryByRole("button", { name: withheld })).toBeNull();
+    }
   });
 });
 

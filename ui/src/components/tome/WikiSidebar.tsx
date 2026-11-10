@@ -2,7 +2,9 @@
 
 import { useState, type DragEvent } from "react";
 import {
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   FilePlus2,
   Folder,
   FolderOpen,
@@ -60,6 +62,16 @@ interface Props {
    * what Settings > Content is for.
    */
   showMeta?: boolean;
+  /**
+   * Whether the tree is being rearranged rather than read.
+   *
+   * Every row shows its move and delete controls outright instead of waiting
+   * for a pointer. Rearranging is the whole of what the tree is for in this
+   * mode, so hiding the controls would hide the mode; and a control that only
+   * exists under the cursor is one nobody reordering from the keyboard can
+   * ever reach.
+   */
+  arranging?: boolean;
 }
 
 /**
@@ -83,6 +95,22 @@ export type WikiNavigationItem = { kind: "page" | "folder"; id: string };
 export type WikiNavigationTarget =
   | { position: "root" }
   | { position: "inside" | "before" | "after"; item: WikiNavigationItem };
+
+/**
+ * How the navigation API names a row.
+ *
+ * Null for a folder the server has never persisted: it is drawn from the
+ * paths of the pages inside it and has no identity to move or move against.
+ */
+function navigationItemFor(
+  node: PageTreeNode | undefined,
+): WikiNavigationItem | null {
+  if (!node) return null;
+  if (node.kind === "folder") {
+    return node.folderId ? { kind: "folder", id: node.folderId } : null;
+  }
+  return { kind: "page", id: node.path };
+}
 
 /** Recursive sidebar nav for the wiki page tree. */
 export function WikiSidebar(props: Props) {
@@ -154,20 +182,26 @@ function NodeList({
   checkedPaths,
   onCheckedChange,
   showMeta,
+  arranging,
   onDraggingChange,
 }: {
   nodes: PageTreeNode[];
   depth: number;
   onDraggingChange: (dragging: boolean) => void;
 } & Omit<Props, "tree">) {
+  // Settled first, because a row's own step up or down is a move against the
+  // neighbour it can see — so the neighbours have to be the ones on screen,
+  // not the ones a hidden row sits between.
+  const shown = nodes.filter((n) => showHidden || n.kind !== "hidden");
   return (
     <ul>
-      {nodes
-        .filter((n) => showHidden || n.kind !== "hidden")
-        .map((node) => (
+      {shown
+        .map((node, index) => (
           <li key={node.path}>
             <TreeNode
               node={node}
+              previousSibling={navigationItemFor(shown[index - 1])}
+              nextSibling={navigationItemFor(shown[index + 1])}
               depth={depth}
               selectedPath={selectedPath}
               selectedFolderId={selectedFolderId}
@@ -184,6 +218,7 @@ function NodeList({
               checkedPaths={checkedPaths}
               onCheckedChange={onCheckedChange}
               showMeta={showMeta}
+              arranging={arranging}
               onDraggingChange={onDraggingChange}
             />
           </li>
@@ -195,6 +230,8 @@ function NodeList({
 /** A single tree node: a collapsible folder header, or a selectable page row. */
 function TreeNode({
   node,
+  previousSibling,
+  nextSibling,
   depth,
   selectedPath,
   selectedFolderId,
@@ -211,9 +248,13 @@ function TreeNode({
   checkedPaths,
   onCheckedChange,
   showMeta,
+  arranging,
   onDraggingChange,
 }: {
   node: PageTreeNode;
+  /** The rows this one can step past, so a move needs no pointer. */
+  previousSibling: WikiNavigationItem | null;
+  nextSibling: WikiNavigationItem | null;
   depth: number;
   onDraggingChange: (dragging: boolean) => void;
 } & Omit<Props, "tree">) {
@@ -239,9 +280,7 @@ function TreeNode({
   }
   const [dropZone, setDropZone] = useState<"before" | "inside" | "after" | null>(null);
   const indent = { paddingLeft: `${depth * STEP_PX + BASE_PX}px` };
-  const navigationItem: WikiNavigationItem | null = node.kind === "folder"
-    ? node.folderId ? { kind: "folder", id: node.folderId } : null
-    : { kind: "page", id: node.path };
+  const navigationItem = navigationItemFor(node);
 
   const handleDragOver = (event: DragEvent<HTMLElement>) => {
     if (!navigationItem || !onMoveItem) return;
@@ -286,8 +325,45 @@ function TreeNode({
       checkedPaths={checkedPaths}
       onCheckedChange={onCheckedChange}
       showMeta={showMeta}
+      arranging={arranging}
       onDraggingChange={onDraggingChange}
     />
+  );
+
+  /**
+   * Dragging the row, and stepping it past a neighbour without a pointer.
+   *
+   * The same move either way: both end in `onMoveItem`, so a row reordered
+   * from the keyboard lands exactly where dropping it would have.
+   */
+  const moveControls = onMoveItem && navigationItem && (
+    <>
+      <DragHandle
+        item={navigationItem}
+        label={`Move ${node.title}`}
+        onDraggingChange={onDraggingChange}
+      />
+      {previousSibling && (
+        <RowAction
+          label={`Move ${node.title} up`}
+          onClick={() =>
+            onMoveItem(navigationItem, { position: "before", item: previousSibling })
+          }
+        >
+          <ChevronUp className="h-3 w-3" />
+        </RowAction>
+      )}
+      {nextSibling && (
+        <RowAction
+          label={`Move ${node.title} down`}
+          onClick={() =>
+            onMoveItem(navigationItem, { position: "after", item: nextSibling })
+          }
+        >
+          <ChevronDown className="h-3 w-3" />
+        </RowAction>
+      )}
+    </>
   );
 
   /**
@@ -379,33 +455,32 @@ function TreeNode({
           </button>
           {node.folderId &&
             (onCreatePage || onCreateFolder || onEditFolder || onMoveItem) && (
-            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-              {onMoveItem && navigationItem && (
-                <DragHandle
-                  item={navigationItem}
-                  label={`Move ${node.title}`}
-                  onDraggingChange={onDraggingChange}
-                />
+            <span
+              className={cn(
+                "shrink-0 items-center gap-0.5",
+                arranging ? "flex" : "hidden group-hover:flex",
               )}
+            >
+              {moveControls}
               {onCreateFolder && (
-                <FolderAction label={`New folder in ${node.title}`} onClick={() => onCreateFolder(node.folderId!)}>
+                <RowAction label={`New folder in ${node.title}`} onClick={() => onCreateFolder(node.folderId!)}>
                   <FolderPlus className="h-3 w-3" />
-                </FolderAction>
+                </RowAction>
               )}
               {onCreatePage && (
-                <FolderAction label={`New page in ${node.title}`} onClick={() => onCreatePage(node)}>
+                <RowAction label={`New page in ${node.title}`} onClick={() => onCreatePage(node)}>
                   <FilePlus2 className="h-3 w-3" />
-                </FolderAction>
+                </RowAction>
               )}
               {onEditFolder && (
-                <FolderAction label={`Edit ${node.title}`} onClick={() => onEditFolder(node)}>
+                <RowAction label={`Edit ${node.title}`} onClick={() => onEditFolder(node)}>
                   <Pencil className="h-3 w-3" />
-                </FolderAction>
+                </RowAction>
               )}
               {onDeleteFolder && (
-                <FolderAction label={`Delete ${node.title}`} onClick={() => onDeleteFolder(node.folderId!)} destructive>
+                <RowAction label={`Delete ${node.title}`} onClick={() => onDeleteFolder(node.folderId!)} destructive>
                   <Trash2 className="h-3 w-3" />
-                </FolderAction>
+                </RowAction>
               )}
             </span>
           )}
@@ -414,8 +489,12 @@ function TreeNode({
               folder with nothing in it says so instead: a caret there would
               cost a click to learn what the row could have shown. */}
           {/* Out of the way while the row is hovered, where the move and edit
-              actions want the same space. */}
-          <NavCount count={node.children.length} className="ml-auto group-hover:hidden" />
+              actions want the same space — and out of the way for as long as
+              those actions are standing open. */}
+          <NavCount
+            count={node.children.length}
+            className={cn("ml-auto", arranging ? "hidden" : "group-hover:hidden")}
+          />
           {hasChildren ? (
             <button
               type="button"
@@ -482,13 +561,14 @@ function TreeNode({
             <KindBadge kind={node.kind as PageKind} iconOnly />
           </span>
         )}
-        {onMoveItem && navigationItem && (
-          <span className="hidden group-hover:inline-flex">
-            <DragHandle
-              item={navigationItem}
-              label={`Move ${node.title}`}
-              onDraggingChange={onDraggingChange}
-            />
+        {moveControls && (
+          <span
+            className={cn(
+              "shrink-0 items-center gap-0.5",
+              arranging ? "inline-flex" : "hidden group-hover:inline-flex",
+            )}
+          >
+            {moveControls}
           </span>
         )}
         {onDelete && (
@@ -498,7 +578,10 @@ function TreeNode({
               e.stopPropagation();
               onDelete(node.path);
             }}
-            className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+            className={cn(
+              "shrink-0 text-muted-foreground transition-opacity hover:text-destructive",
+              arranging ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            )}
             aria-label={`Delete ${node.title}`}
             title={`Delete ${node.title}`}
           >
@@ -559,7 +642,8 @@ function DragHandle({
 }
 
 
-function FolderAction({
+/** One icon-sized thing a row offers to have done to it. */
+function RowAction({
   label,
   onClick,
   destructive = false,

@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, Bot, ChevronDown, ImagePlus, Info, Loader2, Pencil, UserRound, X } from "lucide-react";
+import { AlertTriangle, Bot, ChevronDown, ImagePlus, Info, Loader2, Pencil, Trash2, UserRound, X } from "lucide-react";
 
 import {
   MARKDOWN_DOCUMENT_EDITOR_MODES,
@@ -181,6 +181,15 @@ interface Props {
   onClose?: () => void;
   /** When provided, renders a History button opening the revision diff view. */
   onOpenHistory?: () => void;
+  /**
+   * Ask for this page to be removed. Expected to confirm, name what is going,
+   * and take the reader somewhere that still exists.
+   *
+   * Offered from inside editing only: deciding a page should not exist is of
+   * a piece with changing it, and someone who came to read it should not have
+   * a way to delete it sitting beside the things they came to do.
+   */
+  onDelete?: (path: string) => void;
   /** When true, an ingest is rewriting the wiki — render read-only. */
   locked?: boolean;
   /** When true, `locked` is because a draft is awaiting review (not an active
@@ -217,6 +226,7 @@ export function WikiPageView({
   onReload,
   onClose,
   onOpenHistory,
+  onDelete,
   locked = false,
   awaitingReview = false,
   onNavigate,
@@ -963,6 +973,24 @@ export function WikiPageView({
           )}
           {isEditing ? (
             <div className="flex items-center gap-1">
+              {/* At the far end of the editing group, away from Save, and the
+                  only thing here wearing the destructive colour: someone
+                  reaching for Save should not be able to miss it onto this.
+                  Withheld on the same terms as every other write — a mirror
+                  is rewritten from its source every ingest, so deleting this
+                  copy would delete nothing. */}
+              {onDelete && canEdit && !locked && !isMirror && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(path)}
+                  disabled={saving}
+                  title={`Delete ${shownTitle}`}
+                  className="mr-1 flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  Delete
+                </button>
+              )}
               {/* Beside Save, because that is what it qualifies: who hears
                   about this edit is part of saving it, not a property of the
                   page sitting among the badges at the other end of the bar. */}

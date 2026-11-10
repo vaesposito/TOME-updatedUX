@@ -1033,3 +1033,78 @@ describe("naming a page while editing it", () => {
     expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();
   });
 });
+
+describe("deleting a page from its own editor", () => {
+  const page = (
+    props: Partial<React.ComponentProps<typeof WikiPageView>> = {},
+  ) => (
+    <WikiPageView
+      slug="example-project"
+      path="meetings/17.08.2026.md"
+      markdown={"---\ntitle: Weekly sync\nkind: stable\n---\nOriginal markdown"}
+      onWrite={jest.fn().mockResolvedValue(undefined)}
+      onReload={jest.fn()}
+      {...props}
+    />
+  );
+
+  const openEdit = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    });
+  };
+
+  it("asks for the open page to go, naming it", async () => {
+    const onDelete = jest.fn();
+    render(page({ onDelete }));
+    await openEdit();
+
+    const remove = screen.getByRole("button", { name: "Delete" });
+    expect(remove).toHaveAttribute("title", "Delete Weekly sync");
+    fireEvent.click(remove);
+
+    // The page itself, not a copy of the decision: confirming and saying what
+    // is going belong to the one dialog the wiki already asks through.
+    expect(onDelete).toHaveBeenCalledWith("meetings/17.08.2026.md");
+  });
+
+  it("stays out of the way of a reader who only opened the page", () => {
+    render(page({ onDelete: jest.fn() }));
+
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("is withheld from a reader who cannot write here", async () => {
+    render(page({ onDelete: jest.fn(), canEdit: false, autoStartEditing: true }));
+
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("is withheld while an ingest is rewriting the wiki", async () => {
+    render(page({ onDelete: jest.fn(), locked: true, autoStartEditing: true }));
+
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("is withheld on a page mirrored from somewhere else", async () => {
+    // The copy here is rewritten from its source on every ingest, so removing
+    // it would remove nothing: it belongs to the repo it was read from.
+    render(
+      page({
+        onDelete: jest.fn(),
+        autoStartEditing: true,
+        markdown: "---\ntitle: Mirrored page\nmirror: true\n---\nBody",
+      }),
+    );
+
+    expect(await screen.findByRole("textbox", { name: "Wiki editor" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("offers nothing where the host has nowhere to send the request", async () => {
+    render(page());
+    await openEdit();
+
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+});

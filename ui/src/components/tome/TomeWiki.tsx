@@ -42,6 +42,7 @@ import {
   FolderTree,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -372,6 +373,19 @@ function pageTitleOf(path: string, markdown: string): string {
     : (SPEC_BY_PATH.get(path)?.title ?? pageDisplayName(path));
 }
 
+/** The row for a path, wherever in the tree it sits. */
+function findTreeNode(
+  nodes: readonly PageTreeNode[],
+  path: string,
+): PageTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    const inside = findTreeNode(node.children, path);
+    if (inside) return inside;
+  }
+  return null;
+}
+
 /**
  * How each level of each axis is drawn in the trail at the top of the page.
  *
@@ -460,6 +474,14 @@ export function TomeWiki({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [artifactPath, setArtifactPath] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  /**
+   * Whether the reader is arranging the wiki rather than reading it.
+   *
+   * A mode, not a view: the tree it acts on is the one in the rail, which is
+   * on screen whatever the main pane is showing. So it survives opening a
+   * page, and the rail carries its own way out.
+   */
+  const [arrangingWiki, setArrangingWiki] = useState(false);
   const [wikiQuery, setWikiQuery] = useState("");
   // Dots in the rail for pages the reader has not caught up on.
   const { unreadPaths, markPageRead } = useWikiUnread(slug);
@@ -1270,12 +1292,23 @@ export function TomeWiki({ slug }: { slug: string }) {
         method: "DELETE",
       });
       if (!res.ok) throw new Error(`delete failed (${res.status})`);
-      // Leave any view that was showing the now-deleted page.
+      // Leave any view that was showing the now-deleted page, for the folder
+      // that held it — the rest of what the reader was looking at — and only
+      // for the wiki as a whole when the page sat at its root. The folder has
+      // to still exist to be worth going to: a page can be placed in one the
+      // navigation no longer lists, and that view says only "Folder not
+      // found".
       if (
         (view.kind === "page" || view.kind === "pageHistory") &&
         view.path === path
       ) {
-        navigate({ kind: "summary" });
+        const parentId = findTreeNode(data?.tree ?? [], path)?.parentFolderId;
+        const parentListed = Boolean(
+          parentId && data?.folders.some((folder) => folder.id === parentId),
+        );
+        navigate(
+          parentListed ? { kind: "folder", id: parentId! } : { kind: "wiki" },
+        );
       }
       setArtifactPath((currentPath) => (currentPath === path ? null : currentPath));
       setPagePendingDelete(null);
@@ -1285,7 +1318,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     } finally {
       setDeletingPage(false);
     }
-  }, [deletingPage, load, navigate, pagePendingDelete, slug, view]);
+  }, [data, deletingPage, load, navigate, pagePendingDelete, slug, view]);
 
   const openCreateFolder = useCallback((parentId: string | null = null) => {
     setFolderError(null);
@@ -2051,6 +2084,7 @@ export function TomeWiki({ slug }: { slug: string }) {
       emptyNote,
       selectable,
       showMeta,
+      arranging = false,
     }: {
       editable: boolean;
       /**
@@ -2068,6 +2102,15 @@ export function TomeWiki({ slug }: { slug: string }) {
       emptyNote?: string;
       selectable?: boolean;
       showMeta?: boolean;
+      /**
+       * Whether the rows hold their move and delete controls open.
+       *
+       * For the rail's wiki tree under Edit, where rearranging is the whole
+       * of what the reader asked for. The settings tree leaves it off: that
+       * tree is a survey, and a column of grips and trashes down every row
+       * of it would bury what is being surveyed.
+       */
+      arranging?: boolean;
     },
   ) => {
     if (loading) return <SidebarSkeleton />;
@@ -2109,6 +2152,7 @@ export function TomeWiki({ slug }: { slug: string }) {
         checkedPaths={selectable && canEdit ? checkedPaths : undefined}
         onCheckedChange={selectable && canEdit ? toggleChecked : undefined}
         showMeta={showMeta ?? true}
+        arranging={arranging && canEdit}
       />
     );
   };
@@ -2565,10 +2609,30 @@ export function TomeWiki({ slug }: { slug: string }) {
                         </>
                       ) : undefined}
                     >
+                      {/* Said where the mode applies, and left from there.
+                          Edit is pressed on the Wiki's own page, which the
+                          reader may well have navigated away from by now; a
+                          mode with no visible way out is a mode people get
+                          stuck in. */}
+                      {arrangingWiki && canEdit && (
+                        <div className="mb-1 flex items-center gap-2 rounded border border-dashed border-primary/40 bg-primary/5 px-2 py-1">
+                          <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-primary">
+                            Arranging pages
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setArrangingWiki(false)}
+                            className="shrink-0 rounded px-1 text-[10px] font-medium text-primary hover:bg-primary/10"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      )}
                       {renderWikiTree(wikiSplit.authored, {
-                            editable: false,
+                            editable: arrangingWiki,
                             creatable: true,
                             showMeta: false,
+                            arranging: arrangingWiki,
                           })}
 
                       {/* Below the pages rather than among them: the pages
@@ -3054,6 +3118,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                         onWrite={writeMarkdown}
                         onReload={load}
                         onClose={() => setArtifactPath(null)}
+                        onDelete={canEdit ? deletePage : undefined}
                         locked={locked}
                         awaitingReview={awaitingReview}
                         onNavigate={openArtifact}
@@ -3288,6 +3353,27 @@ export function TomeWiki({ slug }: { slug: string }) {
                       )}
                       {canEdit && (
                         <>
+                          {/* First among the wiki's own controls, because it
+                              is about the wiki rather than about adding one
+                              more thing to it — and it governs the tree in
+                              the rail, which is the shape being edited. Edits
+                              the arrangement, not any page's text: that is
+                              edited on the page. */}
+                          {!isEmpty && !loading && (
+                            <Button
+                              variant={arrangingWiki ? "secondary" : "outline"}
+                              aria-pressed={arrangingWiki}
+                              onClick={() => setArrangingWiki((on) => !on)}
+                              title={
+                                arrangingWiki
+                                  ? "Stop arranging pages"
+                                  : "Reorder, move and remove pages in the rail"
+                              }
+                            >
+                              <Pencil className="h-4 w-4" />
+                              {arrangingWiki ? "Done" : "Edit"}
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             onClick={() => uploadInputRef.current?.click()}
@@ -3436,6 +3522,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                     onOpenHistory={() =>
                       navigate({ kind: "pageHistory", path: view.path })
                     }
+                    onDelete={canEdit ? deletePage : undefined}
                     locked={locked}
                     awaitingReview={awaitingReview}
                     onNavigate={(path) => navigate({ kind: "page", path })}

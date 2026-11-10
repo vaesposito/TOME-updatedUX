@@ -38,6 +38,7 @@ export function NavSection({
   controlsId,
   count,
   children,
+  holdsNothing,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -61,6 +62,15 @@ export function NavSection({
   onClick: () => void;
   controlsId: string;
   children: React.ReactNode;
+  /**
+   * Nothing beneath, whatever the count says.
+   *
+   * A row can hold things that themselves hold nothing — five connected
+   * sources with nothing read from any of them. Its figure is honest and
+   * stays, but the row still leads nowhere today, so it is lightened as if
+   * it were empty. It keeps its caret: there is something to open.
+   */
+  holdsNothing?: boolean;
 }) {
   const empty = count === 0;
 
@@ -72,7 +82,7 @@ export function NavSection({
           // Lighter while it holds nothing, on the same terms as the rows
           // under it. A connected source with nothing read from it yet is
           // still a row that leads nowhere today, and should look like one.
-          empty && "text-muted-foreground/60",
+          (empty || holdsNothing) && "text-muted-foreground/60",
           active && "bg-muted text-primary",
         )}
       >

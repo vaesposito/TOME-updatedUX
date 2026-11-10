@@ -80,9 +80,9 @@ import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { NavCount, NavItem, NavSection } from "@/components/tome/RailNav";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import {
-  RelatedSpacesBlock,
-  RelatedSpacesRail,
-} from "@/components/tome/RelatedSpaces";
+  RelatedContentBlock,
+  RelatedContentRail,
+} from "@/components/tome/RelatedContent";
 import { TreeIndex } from "@/components/tome/TreeIndex";
 import { ProjectSettingsPanel } from "@/components/tome/ProjectSettingsPanel";
 import { ProviderLogo } from "@/components/credentials/provider-logo";
@@ -152,7 +152,7 @@ import {
   DEFAULT_TOME_REPORT_VISIBILITY,
   resolveTomeReportVisibility,
 } from "@/lib/tome/report-visibility";
-import { useRelatedSpaces } from "@/hooks/use-related-spaces";
+import { useRelatedContent } from "@/hooks/use-related-content";
 import { useTomeRailCounts } from "@/hooks/use-tome-rail-counts";
 import { useWikiUnread } from "@/hooks/use-wiki-unread";
 import { useUnsavedChangesStore } from "@/store/unsaved-changes-store";
@@ -342,8 +342,8 @@ function pathToView(segments: string[]): MainView {
       return rest[0] ? { kind: "source", id: rest[0] } : { kind: "sources" };
     case "related":
     // The mirrored material moved to Sources and the section kept only the
-    // spaces tagged alongside, but a link written against the old name still
-    // has to land somewhere true.
+    // pages that tag this space, but a link written against either of the
+    // older names still has to land somewhere true.
     case "references":
       return { kind: "related" };
     case "history":
@@ -1562,7 +1562,7 @@ export function TomeWiki({ slug }: { slug: string }) {
           { label: "Glossary" },
         ];
       case "related":
-        return [{ label: "Related projects" }];
+        return [{ label: "Related content" }];
       case "sources":
         return [{ label: "Sources" }];
       case "source":
@@ -1826,7 +1826,7 @@ export function TomeWiki({ slug }: { slug: string }) {
   // Spaces tagged into the same category as this one. They sit in
   // Connections beside the sources, both being things this space is attached
   // to rather than things inside it.
-  const { related } = useRelatedSpaces(slug);
+  const { related } = useRelatedContent(slug);
 
   const navActive = {
     summary: view.kind === "summary",
@@ -2475,6 +2475,12 @@ export function TomeWiki({ slug }: { slug: string }) {
                       onToggle={() => setSourcesOpen(!sourcesOpen)}
                       onClick={() => navigate({ kind: "sources" })}
                       count={loading ? undefined : sources.length}
+                      // Connected but unread is still unread: the figure
+                      // counts the systems attached, so without this the row
+                      // would look full while everything under it is empty.
+                      holdsNothing={
+                        !loading && sources.every((entry) => entry.count === 0)
+                      }
                       controlsId={`tome-v2-sources-${slug}`}
                     >
                       {sources.map(({ source, nodes, count }) => {
@@ -2544,13 +2550,13 @@ export function TomeWiki({ slug }: { slug: string }) {
                       reserveCaret
                     />
 
-                    {/* What the mirrored sources left behind: the spaces
-                        tagged into the same categories as this one. Those
-                        are projects, which the old name claimed and never
-                        held. */}
+                    {/* Pages written elsewhere that tag this space. The only
+                        connection there is, now that the two trees are
+                        disjoint and nothing about the hierarchy relates a
+                        Project to a Subject. */}
                     <NavSection
                       icon={<FileSymlink className="h-4 w-4" />}
-                      label="Related projects"
+                      label="Related content"
                       active={navActive.related}
                       expanded={referencesOpen}
                       onToggle={() => setReferencesOpen(!referencesOpen)}
@@ -2558,7 +2564,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                       count={related.length}
                       controlsId={`tome-v2-related-${slug}`}
                     >
-                      <RelatedSpacesRail related={related} bare />
+                      <RelatedContentRail related={related} bare />
                     </NavSection>
                   </div>
                 )}
@@ -3202,23 +3208,22 @@ export function TomeWiki({ slug }: { slug: string }) {
             ) : view.kind === "related" ? (
               <div className="min-h-0 min-w-0 flex-1">
                 <PanelShell
-                  title="Related projects"
-                  description="The spaces tagged into the same categories as this one. Tagging happens on the By function view, where the categories are made."
+                  title="Related content"
+                  description="Pages written in other spaces that tag this one. Each row names the space it lives in, so you can go and read it in place."
                   titleAccessory={
                     <span className="text-xs font-normal text-muted-foreground">
-                      {related.length} {related.length === 1 ? "space" : "spaces"}
+                      {related.length} {related.length === 1 ? "page" : "pages"}
                     </span>
                   }
                 >
                   {related.length === 0 ? (
                     <TomeEmpty
                       icon={<FileSymlink />}
-                      headline="Nothing tagged alongside this space"
-                      hint="Tag this space into a category and everything else in that category appears here."
-                      action={{ label: "Open By function", href: "/projects?tab=functions" }}
+                      headline="No page tags this space yet"
+                      hint="Open any page in any space, tag it with this one from the editor, and it appears here — and goes into this space's agent knowledge."
                     />
                   ) : (
-                    <RelatedSpacesBlock related={related} bare />
+                    <RelatedContentBlock related={related} bare />
                   )}
                 </PanelShell>
               </div>

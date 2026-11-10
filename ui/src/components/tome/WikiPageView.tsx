@@ -996,6 +996,12 @@ export function WikiPageView({
           <div
             className={cn(isEditing && editorMode === "rich" && "tome-rich-editor-full-width")}
           >
+            {/* Rich mode has a formatting bar to sit under, and gets this
+                through the editor itself; the other two modes have the bar
+                drawn above, so the panel simply follows it here. */}
+            {isEditing && kind === "dynamic" && editorMode !== "rich" && (
+              <CustomPromptsPanel />
+            )}
             {isEditing && editorMode === "source" ? (
               <div className="h-full min-h-[28rem] p-3">
                 <RichCodeEditor
@@ -1052,11 +1058,11 @@ export function WikiPageView({
                 onMentionQuery={setMentionQuery}
                 enableColumns
                 toolbarExtras={editorControls}
+                documentHeader={kind === "dynamic" ? <CustomPromptsPanel /> : undefined}
               />
             )}
           </div>
         </ScrollArea>
-        {isEditing && kind === "dynamic" && <CustomPromptsPanel />}
       </div>
       {/* One `#` trigger, one picker over real spaces: a tag typed as free
           text could name a space that does not exist, and would then be

@@ -26,6 +26,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -126,6 +127,12 @@ type Props = {
    * the document's own buttons rather than in the page header above them.
    */
   toolbarExtras?: ReactNode;
+  /**
+   * Host content between that toolbar and the document itself: something
+   * that configures how the page gets written reads as part of the writing
+   * area rather than as a card parked outside it.
+   */
+  documentHeader?: ReactNode;
   /** Open a host-owned media picker. Defaults to Crepe's built-in picker. */
   onInsertMedia?: () => void;
   /**
@@ -718,6 +725,67 @@ function serializeImageLayoutMetadata(
   return alignment === "center" ? serializedRatio : `${serializedRatio}|${alignment}`;
 }
 
+/** Append to Crepe's formatting bar, which holds its own items in a row. */
+function placeInTopBar(slot: HTMLElement, host: HTMLElement): boolean {
+  const bar = host.querySelector<HTMLElement>(".milkdown-top-bar");
+  if (!bar) return false;
+  bar.appendChild(slot);
+  return true;
+}
+
+/**
+ * Put between that bar and the document.
+ *
+ * Crepe inserts the bar before the editable node rather than inside it, so
+ * what follows the bar is a sibling of the document, not part of it:
+ * ProseMirror never sees this node and never tries to manage it.
+ */
+function placeUnderTopBar(slot: HTMLElement, host: HTMLElement): boolean {
+  const bar = host.querySelector<HTMLElement>(".milkdown-top-bar");
+  if (!bar?.parentElement) return false;
+  bar.insertAdjacentElement("afterend", slot);
+  return true;
+}
+
+/**
+ * A node of the host's own inside Crepe's markup.
+ *
+ * Crepe builds the editor after mount, so nowhere to put one exists when
+ * React first renders. The slot is created as soon as its anchor appears,
+ * and the caller portals into whatever comes back.
+ */
+function useCrepeSlot(
+  hostRef: RefObject<HTMLDivElement | null>,
+  className: string,
+  wanted: boolean,
+  place: (slot: HTMLElement, host: HTMLElement) => boolean,
+): HTMLElement | null {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !wanted) return;
+    const attach = () => {
+      const existing = host.querySelector<HTMLElement>(`.${className}`);
+      if (existing) {
+        setSlot(existing);
+        return true;
+      }
+      const next = document.createElement("div");
+      next.className = className;
+      if (!place(next, host)) return false;
+      setSlot(next);
+      return true;
+    };
+    if (attach()) return;
+    const observer = new MutationObserver(() => {
+      if (attach()) observer.disconnect();
+    });
+    observer.observe(host, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [className, hostRef, place, wanted]);
+  return slot;
+}
+
 /**
  * Thin wrapper around Crepe. Mounts on the host div, exposes a ref handle
  * the parent can call to read the current markdown out (for save).
@@ -737,6 +805,7 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     onChange,
     showToolbar,
     toolbarExtras,
+    documentHeader,
     onInsertMedia,
     onMentionQuery,
     enableColumns = false,
@@ -1014,35 +1083,22 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     crepeRef.current?.setReadonly(readonly);
   }, [readonly]);
 
-  // Somewhere inside Crepe's formatting bar for the host's own controls.
-  // The bar is built by Crepe after the editor is created, so the slot is
-  // appended once it exists and the host's nodes are portalled into it.
-  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
-  const wantsToolbarSlot = toolbarExtras !== undefined && toolbarExtras !== null;
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host || !wantsToolbarSlot) return;
-    const attach = () => {
-      const bar = host.querySelector<HTMLElement>(".milkdown-top-bar");
-      if (!bar) return false;
-      const existing = bar.querySelector<HTMLElement>(":scope > .tome-top-bar-slot");
-      if (existing) {
-        setToolbarSlot(existing);
-        return true;
-      }
-      const slot = document.createElement("div");
-      slot.className = "tome-top-bar-slot";
-      bar.appendChild(slot);
-      setToolbarSlot(slot);
-      return true;
-    };
-    if (attach()) return;
-    const observer = new MutationObserver(() => {
-      if (attach()) observer.disconnect();
-    });
-    observer.observe(host, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [wantsToolbarSlot]);
+  // At the end of Crepe's formatting bar, and directly beneath it. Crepe
+  // puts its bar before the editable node rather than inside it, so a slot
+  // placed after the bar sits above the document without ever landing
+  // inside what ProseMirror manages.
+  const toolbarSlot = useCrepeSlot(
+    hostRef,
+    "tome-top-bar-slot",
+    toolbarExtras != null,
+    placeInTopBar,
+  );
+  const documentHeaderSlot = useCrepeSlot(
+    hostRef,
+    "tome-document-header-slot",
+    documentHeader != null,
+    placeUnderTopBar,
+  );
 
   // Code-block previews are sanitized by Crepe, which intentionally strips
   // iframes. Hydrate only the inert provider placeholders produced by our
@@ -1760,6 +1816,9 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
         className={hideHtmlComments ? "milkdown-host milkdown-hide-comments" : "milkdown-host"}
       />
       {toolbarSlot && toolbarExtras ? createPortal(toolbarExtras, toolbarSlot) : null}
+      {documentHeaderSlot && documentHeader
+        ? createPortal(documentHeader, documentHeaderSlot)
+        : null}
       <TomeMediaInsertDialog
         open={mediaOpen}
         onOpenChange={setMediaOpen}

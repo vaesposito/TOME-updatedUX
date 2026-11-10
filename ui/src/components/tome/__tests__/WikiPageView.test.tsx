@@ -88,11 +88,13 @@ jest.mock("@/components/tome/CrepeEditor", () => {
         readonly,
         onChange,
         toolbarExtras,
+        documentHeader,
       }: {
         initialMarkdown: string;
         readonly: boolean;
         onChange?: (value: string) => void;
         toolbarExtras?: React.ReactNode;
+        documentHeader?: React.ReactNode;
       },
       ref: React.ForwardedRef<{
         getMarkdown: () => string;
@@ -106,9 +108,11 @@ jest.mock("@/components/tome/CrepeEditor", () => {
       }), [value]);
       return (
         <>
-          {/* Stands in for Crepe's formatting bar, which the real editor
-              hands to its host for controls of its own. */}
+          {/* Stands in for Crepe's formatting bar and the gap it leaves
+              between that bar and the document, both of which the real
+              editor hands to its host. */}
           {toolbarExtras ? <div data-testid="mock-crepe-toolbar">{toolbarExtras}</div> : null}
+          {documentHeader}
           <textarea
             aria-label={readonly ? "Wiki preview" : "Wiki editor"}
             value={value}
@@ -768,21 +772,23 @@ describe("WikiPageView", () => {
     expect(screen.queryByTestId("tome-custom-prompts")).toBeNull();
 
     await openEditor();
-    // Inside the editor, under the writing area: it configures how the page
-    // above gets written, so it is part of the editor rather than a card
-    // sitting next to it.
-    const panel = within(screen.getByTestId("tome-page-editor")).getByTestId(
+    // In the writing area, under the formatting bar and above the page it
+    // configures, rather than a card sitting next to the editor.
+    const panel = within(screen.getByTestId("tome-page-editor-scroll")).getByTestId(
       "tome-custom-prompts",
     );
-    expect(panel.compareDocumentPosition(screen.getByTestId("tome-page-editor-scroll")))
-      .toBe(Node.DOCUMENT_POSITION_PRECEDING);
+    expect(panel.compareDocumentPosition(screen.getByRole("textbox", { name: "Wiki editor" })))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(panel).toHaveTextContent("Custom prompts");
-    // Closed until asked for, like every other disclosure in the app.
-    expect(screen.queryByLabelText("Content prompt")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /Custom prompts/ }));
+    // Open on arrival: on a dynamic page the prompts are what a writer came
+    // to change, so they are not hidden behind a disclosure first.
     expect(screen.getByLabelText("Content prompt")).toBeInTheDocument();
     expect(screen.getByLabelText("Source prompt")).toBeInTheDocument();
+
+    // Still foldable, for the writer who came for the prose instead.
+    fireEvent.click(screen.getByRole("button", { name: /Custom prompts/ }));
+    expect(screen.queryByLabelText("Content prompt")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Custom prompts/ }));
     expect(within(panel).getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.queryByTestId("tome-custom-prompts-source-error")).toBeNull();
 

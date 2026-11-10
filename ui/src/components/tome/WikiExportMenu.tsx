@@ -13,10 +13,12 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { PresentationExportDialog } from "@/components/tome/PresentationExportDialog";
 
+// A format needs no explaining: PDF, HTML and Markdown are what they are,
+// and a line of prose under each only made the menu longer to read.
 const EXPORT_FORMATS = [
-  ["pdf", "PDF", "Print-ready document", FileText, "application/pdf"],
-  ["html", "HTML", "Self-contained web page", Globe2, "text/html"],
-  ["markdown", "Markdown", "Portable source file", FileCode2, "text/markdown"],
+  ["pdf", "PDF", FileText, "application/pdf"],
+  ["html", "HTML", Globe2, "text/html"],
+  ["markdown", "Markdown", FileCode2, "text/markdown"],
 ] as const;
 
 interface Props {
@@ -28,6 +30,14 @@ interface Props {
   /** Page title, used to suggest a filename when picking a save location. */
   title?: string;
   triggerClassName?: string;
+  /**
+   * A word on the trigger, for rows that have room for one.
+   *
+   * The icon alone is right in a cluster of icons; beside buttons that carry
+   * labels it reads as something left over. The long form stays on the
+   * tooltip and at the head of the menu either way.
+   */
+  triggerLabel?: string;
 }
 
 export function wikiExportHref(
@@ -61,7 +71,7 @@ function canPickSaveLocation(): boolean {
 }
 
 /** Shared document export menu and guided presentation workflow for wiki and gist exports. */
-export function WikiExportMenu({ slug, path, gist, title, triggerClassName }: Props) {
+export function WikiExportMenu({ slug, path, gist, title, triggerClassName, triggerLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const { toast } = useToast();
@@ -121,24 +131,24 @@ export function WikiExportMenu({ slug, path, gist, title, triggerClassName }: Pr
           )}
         >
           <Download className="h-3.5 w-3.5" />
+          {triggerLabel}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" side="bottom" className="w-56 p-2">
         <p className="px-2 pb-1.5 text-[11px] font-semibold text-foreground">
           {label}
         </p>
-        {EXPORT_FORMATS.map(([format, formatLabel, description, Icon, mimeType]) => (
+        {EXPORT_FORMATS.map(([format, formatLabel, Icon, mimeType]) => (
           <a
             key={format}
             href={wikiExportHref(slug, format, path, gist?.id)}
             download
             onClick={(event) => handleExportClick(event, format, mimeType)}
-            className="flex items-start gap-2 rounded px-2 py-1.5 hover:bg-muted"
+            className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-muted"
           >
-            <Icon aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0">
-              <span className="block text-xs font-medium text-foreground">{formatLabel}</span>
-              <span className="block text-[10px] text-muted-foreground">{description}</span>
+            <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 truncate text-xs font-medium text-foreground">
+              {formatLabel}
             </span>
           </a>
         ))}
@@ -149,15 +159,12 @@ export function WikiExportMenu({ slug, path, gist, title, triggerClassName }: Pr
             setOpen(false);
             setPresentationOpen(true);
           }}
-          className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
         >
-          <Sparkles className="mt-0.5 h-3.5 w-3.5 text-primary" />
-          <span>
-            <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-              Export as presentation
-              <BetaBadge />
-            </span>
-            <span className="block text-[10px] text-muted-foreground">Guide AI, review, and choose the HTML or PowerPoint template</span>
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground">
+            Export as presentation
+            <BetaBadge />
           </span>
         </button>
       </PopoverContent>

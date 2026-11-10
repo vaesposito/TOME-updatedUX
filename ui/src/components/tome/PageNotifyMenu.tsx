@@ -1,11 +1,11 @@
 "use client";
 
-import { Bell, Check, ChevronDown, Search, X } from "lucide-react";
+import { Bell, Check, Search, X } from "lucide-react";
 import * as React from "react";
 
 import { CheckboxMark } from "@/components/notifications/SelectionCheckbox";
+import { PageToolbarSelect } from "@/components/tome/PageToolbarSelect";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
 import {
   PAGE_NOTIFY_NOTE_MAX,
   type PageNotifyRecipient,
@@ -153,25 +153,21 @@ export function PageNotifyMenu({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <PageToolbarSelect
           disabled={disabled}
+          open={open}
+          active={changed}
           data-tour="page-notify"
-          className={cn(
-            "flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
-            changed ? "text-foreground" : "text-muted-foreground",
-          )}
           title="Choose who to notify about this edit"
+          icon={<Bell className="h-3 w-3 shrink-0" aria-hidden="true" />}
         >
-          <Bell className="h-3.5 w-3.5" aria-hidden="true" />
           Notifications
           {taggedCount > 0 && (
-            <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold leading-4 text-foreground">
+            <span className="ml-1 rounded-full bg-muted px-1.5 text-[10px] font-semibold leading-4 text-foreground">
               {taggedCount}
             </span>
           )}
-          <ChevronDown className="h-3 w-3 opacity-50" aria-hidden="true" />
-        </button>
+        </PageToolbarSelect>
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-72 p-0">

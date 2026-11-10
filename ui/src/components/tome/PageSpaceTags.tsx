@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Hash, Link2, X } from "lucide-react";
 import * as React from "react";
 
+import { PageToolbarSelect } from "@/components/tome/PageToolbarSelect";
 import type { TaggableSpace } from "@/components/tome/SpaceTagPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { spaceTagHref } from "@/lib/tome/space-tags";
@@ -106,15 +107,14 @@ export function PageSpaceTags({
                 points here rather than at the row of ones already made —
                 which also keeps the step waiting on Edit, since this is the
                 only part of the row that editing brings. */}
-            <button
-              type="button"
+            <PageToolbarSelect
               disabled={disabled}
+              open={open}
               data-tour="page-tags"
-              className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              icon={<Link2 className="h-3 w-3 shrink-0" aria-hidden="true" />}
             >
-              <Link2 className="h-2.5 w-2.5" aria-hidden="true" />
               Connect to a space
-            </button>
+            </PageToolbarSelect>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-72 p-2">
             <p className="px-1 pb-2 text-xs text-muted-foreground">

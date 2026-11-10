@@ -3363,6 +3363,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                             <Button
                               variant={arrangingWiki ? "secondary" : "outline"}
                               aria-pressed={arrangingWiki}
+                              data-tour="wiki-arrange"
                               onClick={() => setArrangingWiki((on) => !on)}
                               title={
                                 arrangingWiki

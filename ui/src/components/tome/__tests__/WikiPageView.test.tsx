@@ -231,15 +231,19 @@ describe("WikiPageView", () => {
     expect(titleRow).toContainElement(draftStatus);
     expect(screen.getByText("Draft saved locally")).toBeInTheDocument();
     expect(savedTime).toHaveAttribute("dateTime", persistedAt.toISOString());
-    expect(savedTime).toHaveTextContent(
-      persistedAt.toLocaleTimeString(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-        second: "2-digit",
-      }),
-    );
+    // In the words someone would use, not to the second: a writer reads this
+    // to know their typing is safe, not to log when it happened. The instant
+    // stays available to anyone who wants it.
+    expect(savedTime).toHaveTextContent("just now");
+    expect(savedTime).toHaveAttribute("title", persistedAt.toLocaleString());
+    expect(draftStatus).not.toHaveTextContent(/\d:\d\d:\d\d/);
     expect(JSON.parse(window.localStorage.getItem("tome:draft:example-project:charter.md")!))
       .toMatchObject({ updatedAt: persistedAt.toISOString() });
+
+    // A writer who stops typing stops re-rendering the header, so the phrase
+    // has to age on its own rather than sit at "just now" forever.
+    act(() => jest.advanceTimersByTime(16 * 60_000));
+    expect(container.querySelector("time")).toHaveTextContent("16m ago");
 
     unmount();
     jest.useRealTimers();
@@ -1031,6 +1035,121 @@ describe("naming a page while editing it", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();
+  });
+});
+
+describe("what the editor's toolbar looks like", () => {
+  const page = (
+    props: Partial<React.ComponentProps<typeof WikiPageView>> = {},
+  ) => (
+    <WikiPageView
+      slug="example-project"
+      path="roadmap.md"
+      markdown={"---\ntitle: Roadmap\nkind: dynamic\n---\nRoadmap content"}
+      onWrite={jest.fn().mockResolvedValue(undefined)}
+      onReload={jest.fn()}
+      {...props}
+    />
+  );
+
+  const openEdit = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    });
+  };
+
+  /** Answer the space catalogue the tag picker names its slugs from. */
+  const mockSpaces = (...spaces: { slug: string; title: string; type?: string }[]) => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () =>
+          String(url).includes("/api/projects") ? { data: { projects: spaces } } : {},
+        text: async () => "",
+      }),
+    );
+  };
+
+  it("sets what only informs as text rather than as a pill", async () => {
+    render(page());
+    await openEdit();
+
+    // A statement about the page is not a thing to press, and as a filled
+    // chip it read as the brightest thing in a row full of real controls.
+    const warning = screen.getByTestId("tome-dynamic-warning");
+    expect(warning).toHaveTextContent("Agent rewrites on ingest");
+    expect(warning.className).not.toMatch(/\bbg-/);
+    expect(warning).toHaveClass("text-muted-foreground");
+    // The caution still has a mark worth catching the eye.
+    expect(warning.querySelector("svg")).not.toBeNull();
+  });
+
+  it("gives all three pickers one treatment, and the chip none of it", async () => {
+    mockSpaces({ slug: "other-space", title: "Other Space", type: "project" });
+    render(page({ markdown: "---\ntitle: Roadmap\nkind: dynamic\ntagged_spaces: [other-space]\n---\nProse." }));
+    await openEdit();
+
+    // Connecting a space, choosing a kind and choosing who hears are the same
+    // act, so they are the same control: a bordered field with a chevron.
+    const pickers = [
+      screen.getByRole("button", { name: /Connect to a space/ }),
+      screen.getByTitle(/Dynamic page/),
+      screen.getByRole("button", { name: /Notifications/ }),
+    ];
+    for (const picker of pickers) {
+      expect(picker).toHaveClass("border", "border-input", "bg-background", "rounded-md");
+      expect(picker.className).not.toMatch(/border-dashed|rounded-full/);
+      // No filled colour: the only fill left in the row is Save.
+      expect(picker.className).not.toMatch(/bg-(primary|emerald|sky|amber)/);
+    }
+
+    // A tag is a value someone already chose, not a way to choose, so it
+    // stays a chip and keeps looking unlike the three.
+    const tag = screen.getByRole("button", { name: /Disconnect this page from Other Space/ })
+      .parentElement!;
+    expect(tag).toHaveClass("rounded-full");
+  });
+
+  it("still says which kind the page is once the colour is gone", async () => {
+    render(page());
+    await openEdit();
+
+    // The fill used to carry the kind. The label and the kind's own mark
+    // carry it now, so it is still readable without opening anything.
+    const kind = screen.getByTitle(/Dynamic page/);
+    expect(kind).toHaveTextContent("dynamic");
+    expect(kind.querySelector("svg")).not.toBeNull();
+  });
+
+  it("keeps Delete, Cancel and Save together, with Delete out of the pair", async () => {
+    render(page({ onDelete: jest.fn() }));
+    await openEdit();
+
+    const actions = screen.getByTestId("tome-page-edit-actions");
+    for (const name of ["Delete", "Cancel", "Save"]) {
+      expect(within(actions).getByRole("button", { name })).toBeInTheDocument();
+    }
+    // Notifications is a picker, and used to sit between Delete and Cancel,
+    // splitting the one group whose members belong together.
+    expect(within(actions).queryByRole("button", { name: /Notifications/ })).toBeNull();
+    // Near the pair, but visibly not one of it.
+    expect(actions.querySelector("span[aria-hidden='true']")).not.toBeNull();
+  });
+
+  it("anchors the walkthrough on the controls it already pointed at", async () => {
+    mockSpaces({ slug: "other-space", title: "Other Space" });
+    const { container } = render(page({ onDelete: jest.fn() }));
+
+    expect(container.querySelector('[data-tour="page-edit"]')).toHaveTextContent("Edit");
+    await openEdit();
+    expect(container.querySelector('[data-tour="page-tags"]')).toHaveTextContent(
+      "Connect to a space",
+    );
+    expect(container.querySelector('[data-tour="page-notify"]')).toHaveTextContent(
+      "Notifications",
+    );
+    expect(container.querySelector('[data-tour="page-delete"]')).toHaveTextContent("Delete");
   });
 });
 

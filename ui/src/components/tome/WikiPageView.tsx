@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, Bot, ChevronDown, ImagePlus, Info, Loader2, Pencil, Trash2, UserRound, X } from "lucide-react";
+import { AlertTriangle, Bot, ImagePlus, Info, Loader2, Pencil, Trash2, UserRound, X } from "lucide-react";
 
 import {
   MARKDOWN_DOCUMENT_EDITOR_MODES,
@@ -66,10 +66,12 @@ import {
 import {
   liveRevisions,
   readPageProvenance,
+  relativeTime,
   type PageAuthorKind,
   type PageRevisionLike,
 } from "@/lib/tome/page-provenance";
 import { pageDisplayName } from "@/lib/tome/page-names";
+import { PageToolbarSelect } from "@/components/tome/PageToolbarSelect";
 import { WatchToggle } from "@/components/tome/WatchToggle";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
@@ -251,6 +253,10 @@ export function WikiPageView({
   const [mediaOpen, setMediaOpen] = useState(false);
   const [draftStatus, setDraftStatus] = useState<string | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  // What "just now" is measured against. Typing re-renders this header on its
+  // own, so the clock only has to move for the writer who has stopped — who
+  // is exactly the person a phrase frozen at "just now" would mislead.
+  const [draftClock, setDraftClock] = useState(() => Date.now());
   const [baseRevisionId, setBaseRevisionId] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{
     currentRevisionId: string | null;
@@ -434,6 +440,14 @@ export function WikiPageView({
     }, 500);
     return () => window.clearTimeout(timer);
   }, [baseRevisionId, draftBody, draftStorageKey, fmDraft, isEditing]);
+
+  // Only while there is a draft time to age. Half-minute steps are fine for a
+  // phrase measured in minutes, and nothing else on screen depends on it.
+  useEffect(() => {
+    if (!draftSavedAt) return;
+    const timer = window.setInterval(() => setDraftClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [draftSavedAt]);
 
   // Track content changes that landed while this page was open (an out-of-band
   // edit picked up by the polling in TomeWiki) — surfaced as a badge on the
@@ -799,21 +813,29 @@ export function WikiPageView({
                 )}
               </div>
             )}
+            {/* Both of these report; neither is pressable. So they are set as
+                text, at the weight everything else in this header that only
+                informs is set at. As pills they read as the brightest things
+                in the row and drew the eye away from the buttons. */}
             {isEditing && draftStatus && (
               <p
-                className="min-w-0 truncate rounded bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-700 dark:text-emerald-300"
+                className="min-w-0 truncate text-[11px] text-muted-foreground"
                 data-testid="tome-draft-status"
               >
                 <span>{draftStatus}</span>
                 {draftSavedAt && (
                   <>
-                    {" · Last saved "}
-                    <time dateTime={draftSavedAt}>
-                      {new Date(draftSavedAt).toLocaleTimeString(undefined, {
-                        hour: "numeric",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
+                    {" · "}
+                    {/* Minutes, not seconds, and the same words the line
+                        below uses for the page's own history: to the second
+                        is what a machine logs, and nobody reads a clock to
+                        find out whether their typing is safe. The instant
+                        itself stays in the title for anyone who wants it. */}
+                    <time
+                      dateTime={draftSavedAt}
+                      title={new Date(draftSavedAt).toLocaleString()}
+                    >
+                      {relativeTime(draftSavedAt, new Date(draftClock))}
                     </time>
                   </>
                 )}
@@ -822,14 +844,20 @@ export function WikiPageView({
             {dynamicWarning && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 cursor-help gap-1 border-amber-300 bg-amber-50 text-[10px] font-medium normal-case text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+                  <span
+                    className="flex shrink-0 cursor-help items-center gap-1 text-[11px] text-muted-foreground"
                     data-testid="tome-dynamic-warning"
                   >
-                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                    {/* The one place colour is still spent here: being told
+                        your words may be rewritten is worth catching, and a
+                        small amber mark catches it without the sentence
+                        shouting over the controls beside it. */}
+                    <AlertTriangle
+                      className="h-3 w-3 shrink-0 text-amber-600 dark:text-amber-500"
+                      aria-hidden="true"
+                    />
                     Agent rewrites on ingest
-                  </Badge>
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-80 whitespace-normal text-[11px]">
                   {dynamicWarning}
@@ -972,46 +1000,57 @@ export function WikiPageView({
             </>
           )}
           {isEditing ? (
-            <div className="flex items-center gap-1">
-              {/* At the far end of the editing group, away from Save, and the
-                  only thing here wearing the destructive colour: someone
-                  reaching for Save should not be able to miss it onto this.
-                  Withheld on the same terms as every other write — a mirror
-                  is rewritten from its source every ingest, so deleting this
-                  copy would delete nothing. */}
-              {onDelete && canEdit && !locked && !isMirror && (
+            <>
+              {/* With the other pickers rather than among the buttons that
+                  commit: who hears about this edit is chosen the same way the
+                  page's spaces and its kind are, and it used to sit between
+                  Delete and Cancel, splitting the one group in the row whose
+                  members really do belong together. */}
+              <PageNotifyMenu value={notify} onChange={setNotify} disabled={saving} />
+              {/* The three things that end the edit, kept as one cluster at
+                  the end of the row so there is one place to look for them. */}
+              <div className="flex items-center gap-1" data-testid="tome-page-edit-actions">
+                {/* Withheld on the same terms as every other write — a mirror
+                    is rewritten from its source every ingest, so deleting
+                    this copy would delete nothing. */}
+                {onDelete && canEdit && !locked && !isMirror && (
+                  <>
+                    <button
+                      type="button"
+                      data-tour="page-delete"
+                      onClick={() => onDelete(path)}
+                      disabled={saving}
+                      title={`Delete ${shownTitle}`}
+                      className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      Delete
+                    </button>
+                    {/* Discarding the page is not the third option beside
+                        keeping and abandoning this edit, so it is in the
+                        cluster but not in the pair: the rule says near, and
+                        the gap says not the same. */}
+                    <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+                  </>
+                )}
                 <button
                   type="button"
-                  onClick={() => onDelete(path)}
+                  onClick={handleCancel}
                   disabled={saving}
-                  title={`Delete ${shownTitle}`}
-                  className="mr-1 flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  Delete
+                  Cancel
                 </button>
-              )}
-              {/* Beside Save, because that is what it qualifies: who hears
-                  about this edit is part of saving it, not a property of the
-                  page sitting among the badges at the other end of the bar. */}
-              <PageNotifyMenu value={notify} onChange={setNotify} disabled={saving} />
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={saving}
-                className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </>
           ) : (
             <ViewOnlyTooltip viewOnly={!canEdit}>
               <button
@@ -1290,22 +1329,21 @@ function KindToggle({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          // Wears the kind badge's own colours, so the control that changes
-          // the kind is also the thing that states it.
-          className={cn(
-            "flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors hover:brightness-95",
-            spec.badgeClass,
-          )}
+        {/* The kind used to be carried by a filled, colour-coded pill, which
+            made the one control in the row that only opens a list look like
+            the most pressable thing in it. The kind still has to be readable
+            without opening anything, so it moves into the label and the
+            kind's own mark — which is where the tree already reads it from —
+            and the colour is spent on that mark alone. */}
+        <PageToolbarSelect
+          open={open}
+          active
+          icon={<Icon className={cn("h-3 w-3 shrink-0", spec.iconClass)} aria-hidden="true" />}
+          className="uppercase tracking-wide"
           title={`${spec.title} page — ${spec.description} Click to change.`}
         >
-          <Icon className={cn("h-3 w-3", spec.iconClass)} aria-hidden="true" />
           {spec.label}
-          <ChevronDown
-            className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
-          />
-        </button>
+        </PageToolbarSelect>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 p-2">
         <p className="mb-2 px-1 text-[11px] uppercase tracking-wider text-muted-foreground">

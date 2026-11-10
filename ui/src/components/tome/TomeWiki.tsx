@@ -2366,23 +2366,21 @@ export function TomeWiki({ slug }: { slug: string }) {
             {canEdit && (
               <Button
                 size="sm"
-                // The app's own green for a go action, a fixed hue rather
-                // than a themed one so it reads the same in both themes.
+                // Shaped and coloured like Ask on Overview: the two are the
+                // same kind of offer, so this takes the theme's own primary
+                // rather than a hand-picked green beside it, and `size="sm"`
+                // carries the height and the padding.
                 //
-                // In flight it darkens and keeps its strength instead of
+                // In flight it deepens and keeps its strength instead of
                 // taking the usual disabled fade: this button spends a whole
                 // run disabled while reporting what that run is doing, and a
-                // faded white label on the light theme is hard to read for a
-                // state worth watching. The spinner and the label say it is
-                // working; the colour does not have to say it is off.
-                // Sized to match Ask on Overview: the two are the same kind
-                // of offer, and `size="sm"` carries the height and the
-                // padding rather than hand-rolled ones.
+                // faded label is hard to read for a state worth watching.
+                // The spinner and the label say it is working; the colour
+                // does not have to say it is off.
                 className={cn(
-                  "shrink-0 gap-1.5 text-white",
-                  inFlightRun || startingSync
-                    ? "bg-emerald-700 hover:bg-emerald-700 disabled:opacity-100"
-                    : "bg-emerald-600 hover:bg-emerald-700",
+                  "h-9 shrink-0 gap-1.5",
+                  (inFlightRun || startingSync) &&
+                    "bg-primary/90 hover:bg-primary/90 disabled:opacity-100",
                 )}
                 onClick={() => void syncNow()}
                 disabled={startingSync || inFlightRun !== null}

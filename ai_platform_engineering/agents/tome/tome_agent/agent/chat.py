@@ -15,6 +15,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
+from html import escape
 from typing import Any
 
 from claude_agent_sdk import (
@@ -43,6 +44,7 @@ from tome_agent.orchestrator.contract import (
     IssueContext,
     ProjectSnapshot,
     RetrievalMessage,
+    TaggedPage,
 )
 from tome_agent.reports import schema as report_schema
 from tome_agent.tracing import rename_current_span
@@ -65,10 +67,43 @@ they need editor access to do so.\
 """
 
 
+def _format_tagged_pages(pages: list[TaggedPage], write_root: str) -> str:
+    """Render pages other spaces tagged into this one as read-only context.
+
+    These pages are never materialized under this project's root, so their
+    bodies travel inline. Each one names the space that owns it: that space
+    is the only one that may edit the page, and it is the attribution any
+    answer drawn from the page has to carry."""
+    if not pages:
+        return ""
+
+    blocks: list[str] = []
+    for page in pages:
+        scope = "whole page" if page.whole_page else "tagged passages"
+        blocks.append(
+            f'<tagged_page title="{escape(page.title, quote=True)}" '
+            f'space="{escape(page.space_title, quote=True)}" '
+            f'space_slug="{escape(page.space_slug, quote=True)}" '
+            f'path="{escape(page.path, quote=True)}" tagged="{scope}">\n'
+            f"{page.markdown.strip()}\n"
+            "</tagged_page>"
+        )
+    return (
+        "TAGGED PAGES — pages that live in other spaces and are tagged to this "
+        "one. They are READ-ONLY reference material: they are not part of this "
+        "wiki, they are not on disk, and you must NEVER write to them or offer "
+        f"to edit them. Your own write root is `{write_root}`, stated above; "
+        "that is the only place you write. Tagging grants this one page, not "
+        "the space it came from — say which space a page belongs to whenever "
+        "you use what it says:\n\n" + "\n\n".join(blocks)
+    )
+
+
 def build_system_prompt(
     snapshot: ProjectSnapshot,
     stable_pages: dict[str, str],
     issue_context: IssueContext | None = None,
+    tagged_pages: list[TaggedPage] | None = None,
 ) -> str:
     def _strip(path: str) -> str:
         md = stable_pages.get(path, "")
@@ -162,6 +197,10 @@ Project anchor (top-level overview — read repo-specific overviews under `repos
             f"{child_lines}"
         )
 
+    tagged_block = _format_tagged_pages(tagged_pages or [], write_root)
+    if tagged_block:
+        project_block += f"\n\n{tagged_block}"
+
     issue_block = format_issue_context(issue_context)
     if issue_block:
         project_block += f"\n\n{issue_block}"
@@ -179,6 +218,7 @@ async def stream_chat(
     snapshot: ProjectSnapshot,
     stable_pages: dict[str, str],
     issue_context: IssueContext | None = None,
+    tagged_pages: list[TaggedPage] | None = None,
     actor_email: str | None = None,
     actor_sub: str | None = None,
     is_compact: bool = False,
@@ -253,7 +293,7 @@ async def stream_chat(
                 )
             gist_context += "</relevant_gist_reference>"
             prompt += gist_context
-    system_prompt = build_system_prompt(snapshot, stable_pages, issue_context)
+    system_prompt = build_system_prompt(snapshot, stable_pages, issue_context, tagged_pages)
     if myagent_research:
         system_prompt = (
             "MYAGENT RESEARCH CHAT: You can talk to MyAgent using mcp__myagent__ask_myagent. "

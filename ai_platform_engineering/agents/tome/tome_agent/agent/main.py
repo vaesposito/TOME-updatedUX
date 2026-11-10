@@ -551,6 +551,7 @@ async def chat_endpoint(body: ChatRequest):
                         snapshot=body.snapshot,
                         stable_pages=body.stable_pages,
                         issue_context=body.issue_context,
+                        tagged_pages=body.tagged_pages,
                         actor_email=body.actor_email,
                         actor_sub=body.actor_sub,
                         is_compact=body.is_compact,

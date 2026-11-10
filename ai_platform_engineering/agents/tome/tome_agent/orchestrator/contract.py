@@ -141,6 +141,22 @@ class RetrievalMessage(BaseModel):
     content: str = Field(max_length=12_000)
 
 
+class TaggedPage(BaseModel):
+    """A page written in another space that carries a tag naming this one.
+
+    The two wikis are disjoint trees, so the tag is the only thing that makes
+    another space's page relevant here. `space_slug` owns the page and is the
+    only space that may edit it; from this project it is read-only context."""
+
+    space_slug: str
+    space_title: str
+    path: str
+    title: str
+    whole_page: bool
+    """True when the whole page carries the tag rather than passages inside it."""
+    markdown: str
+
+
 class ChatRequest(BaseModel):
     global_chat: bool = False
     """Read-only reasoning over a caller-scoped published view, without MCP or SDK tools."""
@@ -162,6 +178,10 @@ class ChatRequest(BaseModel):
     """Map of `path -> markdown` for stable pages the chat prompt references
     (overview, team, architecture). Backend reads from sqlite
     before dispatching."""
+    tagged_pages: list[TaggedPage] = Field(default_factory=list)
+    """Pages from other spaces tagged with this one, already resolved and
+    access-filtered by the caller. Read-only context carried inline because
+    these pages live outside this project's tree and never reach its disk."""
     issue_context: IssueContext = Field(default_factory=IssueContext)
     """Compact GitHub-backed Decisions/Critical index. Full issue bodies and
     comments are fetched with GitHub tools only when relevant."""
@@ -726,6 +746,7 @@ __all__ = [
     "RelevanceCompletenessResult",
     "RepoSnapshot",
     "RubricCriterion",
+    "TaggedPage",
     "WebexRoomSnapshot",
     "WritePageRequest",
 ]

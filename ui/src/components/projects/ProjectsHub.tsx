@@ -897,7 +897,7 @@ export function ProjectsHub() {
       {/* Under the welcome rather than above the list, because they are three
           readings of the same thing and none of them is a section of the
           catalogue. Outside the band, so the band stays a greeting. */}
-      <div className="flex justify-center" data-tour="hub-tabs">
+      <div className="flex justify-center">
         <HubTabs value={tab} onChange={setTab} settingsHref="/projects/admin" />
       </div>
 

@@ -260,7 +260,14 @@ export function PopoverContent({
       left -= pRect.left + portalContainer.clientLeft - portalContainer.scrollLeft;
     }
 
-    setCoords({ top, left });
+    // Same place as last time is not a state change: the trigger is watched
+    // for movement below, and re-rendering on every unchanged reading would
+    // make that watch cost a render a frame.
+    setCoords((current) =>
+      current && current.top === top && current.left === left
+        ? current
+        : { top, left },
+    );
   }, [align, alignOffset, side, sideOffset, triggerRef, portalContainer]);
 
   React.useLayoutEffect(() => {
@@ -284,10 +291,24 @@ export function PopoverContent({
     if (contentRef.current) resizeObserver?.observe(contentRef.current);
     if (triggerRef.current) resizeObserver?.observe(triggerRef.current);
 
+    // A trigger that moves without changing size resizes nothing the
+    // observer above can see and scrolls nothing the listener can hear — the
+    // walkthrough's spotlight is a fixed box re-placed by inline style, and
+    // the card used to stay behind at the previous step's control.
+    const moveObserver = typeof MutationObserver === "undefined"
+      ? null
+      : new MutationObserver(onChange);
+    if (triggerRef.current) {
+      moveObserver?.observe(triggerRef.current, {
+        attributeFilter: ["style", "class"],
+      });
+    }
+
     return () => {
       window.removeEventListener("resize", onChange);
       window.removeEventListener("scroll", onChange, true);
       resizeObserver?.disconnect();
+      moveObserver?.disconnect();
     };
   }, [open,computeCoords,triggerRef]);
 

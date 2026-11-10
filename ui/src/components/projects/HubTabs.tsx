@@ -68,7 +68,15 @@ export function HubTabs({
         className,
       )}
     >
-      <div role="tablist" aria-label="TOME views" className="inline-flex items-center gap-1">
+      {/* The walkthrough points at the tabs themselves rather than at
+          whatever centres them on the page: a step about two ways of reading
+          the catalogue should ring a control the width of the control. */}
+      <div
+        role="tablist"
+        aria-label="TOME views"
+        data-tour="hub-tabs"
+        className="inline-flex items-center gap-1"
+      >
       {HUB_TABS.map((tab) => {
         const active = tab === value;
         return (

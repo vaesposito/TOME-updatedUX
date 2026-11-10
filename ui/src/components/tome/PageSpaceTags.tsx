@@ -61,7 +61,6 @@ export function PageSpaceTags({
     <span
       className="flex flex-wrap items-center gap-1"
       data-testid="tome-page-space-tags"
-      data-tour="page-tags"
     >
       {tags.map((slug) =>
         editing ? (
@@ -103,9 +102,14 @@ export function PageSpaceTags({
           }}
         >
           <PopoverTrigger asChild>
+            {/* The walkthrough's step is about making a connection, so it
+                points here rather than at the row of ones already made —
+                which also keeps the step waiting on Edit, since this is the
+                only part of the row that editing brings. */}
             <button
               type="button"
               disabled={disabled}
+              data-tour="page-tags"
               className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
             >
               <Link2 className="h-2.5 w-2.5" aria-hidden="true" />

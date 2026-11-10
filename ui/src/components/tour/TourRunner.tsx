@@ -51,6 +51,16 @@ const GRACE_MS = 1200;
 /** A navigation that never lands must not strand the reader on one step. */
 const NAVIGATION_TIMEOUT_MS = 6000;
 
+/**
+ * How long the ring keeps re-reading after a step has scrolled to its anchor.
+ *
+ * `scrollIntoView` is asynchronous and smooth, so the box it was asked about
+ * keeps moving after the call returns. Leaving that to the poll drew the ring
+ * beside the control for a tenth of a second and then stepped it on, which is
+ * the one moment a reader is looking straight at it.
+ */
+const SETTLE_MS = 1000;
+
 interface Rect {
   top: number;
   left: number;
@@ -88,20 +98,55 @@ function isTall(height: number): boolean {
   return height > window.innerHeight * TALL_ANCHOR_RATIO;
 }
 
-function measure(anchor: TourAnchor): Rect | null {
-  const node = document.querySelector(`[data-tour="${anchor}"]`);
-  if (!node) return null;
-  const rect = node.getBoundingClientRect();
+/**
+ * The element a step is about, preferring one the reader can see.
+ *
+ * An anchor can match more than once: the same control is offered both in a
+ * project's header and in its settings, and a tab's panel is in the document
+ * before it is opened. Taking the first match in document order handed back
+ * the invisible copy and rang a control nobody could see.
+ */
+function anchorNode(anchor: TourAnchor): Element | null {
+  const matches = Array.from(document.querySelectorAll(`[data-tour="${anchor}"]`));
   // A node that is present but collapsed is not something to point at — a
   // tab panel that has not opened yet, say.
-  if (rect.width === 0 && rect.height === 0) return null;
+  const drawn = matches.filter((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 || rect.height > 0;
+  });
+  // On screen wins over merely drawn, but a single anchor that is simply
+  // scrolled away still counts: it is about to be scrolled to.
+  const onScreen = drawn.find((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.top + rect.height > 0 && rect.top < window.innerHeight;
+  });
+  return onScreen ?? drawn.at(0) ?? null;
+}
+
+function measure(anchor: TourAnchor): Rect | null {
+  const node = anchorNode(anchor);
+  if (!node) return null;
+  const rect = node.getBoundingClientRect();
+  if (!isTall(rect.height)) {
+    return {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+  // The band is taken from where the region is now rather than from its own
+  // top. A reader who has scrolled into it, or a page that settled after the
+  // step scrolled to it, would otherwise be given a ring above the window.
+  const top = Math.max(rect.top, 0);
   return {
-    top: rect.top,
+    top,
     left: rect.left,
     width: rect.width,
-    height: isTall(rect.height)
-      ? window.innerHeight * TALL_ANCHOR_BAND
-      : rect.height,
+    height: Math.min(
+      window.innerHeight * TALL_ANCHOR_BAND,
+      rect.top + rect.height - top,
+    ),
   };
 }
 
@@ -473,6 +518,10 @@ export function TourRunner() {
   // `rect` is only ever written when something was found. Clearing it the
   // moment an anchor goes is what used to throw the card into the middle of
   // the window between pages.
+  //
+  // Held in a ref as well, so the scroll below can re-read the box as it
+  // comes to rest rather than leaving it to the next poll.
+  const resync = React.useRef<() => void>(() => {});
   React.useEffect(() => {
     if (!step) return;
 
@@ -485,6 +534,7 @@ export function TourRunner() {
       if (next) setRect((current) => (sameRect(current, next) ? current : next));
     };
 
+    resync.current = sync;
     sync();
     const timer = window.setInterval(sync, POLL_MS);
     window.addEventListener("scroll", sync, true);
@@ -517,7 +567,7 @@ export function TourRunner() {
     const key = `${state?.tour}:${step.id}:${location}`;
     if (scrolled.current === key) return;
     scrolled.current = key;
-    const node = document.querySelector(`[data-tour="${step.anchor}"]`);
+    const node = anchorNode(step.anchor);
     if (!node) return;
     // Centring a region taller than the window scrolls past its beginning:
     // the reader is put half way down a panel they have not seen the top of.
@@ -526,6 +576,23 @@ export function TourRunner() {
       block: isTall(node.getBoundingClientRect().height) ? "start" : "center",
       behavior: "smooth",
     });
+
+    // Then follow it to its rest. A smooth scroll stops firing `scroll`
+    // before its last frame is painted, so the box is re-read until it
+    // repeats or the scroll has had long enough. See SETTLE_MS.
+    let previous: string | null = null;
+    let frame = 0;
+    const deadline = Date.now() + SETTLE_MS;
+    const settle = () => {
+      resync.current();
+      const rect = node.getBoundingClientRect();
+      const where = `${rect.top},${rect.left}`;
+      if (where === previous || Date.now() > deadline) return;
+      previous = where;
+      frame = window.requestAnimationFrame(settle);
+    };
+    frame = window.requestAnimationFrame(settle);
+    return () => window.cancelAnimationFrame(frame);
   }, [found, location, stale, state?.tour, step]);
 
   React.useEffect(() => {

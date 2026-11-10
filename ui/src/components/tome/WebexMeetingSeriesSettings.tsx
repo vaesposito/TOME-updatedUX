@@ -462,8 +462,11 @@ export function WebexMeetingSeriesSettings({
   };
 
   return (
-    <div className="rounded-xl border border-border/60 p-4" data-tour="webex-settings">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-xl border border-border/60 p-4">
+      {/* The walkthrough rings what it is naming — what this section is for
+          and the way into it — rather than the whole card, which grows with
+          every series attached and with the history under each one. */}
+      <div className="flex items-start justify-between gap-3" data-tour="webex-settings">
         <div>
           <p className="flex items-center gap-2 text-sm font-medium">
             <CalendarDays className="h-4 w-4" /> Recurring Webex meetings

@@ -162,12 +162,12 @@ export function McpConnectDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {/* The height the catalogue's toolbar is set to, which its search
-            field establishes: this sits in that row and nowhere else. */}
+        {/* Shaped like the rest of the catalogue's welcome band — Settings,
+            the tour, Provide feedback — which is the row this sits in. */}
         <Button
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 px-2.5"
+          className="h-auto gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           data-tour="hub-mcp"
         >
           <Plug className="h-3.5 w-3.5" />

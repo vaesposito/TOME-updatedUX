@@ -867,6 +867,11 @@ export function ProjectsHub() {
                   Settings
                 </Link>
               )}
+              {/* Beside the tour rather than down in the catalogue's
+                  toolbar: connecting an agent is something you do to the
+                  whole of TOME, not to the list of projects, and here it is
+                  offered from every tab instead of only one. */}
+              <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
               {/* Offered where a newcomer arrives, in the band that
                   greets them. The tour opens on the catalogue, so the tab
                   is set before it starts rather than leaving its first
@@ -943,7 +948,6 @@ export function ProjectsHub() {
             <Plus className="h-3.5 w-3.5" />
             Add project
           </Button>
-          <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
           {isTomeAdmin && groupBy === "initiative" && (
             <>
               <Button

@@ -162,11 +162,9 @@ export function McpConnectDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-auto gap-1.5 px-2 py-1"
-        >
+        {/* The height the catalogue's toolbar is set to, which its search
+            field establishes: this sits in that row and nowhere else. */}
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5">
           <Plug className="h-3.5 w-3.5" />
           Connect via MCP
         </Button>

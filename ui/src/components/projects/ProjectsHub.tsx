@@ -923,7 +923,7 @@ export function ProjectsHub() {
           <Button
             variant="outline"
             size="sm"
-            className="gap-1.5"
+            className="h-8 gap-1.5"
             onClick={() => setCreating(true)}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -935,7 +935,7 @@ export function ProjectsHub() {
               <Button
                 variant={reordering ? "secondary" : "outline"}
                 size="sm"
-                className="gap-1.5"
+                className="h-8 gap-1.5"
                 disabled={loading || visibleBhagOrder.length < 2 || orderSaving}
                 onClick={() => setReordering((current) => !current)}
               >
@@ -946,7 +946,7 @@ export function ProjectsHub() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="gap-1.5 text-muted-foreground"
+                  className="h-8 gap-1.5 text-muted-foreground"
                   disabled={orderSaving}
                   onClick={resetBhagOrder}
                 >

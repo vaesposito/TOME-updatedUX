@@ -88,6 +88,19 @@ export function rollupGitHubRepos(projects: TomeProjectRow[]): string[] {
   return [...new Set(projects.flatMap(projectGitHubRepos))];
 }
 
+/** Which space each repository was read for, so issues can be read back to one. */
+export function rollupRepoOwners(
+  projects: TomeProjectRow[],
+): Array<{ slug: string; title: string; repos: string[] }> {
+  return projects
+    .map((project) => ({
+      slug: project.slug,
+      title: project.title || project.name || project.slug,
+      repos: [...new Set(projectGitHubRepos(project))],
+    }))
+    .filter((entry) => entry.repos.length > 0);
+}
+
 async function subjectForEmail(email: string): Promise<string> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return "";

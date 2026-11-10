@@ -29,6 +29,8 @@ function issuesResponse(
     credentialConfigured: boolean;
     writeCredentialConfigured: boolean;
     availableIssues: typeof issue[];
+    repos: string[];
+    projectRepos: Array<{ slug: string; title: string; repos: string[] }>;
   }> = {},
 ) {
   return {
@@ -178,47 +180,65 @@ describe("GithubIssuesPanel", () => {
     });
   });
 
-  it("tracks an issue from an attached repository and mutates the panel data", async () => {
-    const cachedIssue = {
-      ...issue,
-      number: 99,
-      title: "Newly tracked work",
-      labels: [],
-      url: "https://github.com/example/service/issues/99",
-    };
-    const addedIssue = { ...cachedIssue, labels: ["critical"] };
-    mockFetch
-      .mockResolvedValueOnce(issuesResponse([], { availableIssues: [cachedIssue] }))
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          success: true,
-          data: { issue: addedIssue },
-        }),
-      });
+  it("offers no way to add a label, since labels are not managed from here", async () => {
+    mockFetch.mockResolvedValue(issuesResponse());
 
     render(<GithubIssuesPanel slug="example-project" canEdit />);
     await screen.findByLabelText("Search tracked issues");
-    fireEvent.click(screen.getByRole("button", { name: "Add label to issue" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "Issue" }));
-    fireEvent.click(screen.getByRole("option", { name: /#99 Newly tracked work/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Add / remove labels" }));
 
-    expect(await screen.findByText("Newly tracked work")).toBeInTheDocument();
-    expect(mockFetch).toHaveBeenNthCalledWith(
-      2,
-      "/api/tome/projects/example-project/github-issues",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({
-          repo: "example/service",
-          number: 99,
-          label: "critical",
-          operation: "add",
-        }),
+    expect(
+      screen.queryByRole("button", { name: "Add label to issue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("narrows the board to one project's repositories", async () => {
+    const otherRepoIssue = {
+      ...issue,
+      number: 7,
+      title: "Work in the second project",
+      repo: "example/second-service",
+    };
+    mockFetch.mockResolvedValue(
+      issuesResponse([issue, otherRepoIssue], {
+        repos: ["example/service", "example/second-service"],
+        projectRepos: [
+          { slug: "example-project", title: "Example Project", repos: ["example/service"] },
+          {
+            slug: "second-example-project",
+            title: "Second Example Project",
+            repos: ["example/second-service"],
+          },
+        ],
       }),
     );
+
+    render(<GithubIssuesPanel slug="example-project" canEdit />);
+    await screen.findByLabelText("Search tracked issues");
+    expect(screen.getByText("Work in the second project")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filter issues by project"), {
+      target: { value: "example-project" },
+    });
+
+    expect(screen.queryByText("Work in the second project")).not.toBeInTheDocument();
+    expect(screen.getByText(issue.title)).toBeInTheDocument();
+  });
+
+  it("asks nothing when every repository belongs to one project", async () => {
+    mockFetch.mockResolvedValue(
+      issuesResponse([issue], {
+        projectRepos: [
+          { slug: "example-project", title: "Example Project", repos: ["example/service"] },
+        ],
+      }),
+    );
+
+    render(<GithubIssuesPanel slug="example-project" canEdit />);
+    await screen.findByLabelText("Search tracked issues");
+
+    expect(
+      screen.queryByLabelText("Filter issues by project"),
+    ).not.toBeInTheDocument();
   });
 
   it("uses CSS line clamping instead of truncating issue descriptions", async () => {

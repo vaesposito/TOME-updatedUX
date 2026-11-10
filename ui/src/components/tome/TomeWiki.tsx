@@ -2947,7 +2947,6 @@ export function TomeWiki({ slug }: { slug: string }) {
                         onRemoveLabel: canRemoveIssueTrackers
                           ? removeIssueTracker
                           : undefined,
-                        addLabelAction: addTrackedLabelAction,
                       }
                     : {})}
                 />

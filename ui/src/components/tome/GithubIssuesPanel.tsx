@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   type KeyboardEvent,
   type MouseEvent,
-  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -19,7 +18,6 @@ import {
   HelpCircle,
   Loader2,
   MessagesSquare,
-  Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -28,15 +26,6 @@ import { BetaBadge } from "@/components/tome/BetaBadge";
 import { PanelShell } from "@/components/tome/PanelHeader";
 import { Button } from "@/components/ui/button";
 import { TomeEmpty } from "@/components/tome/TomeEmpty";
-import { SearchablePicker } from "@/components/ui/searchable-picker";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -50,7 +39,6 @@ import {
 } from "@/components/ui/tooltip";
 import { IssueLabelFilter } from "@/components/tome/IssueLabelFilter";
 import {
-  matchesTomeTrackedIssueLabel,
   TOME_TRACKED_ISSUE_LABELS,
   type TomeTrackedIssueLabel,
 } from "@/lib/tome/issue-filter-views";
@@ -92,6 +80,8 @@ interface IssuesPayload {
   writeCredentialOwner?: string | null;
   repos: string[];
   rollupProjectSlugs: string[];
+  /** Which space each repository was read for. Absent on older responses. */
+  projectRepos?: Array<{ slug: string; title: string; repos: string[] }>;
   cache?: {
     source: "mongodb";
     stale: boolean;
@@ -213,14 +203,6 @@ function issueKey(
   return `${issue.repo.toLowerCase()}:${type}#${issue.number}`;
 }
 
-function issueTrackedLabels(
-  issue: GitHubIssue,
-  trackedLabels: readonly TomeTrackedIssueLabel[],
-): string[] {
-  return trackedLabels
-    .filter((tracked) => matchesTomeTrackedIssueLabel(issue.labels, tracked))
-    .map((tracked) => tracked.label);
-}
 
 function actualIssueLabel(
   issue: GitHubIssue,
@@ -240,7 +222,6 @@ export function GithubIssuesPanel({
   onSelectLabel,
   onRemoveLabel,
   isLabelRemovable,
-  addLabelAction,
 }: {
   slug: string;
   canEdit: boolean;
@@ -257,8 +238,6 @@ export function GithubIssuesPanel({
   onSelectLabel?: (label: string) => void;
   onRemoveLabel?: (tracked: TomeTrackedIssueLabel) => void;
   isLabelRemovable?: (tracked: TomeTrackedIssueLabel) => boolean;
-  /** Whatever adds a tracked label, placed at the end of the filter row. */
-  addLabelAction?: ReactNode;
 }) {
   const trackedLabel = initialLabel?.trim().toLowerCase();
   const [payload, setPayload] = useState<IssuesPayload | null>(null);
@@ -274,12 +253,6 @@ export function GithubIssuesPanel({
   const firstRepoIssuesUrl = payload?.repos[0]
     ? `https://github.com/${payload.repos[0]}/issues`
     : null;
-  const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
-  const [issueRepository, setIssueRepository] = useState("");
-  const [issueNumber, setIssueNumber] = useState("");
-  const [trackingLabels, setTrackingLabels] = useState<string[]>([]);
-  const [trackingError, setTrackingError] = useState<string | null>(null);
-  const [trackingIssue, setTrackingIssue] = useState(false);
   const [movingIssueKeys, setMovingIssueKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -404,13 +377,25 @@ export function GithubIssuesPanel({
   }, [trackedLabel]);
 
   const issues = useMemo(() => payload?.issues ?? [], [payload?.issues]);
-  const availableIssues = useMemo(
-    () => payload?.availableIssues ?? issues,
-    [issues, payload?.availableIssues],
+  // Which space's issues are being read, by slug. Empty means all of them.
+  const [projectFilter, setProjectFilter] = useState("");
+  const projectRepos = useMemo(
+    () => payload?.projectRepos ?? [],
+    [payload?.projectRepos],
   );
+  // A repository can be attached to more than one space, so this answers
+  // "does this space read that repository" rather than naming one owner.
+  const reposInFilter = useMemo(() => {
+    if (!projectFilter) return null;
+    const entry = projectRepos.find((row) => row.slug === projectFilter);
+    return entry ? new Set(entry.repos.map((repo) => repo.toLowerCase())) : null;
+  }, [projectFilter, projectRepos]);
   const filteredIssues = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return issues.filter((issue) => {
+        if (reposInFilter && !reposInFilter.has(issue.repo.toLowerCase())) {
+          return false;
+        }
         if (!normalizedQuery) return true;
         return [
           issue.title,
@@ -424,147 +409,18 @@ export function GithubIssuesPanel({
           ...issue.assignees,
         ].some((value) => value.toLowerCase().includes(normalizedQuery));
       });
-  }, [issues, query]);
+  }, [issues, query, reposInFilter]);
 
   const canMoveIssues =
     canEdit && payload?.writeCredentialConfigured !== false;
 
-  const selectedIssue = useMemo(() => {
-    if (!issueRepository || !issueNumber) return undefined;
-    const key = `${issueRepository.toLowerCase()}:issue#${issueNumber}`;
-    return availableIssues.find((issue) => issueKey(issue) === key);
-  }, [availableIssues, issueNumber, issueRepository]);
 
-  const defaultTrackingLabels = useMemo(
-    () => (
-      trackedLabel && trackedLabels.some(({ label }) => label === trackedLabel)
-        ? [trackedLabel]
-        : trackedLabels.length > 0 ? [trackedLabels[0].label] : []
-    ),
-    [trackedLabel, trackedLabels],
-  );
 
-  const labelChanges = useMemo(() => {
-    if (!selectedIssue) return { add: [] as string[], remove: [] as string[] };
-    const add = trackingLabels.filter(
-      (label) => {
-        const tracked = trackedLabels.find((candidate) => candidate.label === label);
-        return tracked
-          ? !actualIssueLabel(selectedIssue, tracked)
-          : !selectedIssue.labels.some(
-              (candidate) => candidate.toLowerCase() === label.toLowerCase(),
-            );
-      },
-    );
-    const remove = trackedLabels.flatMap((tracked) => {
-      const actual = actualIssueLabel(selectedIssue, tracked);
-      return actual && !trackingLabels.includes(tracked.label) ? [actual] : [];
-    });
-    return { add, remove };
-  }, [selectedIssue, trackedLabels, trackingLabels]);
 
-  const openTrackingDialog = useCallback(() => {
-    setIssueRepository(payload?.repos.length === 1 ? payload.repos[0] : "");
-    setIssueNumber("");
-    setTrackingLabels(defaultTrackingLabels);
-    setTrackingError(null);
-    setTrackingDialogOpen(true);
-  }, [defaultTrackingLabels, payload?.repos]);
 
-  const selectIssue = useCallback(
-    (issue: GitHubIssue) => {
-      setIssueRepository(issue.repo);
-      setIssueNumber(String(issue.number));
-      const currentLabels = issueTrackedLabels(issue, trackedLabels);
-      setTrackingLabels(currentLabels.length ? currentLabels : defaultTrackingLabels);
-      setTrackingError(null);
-    },
-    [defaultTrackingLabels, trackedLabels],
-  );
 
-  const toggleTrackingLabel = useCallback((label: string) => {
-    setTrackingLabels((current) => current.includes(label)
-      ? current.filter((candidate) => candidate !== label)
-      : [...current, label]);
-  }, []);
 
-  const upsertTrackedIssue = useCallback((issue: GitHubIssue) => {
-    const key = issueKey(issue);
-    setPayload((current) => {
-      if (!current) return current;
-      const exists = current.issues.some((candidate) => issueKey(candidate) === key);
-      const availableIssueExists = current.availableIssues?.some(
-        (candidate) => issueKey(candidate) === key,
-      );
-      const updatedAvailableIssues = current.availableIssues
-        ? availableIssueExists
-          ? current.availableIssues.map((candidate) =>
-              issueKey(candidate) === key ? issue : candidate,
-            )
-          : [issue, ...current.availableIssues]
-        : current.availableIssues;
-      if (trackedLabel && !issue.labels.some((label) => label.toLowerCase() === trackedLabel)) {
-        return {
-          ...current,
-          issues: exists
-            ? current.issues.filter((candidate) => issueKey(candidate) !== key)
-            : current.issues,
-          availableIssues: updatedAvailableIssues,
-        };
-      }
-      return {
-        ...current,
-        issues: exists
-          ? current.issues.map((candidate) => issueKey(candidate) === key ? issue : candidate)
-          : [issue, ...current.issues],
-        availableIssues: updatedAvailableIssues,
-      };
-    });
-  }, [trackedLabel]);
 
-  const trackIssue = useCallback(async () => {
-    if (!selectedIssue) {
-      setTrackingError("Choose a cached GitHub issue.");
-      return;
-    }
-    if (!labelChanges.add.length && !labelChanges.remove.length) {
-      setTrackingError("Choose at least one label to add or remove.");
-      return;
-    }
-
-    setTrackingIssue(true);
-    setTrackingError(null);
-    try {
-      for (const [operation, labels] of [
-        ["add", labelChanges.add],
-        ["remove", labelChanges.remove],
-      ] as const) {
-        for (const label of labels) {
-          const result = await fetchJson<IssueMutationPayload>(
-            `/api/tome/projects/${encodeURIComponent(slug)}/github-issues`,
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                repo: selectedIssue.repo,
-                number: selectedIssue.number,
-                label,
-                operation,
-              }),
-            },
-          );
-          upsertTrackedIssue(result.issue);
-        }
-      }
-      setTrackingDialogOpen(false);
-    } catch (err) {
-      setTrackingError(
-        err instanceof Error ? err.message : "Could not update this issue's labels.",
-      );
-    } finally {
-      setTrackingIssue(false);
-    }
-  }, [labelChanges, selectedIssue, slug, upsertTrackedIssue]);
 
   const finishIssueDrag = useCallback(() => {
     dragSourceRef.current = null;
@@ -867,140 +723,6 @@ export function GithubIssuesPanel({
               )}
             </PopoverContent>
           </Popover>
-          {canEdit && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={openTrackingDialog}
-                disabled={!canMoveIssues}
-              >
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Add label to issue</span>
-              </Button>
-              <Dialog
-                open={trackingDialogOpen}
-                onOpenChange={(open) => {
-                  if (!trackingIssue) setTrackingDialogOpen(open);
-                }}
-              >
-                <DialogContent className="sm:max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Manage GitHub issue labels</DialogTitle>
-                    <DialogDescription>
-                      Choose a cached issue, then add or remove the selected TOME
-                      labels in GitHub.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Repository</label>
-                      <SearchablePicker
-                        options={payload?.repos ?? []}
-                        selected={payload?.repos.find(
-                          (repo) => repo.toLowerCase() === issueRepository.toLowerCase(),
-                        )}
-                        onSelect={(repo) => {
-                          setIssueRepository(repo);
-                          setIssueNumber("");
-                          setTrackingLabels(defaultTrackingLabels);
-                          setTrackingError(null);
-                        }}
-                        getOptionKey={(repo) => repo}
-                        getOptionLabel={(repo) => repo}
-                        placeholder="Choose a repository"
-                        searchPlaceholder="Search repositories..."
-                        emptyLabel="No attached repositories"
-                        ariaLabel="Repository"
-                        triggerClassName="h-10"
-                        contentClassName="w-[min(520px,90vw)]"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Issue</label>
-                      <SearchablePicker
-                        options={availableIssues.filter(
-                          (issue) => issue.repo.toLowerCase() === issueRepository.toLowerCase(),
-                        )}
-                        selected={selectedIssue}
-                        onSelect={selectIssue}
-                        getOptionKey={(issue) => issueKey(issue)}
-                        getOptionLabel={(issue) => `#${issue.number} ${issue.title}`}
-                        getSearchText={(issue) => [
-                          String(issue.number),
-                          issue.title,
-                          issue.repo,
-                        ]}
-                        renderOption={(issue) => (
-                          <span className="min-w-0">
-                            <span className="block truncate">#{issue.number} {issue.title}</span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {issue.repo}
-                            </span>
-                          </span>
-                        )}
-                        placeholder="Choose an issue"
-                        searchPlaceholder="Search cached issues..."
-                        emptyLabel="No cached issues for this repository"
-                        ariaLabel="Issue"
-                        triggerClassName="h-10"
-                        contentClassName="w-[min(520px,90vw)]"
-                      />
-                    </div>
-                  </div>
-                  <fieldset className="space-y-2">
-                    <legend className="text-sm font-medium">TOME labels</legend>
-                    <p className="text-xs text-muted-foreground">
-                      The selected labels determine where this issue appears in TOME.
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      {trackedLabels.map((tracked) => (
-                        <label
-                          key={tracked.id}
-                          className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={trackingLabels.includes(tracked.label)}
-                            onChange={() => toggleTrackingLabel(tracked.label)}
-                            disabled={trackingIssue || !selectedIssue}
-                          />
-                          {tracked.title}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                  {trackingError && (
-                    <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
-                      {trackingError}
-                    </p>
-                  )}
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setTrackingDialogOpen(false)}
-                      disabled={trackingIssue}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => void trackIssue()}
-                      disabled={
-                        trackingIssue ||
-                        !selectedIssue ||
-                        (!labelChanges.add.length && !labelChanges.remove.length)
-                      }
-                    >
-                      {trackingIssue && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Add / remove labels
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </>
-          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -1088,20 +810,38 @@ export function GithubIssuesPanel({
           onSelect={onSelectLabel}
           onRemove={onRemoveLabel}
           isRemovable={isLabelRemovable}
-          action={addLabelAction}
         />
       )}
 
       {payload && (payload.credentialConfigured || payload.issues.length > 0) && (
-        <div className="relative min-w-0">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search tracked issues…"
-            className="h-9 pl-8"
-            aria-label="Search tracked issues"
-          />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search tracked issues…"
+              className="h-9 pl-8"
+              aria-label="Search tracked issues"
+            />
+          </div>
+          {/* Only where there is a choice to make: a space reading one
+              space's repositories has nothing to narrow to. */}
+          {projectRepos.length > 1 && (
+            <select
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+              aria-label="Filter issues by project"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">All projects</option>
+              {projectRepos.map((entry) => (
+                <option key={entry.slug} value={entry.slug}>
+                  {entry.title}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 

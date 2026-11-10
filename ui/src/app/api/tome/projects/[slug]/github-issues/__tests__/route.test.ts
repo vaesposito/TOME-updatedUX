@@ -26,6 +26,12 @@ jest.mock("@/lib/tome/github-issue-scope", () => ({
   resolveTomeGitHubWriteCredential: (...args: unknown[]) =>
     mockResolveWriteCredential(...args),
   rollupGitHubRepos: (...args: unknown[]) => mockRollupRepos(...args),
+  rollupRepoOwners: (projects: Array<{ slug?: string; title?: string }>) =>
+    projects.map((project) => ({
+      slug: project.slug ?? "",
+      title: project.title ?? project.slug ?? "",
+      repos: mockRollupRepos(),
+    })),
 }));
 jest.mock("@/lib/github-issue-link", () => ({
   updateGitHubIssueLabel: (...args: unknown[]) =>

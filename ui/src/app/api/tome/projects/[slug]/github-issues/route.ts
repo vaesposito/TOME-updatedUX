@@ -24,6 +24,7 @@ import {
   resolveTomeGitHubCredential,
   resolveTomeGitHubWriteCredential,
   rollupGitHubRepos,
+  rollupRepoOwners,
 } from "@/lib/tome/github-issue-scope";
 import {
   loadTomeIssueCache,
@@ -134,6 +135,7 @@ export const GET = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
       repos,
       trackedLabels,
       rollupProjectSlugs: rollup.map((project) => project.slug),
+      projectRepos: rollupRepoOwners(rollup),
       cache: {
         source: "mongodb",
         stale: cached.sync.some((state) => state.needs_reconciliation),

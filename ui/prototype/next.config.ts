@@ -16,20 +16,19 @@ import type { NextConfig } from "next";
  */
 const basePath = process.env.PROTOTYPE_BASE_PATH ?? "";
 
-// Describe the deployment to the render as well as to the browser.
+// Name the application for the render as well as for the browser.
 //
-// The shell describes it in `window.__APP_CONFIG__`, which does not exist
-// while the pages are being rendered to files. Anything the rendered HTML
-// shows has to be settled here too, or the files carry the stock answer, the
-// browser shows this one, and React throws the first paint away as a
-// hydration failure: the name appears in the brand, and the TOME flag
-// decides which entries the navigation rail has at all.
+// The shell names it in `window.__APP_CONFIG__`, which does not exist while
+// the pages are being rendered to files, so without this the files carry the
+// stock name, the browser shows this one, and the brand changes under the
+// visitor a moment after the first paint.
 //
-// Set as environment variables rather than through `env` below, because the
-// application looks these up under a computed key, which a build-time
-// substitution cannot see.
+// Set as an environment variable rather than through `env` below, because
+// the application looks it up under a computed key, which a build-time
+// substitution cannot see. Only the name: the TOME flag cannot be given the
+// same treatment, because with it on, rendering a space to a file asks for
+// the space, and there is no server here to answer.
 process.env.APP_NAME ??= "TOME";
-process.env.TOME_ENABLED ??= "true";
 
 const nextConfig: NextConfig = {
   output: "export",

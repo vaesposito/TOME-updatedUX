@@ -566,6 +566,7 @@ export function WikiPageView({
         disabled={saving}
         ariaLabel="Tome editor mode"
         testId="tome-editor-mode-toggle"
+        anchor="editor-mode"
       />
       {editorMode === "source" && (
         <Button

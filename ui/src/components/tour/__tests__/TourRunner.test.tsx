@@ -1,65 +1,129 @@
 /** @jest-environment jsdom */
 
 /**
- * A step with nothing to point at is still part of the walkthrough.
+ * What the runner does with a tour it has been handed.
  *
- * An anchored step dims the window with its spotlight's very wide shadow.
- * One that cannot find its control used to be drawn over a fully lit page,
- * which read as a stray dialog rather than as the tour it belongs to.
+ * Three things that were each a bug: a step with nothing to point at drawn
+ * over a fully lit page, so it read as a stray dialog; a request for a tour
+ * nobody wrote starting the first one instead; and a step asking for a tab
+ * believing it had arrived because the path already matched.
  */
 
 import { act, render, screen, waitFor } from "@testing-library/react";
 
 import { TourRunner } from "../TourRunner";
-import { TOUR_START_EVENT, type TourStep } from "../notification-tour";
+import { GENERAL_TOUR } from "../general-tour";
+import { startTour, TOUR_STATE_KEY } from "../tour";
+
+const push = jest.fn();
+let pathname = "/projects";
+let query = "";
 
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: jest.fn() }),
-  usePathname: () => "/notifications",
+  useRouter: () => ({ push }),
+  usePathname: () => pathname,
+  useSearchParams: () => new URLSearchParams(query),
 }));
 
-const NEEDS_A_PROJECT: readonly TourStep[] = [
-  {
-    id: "borrowed",
-    anchor: "project-home",
-    // The reader can read no project, so there is nowhere to send them.
-    route: () => null,
-    title: "A project's Home gathers them",
-    body: "Never shown, because the step cannot be reached.",
-    unavailable: "This step needs a project you can read, and there is not one yet.",
-  },
-];
+/** The step index within the general tour that asks for a given route. */
+const stepAsking = (route: string) =>
+  GENERAL_TOUR.findIndex(
+    (step) => step.route?.({ slug: null, pagePath: null }) === route,
+  );
 
-describe("a step that cannot be reached", () => {
-  beforeEach(() => {
-    window.sessionStorage.clear();
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: { nodes: [] } }),
-    }) as unknown as typeof fetch;
-  });
+beforeEach(() => {
+  push.mockClear();
+  pathname = "/projects";
+  query = "";
+  window.sessionStorage.clear();
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ data: { nodes: [] } }),
+  }) as unknown as typeof fetch;
+});
 
-  it("says what is missing, over a dimmed page", async () => {
-    render(
-      <TourRunner
-        tour={NEEDS_A_PROJECT}
-        stateKey="grid.tour.test"
-        startEvent={TOUR_START_EVENT}
-        label="Test walkthrough"
-      />,
-    );
+describe("starting a tour", () => {
+  it("runs the one that was asked for", async () => {
+    render(<TourRunner />);
 
     act(() => {
-      window.dispatchEvent(new Event(TOUR_START_EVENT));
+      startTour("linking");
     });
 
-    expect(
-      await screen.findByText(
-        "This step needs a project you can read, and there is not one yet.",
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Nothing is only in one place")).toBeInTheDocument();
+  });
+
+  it("starts nothing when asked for a tour we do not have", () => {
+    render(<TourRunner />);
+
+    act(() => {
+      startTour("not-a-tour");
+    });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("a step with no control to point at", () => {
+  it("is shown over a dimmed page, like an anchored one", async () => {
+    render(<TourRunner />);
+
+    act(() => {
+      startTour("linking");
+    });
+
     await waitFor(() =>
       expect(screen.getByTestId("tour-backdrop")).toBeInTheDocument(),
     );
+  });
+});
+
+describe("a step that asks for a tab", () => {
+  it("routes there even though the path already matches", async () => {
+    const index = stepAsking("/projects?tab=overview");
+    expect(index).toBeGreaterThan(-1);
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({ tour: "general", index, subject: null }),
+    );
+
+    render(<TourRunner />);
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/projects?tab=overview"));
+  });
+
+  it("stays put once that tab is the one showing", async () => {
+    query = "tab=overview";
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "general",
+        index: stepAsking("/projects?tab=overview"),
+        subject: null,
+      }),
+    );
+
+    render(<TourRunner />);
+
+    // Long enough for the step to have routed if it thought it had to. The
+    // card itself stays hidden here: its anchor is on the real Overview
+    // panel, which this test does not render.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe("a saved place", () => {
+  it("is dropped when it names a tour we no longer have", () => {
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({ tour: "retired", index: 0, subject: null }),
+    );
+
+    render(<TourRunner />);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

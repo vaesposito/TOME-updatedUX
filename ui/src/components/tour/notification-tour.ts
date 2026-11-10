@@ -13,10 +13,10 @@
  * answer both "where do I see these" and "why am I getting them".
  */
 
-import { TOUR_STATE_KEYS, type TourStep } from "@/components/tour/tour";
+import type { TourStep } from "@/components/tour/tour";
 
 // Re-exported because this file was the whole of the tour before there were
-// two of them, and its callers have no reason to care that the shape moved.
+// five of them, and its callers have no reason to care that the shape moved.
 export {
   isTourRunning,
   samePath,
@@ -93,8 +93,5 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
   },
 ];
 
-/** Dispatched on `window` to start this tour from anywhere. */
-export const TOUR_START_EVENT = "grid.tour:start";
-
-/** Where this tour keeps its place. See TOUR_STATE_KEYS. */
-export const TOUR_STATE_KEY = TOUR_STATE_KEYS.notifications;
+// The event and the saved place belong to every tour, not to this one.
+export { TOUR_START_EVENT, TOUR_STATE_KEY } from "@/components/tour/tour";

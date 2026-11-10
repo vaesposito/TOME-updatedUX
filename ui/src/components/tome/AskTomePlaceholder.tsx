@@ -493,6 +493,7 @@ export function AskTomePlaceholder({
         type="button"
         aria-label="Open Ask Tome"
         aria-expanded={open}
+        data-tour="ask-tome"
         className="pointer-events-auto inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-200/30 bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-200"
         onClick={() => setOpen(!open)}
       >

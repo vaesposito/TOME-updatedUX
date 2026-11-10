@@ -58,7 +58,11 @@ export function PageSpaceTags({
   if (tags.length === 0 && !editing) return null;
 
   return (
-    <span className="flex flex-wrap items-center gap-1" data-testid="tome-page-space-tags">
+    <span
+      className="flex flex-wrap items-center gap-1"
+      data-testid="tome-page-space-tags"
+      data-tour="page-tags"
+    >
       {tags.map((slug) =>
         editing ? (
           <span

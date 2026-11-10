@@ -47,6 +47,7 @@ export function CustomPromptsPanel() {
     <section
       className="border-b bg-muted/20"
       data-testid="tome-custom-prompts"
+      data-tour="custom-prompts"
     >
       <button
         type="button"

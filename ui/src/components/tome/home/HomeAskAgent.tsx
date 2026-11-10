@@ -46,7 +46,10 @@ export function HomeAskAgent({
   return (
     // Tinted, and the only thing on the page that is: a reader arriving with
     // a question should find the box before they find the cards.
-    <section className="rounded-lg border bg-gradient-to-br from-primary/10 via-card to-card p-4 shadow-sm">
+    <section
+      className="rounded-lg border bg-gradient-to-br from-primary/10 via-card to-card p-4 shadow-sm"
+      data-tour="home-ask"
+    >
       <form
         onSubmit={(event) => {
           event.preventDefault();

@@ -1,16 +1,19 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { findTour } from "@/components/tour/tour-catalog";
 import {
+  requestedTourId,
   samePath,
+  TOUR_START_EVENT,
+  TOUR_STATE_KEY,
   type TourAnchor,
-  type TourStep,
   type TourSubject,
 } from "@/components/tour/tour";
 
@@ -154,6 +157,8 @@ async function resolveSubject(): Promise<TourSubject> {
 }
 
 interface Saved {
+  /** Which of the catalogue's tours this place belongs to. */
+  tour: string;
   index: number;
   /**
    * Null until the lookup finishes.
@@ -166,13 +171,15 @@ interface Saved {
   subject: TourSubject | null;
 }
 
-function readSaved(stateKey: string, length: number): Saved | null {
+function readSaved(): Saved | null {
   try {
-    const raw = window.sessionStorage.getItem(stateKey);
+    const raw = window.sessionStorage.getItem(TOUR_STATE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Saved;
     if (typeof parsed?.index !== "number") return null;
-    if (parsed.index < 0 || parsed.index >= length) return null;
+    const tour = findTour(parsed.tour);
+    if (!tour) return null;
+    if (parsed.index < 0 || parsed.index >= tour.steps.length) return null;
     return parsed;
   } catch {
     // Storage can be unavailable or hold something stale; either way the
@@ -181,22 +188,15 @@ function readSaved(stateKey: string, length: number): Saved | null {
   }
 }
 
-export function TourRunner({
-  tour,
-  stateKey,
-  startEvent,
-  label,
-}: {
-  tour: readonly TourStep[];
-  /** Where this tour's place is kept. See TOUR_STATE_KEYS. */
-  stateKey: string;
-  /** The window event that starts it. */
-  startEvent: string;
-  /** What the card calls itself to a screen reader. */
-  label: string;
-}) {
+export function TourRunner() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  /** Where the reader is, query and all, as a step's route is written. */
+  const location = React.useMemo(() => {
+    const query = searchParams?.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }, [pathname, searchParams]);
   const [state, setState] = React.useState<Saved | null>(null);
   /**
    * A step asked for but not yet shown, because its page is still arriving.
@@ -222,16 +222,27 @@ export function TourRunner({
   /** Set once a step has had long enough to find an anchor. See GRACE_MS. */
   const [graceOver, setGraceOver] = React.useState(false);
 
-  const step = state ? tour[state.index] : undefined;
+  /** The tour being walked, and the step within it. */
+  const tour = findTour(state?.tour);
+  // Memoised because an empty array literal is a new array every render, and
+  // the route lookup below is keyed on it.
+  const steps = React.useMemo(() => tour?.steps ?? [], [tour]);
+  const step = state ? steps[state.index] : undefined;
 
-  // Resume after a navigation, and listen for the start button.
+  // Resume after a navigation, and listen for a request to start one.
   React.useEffect(() => {
-    setState(readSaved(stateKey, tour.length));
+    setState(readSaved());
 
-    const onStart = () => setState({ index: 0, subject: null });
-    window.addEventListener(startEvent, onStart);
-    return () => window.removeEventListener(startEvent, onStart);
-  }, [startEvent, stateKey, tour.length]);
+    const onStart = (event: Event) => {
+      // A tour we do not have is not started at all, rather than started as
+      // whichever one happens to be first.
+      const asked = findTour(requestedTourId(event));
+      if (!asked) return;
+      setState({ tour: asked.id, index: 0, subject: null });
+    };
+    window.addEventListener(TOUR_START_EVENT, onStart);
+    return () => window.removeEventListener(TOUR_START_EVENT, onStart);
+  }, []);
 
   // Find the project the last three steps borrow, in the background. Also
   // covers resuming after a reload, which restores the place but not the
@@ -252,11 +263,11 @@ export function TourRunner({
     setState(null);
     setRect(null);
     try {
-      window.sessionStorage.removeItem(stateKey);
+      window.sessionStorage.removeItem(TOUR_STATE_KEY);
     } catch {
       // Nothing to clean up if storage is unavailable.
     }
-  }, [stateKey]);
+  }, []);
 
   /** Show a step. Only called once its page is on screen. */
   const go = React.useCallback((index: number) => {
@@ -265,13 +276,13 @@ export function TourRunner({
       if (!current) return current;
       const next = { ...current, index };
       try {
-        window.sessionStorage.setItem(stateKey, JSON.stringify(next));
+        window.sessionStorage.setItem(TOUR_STATE_KEY, JSON.stringify(next));
       } catch {
         // The step still changes; only resuming after a reload is lost.
       }
       return next;
     });
-  }, [stateKey]);
+  }, []);
 
   /** Ask for a step. What Back and Next do; the arriving is `go`'s job. */
   const request = React.useCallback((index: number) => setPending(index), []);
@@ -280,11 +291,11 @@ export function TourRunner({
   React.useEffect(() => {
     if (!state) return;
     try {
-      window.sessionStorage.setItem(stateKey, JSON.stringify(state));
+      window.sessionStorage.setItem(TOUR_STATE_KEY, JSON.stringify(state));
     } catch {
       // See `go`.
     }
-  }, [state, stateKey]);
+  }, [state]);
 
   /**
    * Where a step belongs, or null if it cannot be worked out.
@@ -298,18 +309,18 @@ export function TourRunner({
     [state?.subject],
   );
   const routeOf = React.useCallback(
-    (index: number) => tour[index]?.route?.(subjectProbe) ?? null,
-    [subjectProbe, tour],
+    (index: number) => steps[index]?.route?.(subjectProbe) ?? null,
+    [steps, subjectProbe],
   );
 
   /** The step the tour is trying to reach: the asked-for one, or the current. */
   const wantIndex = pending ?? state?.index ?? 0;
   const wantRoute = routeOf(wantIndex);
   /** Whether the page the wanted step needs is the one on screen. */
-  const arrived = !wantRoute || samePath(wantRoute, pathname);
+  const arrived = !wantRoute || samePath(wantRoute, location);
   /** The page the shown step was measured against has gone. */
   const shownRoute = state ? routeOf(state.index) : null;
-  const stale = Boolean(shownRoute && !samePath(shownRoute, pathname));
+  const stale = Boolean(shownRoute && !samePath(shownRoute, location));
 
   // Go where the wanted step lives, and show it only once there. Covers both
   // a Next that crosses pages and resuming on the wrong one after a reload.
@@ -347,7 +358,7 @@ export function TourRunner({
     if (!step) return;
 
     const sync = () => {
-      const own = measure(step.anchor);
+      const own = step.anchor ? measure(step.anchor) : null;
       const next =
         own ?? (step.waitingAnchor ? measure(step.waitingAnchor) : null);
       setWaiting(!own);
@@ -381,7 +392,7 @@ export function TourRunner({
   // they are reading is its own kind of rude.
   const scrolled = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!step || !found || stale) return;
+    if (!step?.anchor || !found || stale) return;
     if (scrolled.current === step.id) return;
     scrolled.current = step.id;
     document
@@ -400,7 +411,7 @@ export function TourRunner({
 
   if (!state || !step) return null;
 
-  const last = state.index === tour.length - 1;
+  const last = state.index === steps.length - 1;
   /** This step wants something of the reader's that could not be supplied. */
   const unsupplied = step.route !== undefined && routeOf(state.index) === null;
   /** Still being looked up, as against looked up and not there. */
@@ -425,11 +436,11 @@ export function TourRunner({
   const card = (
     <div
       role="dialog"
-      aria-label={label}
+      aria-label={`${tour?.name ?? "TOME"} walkthrough`}
       className="w-80 space-y-3 p-4"
     >
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Step {state.index + 1} of {tour.length}
+        Step {state.index + 1} of {steps.length}
       </p>
       <div className="space-y-1.5">
         <p className="text-sm font-semibold">{step.title}</p>
@@ -482,8 +493,14 @@ export function TourRunner({
    * window rather than silently skipped. Withheld until the grace period is
    * up and the page has settled, so arriving somewhere never flashes it.
    */
+  // A step with no anchor is not waiting for one: it explains an idea
+  // rather than a control, and is shown in the middle of the window at
+  // once instead of after the grace period a missing anchor is given.
   const homeless =
-    unreachable || searching || (!found && graceOver && !navigating && !stale);
+    !step.anchor ||
+    unreachable ||
+    searching ||
+    (!found && graceOver && !navigating && !stale);
   if (homeless) {
     return (
       <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center">

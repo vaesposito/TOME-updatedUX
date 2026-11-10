@@ -28,12 +28,8 @@ jest.mock("@/components/layout/LiveStreamBanner", () => ({
   LiveStreamBanner: () => <div data-testid="live-stream-banner" />,
 }));
 
-jest.mock("@/components/tour/NotificationTour", () => ({
-  NotificationTour: () => <div data-testid="notification-tour" />,
-}));
-
-jest.mock("@/components/tour/FeatureTour", () => ({
-  FeatureTour: () => <div data-testid="feature-tour" />,
+jest.mock("@/components/tour/TourRunner", () => ({
+  TourRunner: () => <div data-testid="tour-runner" />,
 }));
 
 jest.mock("@/hooks/use-user-init", () => ({

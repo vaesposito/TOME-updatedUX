@@ -28,6 +28,8 @@ interface Props<TMode extends string> {
   disabled?: boolean;
   ariaLabel?: string;
   testId?: string;
+  /** `data-tour` for a walkthrough that stops here. */
+  anchor?: string;
 }
 
 /** Shared segmented control for Markdown source, rich, split, and preview modes. */
@@ -38,6 +40,7 @@ export function MarkdownEditorModeToggle<TMode extends string>({
   disabled = false,
   ariaLabel = "Editor view mode",
   testId,
+  anchor,
 }: Props<TMode>) {
   return (
     <div
@@ -45,6 +48,7 @@ export function MarkdownEditorModeToggle<TMode extends string>({
       role="group"
       aria-label={ariaLabel}
       data-testid={testId}
+      data-tour={anchor}
     >
       {options.map((option) => {
         const Icon = option.icon;

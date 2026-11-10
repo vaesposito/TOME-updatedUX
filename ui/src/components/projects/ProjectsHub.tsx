@@ -20,8 +20,7 @@ import {
 import { SpaceCreationFlow } from "@/components/projects/SpaceCreationFlow";
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { OnboardingModal } from "@/components/tome/OnboardingModal";
-import { FEATURE_TOUR_START_EVENT } from "@/components/tour/feature-tour";
-import { TourStartButton } from "@/components/tour/TourStartButton";
+import { TourMenu } from "@/components/tour/TourStartButton";
 import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBanner";
 import { AskTomePlaceholder } from "@/components/tome/AskTomePlaceholder";
 import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
@@ -872,13 +871,12 @@ export function ProjectsHub() {
                   whole of TOME, not to the list of projects, and here it is
                   offered from every tab instead of only one. */}
               <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
-              {/* Offered where a newcomer arrives, in the band that
-                  greets them. The tour opens on the catalogue, so the tab
-                  is set before it starts rather than leaving its first
-                  step pointing at a panel that is not showing. */}
-              <TourStartButton
-                label="Take a tour"
-                event={FEATURE_TOUR_START_EVENT}
+              {/* Offered where a newcomer arrives, in the band that greets
+                  them, and asking which walkthrough rather than assuming.
+                  Every tour's first step is on the catalogue, so the tab is
+                  set before one starts rather than leaving that step
+                  pointing at a panel which is not showing. */}
+              <TourMenu
                 className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 font-medium text-primary hover:bg-primary/10 hover:text-primary"
                 onStart={() => setTab("projects")}
               />
@@ -903,13 +901,26 @@ export function ProjectsHub() {
           hidden instead: it carries a search, a grouping and a reorder mode a
           reader has set, over three requests, and dropping that to look at
           the digest for a moment would be a poor trade. */}
-      {tab === "overview" && <WorkspaceOverview />}
-      {tab === "digest" && <WorkspaceDigest />}
+      {/* Wrapped only so a walkthrough has something to point at: each of
+          these is a reading in its own right, and a tour that stopped at the
+          tab bar would leave the reader to find out what they hold. */}
+      {tab === "overview" && (
+        <div data-tour="hub-overview">
+          <WorkspaceOverview />
+        </div>
+      )}
+      {tab === "digest" && (
+        <div data-tour="hub-digest">
+          <WorkspaceDigest />
+        </div>
+      )}
       {/* The subjects the hub already loaded, so moving between the two axes
           costs nothing. Not the catalogue's projects read another way: a
           subject is its own entity and appears here and nowhere else. */}
       {tab === "functions" && (
-        <FunctionsView subjects={subjects} onSubjectCreated={() => void load()} />
+        <div data-tour="hub-functions">
+          <FunctionsView subjects={subjects} onSubjectCreated={() => void load()} />
+        </div>
       )}
 
       <section className={cn("space-y-6", tab !== "projects" && "hidden")}>

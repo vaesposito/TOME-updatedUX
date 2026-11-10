@@ -462,7 +462,7 @@ export function WebexMeetingSeriesSettings({
   };
 
   return (
-    <div className="rounded-xl border border-border/60 p-4">
+    <div className="rounded-xl border border-border/60 p-4" data-tour="webex-settings">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-2 text-sm font-medium">

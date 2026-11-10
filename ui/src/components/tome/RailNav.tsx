@@ -69,6 +69,10 @@ export function NavSection({
       <div
         className={cn(
           "flex w-full items-center rounded-md pr-2 text-sm font-medium transition-colors hover:bg-muted",
+          // Lighter while it holds nothing, on the same terms as the rows
+          // under it. A connected source with nothing read from it yet is
+          // still a row that leads nowhere today, and should look like one.
+          empty && "text-muted-foreground/60",
           active && "bg-muted text-primary",
         )}
       >

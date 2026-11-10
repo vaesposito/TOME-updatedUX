@@ -393,4 +393,39 @@ describe("NavItem", () => {
     expect(nowhere?.className).toContain("text-muted-foreground/60");
     expect(filled?.className).not.toContain("text-muted-foreground/60");
   });
+  it("lightens a section holding nothing, such as a source with nothing read from it", () => {
+    render(
+      <>
+        <NavSection
+          icon={<span />}
+          label="Confluence"
+          active={false}
+          expanded={false}
+          onToggle={jest.fn()}
+          onClick={jest.fn()}
+          controlsId="confluence"
+          count={0}
+        >
+          <p>nothing</p>
+        </NavSection>
+        <NavSection
+          icon={<span />}
+          label="GitHub"
+          active={false}
+          expanded={false}
+          onToggle={jest.fn()}
+          onClick={jest.fn()}
+          controlsId="github"
+          count={4}
+        >
+          <p>something</p>
+        </NavSection>
+      </>,
+    );
+
+    const row = (name: string) =>
+      screen.getByText(name).closest("div[class*='rounded-md']")?.className ?? "";
+    expect(row("Confluence")).toContain("text-muted-foreground/60");
+    expect(row("GitHub")).not.toContain("text-muted-foreground/60");
+  });
 });

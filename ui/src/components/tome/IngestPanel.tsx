@@ -47,6 +47,7 @@ import {
   myAgentConnectorOption,
   normalizeMyAgentConnectors,
 } from "@/lib/projects/myagent-source";
+import { ingestEndpoint, isRunInFlight } from "@/lib/tome/ingest-run";
 import { preflightState, type PreflightSourceResult } from "@/lib/tome/preflight";
 import { sharePointSourceKey } from "@/lib/projects/sharepoint-source";
 import { describeRelativeTime, nextCronRun } from "@/lib/tome/auto-ingest/schedule-presets";
@@ -645,9 +646,7 @@ export function IngestPanel({
 
   // ── Start ingest ───────────────────────────────────────────────────────────
 
-  const activeRun = (runs ?? []).find(
-    (r) => r.status === "running" || r.status === "queued",
-  );
+  const activeRun = (runs ?? []).find((r) => isRunInFlight(r.status));
   const inProgress = Boolean(activeRun);
   const reviewRun = (runs ?? []).find((r) => r.status === "awaiting_review");
   const [draftPaths, setDraftPaths] = useState<string[] | null>(null);
@@ -695,9 +694,7 @@ export function IngestPanel({
     setStarting(true);
     setError(null);
     const selectedList = (meetings ?? []).filter((m) => selectedMeetings.has(m.id));
-    // BHAGs/Areas synthesize tagged children plus direct sources via
-    // /synthesize; regular projects pull direct sources via /reingest.
-    const endpoint = isSynthesized ? "synthesize" : "reingest";
+    const endpoint = ingestEndpoint(isSynthesized);
     // Quick edit only applies to the plain /reingest path — a targeted
     // point-edit, not a roll-up synthesis.
     const mode = !isSynthesized && action === "quick" ? "quick" : undefined;

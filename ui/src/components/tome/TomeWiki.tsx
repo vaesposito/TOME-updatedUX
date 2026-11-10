@@ -39,6 +39,7 @@ import {
   Newspaper,
   PanelLeftClose,
   PanelLeftOpen,
+  Play,
   Plus,
   RefreshCw,
   NotebookPen,
@@ -118,9 +119,14 @@ import { IngestRunView } from "@/components/tome/IngestRunView";
 import { DraftReviewView } from "@/components/tome/DraftReviewView";
 import { EngagementPanel } from "@/components/tome/EngagementPanel";
 import { PageHistoryView } from "@/components/tome/PageHistoryView";
+import {
+  inFlightLabel,
+  ingestEndpoint,
+  isRunInFlight,
+  type IngestRunStatus,
+} from "@/lib/tome/ingest-run";
 import { pageDisplayName, renamedPagePath } from "@/lib/tome/page-names";
 import { Breadcrumb, type Crumb } from "@/components/tome/Breadcrumb";
-import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { FollowMenu } from "@/components/tome/FollowMenu";
 import { isTourRunning } from "@/components/tour/notification-tour";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
@@ -590,6 +596,11 @@ export function TomeWiki({ slug }: { slug: string }) {
   >(null);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [savingRename, setSavingRename] = useState(false);
+  /** The run this space has going, if any, for the header's own sync button. */
+  const [inFlightRun, setInFlightRun] = useState<
+    { id: string; status: IngestRunStatus } | null
+  >(null);
+  const [startingSync, setStartingSync] = useState(false);
   const [deletingPage, setDeletingPage] = useState(false);
   const [folderPendingDelete, setFolderPendingDelete] = useState<{
     id: string;
@@ -1474,6 +1485,57 @@ export function TomeWiki({ slug }: { slug: string }) {
     [bulkBusy, checkedNodes, clearChecked, load, slug],
   );
 
+  /**
+   * Whether this space has a run going, polled while someone is looking.
+   *
+   * The header offers to start one, so it has to know not to: a second run
+   * asked for while the first is still going is a question, not an action.
+   */
+  const pollInFlightRun = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tome/projects/${slug}/ingests`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const runs: { id: string; status: IngestRunStatus }[] = json?.data?.runs ?? [];
+      setInFlightRun(runs.find((run) => isRunInFlight(run.status)) ?? null);
+    } catch {
+      // The header's own state. Nothing else waits on it, so a failed poll
+      // leaves the last answer standing rather than claiming anything.
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    void pollInFlightRun();
+    const timer = setInterval(pollInFlightRun, 5000);
+    return () => clearInterval(timer);
+  }, [canEdit, pollInFlightRun]);
+
+  /** Bring the space up to date the ordinary way, from its header. */
+  const syncNow = useCallback(async () => {
+    setStartingSync(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/tome/projects/${slug}/${ingestEndpoint(isSynthesized)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `sync failed (${res.status})`);
+      }
+      await pollInFlightRun();
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setStartingSync(false);
+    }
+  }, [slug, isSynthesized, pollInFlightRun]);
+
   // Rename a page: write its markdown to the new path, then tombstone the old
   // one (there's no move endpoint). History starts fresh on the new path.
   const renamePage = useCallback(
@@ -2331,7 +2393,34 @@ export function TomeWiki({ slug }: { slug: string }) {
                 people reach for. Full screen went with it: a reader who
                 wants the chrome gone has the browser's own. */}
             {!navV2 && <FollowMenu slug={slug} />}
-            <McpConnectDialog />
+            {/* What the header offers about the space as a whole: bring it up
+                to date. Absent rather than disabled for a reader who cannot
+                start a run — an action nobody here can take is not an action.
+                Connecting over MCP is not per-space and is offered once, in
+                the catalogue header. */}
+            {canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-auto gap-1.5 px-2 py-1"
+                onClick={() => void syncNow()}
+                disabled={startingSync || inFlightRun !== null}
+                title={
+                  inFlightRun
+                    ? "This space is already being brought up to date"
+                    : isSynthesized
+                      ? "Synthesize this space from the spaces tagged into it"
+                      : "Read this space's sources and write what changed"
+                }
+              >
+                {inFlightRun || startingSync ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+                {inFlightRun ? inFlightLabel(inFlightRun.status) : "Sync now"}
+              </Button>
+            )}
             {!navV2 && (
               <Button
                 variant="outline"

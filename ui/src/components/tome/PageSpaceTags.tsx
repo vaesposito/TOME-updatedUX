@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Hash, Plus, X } from "lucide-react";
+import { Hash, Link2, X } from "lucide-react";
 import * as React from "react";
 
 import type { TaggableSpace } from "@/components/tome/SpaceTagPicker";
@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { spaceTagHref } from "@/lib/tome/space-tags";
 
 /**
- * Which spaces this whole page belongs to.
+ * Which spaces this whole page is connected to.
  *
  * The easy granularity, and the durable one: a whole-page tag is frontmatter,
  * so it is independent of the prose and is the only form the server can carry
@@ -71,7 +71,7 @@ export function PageSpaceTags({
               type="button"
               disabled={disabled}
               onClick={() => onChange(tags.filter((kept) => kept !== slug))}
-              aria-label={`Remove the ${titleOf(slug)} tag`}
+              aria-label={`Disconnect this page from ${titleOf(slug)}`}
               className="rounded-full p-0.5 hover:bg-muted hover:text-foreground disabled:opacity-50"
             >
               <X className="h-2.5 w-2.5" aria-hidden="true" />
@@ -81,7 +81,7 @@ export function PageSpaceTags({
           <Link
             key={slug}
             href={spaceTagHref(slug)}
-            title={`Tagged with ${titleOf(slug)} — this page is in its related content`}
+            title={`Connected to ${titleOf(slug)} — this page shows in its related content`}
             className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Hash className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
@@ -104,20 +104,21 @@ export function PageSpaceTags({
               disabled={disabled}
               className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
             >
-              <Plus className="h-2.5 w-2.5" aria-hidden="true" />
-              Tag space
+              <Link2 className="h-2.5 w-2.5" aria-hidden="true" />
+              Connect to a space
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-72 p-2">
             <p className="px-1 pb-2 text-xs text-muted-foreground">
-              Put this page in a space&apos;s related content and its agent knowledge.
+              This page will show in the space&apos;s related content, and its
+              agent can read it.
             </p>
             <input
               autoFocus
               value={term}
               onChange={(event) => setTerm(event.target.value)}
               placeholder="Search spaces…"
-              aria-label="Search spaces to tag this page with"
+              aria-label="Search spaces to connect this page to"
               className="mb-1 w-full rounded-md border border-input bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
             />
             {choices.length === 0 ? (

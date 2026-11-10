@@ -571,7 +571,7 @@ describe("WikiPageView", () => {
 
     await openEditor();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Tag space/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Connect to a space/ }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Other Space/ }));
@@ -598,7 +598,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: /Tag space/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Connect to a space/ })).toBeNull();
     expect(screen.getByTestId("tome-page-space-tags")).toBeInTheDocument();
   });
 

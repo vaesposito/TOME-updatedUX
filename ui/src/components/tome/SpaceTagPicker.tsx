@@ -108,7 +108,7 @@ export function SpaceTagPicker({
   return (
     <div
       role="dialog"
-      aria-label="Tag this content with a space"
+      aria-label="Connect this content to a space"
       style={anchorStyle(query)}
       className="fixed z-50 overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md"
       data-testid="tome-space-tag-picker"
@@ -116,7 +116,7 @@ export function SpaceTagPicker({
       <div className="py-1">
         <div className="flex items-center gap-2 px-3 pb-1 pt-1 text-xs text-muted-foreground">
           <Hash className="h-3.5 w-3.5 shrink-0 opacity-50" aria-hidden="true" />
-          <span className="truncate">{term ? `#${term}` : "Tag a space…"}</span>
+          <span className="truncate">{term ? `#${term}` : "Connect to a space…"}</span>
         </div>
         {results.length === 0 ? (
           <p className="px-3 py-2 text-xs text-muted-foreground">No space matches.</p>

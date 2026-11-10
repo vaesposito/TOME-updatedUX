@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, CircleAlert, CornerDownRight } from "lucide-react";
+import { Activity, CircleAlert, CornerDownRight, History } from "lucide-react";
 import * as React from "react";
 
 import { MarkdownRenderer } from "@/components/shared/timeline/MarkdownRenderer";
@@ -10,19 +10,20 @@ import {
   HomeSkeleton,
   homeAction,
 } from "@/components/tome/home/HomeCard";
-import {
-  parseStandup,
-  summarizeStandupHeadline,
-} from "@/lib/tome/standup";
+import { parseStandup, plainStandupHeadline } from "@/lib/tome/standup";
 
 /**
  * How the project is doing, in its own words.
  *
  * The standup page is rewritten on every ingest and already answers the
- * question a home page exists to answer, so this shows its headline and the
- * two sections a reader acts on — what is in the way, and what is next.
- * Progress is left to the standup page itself: it is the long part, and a
- * reader who wants the history is one click from it.
+ * question a home page exists to answer, so this is the whole of the recap
+ * it writes: the headline, what has happened since last time, what is in the
+ * way, and what is next.
+ *
+ * Whole, and not abridged. The headline is shown as written rather than cut
+ * to its first sentence, and Progress — which used to be left to the standup
+ * page on the grounds that it is the long part — is here, because a recap a
+ * reader has to click through to finish is a recap they do not read.
  */
 export function HomeGlance({
   markdown,
@@ -66,10 +67,13 @@ export function HomeGlance({
     () => (markdown ? parseStandup(markdown) : null),
     [markdown],
   );
-  const headline = standup ? summarizeStandupHeadline(standup.headline) : "";
+  const headline = standup ? plainStandupHeadline(standup.headline) : "";
+  const progress = standup?.progress?.trim() ?? "";
   const blockers = standup?.blockers?.trim() ?? "";
   const upNext = standup?.upNext?.trim() ?? "";
-  const anything = Boolean(headline || blockers || upNext || standup?.fallback);
+  const anything = Boolean(
+    headline || progress || blockers || upNext || standup?.fallback,
+  );
 
   return (
     <HomeCard
@@ -110,6 +114,19 @@ export function HomeGlance({
             )
           )}
 
+          {progress && (
+            <GlanceSection
+              title="Progress"
+              icon={
+                <History
+                  className="h-3.5 w-3.5 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              }
+              content={progress}
+              onNavigate={onNavigate}
+            />
+          )}
           {blockers && (
             <GlanceSection
               title="Blockers"

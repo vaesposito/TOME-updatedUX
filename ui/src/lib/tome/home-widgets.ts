@@ -24,9 +24,12 @@ import type { ProjectType } from "@/types/projects";
 export type HomeScope = ProjectType | "workspace";
 
 export type TomeHomeWidgetId =
+  | "about"
   | "ask"
   | "attention"
   | "tagged"
+  | "changes"
+  | "decisions"
   | "updates"
   | "children"
   | "partof"
@@ -72,9 +75,19 @@ export interface TomeHomeWidget {
  * than at the end of the list.
  */
 export const TOME_HOME_WIDGETS: readonly TomeHomeWidget[] = [
+  // First, because it answers "what is this" and every other card assumes a
+  // reader who already knows. Whole-width so a description written as prose
+  // is read as prose rather than down a column.
+  { id: "about", label: "About", width: 3 },
   { id: "ask", label: "Ask the agent", width: 3 },
   { id: "attention", label: "Needs attention", width: 2, workspace: true },
   { id: "tagged", label: "Tagged for you", width: 1, workspace: true },
+  // The space's own record and the questions it is still carrying, as one
+  // row. Neither has an answer with no single space in view: there is no
+  // workspace-wide feed, and decisions roll up from a space, not from all of
+  // them.
+  { id: "changes", label: "Changed this week", width: 2 },
+  { id: "decisions", label: "Open decisions", width: 1 },
   { id: "updates", label: "Latest updates", width: 3, workspace: true },
   {
     id: "children",

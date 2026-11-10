@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Database } from "lucide-react";
+import { ArrowUpRight, Clock, Database, RefreshCw } from "lucide-react";
 import * as React from "react";
 
 import { sourcesFromProject } from "@/components/tome/IngestPanel";
@@ -31,6 +31,14 @@ import { formatRelativeTimeCompact } from "@/lib/utils";
  */
 
 type SourceRow = ReturnType<typeof sourcesFromProject>[number];
+
+/** Whether a space's sources have actually been read, and when they will be again. */
+export interface SourceReading {
+  /** The newest run, `null` where none has ever run, `undefined` while loading. */
+  lastRun?: { at: string; status: string } | null;
+  /** The schedule in plain words, or `null` where nothing is scheduled. */
+  schedule?: string | null;
+}
 
 const SHOWN_PER_PROVIDER = 3;
 
@@ -78,6 +86,7 @@ function mergeSources(groups: readonly SourceRow[][]): SourceRow[] {
 export function HomeSources({
   sources,
   rollup,
+  reading,
   ingestHref,
   onOpenIngest,
   actionLabel,
@@ -94,6 +103,14 @@ export function HomeSources({
    * `loading` draws for the space's own record.
    */
   rollup?: readonly ChildRow[] | null;
+  /**
+   * When this space last read its sources, and when it will read them next.
+   *
+   * A list of sources says where the knowledge could come from; this says
+   * whether it has. Omitted where there is no single space to ask — the
+   * roll-up answers the same question from the rows below instead.
+   */
+  reading?: SourceReading;
   ingestHref: string;
   onOpenIngest?: () => void;
   /**
@@ -221,6 +238,28 @@ export function HomeSources({
             From {places} {places === 1 ? "space" : "spaces"}
             {lastIngest ? `, last ingest ${formatRelativeTimeCompact(lastIngest)}` : ""}.
           </p>
+        ) : null}
+        {/* The single space's version of the same two facts, and the only
+            place on this page that says whether the list above is current. */}
+        {reading ? (
+          <div className="mt-2.5 flex shrink-0 flex-col gap-1 border-t pt-2 text-[11px] text-muted-foreground">
+            <p className="flex items-center gap-1.5">
+              <RefreshCw className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                {reading.lastRun === undefined
+                  ? "Checking for a recent ingest…"
+                  : reading.lastRun === null
+                    ? "No ingest has run yet"
+                    : `Last ingest ${formatRelativeTimeCompact(reading.lastRun.at)}, ${reading.lastRun.status.replace(/_/g, " ")}`}
+              </span>
+            </p>
+            <p className="flex items-center gap-1.5">
+              <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                {reading.schedule ?? "Not scheduled"}
+              </span>
+            </p>
+          </div>
         ) : null}
         </>
       )}

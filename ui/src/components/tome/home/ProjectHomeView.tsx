@@ -17,7 +17,9 @@ import {
 import { AtSign, CircleAlert, Newspaper, WifiOff } from "lucide-react";
 import * as React from "react";
 
+import { HomeAbout } from "@/components/tome/home/HomeAbout";
 import { HomeAskAgent } from "@/components/tome/home/HomeAskAgent";
+import { HomeChanges } from "@/components/tome/home/HomeChanges";
 import {
   HomeChildren,
   type ChildrenResponse,
@@ -28,6 +30,7 @@ import {
   HomeEmpty,
   HomeSkeleton,
 } from "@/components/tome/home/HomeCard";
+import { HomeDecisions } from "@/components/tome/home/HomeDecisions";
 import { HomeGlance } from "@/components/tome/home/HomeGlance";
 import { HomeKpis } from "@/components/tome/home/HomeKpis";
 import { HomeMilestones } from "@/components/tome/home/HomeMilestones";
@@ -36,12 +39,19 @@ import {
   HomePartOf,
   type AncestorRow,
 } from "@/components/tome/home/HomePartOf";
-import { HomeSources } from "@/components/tome/home/HomeSources";
+import {
+  HomeSources,
+  type SourceReading,
+} from "@/components/tome/home/HomeSources";
 import { HomeTeam } from "@/components/tome/home/HomeTeam";
 import { HomeWidgetFrame } from "@/components/tome/home/HomeWidgetFrame";
 import { splitHomeFeeds } from "@/components/tome/home/home-feeds";
 import { PanelHeader } from "@/components/tome/PanelHeader";
 import { computeReorder } from "@/lib/reorder";
+import {
+  cronToSchedule,
+  describeSchedule,
+} from "@/lib/tome/auto-ingest/schedule-presets";
 import {
   TOME_HOME_WIDGETS,
   isCustomized,
@@ -73,9 +83,11 @@ import type { TomeSummary, TomeSummaryItem } from "@/types/tome-summary";
  * That is the order it ships in; a reader can arrange it otherwise, and what
  * they choose follows them into every space.
  *
- * Most of it costs nothing to show: the curated pages are already loaded for
+ * Much of it costs nothing to show: the curated pages are already loaded for
  * the wiki beside it, and the notification cards all come out of the one
- * summary read the old digest made. Only the roster is a request of its own.
+ * summary read the old digest made. The roster, the week's changes, the open
+ * decisions and the last ingest are each a request of their own, because each
+ * is a different record and none of them is in the digest.
  */
 
 /** Rows per notification card. Enough to be useful, short enough to scan. */
@@ -99,20 +111,31 @@ const CHARTER_PAGE = "charter.md";
 export function ProjectHomeView({
   slug,
   title,
+  description,
   kind,
   pages,
   sources,
+  autoIngest,
   ancestors,
   onAsk,
   onOpenPage,
   onOpenStandup,
   onOpenSettings,
   onOpenIngest,
+  onOpenFeed,
   onNavigate,
 }: {
   slug: string;
   /** The space's own name, used where the page addresses the reader. */
   title: string;
+  /**
+   * The space's own description, in full.
+   *
+   * It used to sit clipped under the title on every view with the rest of it
+   * behind a hover. `undefined` while the record is still on its way, which
+   * is not the same as a space that has never been described.
+   */
+  description?: string | null;
   /**
    * What kind of space this is.
    *
@@ -128,6 +151,8 @@ export function ProjectHomeView({
   /** Every page's markdown, as the wiki beside this already holds it. */
   pages?: Record<string, string>;
   sources: Record<string, unknown> | null;
+  /** The ingest schedule, as the space's record stores it. */
+  autoIngest?: { enabled?: boolean; cron?: string } | null;
   /**
    * The spaces above this one, furthest first, as the breadcrumb reads them.
    *
@@ -141,6 +166,7 @@ export function ProjectHomeView({
   onOpenStandup?: () => void;
   onOpenSettings?: () => void;
   onOpenIngest?: () => void;
+  onOpenFeed?: () => void;
   onNavigate?: (href: string) => void;
 }) {
   const [summary, setSummary] = React.useState<TomeSummary | null>(null);
@@ -211,6 +237,7 @@ export function ProjectHomeView({
   const inboxHref = `/notifications?entity=${encodeURIComponent(slug)}&tab=all`;
   const ingestHref = `/projects/${encodeURIComponent(slug)}/tome/ingest`;
   const settingsHref = `/projects/${encodeURIComponent(slug)}/tome/settings`;
+  const feedHref = `/projects/${encodeURIComponent(slug)}/tome/feed`;
 
   /**
    * What the three notification cards show before their own answer is in.
@@ -263,6 +290,59 @@ export function ProjectHomeView({
     };
   }, [slug, container]);
 
+  /**
+   * The newest ingest run, which is what turns the list of sources into an
+   * answer about whether the wiki beside it is current.
+   *
+   * `undefined` while the request is out, `null` once it is in and there has
+   * never been a run — a card that cannot tell those apart tells a reader
+   * their space has never been read while it is still finding out.
+   */
+  const [lastRun, setLastRun] = React.useState<
+    { at: string; status: string } | null | undefined
+  >(undefined);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLastRun(undefined);
+    fetch(`/api/tome/projects/${encodeURIComponent(slug)}/ingests`, {
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((body) => {
+        const runs = ((body?.data ?? body)?.runs ?? []) as {
+          started_at: string;
+          status: string;
+        }[];
+        // The route sorts newest first, so the run to report is the first.
+        const newest = runs[0];
+        if (!cancelled) {
+          setLastRun(newest ? { at: newest.started_at, status: newest.status } : null);
+        }
+      })
+      .catch(() => {
+        // A run list that did not come back is one line of a card, not a
+        // page: Sources keeps waiting rather than claiming nothing has run.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  /**
+   * When this space reads its sources next, in plain words.
+   *
+   * Built from the same cron the settings panel edits, through the same
+   * reader, so the two can never describe one schedule differently.
+   */
+  const schedule = React.useMemo(() => {
+    const cron = autoIngest?.cron?.trim();
+    if (!autoIngest?.enabled || !cron) return null;
+    return describeSchedule(cronToSchedule(cron));
+  }, [autoIngest?.enabled, autoIngest?.cron]);
+
+  const reading: SourceReading = { lastRun, schedule };
+
   /** `undefined` where there is nothing below to roll up, `null` until it is in. */
   const rollup = container ? (children?.children ?? null) : undefined;
   /** The wiki's pages, which three of the cards are entirely made of. */
@@ -310,6 +390,16 @@ export function ProjectHomeView({
    * deciding it once per card.
    */
   const cards: Record<TomeHomeWidgetId, React.ReactNode> = {
+    about: (
+      <HomeAbout
+        description={description ?? null}
+        // The description arrives with the kind, from the same record.
+        loading={metaLoading || description === undefined}
+        settingsHref={settingsHref}
+        onOpenSettings={onOpenSettings}
+      />
+    ),
+
     ask: <HomeAskAgent title={title} onAsk={onAsk} />,
 
     attention: (
@@ -364,6 +454,27 @@ export function ProjectHomeView({
         />
         <FeedScale items={feeds.tagged} container={container} />
       </HomeCard>
+    ),
+
+    changes: (
+      <HomeChanges
+        slug={slug}
+        feedHref={feedHref}
+        onOpenFeed={onOpenFeed}
+        ingestHref={ingestHref}
+        onOpenIngest={onOpenIngest}
+        container={container}
+      />
+    ),
+
+    decisions: (
+      <HomeDecisions
+        slug={slug}
+        ingestHref={ingestHref}
+        onOpenIngest={onOpenIngest}
+        onOpenPage={onOpenPage}
+        container={container}
+      />
     ),
 
     updates: (
@@ -461,6 +572,9 @@ export function ProjectHomeView({
       <HomeSources
         sources={sources}
         rollup={rollup}
+        // Only where there is one space to ask: a roll-up answers the same
+        // question from the rows below it.
+        reading={container ? undefined : reading}
         loading={metaLoading}
         container={container}
         ingestHref={ingestHref}

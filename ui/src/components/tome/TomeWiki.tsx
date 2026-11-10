@@ -98,10 +98,6 @@ import { groupBySource, sourceById } from "@/lib/tome/sources";
 import { isReferencePath, splitWikiTree } from "@/lib/tome/wiki-tree-split";
 import { usePersistentDisclosure } from "@/lib/tome/use-persistent-disclosure";
 import { useFeatureFlagStore } from "@/store/feature-flag-store";
-import {
-  ProjectDescription,
-  ProjectMetadataInfo,
-} from "@/components/tome/ProjectDescription";
 import { OnboardingModal } from "@/components/tome/OnboardingModal";
 import {
   WikiSidebar,
@@ -479,6 +475,8 @@ export function TomeWiki({ slug }: { slug: string }) {
     dataSteward: string | null;
     /** Kept whole for Home's Sources card, which reads it as Ingest does. */
     sources: Record<string, unknown> | null;
+    /** The schedule, for the line on Home that says when sources are read. */
+    autoIngest: { enabled?: boolean; cron?: string } | null;
   }>({
     description: null,
     status: null,
@@ -486,6 +484,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     tags: [],
     dataSteward: null,
     sources: null,
+    autoIngest: null,
   });
   const [projectMetaLoading, setProjectMetaLoading] = useState(true);
   const [reportVisibility, setReportVisibility] = useState<TomeReportVisibility>(
@@ -751,6 +750,8 @@ export function TomeWiki({ slug }: { slug: string }) {
       tags: Array.isArray(p.tags) ? p.tags.filter((t): t is string => typeof t === "string") : [],
       dataSteward: dataStewardLabel(p.data_steward) || null,
       sources: (p.sources as Record<string, unknown> | undefined) ?? null,
+      autoIngest:
+        (p.autoIngest as { enabled?: boolean; cron?: string } | undefined) ?? null,
     });
   }, []);
 
@@ -2358,32 +2359,18 @@ export function TomeWiki({ slug }: { slug: string }) {
             />
           </HeaderBreadcrumbPortal>
           <div className="min-w-0 flex-1">
+            {/* The title, and nothing else. The description and the metadata
+                tooltip that used to flank it both said their piece through a
+                hover, which is no way to read a sentence; Overview carries
+                them in full instead. */}
             {projectMetaLoading ? (
-              <div className="flex flex-col gap-2" data-testid="skeleton">
+              <div data-testid="skeleton">
                 <div className="h-5 w-48 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-96 max-w-full animate-pulse rounded bg-muted" />
-                <div className="flex gap-1.5">
-                  <div className="h-5 w-16 animate-pulse rounded-full bg-muted" />
-                  <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
-                  <div className="h-5 w-14 animate-pulse rounded-full bg-muted" />
-                </div>
               </div>
             ) : (
-              <>
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <h1 className="truncate text-lg font-semibold leading-tight">
-                    {projectTitle ?? slug}
-                  </h1>
-                  <ProjectMetadataInfo
-                    teamName={projectMeta.teamName}
-                    dataSteward={projectMeta.dataSteward}
-                    tags={projectMeta.tags}
-                  />
-                </div>
-                {projectMeta.description && (
-                  <ProjectDescription description={projectMeta.description} />
-                )}
-              </>
+              <h1 className="truncate text-lg font-semibold leading-tight">
+                {projectTitle ?? slug}
+              </h1>
             )}
           </div>
           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -3008,6 +2995,12 @@ export function TomeWiki({ slug }: { slug: string }) {
                 <ProjectHomeView
                   slug={slug}
                   title={projectTitle ?? slug}
+                  // Whole, where the header used to show one clipped line of
+                  // it. Left undefined until the record is in, so the card
+                  // waits rather than reporting an undescribed space.
+                  description={
+                    projectMetaLoading ? undefined : projectMeta.description
+                  }
                   // Left undefined until the entity's own record is in, so
                   // the cards whose wording depends on the kind wait rather
                   // than telling the reader of a BHAG to connect a
@@ -3017,6 +3010,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                   // the cards reading the curated ones cost nothing.
                   pages={data?.pages}
                   sources={projectMeta.sources}
+                  autoIngest={projectMeta.autoIngest}
                   // The same trail the breadcrumb above walks, left undefined
                   // until the tags it is read from are in.
                   ancestors={projectMetaLoading ? undefined : ancestors}
@@ -3030,6 +3024,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                   }
                   onOpenSettings={() => navigate({ kind: "settings" })}
                   onOpenIngest={() => navigate({ kind: "ingest" })}
+                  onOpenFeed={() => navigate({ kind: "feed" })}
                   onNavigate={(path) => navigate({ kind: "page", path })}
                 />
               </ScrollArea>

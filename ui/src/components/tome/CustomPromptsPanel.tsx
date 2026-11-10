@@ -75,54 +75,55 @@ export function CustomPromptsPanel() {
       </button>
 
       {expanded && (
-        <div
-          id={bodyId}
-          // Capped and scrolled: this opens above the page, and must never
-          // leave the writing area underneath it with no room left.
-          className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto px-5 pb-4"
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={contentId}>Content prompt</Label>
-            <Textarea
-              id={contentId}
-              rows={4}
-              value={contentPrompt}
-              onChange={(event) => setContentPrompt(event.target.value)}
-              placeholder="Describe how the page should be structured and what content it should include."
-            />
-          </div>
+        <div id={bodyId}>
+          {/* Only the fields scroll. The panel is capped because it opens
+              above the page and must never leave the writing area with no
+              room left, but the cap used to fall across Save — the one
+              control the panel exists to reach. */}
+          <div className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto px-5 pb-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={contentId}>Content prompt</Label>
+              <Textarea
+                id={contentId}
+                rows={4}
+                value={contentPrompt}
+                onChange={(event) => setContentPrompt(event.target.value)}
+                placeholder="Describe how the page should be structured and what content it should include."
+              />
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={sourceId}>Source prompt</Label>
-            <Textarea
-              id={sourceId}
-              rows={5}
-              value={sourcePrompt}
-              onChange={(event) => setSourcePrompt(event.target.value)}
-              placeholder="Specify which sources the agent should use to retrieve the information required to populate the desired structure."
-              aria-invalid={unconfiguredSource}
-              aria-describedby={unconfiguredSource ? `${sourceId}-error` : undefined}
-            />
-            {unconfiguredSource && (
-              <p
-                id={`${sourceId}-error`}
-                className="text-xs text-destructive"
-                data-testid="tome-custom-prompts-source-error"
-              >
-                The requested source is not configured. Please configure it{" "}
-                <a
-                  href="../sources"
-                  className="inline-flex items-center gap-0.5 underline underline-offset-2"
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={sourceId}>Source prompt</Label>
+              <Textarea
+                id={sourceId}
+                rows={5}
+                value={sourcePrompt}
+                onChange={(event) => setSourcePrompt(event.target.value)}
+                placeholder="Specify which sources the agent should use to retrieve the information required to populate the desired structure."
+                aria-invalid={unconfiguredSource}
+                aria-describedby={unconfiguredSource ? `${sourceId}-error` : undefined}
+              />
+              {unconfiguredSource && (
+                <p
+                  id={`${sourceId}-error`}
+                  className="text-xs text-destructive"
+                  data-testid="tome-custom-prompts-source-error"
                 >
-                  here
-                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                </a>
-                .
-              </p>
-            )}
+                  The requested source is not configured. Please configure it{" "}
+                  <a
+                    href="../sources"
+                    className="inline-flex items-center gap-0.5 underline underline-offset-2"
+                  >
+                    here
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </a>
+                  .
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-1">
             <Button
               type="button"
               variant="ghost"

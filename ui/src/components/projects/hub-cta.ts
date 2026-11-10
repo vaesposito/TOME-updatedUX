@@ -9,6 +9,9 @@
  *
  * Height is stated rather than grown from the padding, because a `Button`
  * states its own and a bare link cannot match one it has to guess.
+ *
+ * Sized against the tabs under the band rather than against the catalogue's
+ * toolbar: these are the first things a newcomer is offered, and at the
+ * toolbar's size they read as something to get past on the way to the list.
  */
-export const HUB_CTA_CLASS =
-  "h-8 gap-1.5 rounded-lg px-3 text-xs font-medium";
+export const HUB_CTA_CLASS = "h-9 gap-1.5 rounded-lg px-3 text-sm font-medium";

@@ -175,7 +175,7 @@ export function McpConnectDialog({
           )}
           data-tour="hub-mcp"
         >
-          <Plug className="h-3.5 w-3.5" />
+          <Plug className="h-4 w-4" />
           Connect via MCP
         </Button>
       </DialogTrigger>

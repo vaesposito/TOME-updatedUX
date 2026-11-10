@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { TOURS, NOTIFICATIONS_TOUR_ID } from "@/components/tour/tour-catalog";
+import { prefetchTourSubject } from "@/components/tour/TourRunner";
 import { startTour } from "@/components/tour/tour";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +81,16 @@ export function TourMenu({
   const [open, setOpen] = React.useState(false);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        // Reading five names takes about as long as finding the project the
+        // project-bound steps borrow, so the two happen together and the
+        // chosen tour opens on the page it is about rather than on a wait.
+        if (next) prefetchTourSubject();
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="ghost"

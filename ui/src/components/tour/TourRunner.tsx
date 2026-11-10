@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { findTour } from "@/components/tour/tour-catalog";
 import {
+  projectSlugFromPath,
   requestedTourId,
   samePath,
   TOUR_START_EVENT,
@@ -40,11 +41,15 @@ const POLL_MS = 100;
  * A page that has just been navigated to renders in pieces, and the control a
  * step is about is rarely in the first piece. Falling back to an unanchored
  * card the instant it is missing would make every navigation flash one.
+ *
+ * Long enough to cover that, and no longer: nothing at all is drawn while a
+ * step is waiting, so every extra second here is a second of blank page
+ * after the reader has asked for a tour.
  */
-const GRACE_MS = 4000;
+const GRACE_MS = 1200;
 
 /** A navigation that never lands must not strand the reader on one step. */
-const NAVIGATION_TIMEOUT_MS = 8000;
+const NAVIGATION_TIMEOUT_MS = 6000;
 
 interface Rect {
   top: number;
@@ -181,16 +186,15 @@ async function readableSlugs(): Promise<string[]> {
  * and every step about a page told them there was no page to show, in a
  * deployment full of them.
  */
-async function resolveSubject(preferred: string | null): Promise<TourSubject> {
-  const followed = await followedSlugs();
+async function lookUpSubject(preferred: string | null): Promise<TourSubject> {
+  // Both at once: they are independent, and asking one after the other put
+  // two round trips in front of the first step of three of the tours.
+  const [followed, readable] = await Promise.all([
+    followedSlugs(),
+    readableSlugs(),
+  ]);
   const slugs = [
-    ...new Set([
-      ...(preferred ? [preferred] : []),
-      ...followed,
-      // Only when there is room left to probe: a reader who watches four
-      // projects has given the tour all the subjects it can use.
-      ...(followed.length < MAX_PROBES ? await readableSlugs() : []),
-    ]),
+    ...new Set([...(preferred ? [preferred] : []), ...followed, ...readable]),
   ];
 
   // Asked all at once rather than one after another: this runs while the
@@ -208,6 +212,47 @@ async function resolveSubject(preferred: string | null): Promise<TourSubject> {
   // Nothing with a page: the first readable project still serves the steps
   // that only need a project, and the page steps say what is missing.
   return { slug: slugs.at(0) ?? null, pagePath: null };
+}
+
+/**
+ * What the lookup found, kept for the rest of the session.
+ *
+ * Six requests to learn which project to borrow is a price worth paying once.
+ * Paying it again on the second tour — and on a tour restarted because the
+ * reader wanted another look — is what made them feel slow. Keyed by the
+ * project the reader was standing in, since that is what changes the answer.
+ */
+const subjects = new Map<string, TourSubject>();
+const inFlight = new Map<string, Promise<TourSubject>>();
+
+function resolveSubject(preferred: string | null): Promise<TourSubject> {
+  const key = preferred ?? "";
+  const known = subjects.get(key);
+  if (known) return Promise.resolve(known);
+  const running = inFlight.get(key);
+  if (running) return running;
+  const promise = lookUpSubject(preferred)
+    .then((subject) => {
+      // A lookup that found nothing is not remembered: the reader may have
+      // been given a project since, and the next tour should check.
+      if (subject.slug) subjects.set(key, subject);
+      return subject;
+    })
+    .finally(() => inFlight.delete(key));
+  inFlight.set(key, promise);
+  return promise;
+}
+
+/**
+ * Start the lookup before a tour is chosen.
+ *
+ * Called when the chooser opens: reading five names and deciding takes a
+ * second or two, which is about what the lookup needs, so by the time one is
+ * picked its first step can go straight to the page it is about.
+ */
+export function prefetchTourSubject(): void {
+  if (typeof window === "undefined") return;
+  void resolveSubject(projectSlugFromPath(window.location.pathname));
 }
 
 interface Saved {
@@ -299,12 +344,7 @@ export function TourRunner() {
   }, []);
 
   /** The project the reader is standing in, if they started from one. */
-  const here = React.useMemo(() => {
-    const match = /^\/projects\/([^/]+)/.exec(pathname ?? "");
-    const slug = match?.[1];
-    // Not a project: `/projects/admin` is TOME's own settings page.
-    return slug && slug !== "admin" ? decodeURIComponent(slug) : null;
-  }, [pathname]);
+  const here = React.useMemo(() => projectSlugFromPath(pathname), [pathname]);
 
   // Find the project the project-bound steps borrow, in the background. Also
   // covers resuming after a reload, which restores the place but not the
@@ -382,8 +422,21 @@ export function TourRunner() {
   /** The step the tour is trying to reach: the asked-for one, or the current. */
   const wantIndex = pending ?? state?.index ?? 0;
   const wantRoute = routeOf(wantIndex);
+  /**
+   * Whether the wanted step is waiting on the lookup rather than on a page.
+   *
+   * Its route came back empty only because the project it asks for is still
+   * being found. Counting that as "nowhere to go, so we must be there
+   * already" showed the step on whatever page the reader was on, then moved
+   * it once the lookup landed — the tour appearing to open the wrong thing
+   * and correct itself.
+   */
+  const unresolved =
+    steps[wantIndex]?.route !== undefined &&
+    wantRoute === null &&
+    state?.subject === null;
   /** Whether the page the wanted step needs is the one on screen. */
-  const arrived = !wantRoute || samePath(wantRoute, location);
+  const arrived = !unresolved && (!wantRoute || samePath(wantRoute, location));
   /** The page the shown step was measured against has gone. */
   const shownRoute = state ? routeOf(state.index) : null;
   const stale = Boolean(shownRoute && !samePath(shownRoute, location));
@@ -459,8 +512,11 @@ export function TourRunner() {
   const scrolled = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!step?.anchor || !found || stale) return;
-    if (scrolled.current === step.id) return;
-    scrolled.current = step.id;
+    // Keyed by where as well as what: step ids repeat between tours, and a
+    // reader taking a second tour found its shared steps never scrolled.
+    const key = `${state?.tour}:${step.id}:${location}`;
+    if (scrolled.current === key) return;
+    scrolled.current = key;
     const node = document.querySelector(`[data-tour="${step.anchor}"]`);
     if (!node) return;
     // Centring a region taller than the window scrolls past its beginning:
@@ -470,7 +526,7 @@ export function TourRunner() {
       block: isTall(node.getBoundingClientRect().height) ? "start" : "center",
       behavior: "smooth",
     });
-  }, [found, stale, step]);
+  }, [found, location, stale, state?.tour, step]);
 
   React.useEffect(() => {
     if (!state) return;

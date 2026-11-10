@@ -141,6 +141,42 @@ describe("borrowing something to show", () => {
   });
 });
 
+describe("the borrowed project", () => {
+  it("is looked up once, not again for the next tour", async () => {
+    const calls: string[] = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      const payload = url.includes("/api/notifications/following")
+        ? { data: { nodes: [] } }
+        : url.includes("/api/projects")
+          ? { data: { projects: [{ slug: "example-project" }] } }
+          : { data: { pages: { "charter.md": "" } } };
+      return { ok: true, json: async () => payload };
+    }) as unknown as typeof fetch;
+
+    const { unmount } = render(<TourRunner />);
+    act(() => {
+      startTour("editing");
+    });
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    unmount();
+    calls.length = 0;
+
+    render(<TourRunner />);
+    act(() => {
+      startTour("agent");
+    });
+    // Past the grace a step with no anchor on screen is given, so the tour
+    // has certainly done whatever asking it was going to do.
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument(), {
+      timeout: 3000,
+    });
+
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("a step about a whole panel", () => {
   it("rings the top of it and brings that to the top of the window", async () => {
     query = "tab=functions";

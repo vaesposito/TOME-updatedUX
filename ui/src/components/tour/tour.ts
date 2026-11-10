@@ -132,6 +132,24 @@ export function isTourRunning(): boolean {
 }
 
 /**
+ * The project a path is inside, or null if it is not inside one.
+ *
+ * So a tour started from a project is about that project, rather than about
+ * whichever one it would have borrowed from a reader standing on the
+ * catalogue.
+ */
+export function projectSlugFromPath(path: string | null | undefined): string | null {
+  const slug = /^\/projects\/([^/?#]+)/.exec(path ?? "")?.[1];
+  // `/projects/admin` is TOME's own settings page, not a project.
+  if (!slug || slug === "admin") return null;
+  try {
+    return decodeURIComponent(slug);
+  } catch {
+    return slug;
+  }
+}
+
+/**
  * Whether two locations name the same place, path and query alike.
  *
  * Compared decoded, because a wiki path is pushed encoded but read back from

@@ -2387,8 +2387,11 @@ export function TomeWiki({ slug }: { slug: string }) {
                 // faded white label on the light theme is hard to read for a
                 // state worth watching. The spinner and the label say it is
                 // working; the colour does not have to say it is off.
+                // Sized to match Ask on Overview: the two are the same kind
+                // of offer, and `size="sm"` carries the height and the
+                // padding rather than hand-rolled ones.
                 className={cn(
-                  "h-auto gap-1.5 px-2 py-1 text-white",
+                  "shrink-0 gap-1.5 text-white",
                   inFlightRun || startingSync
                     ? "bg-emerald-700 hover:bg-emerald-700 disabled:opacity-100"
                     : "bg-emerald-600 hover:bg-emerald-700",
@@ -2404,9 +2407,9 @@ export function TomeWiki({ slug }: { slug: string }) {
                 }
               >
                 {inFlightRun || startingSync ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 ) : (
-                  <Play className="h-3.5 w-3.5" />
+                  <Play className="h-4 w-4" aria-hidden="true" />
                 )}
                 {inFlightRun ? inFlightLabel(inFlightRun.status) : "Run ingest"}
               </Button>

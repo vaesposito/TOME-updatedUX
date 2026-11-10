@@ -254,7 +254,7 @@ describe("GistView", () => {
 
     await screen.findByRole("heading", { name: "Example gist" });
     const metadata = screen.getByTestId("gist-author-meta");
-    expect(metadata).toHaveTextContent("example-gist.md");
+    expect(metadata).not.toHaveTextContent("example-gist.md");
     expect(metadata).toHaveTextContent("creator@example.test");
     expect(metadata).toHaveTextContent("modified");
     expect(metadata).not.toHaveTextContent("editor@example.test");
@@ -271,54 +271,6 @@ describe("GistView", () => {
     expect(tooltip).toHaveTextContent("Modified by");
     expect(tooltip).toHaveTextContent("creator@example.test");
     expect(tooltip).toHaveTextContent("editor@example.test");
-  });
-
-  it("renames the Markdown filename inline without changing the gist id", async () => {
-    const original = {
-      id: "gist-1",
-      title: "Example gist",
-      filename: "example-gist.md",
-      body: "Original markdown",
-      author: "test-user",
-      created_at: "2026-08-14T12:00:00.000Z",
-      tags: [],
-    };
-    (global.fetch as jest.Mock)
-      .mockReset()
-      .mockResolvedValueOnce(jsonResponse({ data: { gist: original } }))
-      .mockResolvedValueOnce(
-        jsonResponse({ data: { gist: { ...original, filename: "renamed.md" } } }),
-      );
-
-    render(
-      <GistView
-        slug="example-project"
-        id="gist-1"
-        canEdit
-        onBack={jest.fn()}
-      />,
-    );
-
-    await screen.findByRole("heading", { name: "Example gist" });
-    const renameButton = screen.getByRole("button", { name: "Rename note filename" });
-    expect(renameButton).toHaveClass("md:opacity-0", "md:group-hover/filename:opacity-100");
-    fireEvent.click(renameButton);
-    const filenameInput = screen.getByRole("textbox", {
-      name: "Rename note filename (Enter to save, Esc to cancel)",
-    });
-    fireEvent.change(filenameInput, { target: { value: "renamed" } });
-    fireEvent.keyDown(filenameInput, { key: "Enter" });
-
-    await waitFor(() => expect(global.fetch).toHaveBeenLastCalledWith(
-      "/api/tome/projects/example-project/gists/gist-1",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ filename: "renamed.md" }),
-      }),
-    ));
-    await waitFor(() => {
-      expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("renamed.md");
-    });
   });
 
   it("keeps gist metadata compact and reveals audit details in a tooltip", async () => {
@@ -351,7 +303,7 @@ describe("GistView", () => {
 
     await screen.findByRole("heading", { name: "Example gist" });
     const metadata = screen.getByTestId("gist-author-meta");
-    expect(metadata).toHaveTextContent("example-gist.md");
+    expect(metadata).not.toHaveTextContent("example-gist.md");
     expect(metadata).toHaveTextContent("creator@example.test");
     expect(metadata).toHaveTextContent("modified");
     expect(metadata).not.toHaveTextContent("editor@example.test");
@@ -368,52 +320,6 @@ describe("GistView", () => {
     expect(tooltip).toHaveTextContent("Modified by");
     expect(tooltip).toHaveTextContent("creator@example.test");
     expect(tooltip).toHaveTextContent("editor@example.test");
-  });
-
-  it("renames the Markdown filename inline without changing the gist id", async () => {
-    const original = {
-      id: "gist-1",
-      title: "Example gist",
-      filename: "example-gist.md",
-      body: "Original markdown",
-      author: "test-user",
-      created_at: "2026-08-14T12:00:00.000Z",
-      tags: [],
-    };
-    (global.fetch as jest.Mock)
-      .mockReset()
-      .mockResolvedValueOnce(jsonResponse({ data: { gist: original } }))
-      .mockResolvedValueOnce(
-        jsonResponse({ data: { gist: { ...original, filename: "renamed.md" } } }),
-      );
-
-    render(
-      <GistView
-        slug="example-project"
-        id="gist-1"
-        canEdit
-        onBack={jest.fn()}
-      />,
-    );
-
-    await screen.findByRole("heading", { name: "Example gist" });
-    fireEvent.click(screen.getByRole("button", { name: "Rename note filename" }));
-    const filenameInput = screen.getByRole("textbox", {
-      name: "Rename note filename (Enter to save, Esc to cancel)",
-    });
-    fireEvent.change(filenameInput, { target: { value: "renamed" } });
-    fireEvent.keyDown(filenameInput, { key: "Enter" });
-
-    await waitFor(() => expect(global.fetch).toHaveBeenLastCalledWith(
-      "/api/tome/projects/example-project/gists/gist-1",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ filename: "renamed.md" }),
-      }),
-    ));
-    await waitFor(() => {
-      expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("renamed.md");
-    });
   });
 
   it("renames the gist title inline without opening the full editor", async () => {
@@ -643,11 +549,8 @@ describe("GistView", () => {
     expect(screen.getByRole("button", { name: "Rich" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Markdown" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument();
-    const metadata = screen.getByTestId("gist-author-meta");
     expect(screen.getByRole("heading", { name: "New context" })).toBeInTheDocument();
-    expect(metadata).toHaveTextContent("new-context.md");
-    expect(metadata).toHaveTextContent("New note");
-    expect(metadata).not.toHaveTextContent("saved outside the curated wiki");
+    expect(screen.queryByTestId("gist-author-meta")).not.toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Gist body" }), {
@@ -733,7 +636,7 @@ describe("GistView", () => {
 
     const titleRow = screen.getByTestId("gist-title-tags-row");
     const status = screen.getByTestId("gist-draft-status");
-    expect(screen.getAllByTestId("gist-author-meta")).toHaveLength(1);
+    expect(screen.queryByTestId("gist-author-meta")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("gist-draft-status")).toHaveLength(1);
     expect(titleRow).toContainElement(status);
     expect(screen.getByTestId("gist-editor-header")).not.toContainElement(status);
@@ -753,7 +656,7 @@ describe("GistView", () => {
     jest.useRealTimers();
   });
 
-  it("keeps title and filename rename controls available after autosave in Preview", () => {
+  it("keeps the title rename control available after autosave in Preview", () => {
     const savedAt = new Date(2026, 8, 16, 14, 0, 0);
     jest.useFakeTimers();
     jest.setSystemTime(savedAt);
@@ -785,20 +688,15 @@ describe("GistView", () => {
     fireEvent.keyDown(renamedTitleInput, { key: "Enter" });
     expect(screen.getByRole("heading", { name: "Renamed after autosave" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Rename note filename" }));
-    const filenameInput = screen.getByRole("textbox", {
-      name: "Rename note filename (Enter to save, Esc to cancel)",
-    });
-    fireEvent.change(filenameInput, { target: { value: "renamed-draft" } });
-    fireEvent.keyDown(filenameInput, { key: "Enter" });
     act(() => jest.advanceTimersByTime(500));
 
-    expect(screen.getByTestId("gist-author-meta")).toHaveTextContent("renamed-draft.md");
+    // The filename follows the title rather than being typed, and is no longer
+    // shown, so the draft is the only place left to see that it tracked.
     expect(JSON.parse(
       window.localStorage.getItem("tome:gist-draft:example-project:new") ?? "{}",
     )).toEqual(expect.objectContaining({
       title: "Renamed after autosave",
-      filename: "renamed-draft.md",
+      filename: "renamed-after-autosave.md",
       body: "Draft body",
     }));
 

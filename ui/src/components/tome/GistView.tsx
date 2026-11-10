@@ -115,10 +115,7 @@ export function GistView({
   const [renamingTitle, setRenamingTitle] = useState(false);
   const [titleSaving, setTitleSaving] = useState(false);
   const [filename, setFilename] = useState("gist.md");
-  const [filenameDraft, setFilenameDraft] = useState("gist.md");
   const [filenameCustomized, setFilenameCustomized] = useState(false);
-  const [renamingFilename, setRenamingFilename] = useState(false);
-  const [filenameSaving, setFilenameSaving] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -175,9 +172,7 @@ export function GistView({
     setTitleDraft(nextTitle);
     setRenamingTitle(false);
     setFilename(nextFilename);
-    setFilenameDraft(nextFilename);
     setFilenameCustomized(Boolean(source?.filename) || recoveredFilename);
-    setRenamingFilename(false);
     setRawDraft(nextBody);
     setRichInitialBody(nextBody);
     setTags(nextTags);
@@ -190,9 +185,7 @@ export function GistView({
 
   useEffect(() => {
     if (creating && editing && !filenameCustomized) {
-      const derived = defaultGistFilename(title);
-      setFilename(derived);
-      setFilenameDraft(derived);
+      setFilename(defaultGistFilename(title));
     }
   }, [creating, editing, filenameCustomized, title]);
 
@@ -269,7 +262,6 @@ export function GistView({
     setDraftSavedAt(null);
     setTagDraft("");
     setRenamingTitle(false);
-    setRenamingFilename(false);
     setError(null);
     setEditorMode("rich");
     setEditorEpoch((current) => current + 1);
@@ -367,60 +359,6 @@ export function GistView({
     }
   }, [creating, editing, gist, id, slug, title, titleDraft]);
 
-  const startFilenameRename = useCallback(() => {
-    const current = editing
-      ? filename
-      : gist?.filename ?? defaultGistFilename(gist?.title ?? title);
-    setFilename(current);
-    setFilenameDraft(current);
-    setRenamingFilename(true);
-  }, [editing, filename, gist, title]);
-
-  const commitFilenameRename = useCallback(async () => {
-    let nextFilename: string;
-    try {
-      nextFilename = normalizeGistFilename(filenameDraft);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-      return;
-    }
-
-    const currentFilename = editing
-      ? filename
-      : gist?.filename ?? defaultGistFilename(gist?.title ?? title);
-    if (nextFilename === currentFilename) {
-      setRenamingFilename(false);
-      return;
-    }
-    if (creating || !id) {
-      setFilename(nextFilename);
-      setFilenameCustomized(true);
-      setRenamingFilename(false);
-      return;
-    }
-
-    setFilenameSaving(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/tome/projects/${slug}/gists/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: nextFilename }),
-      });
-      const updatedGist = await readGistResponse(response, "Failed to rename note");
-      const updatedFilename = updatedGist.filename ?? defaultGistFilename(updatedGist.title);
-      setGist(updatedGist);
-      setFilename(updatedFilename);
-      setFilenameDraft(updatedFilename);
-      setFilenameCustomized(true);
-      setRenamingFilename(false);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setFilenameSaving(false);
-    }
-  }, [creating, editing, filename, filenameDraft, gist, id, slug, title]);
-
   const save = useCallback(async () => {
     if (!title.trim()) return;
     let normalizedFilename: string;
@@ -456,11 +394,9 @@ export function GistView({
         response,
         `Failed to ${creating ? "create" : "update"} note`,
       );
-      const savedFilename = savedGist.filename ?? defaultGistFilename(savedGist.title);
       window.localStorage.removeItem(draftStorageKey);
       setGist(savedGist);
-      setFilename(savedFilename);
-      setFilenameDraft(savedFilename);
+      setFilename(savedGist.filename ?? defaultGistFilename(savedGist.title));
       setEditing(false);
       setEditorMode("rich");
       setTagDraft("");
@@ -567,7 +503,7 @@ export function GistView({
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving || titleSaving || filenameSaving || !title.trim() || !rawDraft.trim()}
+                disabled={saving || titleSaving || !title.trim() || !rawDraft.trim()}
                 className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
               >
                 {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -671,112 +607,50 @@ export function GistView({
                     )}
                   </div>
                 )}
-                <div
-                  className="mt-0.5 flex min-w-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground"
-                  data-testid="gist-author-meta"
-                >
-                  {renamingFilename ? (
-                    <input
-                      autoFocus
-                      value={filenameDraft}
-                      onChange={(event) => setFilenameDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void commitFilenameRename();
-                        } else if (event.key === "Escape") {
-                          event.preventDefault();
-                          setFilenameDraft(
-                            editing
-                              ? filename
-                              : gist?.filename ?? defaultGistFilename(gist?.title ?? title),
-                          );
-                          setRenamingFilename(false);
-                        }
-                      }}
-                      onBlur={() => void commitFilenameRename()}
-                      disabled={filenameSaving}
-                      className="block w-full max-w-md rounded border border-input bg-background px-1 py-0.5 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                      aria-label="Rename note filename (Enter to save, Esc to cancel)"
-                    />
-                  ) : (
-                    <span className="group/filename flex min-w-0 items-center gap-0.5">
-                      <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-                        {editing
-                          ? filename
-                          : gist?.filename ?? defaultGistFilename(gist?.title ?? title)}
-                      </span>
-                      {canChange && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={startFilenameRename}
-                              disabled={filenameSaving}
-                              aria-label="Rename note filename"
-                              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-60 outline-none transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover/filename:opacity-100 md:group-focus-within/filename:opacity-100 disabled:opacity-40"
-                            >
-                              <Pencil className="h-3 w-3" aria-hidden="true" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom" className="text-xs">
-                            Rename note filename
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </span>
-                  )}
-                  {filenameSaving && (
-                    <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-                  )}
-                  {creating ? (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span title="Notes are saved separately from the curated wiki">New note</span>
-                    </>
-                  ) : gist ? (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="truncate">{gist.author}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>modified {timeLabel(gist.updated_at ?? gist.created_at)}</span>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label="View note creation and modification details"
-                            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="bottom"
-                          className="w-80 max-w-[calc(100vw-2rem)] whitespace-normal p-3 text-left"
+                {gist && !creating && (
+                  <div
+                    className="mt-0.5 flex min-w-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground"
+                    data-testid="gist-author-meta"
+                  >
+                    <span className="truncate">{gist.author}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>modified {timeLabel(gist.updated_at ?? gist.created_at)}</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="View note creation and modification details"
+                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-                            <dt className="font-medium text-muted-foreground">Created</dt>
-                            <dd>{timeLabel(gist.created_at)}</dd>
-                            <dt className="font-medium text-muted-foreground">Created by</dt>
-                            <dd className="break-all">{gist.author}</dd>
-                            <dt className="font-medium text-muted-foreground">Last modified</dt>
-                            <dd>
-                              {gist.updated_at
-                                ? timeLabel(gist.updated_at)
-                                : "Not modified since creation"}
-                            </dd>
-                            {gist.updated_at && (
-                              <>
-                                <dt className="font-medium text-muted-foreground">Modified by</dt>
-                                <dd className="break-all">{gist.updated_by ?? gist.author}</dd>
-                              </>
-                            )}
-                          </dl>
-                        </TooltipContent>
-                      </Tooltip>
-                    </>
-                  ) : null}
-                </div>
+                          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="bottom"
+                        className="w-80 max-w-[calc(100vw-2rem)] whitespace-normal p-3 text-left"
+                      >
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                          <dt className="font-medium text-muted-foreground">Created</dt>
+                          <dd>{timeLabel(gist.created_at)}</dd>
+                          <dt className="font-medium text-muted-foreground">Created by</dt>
+                          <dd className="break-all">{gist.author}</dd>
+                          <dt className="font-medium text-muted-foreground">Last modified</dt>
+                          <dd>
+                            {gist.updated_at
+                              ? timeLabel(gist.updated_at)
+                              : "Not modified since creation"}
+                          </dd>
+                          {gist.updated_at && (
+                            <>
+                              <dt className="font-medium text-muted-foreground">Modified by</dt>
+                              <dd className="break-all">{gist.updated_by ?? gist.author}</dd>
+                            </>
+                          )}
+                        </dl>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                )}
               </div>
               {editing && draftStatus && (
                 <p

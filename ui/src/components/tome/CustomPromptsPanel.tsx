@@ -5,8 +5,9 @@
  *
  * Only a dynamic page has an agent writing it, so only a dynamic page has
  * prompts to shape; stable pages are written by hand and have nothing here
- * to configure. Drawn as a header region of the editor itself, since it
- * configures how the page below gets written rather than standing beside it.
+ * to configure. Drawn as a footer region of the editor itself, under the
+ * writing area, since it configures how that page gets written rather than
+ * standing beside it.
  *
  * Presentation only: the fields live in this component for now, so nothing
  * typed here is sent anywhere or survives leaving the page.
@@ -43,7 +44,7 @@ export function CustomPromptsPanel() {
 
   return (
     <section
-      className="border-b bg-muted/20"
+      className="border-t bg-muted/20"
       data-testid="tome-custom-prompts"
     >
       <button
@@ -72,8 +73,8 @@ export function CustomPromptsPanel() {
       {expanded && (
         <div
           id={bodyId}
-          // Capped and scrolled: this is a header of the editor, and expanding
-          // it must never leave the writing area with no room left.
+          // Capped and scrolled: this sits under the writing area, and
+          // expanding it must never leave that area with no room left.
           className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto px-5 pb-4"
         >
           <div className="flex flex-col gap-1.5">

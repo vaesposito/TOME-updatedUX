@@ -960,7 +960,7 @@ export function WikiPageView({
       )}
 
       {/* The editor, ring and all. What configures how the page gets written
-          belongs inside that ring, above the writing area, rather than beside
+          belongs inside that ring, below the writing area, rather than beside
           it: the ring is what tells a reader where the editing starts. */}
       <div
         data-testid="tome-page-editor"
@@ -970,7 +970,6 @@ export function WikiPageView({
             "ring-2 ring-inset ring-amber-400/70 dark:ring-amber-700/60",
         )}
       >
-        {isEditing && kind === "dynamic" && <CustomPromptsPanel />}
         <ScrollArea
           data-testid="tome-page-editor-scroll"
           className="min-h-0 flex-1"
@@ -1037,6 +1036,7 @@ export function WikiPageView({
             )}
           </div>
         </ScrollArea>
+        {isEditing && kind === "dynamic" && <CustomPromptsPanel />}
       </div>
       {/* One `#` trigger, one picker over real spaces: a tag typed as free
           text could name a space that does not exist, and would then be

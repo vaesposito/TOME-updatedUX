@@ -733,14 +733,14 @@ describe("WikiPageView", () => {
     expect(screen.queryByTestId("tome-custom-prompts")).toBeNull();
 
     await openEditor();
-    // Inside the editor, above the writing area: it configures how the page
-    // below gets written, so it is part of the editor rather than a card
+    // Inside the editor, under the writing area: it configures how the page
+    // above gets written, so it is part of the editor rather than a card
     // sitting next to it.
     const panel = within(screen.getByTestId("tome-page-editor")).getByTestId(
       "tome-custom-prompts",
     );
     expect(panel.compareDocumentPosition(screen.getByTestId("tome-page-editor-scroll")))
-      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      .toBe(Node.DOCUMENT_POSITION_PRECEDING);
     expect(panel).toHaveTextContent("Custom prompts");
     // Closed until asked for, like every other disclosure in the app.
     expect(screen.queryByLabelText("Content prompt")).toBeNull();

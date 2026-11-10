@@ -8,18 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import {
-  NOTIFICATION_TOUR,
-  TOUR_START_EVENT,
-  TOUR_STATE_KEY,
   samePath,
   type TourAnchor,
+  type TourStep,
   type TourSubject,
-} from "@/components/tour/notification-tour";
+} from "@/components/tour/tour";
 
 /**
- * Runs the notifications walkthrough.
+ * Runs a walkthrough.
  *
- * Mounted once for the whole app, because the tour crosses routes: it is the
+ * Mounted once for the whole app, because a tour crosses routes: it is the
  * only part that survives a step moving from the notification page to a
  * project, and it reads its place back out of session storage after each
  * navigation.
@@ -168,13 +166,13 @@ interface Saved {
   subject: TourSubject | null;
 }
 
-function readSaved(): Saved | null {
+function readSaved(stateKey: string, length: number): Saved | null {
   try {
-    const raw = window.sessionStorage.getItem(TOUR_STATE_KEY);
+    const raw = window.sessionStorage.getItem(stateKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Saved;
     if (typeof parsed?.index !== "number") return null;
-    if (parsed.index < 0 || parsed.index >= NOTIFICATION_TOUR.length) return null;
+    if (parsed.index < 0 || parsed.index >= length) return null;
     return parsed;
   } catch {
     // Storage can be unavailable or hold something stale; either way the
@@ -183,7 +181,20 @@ function readSaved(): Saved | null {
   }
 }
 
-export function NotificationTour() {
+export function TourRunner({
+  tour,
+  stateKey,
+  startEvent,
+  label,
+}: {
+  tour: readonly TourStep[];
+  /** Where this tour's place is kept. See TOUR_STATE_KEYS. */
+  stateKey: string;
+  /** The window event that starts it. */
+  startEvent: string;
+  /** What the card calls itself to a screen reader. */
+  label: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [state, setState] = React.useState<Saved | null>(null);
@@ -211,16 +222,16 @@ export function NotificationTour() {
   /** Set once a step has had long enough to find an anchor. See GRACE_MS. */
   const [graceOver, setGraceOver] = React.useState(false);
 
-  const step = state ? NOTIFICATION_TOUR[state.index] : undefined;
+  const step = state ? tour[state.index] : undefined;
 
   // Resume after a navigation, and listen for the start button.
   React.useEffect(() => {
-    setState(readSaved());
+    setState(readSaved(stateKey, tour.length));
 
     const onStart = () => setState({ index: 0, subject: null });
-    window.addEventListener(TOUR_START_EVENT, onStart);
-    return () => window.removeEventListener(TOUR_START_EVENT, onStart);
-  }, []);
+    window.addEventListener(startEvent, onStart);
+    return () => window.removeEventListener(startEvent, onStart);
+  }, [startEvent, stateKey, tour.length]);
 
   // Find the project the last three steps borrow, in the background. Also
   // covers resuming after a reload, which restores the place but not the
@@ -241,11 +252,11 @@ export function NotificationTour() {
     setState(null);
     setRect(null);
     try {
-      window.sessionStorage.removeItem(TOUR_STATE_KEY);
+      window.sessionStorage.removeItem(stateKey);
     } catch {
       // Nothing to clean up if storage is unavailable.
     }
-  }, []);
+  }, [stateKey]);
 
   /** Show a step. Only called once its page is on screen. */
   const go = React.useCallback((index: number) => {
@@ -254,13 +265,13 @@ export function NotificationTour() {
       if (!current) return current;
       const next = { ...current, index };
       try {
-        window.sessionStorage.setItem(TOUR_STATE_KEY, JSON.stringify(next));
+        window.sessionStorage.setItem(stateKey, JSON.stringify(next));
       } catch {
         // The step still changes; only resuming after a reload is lost.
       }
       return next;
     });
-  }, []);
+  }, [stateKey]);
 
   /** Ask for a step. What Back and Next do; the arriving is `go`'s job. */
   const request = React.useCallback((index: number) => setPending(index), []);
@@ -269,11 +280,11 @@ export function NotificationTour() {
   React.useEffect(() => {
     if (!state) return;
     try {
-      window.sessionStorage.setItem(TOUR_STATE_KEY, JSON.stringify(state));
+      window.sessionStorage.setItem(stateKey, JSON.stringify(state));
     } catch {
       // See `go`.
     }
-  }, [state]);
+  }, [state, stateKey]);
 
   /**
    * Where a step belongs, or null if it cannot be worked out.
@@ -287,8 +298,8 @@ export function NotificationTour() {
     [state?.subject],
   );
   const routeOf = React.useCallback(
-    (index: number) => NOTIFICATION_TOUR[index]?.route?.(subjectProbe) ?? null,
-    [subjectProbe],
+    (index: number) => tour[index]?.route?.(subjectProbe) ?? null,
+    [subjectProbe, tour],
   );
 
   /** The step the tour is trying to reach: the asked-for one, or the current. */
@@ -389,7 +400,7 @@ export function NotificationTour() {
 
   if (!state || !step) return null;
 
-  const last = state.index === NOTIFICATION_TOUR.length - 1;
+  const last = state.index === tour.length - 1;
   /** This step wants something of the reader's that could not be supplied. */
   const unsupplied = step.route !== undefined && routeOf(state.index) === null;
   /** Still being looked up, as against looked up and not there. */
@@ -414,11 +425,11 @@ export function NotificationTour() {
   const card = (
     <div
       role="dialog"
-      aria-label="Notifications walkthrough"
+      aria-label={label}
       className="w-80 space-y-3 p-4"
     >
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Step {state.index + 1} of {NOTIFICATION_TOUR.length}
+        Step {state.index + 1} of {tour.length}
       </p>
       <div className="space-y-1.5">
         <p className="text-sm font-semibold">{step.title}</p>

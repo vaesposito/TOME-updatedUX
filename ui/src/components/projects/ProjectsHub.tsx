@@ -20,6 +20,8 @@ import {
 import { SpaceCreationFlow } from "@/components/projects/SpaceCreationFlow";
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { OnboardingModal } from "@/components/tome/OnboardingModal";
+import { FEATURE_TOUR_START_EVENT } from "@/components/tour/feature-tour";
+import { TourStartButton } from "@/components/tour/TourStartButton";
 import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBanner";
 import { AskTomePlaceholder } from "@/components/tome/AskTomePlaceholder";
 import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
@@ -865,6 +867,16 @@ export function ProjectsHub() {
                   Settings
                 </Link>
               )}
+              {/* Offered where a newcomer arrives, in the band that
+                  greets them. The tour opens on the catalogue, so the tab
+                  is set before it starts rather than leaving its first
+                  step pointing at a panel that is not showing. */}
+              <TourStartButton
+                label="Take a tour"
+                event={FEATURE_TOUR_START_EVENT}
+                className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+                onStart={() => setTab("projects")}
+              />
               <TomeProductFeedback variant="link" />
             </div>
           </div>
@@ -875,7 +887,7 @@ export function ProjectsHub() {
       {/* Under the welcome rather than above the list, because they are three
           readings of the same thing and none of them is a section of the
           catalogue. Outside the band, so the band stays a greeting. */}
-      <div className="flex justify-center">
+      <div className="flex justify-center" data-tour="hub-tabs">
         <HubTabs value={tab} onChange={setTab} settingsHref="/projects/admin" />
       </div>
 
@@ -916,6 +928,7 @@ export function ProjectsHub() {
             placeholder="Find project…"
             label="Find a TOME project"
             clearLabel="Clear project search"
+            anchor="hub-search"
           />
           {/* The same flow By function opens, carrying no placement: what
               differs between the two tabs is which axis the result lands on,
@@ -924,6 +937,7 @@ export function ProjectsHub() {
             variant="outline"
             size="sm"
             className="h-8 gap-1.5"
+            data-tour="hub-create"
             onClick={() => setCreating(true)}
           >
             <Plus className="h-3.5 w-3.5" />

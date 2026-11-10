@@ -13,52 +13,17 @@
  * answer both "where do I see these" and "why am I getting them".
  */
 
-/** Where a step can be anchored. Elements carry `data-tour="<id>"`. */
-export type TourAnchor =
-  | "notifications-bell"
-  | "notifications-inbox"
-  | "notifications-watching"
-  | "notifications-watching-tree"
-  | "watch-toggle"
-  | "page-notify"
-  | "page-edit"
-  | "project-home";
+import { TOUR_STATE_KEYS, type TourStep } from "@/components/tour/tour";
 
-/**
- * What the tour had to look up before it could run.
- *
- * The last three steps are about a project, and which project that is
- * depends on the reader: the tour borrows the first one they can actually
- * read rather than shipping a slug that only exists in one deployment.
- */
-export interface TourSubject {
-  /** A project the reader can read, or null if they can read none. */
-  slug: string | null;
-  /** A page in that project, for the step about saving one. */
-  pagePath: string | null;
-}
-
-export interface TourStep {
-  id: string;
-  title: string;
-  body: string;
-  /** The element this step is about. */
-  anchor: TourAnchor;
-  /**
-   * Anchored here instead while `anchor` is absent, with `hint` for the body.
-   *
-   * For steps whose subject only exists in a particular state — the save-time
-   * notification menu appears once a page is being edited — so the step can
-   * point at the way in rather than at nothing.
-   */
-  waitingAnchor?: TourAnchor;
-  /** What to do to bring `anchor` into existence. */
-  hint?: string;
-  /** Where the anchor lives, or null when it is on every page. */
-  route?: (subject: TourSubject) => string | null;
-  /** Shown when `route` comes back empty, naming what is missing. */
-  unavailable?: string;
-}
+// Re-exported because this file was the whole of the tour before there were
+// two of them, and its callers have no reason to care that the shape moved.
+export {
+  isTourRunning,
+  samePath,
+  type TourAnchor,
+  type TourStep,
+  type TourSubject,
+} from "@/components/tour/tour";
 
 export const NOTIFICATION_TOUR: readonly TourStep[] = [
   {
@@ -128,49 +93,8 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
   },
 ];
 
-/**
- * Whether two paths name the same page.
- *
- * Compared decoded, because a wiki path is pushed encoded but read back from
- * the router in whichever form the browser settled on. Comparing the raw
- * strings would leave the two disagreeing forever, and the step would push
- * its own route on every render.
- */
-export function samePath(a: string, b: string): boolean {
-  const decoded = (path: string) => {
-    try {
-      return decodeURIComponent(path);
-    } catch {
-      return path;
-    }
-  };
-  return decoded(a) === decoded(b);
-}
-
-/** Dispatched on `window` to start the tour from anywhere. */
+/** Dispatched on `window` to start this tour from anywhere. */
 export const TOUR_START_EVENT = "grid.tour:start";
 
-/**
- * Where the tour keeps its place.
- *
- * In `sessionStorage` because the tour walks between routes, and a full page
- * load must not drop the reader back at step one. Per tab, and gone when the
- * tab is — an unfinished tour is not something to be reminded of next week.
- */
-export const TOUR_STATE_KEY = "grid.tour.notifications";
-
-/**
- * Whether a walkthrough is part-way through.
- *
- * For anything that opens itself on arrival to check before it does. The
- * tour navigates into projects and pages, and a first-run dialog that
- * greeted it there would cover the step the reader is in the middle of.
- */
-export function isTourRunning(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.sessionStorage.getItem(TOUR_STATE_KEY) !== null;
-  } catch {
-    return false;
-  }
-}
+/** Where this tour keeps its place. See TOUR_STATE_KEYS. */
+export const TOUR_STATE_KEY = TOUR_STATE_KEYS.notifications;

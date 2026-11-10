@@ -175,6 +175,23 @@ const widgets = () =>
     node.getAttribute("data-widget"),
   );
 
+describe("what the walkthroughs point at", () => {
+  // Two tours have a step on Home and both find it by this attribute. A step
+  // whose anchor is missing does not fail: it waits, then floats its card
+  // into the middle of the screen, which reads as a broken product rather
+  // than an absent one. So the anchor is asserted here, where rearranging
+  // the page cannot quietly take it away.
+  it("keeps the anchor the project-home step lights up", async () => {
+    home({ kind: "project" });
+    await waitFor(() => expect(widgets()).toContain("glance"));
+    const anchor = document.querySelector('[data-tour="project-home"]');
+    expect(anchor).not.toBeNull();
+    expect(anchor).toContainElement(
+      document.querySelector("[data-widget]") as HTMLElement,
+    );
+  });
+});
+
 describe("which cards a kind of space gets", () => {
   it("gives a BHAG and an Area a card for what is below them", async () => {
     for (const kind of ["bhag", "area"] as const) {

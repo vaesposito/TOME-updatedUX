@@ -5,8 +5,8 @@
  *
  * Only a dynamic page has an agent writing it, so only a dynamic page has
  * prompts to shape; stable pages are written by hand and have nothing here
- * to configure. Shown while editing, where the question "what should this
- * page contain next time" actually comes up.
+ * to configure. Drawn as a header region of the editor itself, since it
+ * configures how the page below gets written rather than standing beside it.
  *
  * Presentation only: the fields live in this component for now, so nothing
  * typed here is sent anywhere or survives leaving the page.
@@ -43,7 +43,7 @@ export function CustomPromptsPanel() {
 
   return (
     <section
-      className="mx-5 mt-3 rounded-lg border bg-card"
+      className="border-b bg-muted/20"
       data-testid="tome-custom-prompts"
     >
       <button
@@ -51,7 +51,7 @@ export function CustomPromptsPanel() {
         onClick={() => setExpanded((open) => !open)}
         aria-expanded={expanded}
         aria-controls={bodyId}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left"
+        className="flex w-full items-start gap-3 px-5 py-2.5 text-left"
       >
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold">Custom prompts</span>
@@ -70,7 +70,12 @@ export function CustomPromptsPanel() {
       </button>
 
       {expanded && (
-        <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4">
+        <div
+          id={bodyId}
+          // Capped and scrolled: this is a header of the editor, and expanding
+          // it must never leave the writing area with no room left.
+          className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto px-5 pb-4"
+        >
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={contentId}>Content prompt</Label>
             <Textarea

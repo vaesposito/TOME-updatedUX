@@ -974,7 +974,6 @@ export function WikiPageView({
           {error}
         </p>
       )}
-      {isEditing && kind === "dynamic" && <CustomPromptsPanel />}
       {isGlossary && (
         <>
           <GlossaryFields
@@ -1014,76 +1013,85 @@ export function WikiPageView({
         </>
       )}
 
-      <ScrollArea
-        data-testid="tome-page-editor-scroll"
+      {/* The editor, ring and all. What configures how the page gets written
+          belongs inside that ring, above the writing area, rather than beside
+          it: the ring is what tells a reader where the editing starts. */}
+      <div
+        data-testid="tome-page-editor"
         className={cn(
-          "min-h-0 flex-1 transition-shadow",
+          "flex min-h-0 flex-1 flex-col transition-shadow",
           isEditing &&
             "ring-2 ring-inset ring-amber-400/70 dark:ring-amber-700/60",
         )}
       >
-        <div
-          className={cn(isEditing && editorMode === "rich" && "tome-rich-editor-full-width")}
+        {isEditing && kind === "dynamic" && <CustomPromptsPanel />}
+        <ScrollArea
+          data-testid="tome-page-editor-scroll"
+          className="min-h-0 flex-1"
         >
-          {isEditing && editorMode === "source" ? (
-            <div className="h-full min-h-[28rem] p-3">
-              <RichCodeEditor
-                editorRef={sourceEditorRef}
-                value={rawDraft}
-                onChange={(nextMarkdown) => {
-                  setRawDraft(nextMarkdown);
-                  const [nextFrontmatter] = parseFrontmatter(nextMarkdown);
-                  setFmDraft(nextFrontmatter as Record<string, FrontmatterValue>);
-                }}
-                filename={path}
-                language="markdown"
-                wrap
-                fillContainer
-                lintSource={(value) => diagnoseTomeMarkdown(value, { knownPaths })}
-                className="h-full"
+          <div
+            className={cn(isEditing && editorMode === "rich" && "tome-rich-editor-full-width")}
+          >
+            {isEditing && editorMode === "source" ? (
+              <div className="h-full min-h-[28rem] p-3">
+                <RichCodeEditor
+                  editorRef={sourceEditorRef}
+                  value={rawDraft}
+                  onChange={(nextMarkdown) => {
+                    setRawDraft(nextMarkdown);
+                    const [nextFrontmatter] = parseFrontmatter(nextMarkdown);
+                    setFmDraft(nextFrontmatter as Record<string, FrontmatterValue>);
+                  }}
+                  filename={path}
+                  language="markdown"
+                  wrap
+                  fillContainer
+                  lintSource={(value) => diagnoseTomeMarkdown(value, { knownPaths })}
+                  className="h-full"
+                />
+              </div>
+            ) : isEditing && previewMode ? (
+              <MarkdownRenderer
+                content={draftBody}
+                variant="final"
+                className="tome-document-preview px-8 py-6"
+                onInternalLink={onNavigate}
+                glossaryPreview={glossaryPreview}
+                enableExternalEmbeds
+                enableExcalidraw
+                enableMermaid
+                enableTomeColumns
               />
-            </div>
-          ) : isEditing && previewMode ? (
-            <MarkdownRenderer
-              content={draftBody}
-              variant="final"
-              className="tome-document-preview px-8 py-6"
-              onInternalLink={onNavigate}
-              glossaryPreview={glossaryPreview}
-              enableExternalEmbeds
-              enableExcalidraw
-              enableMermaid
-              enableTomeColumns
-            />
-          ) : !isEditing ? (
-            <MarkdownRenderer
-              content={body}
-              variant="final"
-              className="tome-document-preview px-8 py-6"
-              onInternalLink={onNavigate}
-              glossaryPreview={glossaryPreview}
-              enableExternalEmbeds
-              enableExcalidraw
-              enableMermaid
-              enableTomeColumns
-            />
-          ) : (
-            <CrepeEditor
-              key={`${slug}-${path}-${editorEpoch}`}
-              ref={editorRef}
-              initialMarkdown={richInitialBody}
-              readonly={false}
-              onChange={(nextBody) => setRawDraft(serializeFrontmatter(fmDraft, nextBody))}
-              onNavigate={onNavigate}
-              glossaryPreview={glossaryPreview}
-              hideHtmlComments
-              onInsertMedia={() => setMediaOpen(true)}
-              onMentionQuery={setMentionQuery}
-              enableColumns
-            />
-          )}
-        </div>
-      </ScrollArea>
+            ) : !isEditing ? (
+              <MarkdownRenderer
+                content={body}
+                variant="final"
+                className="tome-document-preview px-8 py-6"
+                onInternalLink={onNavigate}
+                glossaryPreview={glossaryPreview}
+                enableExternalEmbeds
+                enableExcalidraw
+                enableMermaid
+                enableTomeColumns
+              />
+            ) : (
+              <CrepeEditor
+                key={`${slug}-${path}-${editorEpoch}`}
+                ref={editorRef}
+                initialMarkdown={richInitialBody}
+                readonly={false}
+                onChange={(nextBody) => setRawDraft(serializeFrontmatter(fmDraft, nextBody))}
+                onNavigate={onNavigate}
+                glossaryPreview={glossaryPreview}
+                hideHtmlComments
+                onInsertMedia={() => setMediaOpen(true)}
+                onMentionQuery={setMentionQuery}
+                enableColumns
+              />
+            )}
+          </div>
+        </ScrollArea>
+      </div>
       {/* One `#` trigger, one picker over real spaces: a tag typed as free
           text could name a space that does not exist, and would then be
           indexed against a slug no reader can ever stand in. */}

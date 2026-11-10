@@ -592,6 +592,10 @@ function GeneralStep({
  * A BHAG has no parent, so it is offered none. Everything else is offered
  * its own axis's pair and only its own: a project never sees a function, and
  * a subject never sees a BHAG.
+ *
+ * One field to a row, like every other field in the step. Side by side they
+ * were half the width of the name above them and read as crowded, and a
+ * combo box offering names to choose from has even less room to show them.
  */
 /**
  * The combo box wearing the same clothes as every other field in the flow.
@@ -653,7 +657,7 @@ function Placement({
     const categoryNames = chosen?.categories ?? [];
 
     return (
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-4">
         <div className="space-y-1">
           <Label htmlFor="space-function">Function</Label>
           <LabelComboBox
@@ -692,7 +696,7 @@ function Placement({
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-4">
       <div className="space-y-1">
         <Label htmlFor="space-bhag">BHAG</Label>
         <Select

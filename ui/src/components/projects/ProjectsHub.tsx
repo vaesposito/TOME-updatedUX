@@ -21,6 +21,7 @@ import { SpaceCreationFlow } from "@/components/projects/SpaceCreationFlow";
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { OnboardingModal } from "@/components/tome/OnboardingModal";
 import { TourMenu } from "@/components/tour/TourStartButton";
+import { HUB_CTA_CLASS } from "@/components/projects/hub-cta";
 import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBanner";
 import { AskTomePlaceholder } from "@/components/tome/AskTomePlaceholder";
 import { TomeAssistantBubble } from "@/components/tome/TomeAssistantBubble";
@@ -860,7 +861,10 @@ export function ProjectsHub() {
                 <Link
                   href="/projects/admin"
                   title="TOME Settings"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  className={cn(
+                    HUB_CTA_CLASS,
+                    "inline-flex items-center border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground",
+                  )}
                 >
                   <Settings className="h-3.5 w-3.5" />
                   Settings
@@ -877,7 +881,10 @@ export function ProjectsHub() {
                   set before one starts rather than leaving that step
                   pointing at a panel which is not showing. */}
               <TourMenu
-                className="rounded-lg border border-primary/30 bg-primary/5 px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+                className={cn(
+                  HUB_CTA_CLASS,
+                  "border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary",
+                )}
                 onStart={() => setTab("projects")}
               />
               <TomeProductFeedback variant="link" />

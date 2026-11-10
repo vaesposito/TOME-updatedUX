@@ -14,7 +14,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HUB_CTA_CLASS } from "@/components/projects/hub-cta";
 import { buildMcpRemoteOAuthArgs } from "@/lib/tome/mcpb/manifest";
+import { cn } from "@/lib/utils";
 
 /**
  * "Connect via MCP" - surfaced from the Tome header. Native remote-MCP
@@ -162,15 +164,15 @@ export function McpConnectDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {/* Shaped like the rest of the catalogue's welcome band — Settings,
-            the tour, Provide feedback — which is the row this sits in. A
-            stated height rather than one grown from the padding: beside a
-            button that sets its own, text and padding alone came up two
-            pixels short, which reads as a misalignment rather than a size. */}
+        {/* Shaped like the rest of the catalogue's welcome band, from the
+            one definition the band shares. */}
         <Button
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
+          className={cn(
+            HUB_CTA_CLASS,
+            "text-muted-foreground hover:text-foreground",
+          )}
           data-tour="hub-mcp"
         >
           <Plug className="h-3.5 w-3.5" />

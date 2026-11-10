@@ -68,7 +68,7 @@ jobs:
       retag_matrix: ${{ steps.set-matrix.outputs.retag_matrix }}
     steps:
       - name: Import GitHub App credentials from Vault
-        uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
         with:
           url: ${{ vars.KEEPER_URL }}
           method: approle
@@ -254,7 +254,7 @@ jobs:
           egress-policy: audit
 
       - name: Import GitHub App credentials from Vault
-        uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
         with:
           url: ${{ vars.KEEPER_URL }}
           method: approle
@@ -471,7 +471,7 @@ jobs:
           egress-policy: audit
 
       - name: Import GitHub App credentials from Vault
-        uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
         with:
           url: ${{ vars.KEEPER_URL }}
           method: approle
@@ -667,7 +667,7 @@ jobs:
       CI_RAG_APP_PRIVATE_KEY: ${{ secrets.CI_BUILD_APP_PRIVATE_KEY || secrets.CI_RELEASE_APP_PRIVATE_KEY }}
     steps:
       - name: Import GitHub App credentials from Vault
-        uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
         with:
           url: ${{ vars.KEEPER_URL }}
           method: approle

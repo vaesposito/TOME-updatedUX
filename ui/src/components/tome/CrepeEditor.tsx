@@ -165,47 +165,66 @@ const TOME_COLUMNS_ICON = [
   "</svg>",
 ].join("");
 
-/** An in-progress `@…` at the cursor, handed to React to draw a picker. */
+/**
+ * What a tag sigil names: `@` a person, `#` a space.
+ *
+ * Both are written into the body as plain Markdown links, so one trigger
+ * serves both and the picker that answers decides which kind is being tagged.
+ */
+export type MentionSigil = "@" | "#";
+
+/** An in-progress `@…` or `#…` at the cursor, handed to React to draw a picker. */
 export interface MentionQuery {
-  /** What has been typed after the `@`, which may be empty. */
+  /** Which kind of thing is being tagged. */
+  sigil: MentionSigil;
+  /** What has been typed after the sigil, which may be empty. */
   query: string;
-  /** Viewport coordinates of the `@`, for anchoring the picker. */
+  /** Viewport coordinates of the sigil, for anchoring the picker. */
   left: number;
   bottom: number;
 }
 
 /**
- * `@` only starts a mention at a word boundary, so an email address in prose
+ * A sigil only starts a tag at a word boundary, so an email address in prose
  * does not open the picker. One space is allowed inside the query because
- * people search by full name; a second ends it, which is how the picker
- * closes when someone simply carries on typing.
+ * both people and spaces are searched by full name; a second ends it, which
+ * is how the picker closes when someone simply carries on typing.
+ *
+ * The query is either empty — the sigil just typed, picker inviting a name —
+ * or starts with a non-space. That second rule is what keeps `# ` from
+ * opening a space picker over somebody writing a Markdown heading.
  */
-const MENTION_TRIGGER = /(?:^|\s)@([^\s@]{0,32}(?: [^\s@]{0,32})?)$/;
+const MENTION_TRIGGER = /(?:^|\s)([@#])([^\s@#]{1,32}(?: [^\s@#]{0,32})?|)$/;
 
-/** The document range of the `@…` being typed, or null when there isn't one. */
+/** The document range of the tag being typed, or null when there isn't one. */
 function mentionRange(
   view: EditorView,
-): { from: number; to: number; query: string } | null {
+): { from: number; to: number; query: string; sigil: MentionSigil } | null {
   const { selection } = view.state;
   if (!selection.empty || !selection.$from.parent.isTextblock) return null;
   const cursor = selection.$from.pos;
   const before = view.state.doc.textBetween(selection.$from.start(), cursor, "\n", "\n");
   const match = MENTION_TRIGGER.exec(before);
   if (!match) return null;
-  const from = cursor - match[1].length - 1;
-  // A finished mention is a link, and the cursor lands just after it. Without
+  const from = cursor - match[2].length - 1;
+  // A finished tag is a link, and the cursor lands just after it. Without
   // this the picker would reopen on the name it had only just inserted.
   if (view.state.doc.nodeAt(from)?.marks.some((mark) => mark.type.name === "link")) {
     return null;
   }
-  return { from, to: cursor, query: match[1] };
+  return { from, to: cursor, query: match[2], sigil: match[1] as MentionSigil };
 }
 
 function readMentionQuery(view: EditorView): MentionQuery | null {
   const range = mentionRange(view);
   if (!range) return null;
   const coords = view.coordsAtPos(range.from);
-  return { query: range.query, left: coords.left, bottom: coords.bottom };
+  return {
+    sigil: range.sigil,
+    query: range.query,
+    left: coords.left,
+    bottom: coords.bottom,
+  };
 }
 
 const mentionTriggerPlugin = (report: (query: MentionQuery | null) => void) =>

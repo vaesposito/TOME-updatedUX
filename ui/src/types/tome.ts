@@ -37,6 +37,8 @@ export const TOME_COLLECTIONS = {
   EDGES_INDEX: "tome_edges_index",
   /** Search/roll-up index over issue, decision, and suggestion pages. */
   TRACKED_ENTITIES_INDEX: "tome_tracked_entities_index",
+  /** Index over pages tagged with a space, keyed by the slugs they tag. */
+  SPACE_TAGS_INDEX: "tome_space_tags_index",
   /** Disposable GitHub issue/discussion read model; GitHub remains authoritative. */
   GITHUB_ISSUES: "tome_github_issues",
   /** Per-repository synchronization and webhook health for the issue read model. */
@@ -192,6 +194,27 @@ export interface TrackedEntityIndexRow {
   target?: string;
   target_project_slug: string;
   body: string;
+  updated_at: Date;
+}
+
+/**
+ * One page that tags at least one space, keyed by the slugs it tags.
+ *
+ * Written from the PageStore choke point on every page write; absent for any
+ * page that tags nothing, so the index holds only pages that make a claim.
+ */
+export interface SpaceTagIndexRow {
+  _id?: string; // `${project_id}:${path}`
+  /** Where the tagging page itself lives. */
+  project_id: string;
+  project_slug: string;
+  path: string;
+  /** The page's own title, so a row can be read without fetching the body. */
+  title: string;
+  /** Every space this page tags, on either axis. */
+  tagged_slugs: string[];
+  /** Per-slug granularity: whole page, and how many passages. */
+  counts: Record<string, { page: boolean; passages: number }>;
   updated_at: Date;
 }
 

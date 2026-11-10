@@ -19,6 +19,7 @@ import {
   type ChatRun,
   type TomeUsageEvent,
   type EdgeIndexRow,
+  type SpaceTagIndexRow,
   type TrackedEntityIndexRow,
   type Gist,
   type TomeFolder,
@@ -87,6 +88,12 @@ export async function getTomeTrackedEntitiesIndexCollection(): Promise<
   Collection<TrackedEntityIndexRow>
 > {
   return getCollection<TrackedEntityIndexRow>(TOME_COLLECTIONS.TRACKED_ENTITIES_INDEX);
+}
+
+export async function getTomeSpaceTagsIndexCollection(): Promise<
+  Collection<SpaceTagIndexRow>
+> {
+  return getCollection<SpaceTagIndexRow>(TOME_COLLECTIONS.SPACE_TAGS_INDEX);
 }
 
 export async function getTomeGistsCollection(): Promise<Collection<Gist>> {

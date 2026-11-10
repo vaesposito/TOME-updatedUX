@@ -53,7 +53,15 @@ import {
 } from "@/components/tome/KindBadge";
 import { MentionPicker } from "@/components/tome/MentionPicker";
 import { PageNotifyMenu } from "@/components/tome/PageNotifyMenu";
+import { PageSpaceTags } from "@/components/tome/PageSpaceTags";
+import { SpaceTagPicker } from "@/components/tome/SpaceTagPicker";
+import { useTaggableSpaces } from "@/hooks/use-taggable-spaces";
 import { mentionMarkdown } from "@/lib/tome/mentions";
+import {
+  frontmatterSpaceTags,
+  spaceTagMarkdown,
+  withFrontmatterSpaceTags,
+} from "@/lib/tome/space-tags";
 import {
   liveRevisions,
   readPageProvenance,
@@ -320,6 +328,13 @@ export function WikiPageView({
   const isEdgeEntry = useMemo(() => isEdge(frontmatter), [frontmatter]);
   const isTrackedEntry = useMemo(() => isTrackedEntity(frontmatter), [frontmatter]);
   const isMirror = useMemo(() => isMirrorPage(frontmatter), [frontmatter]);
+  // Read from the draft while editing so a tag just added shows immediately,
+  // and from the saved page otherwise.
+  const spaceTags = useMemo(
+    () => frontmatterSpaceTags(isEditing ? draftFrontmatter : frontmatter),
+    [draftFrontmatter, frontmatter, isEditing],
+  );
+  const taggableSpaces = useTaggableSpaces({ enabled: isEditing });
   // Named for a reader, so the stored `.md` never reaches the header.
   const displayName = useMemo(() => pageDisplayName(path), [path]);
   const provenance = useMemo(() => readPageProvenance(liveHistory), [liveHistory]);
@@ -349,6 +364,20 @@ export function WikiPageView({
   useEffect(() => {
     if (!isEditing) setFmDraft(frontmatter);
   }, [frontmatter, isEditing]);
+
+  // A whole-page tag is frontmatter, and the body may not be touched in the
+  // same edit, so the raw draft is rewritten here as well as the frontmatter
+  // draft — otherwise tagging and saving without typing would save nothing.
+  const setSpaceTags = useCallback((slugs: string[]) => {
+    setFmDraft((current) => withFrontmatterSpaceTags(current, slugs));
+    setRawDraft((current) => {
+      const [fm, bodyContent] = parseFrontmatter(current);
+      return serializeFrontmatter(
+        withFrontmatterSpaceTags(fm as Record<string, FrontmatterValue>, slugs),
+        bodyContent,
+      );
+    });
+  }, []);
 
   // Switching pages resets edit state.
   useEffect(() => {
@@ -831,6 +860,16 @@ export function WikiPageView({
               </TooltipContent>
             </Tooltip>
           )}
+          {/* Which spaces this whole page belongs to. Beside the kind badge
+              because both are claims the page makes about itself rather than
+              things the current reader is doing to it. */}
+          <PageSpaceTags
+            tags={spaceTags}
+            spaces={taggableSpaces}
+            editing={isEditing}
+            disabled={saving}
+            onChange={setSpaceTags}
+          />
           {/* Whether the next ingest may overwrite what you are reading is a
               property of the page, not of your permission to change it — so
               a reader who cannot flip the kind still sees it. */}
@@ -1045,8 +1084,20 @@ export function WikiPageView({
           )}
         </div>
       </ScrollArea>
+      {/* One `#` trigger, one picker over real spaces: a tag typed as free
+          text could name a space that does not exist, and would then be
+          indexed against a slug no reader can ever stand in. */}
+      <SpaceTagPicker
+        spaces={taggableSpaces}
+        query={mentionQuery?.sigil === "#" ? mentionQuery : null}
+        onCancel={() => setMentionQuery(null)}
+        onPick={(space) => {
+          setMentionQuery(null);
+          editorRef.current?.completeMention(spaceTagMarkdown(space));
+        }}
+      />
       <MentionPicker
-        query={mentionQuery}
+        query={mentionQuery?.sigil === "@" ? mentionQuery : null}
         onCancel={() => setMentionQuery(null)}
         onPick={(person, note) => {
           setMentionQuery(null);

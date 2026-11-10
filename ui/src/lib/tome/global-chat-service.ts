@@ -127,7 +127,9 @@ export async function startTomeGlobalTurn(input: TomeGlobalTurnInput): Promise<{
       retrieval_scope_hash: authorized.hash,
       retrieval_history: reuseHistory ? parseHistory(state.retrieval_history ?? [])
         .filter((message) => liveVerification === "off" || message.role === "user") : [],
-      actor_sub: input.subject, actor_email: input.email ?? null, credentials: {}, stable_pages: {},
+      // Global chat answers across the whole readable catalogue rather than
+      // from one space, so there is no space for content to be tagged with.
+      actor_sub: input.subject, actor_email: input.email ?? null, credentials: {}, stable_pages: {}, tagged_pages: [],
       issue_context: { decisions: [], critical: [], decision_count: 0, critical_count: 0, decision_truncated: false, critical_truncated: false },
       snapshot: {
         project_id: `global-chat-${key}`, slug: "", name: "TOME", charter: "", phase: null, cadence: null,

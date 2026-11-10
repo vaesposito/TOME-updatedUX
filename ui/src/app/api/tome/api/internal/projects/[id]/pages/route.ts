@@ -16,6 +16,7 @@ import {
   writeExperimentArtifactPage,
 } from "@/lib/tome/evaluation-store";
 import { blocksStableBodyEdit, preserveStoredKind } from "@/lib/tome/page-kind-guard";
+import { preserveStoredSpaceTags } from "@/lib/tome/space-tags";
 import { parseFrontmatter, SPEC_BY_PATH } from "@/lib/tome/schema";
 import type { TomeReviewMode } from "@/types/projects";
 
@@ -140,7 +141,17 @@ export const POST = withErrorHandler(async (request: NextRequest, ctx: Ctx) => {
         `${guard.storedKind} -> ${guard.attemptedKind ?? "(none)"}; kept ${guard.storedKind}`,
     );
   }
-  const markdown = guard.markdown;
+  // Which spaces a page is tagged with is code-owned on agent writes for the
+  // same reason `kind` is: an ingest composes fresh frontmatter with the body
+  // it regenerates, so a tag a person added would be dropped on every run.
+  const tags = preserveStoredSpaceTags(stored, guard.markdown);
+  if (tags.restored.length > 0) {
+    console.warn(
+      `[tome-space-tags] restored tags dropped by agent write on ${project._id}/${body.path}: ` +
+        tags.restored.join(", "),
+    );
+  }
+  const markdown = tags.markdown;
 
   // One lookup, two gates: the stable-edit block below and the review gate.
   // Scoped to this project as well as the report: the run record is read as

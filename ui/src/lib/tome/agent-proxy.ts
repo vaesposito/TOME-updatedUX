@@ -177,6 +177,21 @@ export interface ProjectSnapshot {
   readable_projects: ChildProjectSnapshot[];
 }
 
+/**
+ * One page from another space that tags this one — mirrors the
+ * `TaggedPage` the agent contract needs to gain (see `taggedKnowledgeForSpace`).
+ */
+export interface AgentTaggedPage {
+  /** The space the page lives in, which is also the only space that may edit it. */
+  space_slug: string;
+  space_title: string;
+  path: string;
+  title: string;
+  /** True when the whole page is tagged rather than a passage inside it. */
+  whole_page: boolean;
+  markdown: string;
+}
+
 /** ChatRequest — mirrors contract.ChatRequest. */
 export interface AgentChatRequest {
   live_verification?: "off" | "required" | "automatic";
@@ -192,6 +207,14 @@ export interface AgentChatRequest {
   is_compact?: boolean;
   snapshot: ProjectSnapshot;
   stable_pages: Record<string, string>;
+  /**
+   * Content tagged with this space, written in other spaces.
+   *
+   * The two trees are disjoint, so a tag is the only thing that makes another
+   * space's page relevant here. These pages are not in this space's wiki and
+   * must never be written to: they belong to whoever owns `space_slug`.
+   */
+  tagged_pages: AgentTaggedPage[];
   /** Compact GitHub-backed Decisions/Critical index; bodies hydrate on demand. */
   issue_context: AgentIssueContext;
   role: "viewer" | "editor";
@@ -464,14 +487,44 @@ export async function loadStablePages(
   return out;
 }
 
+/**
+ * The content tagged with this space, as the agent's wire shape.
+ *
+ * Imported lazily because `tagged-content.server` reaches into Mongo and the
+ * PageStore, and this module is also read for its types by code that must not
+ * pull a database client in with them.
+ */
+async function loadTaggedPages(ctx: TomeProjectContext): Promise<AgentTaggedPage[]> {
+  const { taggedKnowledgeForSpace } = await import("./tagged-content.server");
+  const pages = await taggedKnowledgeForSpace(ctx);
+  return pages.map((page) => ({
+    space_slug: page.space_slug,
+    space_title: page.space_title,
+    path: page.path,
+    title: page.title,
+    whole_page: page.whole_page,
+    markdown: page.markdown,
+  }));
+}
+
 /** Assemble the agent `ChatRequest` for one chat turn. */
 export async function buildChatRequest(
   ctx: TomeProjectContext,
   opts: { message: string; sdkSessionId: string | null; isCompact?: boolean; myAgentResearch?: boolean },
 ): Promise<AgentChatRequest> {
-  const [stablePages, credentials] = await Promise.all([
+  const [stablePages, credentials, taggedPages] = await Promise.all([
     loadStablePages(ctx.projectId),
     opts.myAgentResearch ? Promise.resolve({}) : resolveForwardedCredentials(ctx),
+    // A MyAgent research turn answers from the user's own connectors only and
+    // is deliberately given no wiki context beyond this project's own.
+    opts.myAgentResearch
+      ? Promise.resolve([])
+      : loadTaggedPages(ctx).catch((error) => {
+          // Tagged content is supplementary. A stale index row or an
+          // unreachable store must not fail the turn.
+          console.warn("[tome-chat] tagged content unavailable", error);
+          return [];
+        }),
   ]);
   const snapshot = buildSnapshot(ctx);
   if (opts.myAgentResearch) {
@@ -505,6 +558,7 @@ export async function buildChatRequest(
     ...(opts.isCompact ? { is_compact: true } : {}),
     snapshot,
     stable_pages: stablePages,
+    tagged_pages: taggedPages,
     issue_context: emptyIssueContext(),
     role: ctx.canEdit ? "editor" : "viewer",
     actor_email: ctx.user.email ?? null,

@@ -487,6 +487,93 @@ describe("WikiPageView", () => {
     expect(onAutoStartEditing).toHaveBeenCalledTimes(1);
   });
 
+  /** Answer the space catalogue the tag picker chooses from. */
+  const mockSpaces = (...spaces: { slug: string; title: string; type?: string }[]) => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () =>
+          String(url).includes("/api/projects")
+            ? { data: { projects: spaces } }
+            : {},
+        text: async () => "",
+      }),
+    );
+  };
+
+  it("names the spaces a saved page is tagged with", () => {
+    mockSpaces({ slug: "other-space", title: "Other Space", type: "project" });
+
+    render(
+      <WikiPageView
+        slug="example-subject"
+        path="notes.md"
+        markdown={"---\ntitle: Notes\ntagged_spaces: [other-space]\n---\nProse."}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    const tags = screen.getByTestId("tome-page-space-tags");
+    // Named rather than slugged, and followable: the tag is the reader's way
+    // into the space whose related content now holds this page.
+    expect(within(tags).getByRole("link")).toHaveAttribute(
+      "href",
+      "/projects/other-space/tome",
+    );
+  });
+
+  it("tags a whole page with a space and saves the tag into its frontmatter", async () => {
+    const onWrite = jest.fn().mockResolvedValue(undefined);
+    mockSpaces({ slug: "other-space", title: "Other Space", type: "project" });
+
+    render(
+      <WikiPageView
+        slug="example-subject"
+        path="notes.md"
+        markdown={"---\ntitle: Notes\n---\nProse."}
+        onWrite={onWrite}
+        onReload={jest.fn()}
+      />,
+    );
+
+    // Nothing claims a space until someone says so.
+    expect(screen.queryByTestId("tome-page-space-tags")).toBeNull();
+
+    await openEditor();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Tag space/ }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Other Space/ }));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onWrite).toHaveBeenCalledTimes(1));
+    // Saved as data in the body, so it survives the reload and the ingest.
+    expect(onWrite.mock.calls[0][1]).toContain("tagged_spaces: [other-space]");
+  });
+
+  it("offers no tagging affordance to a reader who cannot edit", () => {
+    mockSpaces({ slug: "other-space", title: "Other Space" });
+
+    render(
+      <WikiPageView
+        slug="example-subject"
+        path="notes.md"
+        markdown={"---\ntitle: Notes\ntagged_spaces: [other-space]\n---\nProse."}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+        canEdit={false}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Tag space/ })).toBeNull();
+    expect(screen.getByTestId("tome-page-space-tags")).toBeInTheDocument();
+  });
+
   it("captures the current revision before saving an auto-opened page", async () => {
     const onWrite = jest.fn().mockResolvedValue(undefined);
     mockRevision({

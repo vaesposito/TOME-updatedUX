@@ -46,9 +46,9 @@ export function TreeIndex({
   /**
    * Something this branch holds that is not a page, drawn above the tree.
    *
-   * Connections holds both the spaces tagged alongside this one and the
-   * sources it mirrors. They are unlike enough to need their own heading and
-   * alike enough to belong on one page.
+   * Connections holds both the pages that tag this space and the sources it
+   * mirrors. They are unlike enough to need their own heading and alike
+   * enough to belong on one page.
    */
   lead?: React.ReactNode;
   /** How much `lead` holds, so the heading counts everything on the page. */

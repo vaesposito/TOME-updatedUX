@@ -260,9 +260,7 @@ function withStructuredIndexes(store: PageStore): PageStore {
       if (paths.length === 0) return;
       const live = await store.listPages(projectId);
       const touched: Record<string, string> = {};
-      for (const p of paths) {
-        if ((p.startsWith("edges/") || isTrackedPath(p)) && p in live) touched[p] = live[p];
-      }
+      for (const p of paths) if (p in live) touched[p] = live[p];
       await reindexTouched(projectId, touched);
     },
     rejectDraftReport: (projectId, reportId) => store.rejectDraftReport(projectId, reportId),
@@ -271,11 +269,7 @@ function withStructuredIndexes(store: PageStore): PageStore {
       if (acceptedPaths.length === 0) return;
       const live = await store.listPages(projectId);
       const touched: Record<string, string> = {};
-      for (const path of acceptedPaths) {
-        if ((path.startsWith("edges/") || isTrackedPath(path)) && path in live) {
-          touched[path] = live[path];
-        }
-      }
+      for (const path of acceptedPaths) if (path in live) touched[path] = live[path];
       await reindexTouched(projectId, touched);
     },
     resolveOrphanDraft: async (projectId, revisionId, resolution, reviewedBy) => {
@@ -285,11 +279,7 @@ function withStructuredIndexes(store: PageStore): PageStore {
         resolution,
         reviewedBy,
       );
-      if (
-        resolution === "publish" &&
-        revision &&
-        (revision.path.startsWith("edges/") || isTrackedPath(revision.path))
-      ) {
+      if (resolution === "publish" && revision) {
         await reindexTouched(projectId, { [revision.path]: revision.markdown ?? "" });
       }
       return revision;
@@ -298,10 +288,8 @@ function withStructuredIndexes(store: PageStore): PageStore {
     listTouchedPaths: (projectId, reportId) => store.listTouchedPaths(projectId, reportId),
     revertPage: async (projectId, path, revisionId, opts) => {
       await store.revertPage(projectId, path, revisionId, opts);
-      if (path.startsWith("edges/") || isTrackedPath(path)) {
-        const live = await store.listPages(projectId);
-        if (path in live) await reindexTouched(projectId, { [path]: live[path] });
-      }
+      const live = await store.listPages(projectId);
+      if (path in live) await reindexTouched(projectId, { [path]: live[path] });
     },
     ...(store.presignRead
       ? { presignRead: (projectId: string, path: string) => store.presignRead!(projectId, path) }
@@ -313,9 +301,7 @@ async function reindexTouched(
   projectId: string,
   pages: Record<string, string>,
 ): Promise<void> {
-  const touched = Object.keys(pages).filter(
-    (path) => path.startsWith("edges/") || isTrackedPath(path),
-  );
+  const touched = Object.keys(pages);
   if (touched.length === 0) return;
   const slug = await projectSlugFor(projectId);
   if (!slug) return;
@@ -346,6 +332,10 @@ async function syncIndexes(
     const { syncTrackedEntityIndex } = await import("./tracked-entities-index");
     await syncTrackedEntityIndex(projectId, projectSlug, path, markdown);
   }
+  // Unfiltered by path: any page in any folder may tag a space, so the tag
+  // index is the one structured index with no prefix of its own to key on.
+  const { syncSpaceTagIndex } = await import("./space-tags-index");
+  await syncSpaceTagIndex(projectId, projectSlug, path, markdown);
 }
 
 async function removeFromIndexes(
@@ -361,6 +351,8 @@ async function removeFromIndexes(
     const { syncTrackedEntityIndex } = await import("./tracked-entities-index");
     await syncTrackedEntityIndex(projectId, projectSlug, path, null);
   }
+  const { syncSpaceTagIndex } = await import("./space-tags-index");
+  await syncSpaceTagIndex(projectId, projectSlug, path, null);
 }
 
 async function projectSlugFor(projectId: string): Promise<string | null> {

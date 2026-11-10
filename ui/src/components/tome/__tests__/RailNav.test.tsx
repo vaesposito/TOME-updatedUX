@@ -1,6 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
-import { NavItem, NavSection } from "@/components/tome/RailNav";
+import {
+  NavItem,
+  NavSection,
+  NavSectionAction,
+} from "@/components/tome/RailNav";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 function renderRail(ui: React.ReactNode) {
@@ -427,5 +431,76 @@ describe("NavItem", () => {
       screen.getByText(name).closest("div[class*='rounded-md']")?.className ?? "";
     expect(row("Confluence")).toContain("text-muted-foreground/60");
     expect(row("GitHub")).not.toContain("text-muted-foreground/60");
+  });
+});
+
+describe("NavSection header actions", () => {
+  const section = (actions?: React.ReactNode) => (
+    <NavSection
+      icon={<span />}
+      label="Wiki"
+      active={false}
+      expanded
+      onToggle={jest.fn()}
+      onClick={jest.fn()}
+      controlsId="wiki-tree"
+      count={3}
+      actions={actions}
+    >
+      <p>Charter</p>
+    </NavSection>
+  );
+
+  it("writes a page from the section header without opening the section", () => {
+    const onNewPage = jest.fn();
+    const onClick = jest.fn();
+
+    renderRail(
+      <NavSection
+        icon={<span />}
+        label="Wiki"
+        active={false}
+        expanded
+        onToggle={jest.fn()}
+        onClick={onClick}
+        controlsId="wiki-tree"
+        count={3}
+        actions={
+          <NavSectionAction label="New page" onClick={onNewPage}>
+            <span />
+          </NavSectionAction>
+        }
+      >
+        <p>Charter</p>
+      </NavSection>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New page" }));
+    expect(onNewPage).toHaveBeenCalledTimes(1);
+    // Asking for a page in the section is not asking to go to the section.
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("keeps the count's column by standing in its place, not beside it", () => {
+    const { container } = renderRail(
+      section(
+        <NavSectionAction label="New page" onClick={jest.fn()}>
+          <span />
+        </NavSectionAction>,
+      ),
+    );
+
+    const count = screen.getByText("3");
+    expect(count.className).toContain("group-hover/section:hidden");
+    expect(
+      container.querySelector(".group-hover\\/section\\:flex"),
+    ).not.toBeNull();
+  });
+
+  it("leaves the count alone where the header does nothing", () => {
+    renderRail(section(undefined));
+
+    expect(screen.queryByRole("button", { name: "New page" })).toBeNull();
+    expect(screen.getByText("3").className).not.toContain("group-hover/section:hidden");
   });
 });

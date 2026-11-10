@@ -923,3 +923,70 @@ describe("WikiPageView", () => {
     expect((editor as HTMLTextAreaElement).value).not.toContain("```arxiv");
   });
 });
+
+describe("renaming a page", () => {
+  const page = (
+    props: Partial<React.ComponentProps<typeof WikiPageView>> = {},
+  ) => (
+    <WikiPageView
+      slug="example-project"
+      path="meetings/17.08.2026.md"
+      markdown={"---\ntitle: Weekly sync\nkind: stable\n---\nOriginal markdown"}
+      onWrite={jest.fn().mockResolvedValue(undefined)}
+      onReload={jest.fn()}
+      {...props}
+    />
+  );
+
+  it("names the page without moving it", async () => {
+    const onWrite = jest.fn().mockResolvedValue(undefined);
+    render(page({ onWrite }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename page" }));
+    const field = screen.getByRole("textbox", { name: "Page title" });
+    expect(field).toHaveValue("Weekly sync");
+
+    fireEvent.change(field, { target: { value: "Monday sync" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    await waitFor(() => expect(onWrite).toHaveBeenCalled());
+    const [writtenPath, writtenMarkdown] = onWrite.mock.calls[0];
+    // The address is what links point at, so it stays; only the name the
+    // page is read by changes, and the body is carried through untouched.
+    expect(writtenPath).toBe("meetings/17.08.2026.md");
+    expect(writtenMarkdown).toContain("title: Monday sync");
+    expect(writtenMarkdown).toContain("Original markdown");
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Page title" })).toBeNull(),
+    );
+  });
+
+  it("puts the name back on Escape", async () => {
+    const onWrite = jest.fn().mockResolvedValue(undefined);
+    render(page({ onWrite }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename page" }));
+    const field = screen.getByRole("textbox", { name: "Page title" });
+    fireEvent.change(field, { target: { value: "Abandoned" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+
+    expect(onWrite).not.toHaveBeenCalled();
+    expect(await screen.findByText("Weekly sync")).toBeInTheDocument();
+  });
+
+  it("offers no rename to a reader who cannot write here", () => {
+    render(page({ canEdit: false }));
+
+    expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();
+  });
+
+  it("offers no rename on a page whose name belongs to what it mirrors", () => {
+    render(
+      page({
+        markdown: "---\ntitle: Mirrored page\nmirror: true\n---\nBody",
+      }),
+    );
+
+    expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();
+  });
+});

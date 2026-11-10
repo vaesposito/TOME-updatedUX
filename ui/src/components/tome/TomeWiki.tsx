@@ -80,7 +80,12 @@ import { GlossaryView } from "@/components/tome/GlossaryView";
 import { PanelShell } from "@/components/tome/PanelHeader";
 import { SourcesIndex } from "@/components/tome/SourcesIndex";
 import { TomeEmpty } from "@/components/tome/TomeEmpty";
-import { NavCount, NavItem, NavSection } from "@/components/tome/RailNav";
+import {
+  NavCount,
+  NavItem,
+  NavSection,
+  NavSectionAction,
+} from "@/components/tome/RailNav";
 import { TomeLoading } from "@/components/tome/TomeLoading";
 import {
   RelatedContentBlock,
@@ -130,7 +135,7 @@ import {
   isRunInFlight,
   type IngestRunStatus,
 } from "@/lib/tome/ingest-run";
-import { pageDisplayName, renamedPagePath } from "@/lib/tome/page-names";
+import { pageDisplayName } from "@/lib/tome/page-names";
 import { Breadcrumb, type Crumb } from "@/components/tome/Breadcrumb";
 import { FollowMenu } from "@/components/tome/FollowMenu";
 import { isTourRunning } from "@/components/tour/notification-tour";
@@ -637,12 +642,6 @@ export function TomeWiki({ slug }: { slug: string }) {
   const [folderError, setFolderError] = useState<string | null>(null);
   const [savingFolder, setSavingFolder] = useState(false);
   const [pagePendingDelete, setPagePendingDelete] = useState<string | null>(null);
-  /** The page being renamed, and the name being typed for it. */
-  const [renameDialog, setRenameDialog] = useState<
-    { path: string; name: string } | null
-  >(null);
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [savingRename, setSavingRename] = useState(false);
   /** The run this space has going, if any, for the header's own sync button. */
   const [inFlightRun, setInFlightRun] = useState<
     { id: string; status: IngestRunStatus } | null
@@ -1584,51 +1583,6 @@ export function TomeWiki({ slug }: { slug: string }) {
     }
   }, [slug, isSynthesized, pollInFlightRun]);
 
-  // Rename a page: write its markdown to the new path, then tombstone the old
-  // one (there's no move endpoint). History starts fresh on the new path.
-  const renamePage = useCallback(
-    async (oldPath: string, rawNew: string) => {
-      let next = rawNew.trim().replace(/^\/+/, "");
-      if (!next) return;
-      if (!/\.(md|mdx)$/i.test(next)) next += ".md";
-      if (next === oldPath) return;
-      if (data?.pages[next] !== undefined) {
-        throw new Error(`A page already exists at ${next}`);
-      }
-      const md = data?.pages[oldPath];
-      if (md === undefined) throw new Error("Page not found");
-      await writeMarkdown(next, md, `rename ${oldPath} to ${next}`);
-      const res = await fetch(`/api/tome/projects/${slug}/pages/${oldPath}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`rename failed to remove old page (${res.status})`);
-      await load();
-      if (view.kind === "page" && view.path === oldPath) {
-        navigate({ kind: "page", path: next });
-      }
-      setArtifactPath((p) => (p === oldPath ? next : p));
-    },
-    [data, slug, writeMarkdown, load, navigate, view],
-  );
-
-  const commitRename = useCallback(async () => {
-    if (!renameDialog) return;
-    // The field holds a name, not a path: the folder and the extension the
-    // store requires are put back rather than asked of the person renaming.
-    const next = renamedPagePath(renameDialog.path, renameDialog.name);
-    if (!next) return;
-    setSavingRename(true);
-    setRenameError(null);
-    try {
-      await renamePage(renameDialog.path, next);
-      setRenameDialog(null);
-    } catch (e) {
-      setRenameError(String((e as Error)?.message ?? e));
-    } finally {
-      setSavingRename(false);
-    }
-  }, [renameDialog, renamePage]);
-
   // Import supported documents through the server converter. Nested layout is
   // preserved via webkitRelativePath when a folder is selected/dropped.
   const uploadPages = useCallback(
@@ -2107,21 +2061,22 @@ export function TomeWiki({ slug }: { slug: string }) {
     tree: PageTreeNode[],
     {
       editable,
-      renamable = editable,
+      creatable = editable,
       emptyNote,
       selectable,
       showMeta,
     }: {
       editable: boolean;
       /**
-       * Whether a page can be renamed from its own row.
+       * Whether a folder row can have a page made inside it.
        *
-       * Its own gate rather than `editable`'s: renaming hides behind one
-       * quiet menu, so it can sit on a rail that is a list of places to go
-       * while a trash and a drag handle on every row could not. Off for
-       * mirrored pages, whose names belong to whatever they mirror.
+       * Its own gate rather than `editable`'s: creation is the one thing a
+       * reader browsing the wiki asked to be able to do without going to
+       * Settings, and letting it through on its own does not hand back the
+       * deleting, moving and folder editing the new rail deliberately moved
+       * there.
        */
-      renamable?: boolean;
+      creatable?: boolean;
       emptyNote?: string;
       selectable?: boolean;
       showMeta?: boolean;
@@ -2171,16 +2126,8 @@ export function TomeWiki({ slug }: { slug: string }) {
         onSelectFolder={openFolder}
         showHidden={showHidden}
         onDelete={editable && canEdit ? deletePage : undefined}
-        onRenamePage={
-          renamable && canEdit
-            ? (path) => {
-                setRenameError(null);
-                setRenameDialog({ path, name: pageDisplayName(path) });
-              }
-            : undefined
-        }
         onCreateFolder={editable && canEdit ? openCreateFolder : undefined}
-        onCreatePage={editable && canEdit ? openNewPage : undefined}
+        onCreatePage={creatable && canEdit ? openNewPage : undefined}
         onEditFolder={editable && canEdit ? openEditFolder : undefined}
         onDeleteFolder={editable && canEdit ? deleteWikiFolder : undefined}
         onMoveItem={editable && canEdit ? moveWikiItem : undefined}
@@ -2254,29 +2201,40 @@ export function TomeWiki({ slug }: { slug: string }) {
         </button>
       )}
       {!loading && canEdit && (
-        <Dialog
-          open={newPageOpen}
-          onOpenChange={(o) => {
-            setNewPageOpen(o);
-            if (o) {
-              setTimeout(() => newPageInputRef.current?.focus(), 0);
-            } else {
-              setNewPageName("");
-              setNewPageParentFolder(null);
-            }
-          }}
+        <button
+          type="button"
+          title="New page"
+          aria-label="New page"
+          onClick={() => openNewPage()}
+          className="rounded p-1 hover:bg-muted hover:text-foreground"
         >
-          <DialogTrigger asChild>
-            <button
-              type="button"
-              title="New page"
-              aria-label="New page"
-              onClick={() => openNewPage()}
-              className="rounded p-1 hover:bg-muted hover:text-foreground"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </DialogTrigger>
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+
+  /**
+   * Asking for a page, wherever it was asked for.
+   *
+   * Mounted once beside the wiki's other dialogs rather than beneath the
+   * button that opens it: a page can now be asked for from the Wiki view, from
+   * a folder, and from the rail, and a dialog living under one of those
+   * openers is a dialog the other two set a flag on and nothing happens.
+   */
+  const newPageDialog = !loading && canEdit && (
+    <Dialog
+      open={newPageOpen}
+      onOpenChange={(o) => {
+        setNewPageOpen(o);
+        if (o) {
+          setTimeout(() => newPageInputRef.current?.focus(), 0);
+        } else {
+          setNewPageName("");
+          setNewPageParentFolder(null);
+        }
+      }}
+    >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>
@@ -2350,9 +2308,7 @@ export function TomeWiki({ slug }: { slug: string }) {
               </div>
             </form>
           </DialogContent>
-        </Dialog>
-      )}
-    </div>
+    </Dialog>
   );
 
   return (
@@ -2600,10 +2556,15 @@ export function TomeWiki({ slug }: { slug: string }) {
                           : wikiSplit.authored.length + 1
                       }
                       controlsId={`tome-v2-wiki-${slug}`}
+                      actions={canEdit ? (
+                        <NavSectionAction label="New page" onClick={() => openNewPage()}>
+                          <FilePlus2 className="h-3.5 w-3.5" />
+                        </NavSectionAction>
+                      ) : undefined}
                     >
                       {renderWikiTree(wikiSplit.authored, {
                             editable: false,
-                            renamable: true,
+                            creatable: true,
                             showMeta: false,
                           })}
 
@@ -2723,7 +2684,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                             )}
                             {renderWikiTree(nodes, {
                               editable: false,
-                              renamable: false,
+                              creatable: false,
                               emptyNote: source.unavailable
                                 ? `${source.name} is not connected to this space yet.`
                                 : `Nothing read from ${source.name} yet.`,
@@ -3567,70 +3528,7 @@ export function TomeWiki({ slug }: { slug: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={renameDialog !== null}
-        onOpenChange={(open) => {
-          if (!open && !savingRename) {
-            setRenameDialog(null);
-            setRenameError(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void commitRename();
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>Rename page</DialogTitle>
-              <DialogDescription>
-                The page keeps its history under the new name. Links written to
-                the old one will no longer resolve.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label htmlFor="tome-page-name" className="text-sm font-medium">
-                  Name
-                </label>
-                <Input
-                  id="tome-page-name"
-                  value={renameDialog?.name ?? ""}
-                  onChange={(event) => setRenameDialog((current) =>
-                    current ? { ...current, name: event.target.value } : current,
-                  )}
-                  maxLength={120}
-                  autoFocus
-                />
-              </div>
-              {renameError && (
-                <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                  {renameError}
-                </p>
-              )}
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setRenameDialog(null)}
-                disabled={savingRename}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={savingRename || !renameDialog?.name.trim()}
-              >
-                {savingRename && <Loader2 className="h-4 w-4 animate-spin" />}
-                Rename
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {newPageDialog}
 
       <DeletePageDialog
         path={pagePendingDelete}

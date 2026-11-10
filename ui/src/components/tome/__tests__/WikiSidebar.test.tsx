@@ -489,56 +489,60 @@ describe("WikiSidebar page actions", () => {
     },
   ];
 
-  const base = {
-    tree,
-    selectedPath: "meetings/17.08.2026.md",
-    onSelect: jest.fn(),
-    showHidden: false,
-  };
-
-  it("renames a page from its own row", async () => {
-    const onRenamePage = jest.fn();
-    render(<WikiSidebar {...base} onRenamePage={onRenamePage} />);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Actions for 17.08.2026" }),
-    );
-    fireEvent.click(await screen.findByRole("button", { name: /Rename/ }));
-
-    // The page is named by its path, which is what the rename acts on.
-    expect(onRenamePage).toHaveBeenCalledWith("meetings/17.08.2026.md");
-  });
-
-  it("keeps the menu out of the way until the row is reached", () => {
-    render(<WikiSidebar {...base} onRenamePage={jest.fn()} />);
-
-    // Present for the keyboard, invisible to a reader going down the tree.
-    expect(
-      screen.getByRole("button", { name: "Actions for 17.08.2026" }).className,
-    ).toContain("opacity-0");
-  });
-
-  it("offers no menu where there is nothing to do with a page", () => {
-    render(<WikiSidebar {...base} />);
-
-    expect(
-      screen.queryByRole("button", { name: "Actions for 17.08.2026" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("leaves folders to the edit action their rows already carry", () => {
-    const onEditFolder = jest.fn();
+  it("offers no way to rename a page, even where pages can be edited", () => {
     render(
-      <WikiSidebar {...base} onRenamePage={jest.fn()} onEditFolder={onEditFolder} />,
+      <WikiSidebar
+        tree={tree}
+        selectedPath="meetings/17.08.2026.md"
+        onSelect={jest.fn()}
+        showHidden={false}
+        onDelete={jest.fn()}
+        onEditFolder={jest.fn()}
+        onCreatePage={jest.fn()}
+      />,
     );
 
-    // A second way to rename a folder would be a second thing to keep in step
-    // with the first.
+    // A page is named where it is written, so the tree never offers it —
+    // not as a row action and not behind a menu.
+    expect(screen.queryByRole("button", { name: /rename/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Actions for/ })).toBeNull();
+  });
+});
+
+describe("WikiSidebar folder actions", () => {
+  const tree: PageTreeNode[] = [
+    {
+      path: "meetings",
+      title: "Meetings",
+      kind: "folder",
+      folderId: "meetings",
+      order: 0,
+      children: [
+        { path: "meetings/one.md", title: "One", kind: "stable", order: 0, children: [] },
+      ],
+    },
+  ];
+
+  const base = { tree, selectedPath: null, onSelect: jest.fn(), showHidden: false };
+
+  it("writes a page into the folder it was asked from", () => {
+    const onCreatePage = jest.fn();
+    render(<WikiSidebar {...base} onCreatePage={onCreatePage} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New page in Meetings" }));
+    // The folder itself, so the dialog opens already knowing where the page
+    // goes rather than asking.
+    expect(onCreatePage).toHaveBeenCalledWith(tree[0]);
+  });
+
+  it("offers creation without offering the rest of the editing with it", () => {
+    render(<WikiSidebar {...base} onCreatePage={jest.fn()} />);
+
     expect(
-      screen.queryByRole("button", { name: "Actions for Meetings" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Edit Meetings" }),
+      screen.getByRole("button", { name: "New page in Meetings" }),
     ).toBeInTheDocument();
+    for (const withheld of ["Delete Meetings", "Edit Meetings", "Move Meetings", "Delete One"]) {
+      expect(screen.queryByRole("button", { name: withheld })).toBeNull();
+    }
   });
 });

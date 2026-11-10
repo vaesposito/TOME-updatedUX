@@ -43,17 +43,3 @@ export function asPagePath(name: string): string {
   return MARKDOWN_SUFFIX.test(trimmed) ? trimmed : `${trimmed}.md`;
 }
 
-/**
- * Where a page lands when it is renamed to `name`.
- *
- * Renaming names a page, it does not move it: the folder it sits in is kept
- * whatever is typed, so a name with slashes in it is read as a name rather
- * than as a path to somewhere else. Empty when nothing usable was typed,
- * which callers read as "no rename to do".
- */
-export function renamedPagePath(oldPath: string, name: string): string {
-  const typed = name.trim().split(/[\\/]/).pop()?.trim() ?? "";
-  const filename = asPagePath(typed);
-  if (!filename) return "";
-  return `${oldPath.slice(0, oldPath.lastIndexOf("/") + 1)}${filename}`;
-}

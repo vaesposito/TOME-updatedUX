@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, Bot, ChevronDown, ImagePlus, Info, Loader2, UserRound, X } from "lucide-react";
+import { AlertTriangle, Bot, ChevronDown, ImagePlus, Info, Loader2, Pencil, UserRound, X } from "lucide-react";
 
 import {
   MARKDOWN_DOCUMENT_EDITOR_MODES,
@@ -20,6 +20,7 @@ import {
   type ReactCodeMirrorRef,
 } from "@/components/skills/workspace/RichCodeEditor";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -227,6 +228,9 @@ export function WikiPageView({
   onAutoStartEditing,
 }: Props) {
   const [isEditing, setIsEditing] = useState(false);
+  const [renamingTitle, setRenamingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [titleSaving, setTitleSaving] = useState(false);
   const [editorMode, setEditorMode] = useState<MarkdownDocumentEditorMode>("rich");
   const [rawDraft, setRawDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -380,6 +384,7 @@ export function WikiPageView({
   // Switching pages resets edit state.
   useEffect(() => {
     setIsEditing(false);
+    setRenamingTitle(false);
     setEditorMode("rich");
     setError(null);
     setDraftStatus(null);
@@ -666,6 +671,61 @@ export function WikiPageView({
     }
   }, [conflict, draftBody, draftStorageKey, editorMode, fmDraft, onWrite, path, refreshLastRevision]);
 
+  const startTitleRename = useCallback(() => {
+    setTitleDraft(title);
+    setRenamingTitle(true);
+  }, [title]);
+
+  const cancelTitleRename = useCallback(() => {
+    setRenamingTitle(false);
+  }, []);
+
+  /**
+   * Name the page, which is not the same as moving it.
+   *
+   * The name is the page's own `title`, which is what the tree, this header
+   * and the breadcrumb all read it by. Its path is its address and is left
+   * exactly as it was, so every link already written to this page still
+   * resolves and no filename is put in front of a reader.
+   *
+   * Mid-edit the new name goes into the draft and is saved with the rest,
+   * because writing it now would write it over whatever is still being typed.
+   */
+  const commitTitleRename = useCallback(async () => {
+    const next = titleDraft.trim();
+    if (!next || next === title) {
+      setRenamingTitle(false);
+      return;
+    }
+    if (isEditing) {
+      setFmDraft((current) => ({ ...current, title: next }));
+      setRawDraft((current) => {
+        const [fm, bodyContent] = parseFrontmatter(current);
+        return serializeFrontmatter(
+          { ...(fm as Record<string, FrontmatterValue>), title: next },
+          bodyContent,
+        );
+      });
+      setRenamingTitle(false);
+      return;
+    }
+    setTitleSaving(true);
+    setError(null);
+    try {
+      await onWrite(
+        path,
+        serializeFrontmatter({ ...frontmatter, title: next }, body),
+        `rename ${path} to ${next}`,
+      );
+      await onReload();
+      setRenamingTitle(false);
+    } catch (caught) {
+      setError(String((caught as Error)?.message ?? caught));
+    } finally {
+      setTitleSaving(false);
+    }
+  }, [body, frontmatter, isEditing, onReload, onWrite, path, title, titleDraft]);
+
   const handleChangeKind = useCallback(
     async (newKind: PageKind) => {
       if (newKind === kind) return;
@@ -696,7 +756,52 @@ export function WikiPageView({
         )}
         <div className="min-w-60 flex-1 overflow-hidden">
           <div className="flex min-w-0 items-center gap-2" data-testid="tome-page-title-row">
-            <h2 className="min-w-0 truncate text-base font-semibold leading-tight">{title}</h2>
+            {renamingTitle ? (
+              <Input
+                aria-label="Page title"
+                value={titleDraft}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void commitTitleRename();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelTitleRename();
+                  }
+                }}
+                onBlur={() => void commitTitleRename()}
+                className="h-auto min-w-0 flex-1 border-0 px-0 py-0 text-base font-semibold leading-tight shadow-none focus-visible:ring-0"
+                autoFocus
+                disabled={titleSaving}
+              />
+            ) : (
+              <div className="group/title flex min-w-0 items-center gap-1.5">
+                <h2 className="min-w-0 truncate text-base font-semibold leading-tight">{title}</h2>
+                {canEdit && !locked && !isMirror && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={startTitleRename}
+                        disabled={titleSaving}
+                        aria-label="Rename page"
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within/title:opacity-100 group-hover/title:opacity-100 disabled:opacity-40"
+                      >
+                        {titleSaving ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      Rename page
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            )}
             {isEditing && draftStatus && (
               <p
                 className="min-w-0 truncate rounded bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-700 dark:text-emerald-300"

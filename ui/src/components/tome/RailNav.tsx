@@ -39,6 +39,7 @@ export function NavSection({
   count,
   children,
   holdsNothing,
+  actions,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -71,6 +72,15 @@ export function NavSection({
    * it were empty. It keeps its caret: there is something to open.
    */
   holdsNothing?: boolean;
+  /**
+   * What can be done to the section as a whole, from its own header.
+   *
+   * Hidden until the row is reached, and it takes the count's place rather
+   * than sitting beside it: every figure in the rail stands in one column,
+   * and an action that widened one row would knock its figure out of that
+   * column for as long as the pointer was there.
+   */
+  actions?: React.ReactNode;
 }) {
   const empty = count === 0;
 
@@ -78,7 +88,7 @@ export function NavSection({
     <div className="flex flex-col">
       <div
         className={cn(
-          "flex w-full items-center rounded-md pr-2 text-sm font-medium transition-colors hover:bg-muted",
+          "group/section flex w-full items-center rounded-md pr-2 text-sm font-medium transition-colors hover:bg-muted",
           // Lighter while it holds nothing, on the same terms as the rows
           // under it. A connected source with nothing read from it yet is
           // still a row that leads nowhere today, and should look like one.
@@ -102,7 +112,15 @@ export function NavSection({
           {icon}
           <span className="flex-1 truncate">{label}</span>
         </button>
-        <NavCount count={count} />
+        {actions && (
+          <span className="hidden shrink-0 items-center gap-0.5 group-focus-within/section:flex group-hover/section:flex">
+            {actions}
+          </span>
+        )}
+        <NavCount
+          count={count}
+          className={cn(actions && "group-focus-within/section:hidden group-hover/section:hidden")}
+        />
         {empty ? (
           <span aria-hidden className="h-3.5 w-3.5 shrink-0" />
         ) : (
@@ -254,5 +272,39 @@ export function NavCount({ count, className }: { count?: number; className?: str
     >
       {count}
     </span>
+  );
+}
+
+/**
+ * One quiet thing a section header can do.
+ *
+ * Icon only, like the actions on the tree rows beneath it: the header already
+ * says which section this is, so the action has only to say what it does, and
+ * it does it under a pointer that is already there.
+ */
+export function NavSectionAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      // The header row goes to the section's own view, which is not what
+      // asking for a new page in it means.
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      aria-label={label}
+      title={label}
+      className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+    >
+      {children}
+    </button>
   );
 }

@@ -9,9 +9,8 @@
  */
 
 import Link from "next/link";
-import { BookOpen, History, UserX } from "lucide-react";
+import { History, UserX } from "lucide-react";
 
-import { ProviderLogo } from "@/components/credentials/provider-logo";
 import {
   Tooltip,
   TooltipContent,
@@ -128,11 +127,6 @@ export function ProjectCard({ project }: { project: EnrichedProject }) {
   const steward = dataStewardLabel(project.data_steward);
   const freshness = activityLabel(project.last_ingested_at, project.last_edited_at);
   const activeRun = project.active_ingests?.[0];
-  const repoCount = project.sources?.repos?.length ?? 0;
-  const webexCount = project.sources?.webex_rooms?.length ?? 0;
-  const confluenceCount = (project.sources?.confluence_spaces?.length ?? 0) ||
-    (project.sources?.confluence_url ? 1 : 0);
-  const hasSources = repoCount > 0 || confluenceCount > 0 || webexCount > 0;
 
   return (
     <Link
@@ -204,60 +198,6 @@ export function ProjectCard({ project }: { project: EnrichedProject }) {
       <p className="mt-2 line-clamp-2 flex-grow text-sm text-muted-foreground">
         {project.description}
       </p>
-
-      <div className="mt-4 space-y-2">
-        {(hasSources || project.page_count != null) && (
-          <div className="flex flex-wrap items-center gap-3">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <BookOpen className="h-3.5 w-3.5" />
-                  {project.page_count ?? 0} {(project.page_count ?? 0) === 1 ? "page" : "pages"}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Wiki pages from the last ingest</TooltipContent>
-            </Tooltip>
-            {repoCount > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <ProviderLogo provider="github" className="h-3.5 w-3.5 grayscale transition-all group-hover:grayscale-0" />
-                    {repoCount} {repoCount === 1 ? "repo" : "repos"}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {repoCount} GitHub {repoCount === 1 ? "repository" : "repositories"} connected
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {confluenceCount > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <ProviderLogo provider="atlassian" className="h-3.5 w-3.5 object-contain grayscale transition-all group-hover:grayscale-0" />
-                    {confluenceCount} {confluenceCount === 1 ? "space" : "spaces"}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>{confluenceCount} Confluence {confluenceCount === 1 ? "space" : "spaces"} connected</TooltipContent>
-              </Tooltip>
-            )}
-            {webexCount > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <ProviderLogo provider="webex" className="h-3.5 w-3.5 object-contain grayscale transition-all group-hover:grayscale-0" />
-                    {webexCount} {webexCount === 1 ? "room" : "rooms"}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {webexCount} Webex {webexCount === 1 ? "room" : "rooms"} connected
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        )}
-
-      </div>
     </Link>
   );
 }

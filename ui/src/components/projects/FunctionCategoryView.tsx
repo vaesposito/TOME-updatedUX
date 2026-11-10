@@ -1,13 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, FolderKanban, Layers, Plus, Search } from "lucide-react";
+import { ArrowLeft, FolderKanban, Layers, Search } from "lucide-react";
 import * as React from "react";
 
-import {
-  FunctionCategoryDialog,
-  type TaggableSpace,
-} from "@/components/projects/FunctionCategoryDialog";
 import {
   HubHeading,
   HubSearchField,
@@ -17,35 +13,36 @@ import {
   ProjectCard,
   type EnrichedProject,
 } from "@/components/projects/ProjectCard";
-import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useFunctionTaxonomy } from "@/hooks/use-function-taxonomy";
 import { TomeEmpty } from "@/components/tome/TomeEmpty";
-import { findCategoryBySlug } from "@/lib/projects/function-taxonomy";
+import {
+  findCategoryBySlug,
+  withSubjectNames,
+} from "@/lib/projects/function-taxonomy";
+import { isInCategory, partitionSpaces } from "@/lib/projects/placement";
 import { projectMatchesQuery } from "@/lib/tome/project-search";
 import { projectGridClassName } from "@/lib/tome/project-grid";
 
 /**
  * One category, read the way the catalogue is read.
  *
- * A category is a set of projects, so it is drawn as a set of projects: the
- * same count, the same toolbar, the same cards the hub draws, rather than
- * the condensed list of names the card in the function view has room for.
- * What a reader came for on either screen is the same thing, and the way
- * through it should not change on the way in.
+ * A category is a set of subjects, so it is drawn as a set of subjects: the
+ * same count, the same toolbar, the same cards the hub draws. What a reader
+ * came for on either screen is the same thing, and the way through it should
+ * not change on the way in.
  *
- * The taxonomy is held by the browser, not the server, so this view can be
- * opened on a device that has never heard of the category in the address.
- * That is a real limit of where categories live, and it is said plainly
- * rather than drawn as a broken page.
+ * Which subjects those are is read off the subjects themselves, so this page
+ * holds whatever the records say whichever browser opens it. Only the
+ * category's *name* comes from the device, and a name no browser holds is
+ * recovered from the subjects that use it.
  */
 export function FunctionCategoryView({ slug }: { slug: string }) {
-  const { taxonomy, ready, update } = useFunctionTaxonomy();
-  const [projects, setProjects] = React.useState<EnrichedProject[]>([]);
+  const { taxonomy, ready } = useFunctionTaxonomy();
+  const [subjects, setSubjects] = React.useState<EnrichedProject[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
-  const [editing, setEditing] = React.useState(false);
 
   React.useEffect(() => {
     let live = true;
@@ -54,7 +51,8 @@ export function FunctionCategoryView({ slug }: { slug: string }) {
         const res = await fetch("/api/projects");
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? "Failed to load projects");
-        if (live) setProjects((body.data?.projects ?? []) as EnrichedProject[]);
+        const spaces = (body.data?.projects ?? []) as EnrichedProject[];
+        if (live) setSubjects(partitionSpaces(spaces).subjects);
       } catch (err) {
         if (live) setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -67,24 +65,20 @@ export function FunctionCategoryView({ slug }: { slug: string }) {
   }, []);
 
   // Resolved only once the device's own copy is in hand: until then the
-  // taxonomy is the empty one the server rendered, and every category in it
-  // is unknown.
-  const found = ready ? findCategoryBySlug(taxonomy, slug) : null;
+  // vocabulary is the empty one the server rendered.
+  const vocabulary = withSubjectNames(taxonomy, subjects);
+  const found = ready ? findCategoryBySlug(vocabulary, slug) : null;
 
-  const bySlug = new Map(projects.map((project) => [project.slug, project]));
-  const tagged = (found?.category.spaces ?? [])
-    .map((tag) => bySlug.get(tag))
-    .filter((project): project is EnrichedProject => project !== undefined);
+  const inCategory = found
+    ? subjects.filter((subject) =>
+        isInCategory(subject, found.fn.name, found.category.name),
+      )
+    : [];
 
   const normalizedQuery = query.trim();
   const shown = normalizedQuery
-    ? tagged.filter((project) => projectMatchesQuery(project, normalizedQuery))
-    : tagged;
-
-  const taggable: TaggableSpace[] = projects.map((project) => ({
-    slug: project.slug,
-    title: project.title || project.name || project.slug,
-  }));
+    ? inCategory.filter((subject) => projectMatchesQuery(subject, normalizedQuery))
+    : inCategory;
 
   return (
     <div className="relative isolate mx-auto w-full max-w-[1600px] space-y-8 p-6">
@@ -112,16 +106,16 @@ export function FunctionCategoryView({ slug }: { slug: string }) {
         )}
       </div>
 
-      {!ready && (
+      {(!ready || loading) && !found && (
         <p className="text-sm text-muted-foreground">Loading category…</p>
       )}
 
-      {ready && !found && (
+      {ready && !loading && !found && (
         <div className="rounded-2xl border border-dashed border-border">
           <TomeEmpty
             icon={<Layers />}
-            headline="No such category on this device"
-            hint="Categories are kept by the browser that made them, so a link to one opens empty elsewhere. By function shows the categories this browser holds."
+            headline="No such category"
+            hint="A category is named by this deployment or by the subjects that sit in it. Nothing names this one. By function shows the categories that exist."
             action={{ label: "By function", href: "/projects?tab=functions" }}
           />
         </div>
@@ -135,32 +129,22 @@ export function FunctionCategoryView({ slug }: { slug: string }) {
                 {loading
                   ? found.category.name
                   : normalizedQuery
-                    ? `${shown.length} of ${tagged.length} projects`
-                    : `${tagged.length} ${tagged.length === 1 ? "project" : "projects"}`}
+                    ? `${shown.length} of ${inCategory.length} subjects`
+                    : `${inCategory.length} ${inCategory.length === 1 ? "subject" : "subjects"}`}
               </HubHeading>
             }
           >
             <HubSearchField
               value={query}
               onChange={setQuery}
-              placeholder="Find project…"
-              label="Find a project in this category"
-              clearLabel="Clear project search"
+              placeholder="Find subject…"
+              label="Find a subject in this category"
+              clearLabel="Clear subject search"
             />
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setEditing(true)}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add projects
-            </Button>
           </HubToolbar>
 
           {loading && (
-            <p className="text-sm text-muted-foreground">Loading projects…</p>
+            <p className="text-sm text-muted-foreground">Loading subjects…</p>
           )}
 
           {error && (
@@ -169,26 +153,22 @@ export function FunctionCategoryView({ slug }: { slug: string }) {
             </p>
           )}
 
-          {!loading && tagged.length === 0 && (
+          {!loading && inCategory.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border">
               <TomeEmpty
                 icon={<FolderKanban />}
-                headline="Nothing tagged into this category yet"
-                hint="A category holds whichever projects were tagged into it. Tag one and it appears here as it appears in the catalogue."
-                action={{
-                  label: "Add projects",
-                  onClick: () => setEditing(true),
-                }}
+                headline="No subjects in this category yet"
+                hint="A subject joins a category by naming it. Name this one on a subject and it appears here as it appears under By function."
               />
             </div>
           )}
 
-          {!loading && tagged.length > 0 && shown.length === 0 && (
+          {!loading && inCategory.length > 0 && shown.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border">
               <TomeEmpty
                 icon={<Search />}
-                headline="No projects match your search"
-                hint={`Nothing in this category matches \u201C${normalizedQuery}\u201D. Clearing the search brings every project back.`}
+                headline="No subjects match your search"
+                hint={`Nothing in this category matches \u201C${normalizedQuery}\u201D. Clearing the search brings every subject back.`}
                 action={{ label: "Clear search", onClick: () => setQuery("") }}
               />
             </div>
@@ -197,29 +177,13 @@ export function FunctionCategoryView({ slug }: { slug: string }) {
           {shown.length > 0 && (
             <TooltipProvider>
               <div className={projectGridClassName()}>
-                {shown.map((project) => (
-                  <ProjectCard key={String(project._id)} project={project} />
+                {shown.map((subject) => (
+                  <ProjectCard key={String(subject._id)} project={subject} />
                 ))}
               </div>
             </TooltipProvider>
           )}
         </section>
-      )}
-
-      {found && editing && (
-        <FunctionCategoryDialog
-          open
-          onOpenChange={(open) => !open && setEditing(false)}
-          taxonomy={taxonomy}
-          spaces={taggable}
-          draft={{
-            functionId: found.fn.id,
-            categoryId: found.category.id,
-            name: found.category.name,
-            spaces: found.category.spaces,
-          }}
-          onCommit={update}
-        />
       )}
     </div>
   );

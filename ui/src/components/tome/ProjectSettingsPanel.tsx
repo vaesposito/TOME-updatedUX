@@ -41,6 +41,7 @@ import { AutosavingSourcesEditor } from "@/components/projects/source-pickers/Au
 import { useProjectSourceKinds } from "@/components/projects/source-pickers/useProjectSourceKinds";
 import type { SourceKind } from "@/components/projects/source-pickers";
 import { withoutMyAgentConsentFields } from "@/lib/projects/myagent-consent-client";
+import { isSubject } from "@/lib/projects/placement";
 import { ChildProjectsPanel } from "@/components/tome/BhagProjectsPanel";
 import { EntityModelSettings } from "@/components/tome/EntityModelSettings";
 import { PanelHeader } from "@/components/tome/PanelHeader";
@@ -287,10 +288,19 @@ export function ProjectSettingsPanel({
   // same directly attached sources available to regular projects.
   const [isSynthesized, setIsSynthesized] = useState(false);
   const [projectKind, setProjectKind] = useState<ProjectType>("project");
+  // A space on the function axis. Not a lesser project: a different entity,
+  // named as itself wherever this panel names the kind of thing it is editing.
+  const [isSubjectSpace, setIsSubjectSpace] = useState(false);
   const [projectName, setProjectName] = useState("");
   const canDelete = canEdit && (!isSynthesized || canManageSteward);
   const entityLabel =
-    projectKind === "bhag" ? "BHAG" : projectKind === "area" ? "Area" : "project";
+    projectKind === "bhag"
+      ? "BHAG"
+      : projectKind === "area"
+        ? "Area"
+        : isSubjectSpace
+          ? "Subject"
+          : "project";
   const [sources, setSources] = useState<ProjectSources>({
     repos: [],
     confluence_url: "",
@@ -391,6 +401,7 @@ export function ProjectSettingsPanel({
         setDescription(project.description ?? "");
         setIsSynthesized(isSynthesizedType(project.type));
         setProjectKind(project.type ?? "project");
+        setIsSubjectSpace(isSubject(project));
         setProjectName(project.name ?? project.title ?? "");
         setSources({
           repos: project.sources?.repos ?? [],

@@ -19,8 +19,12 @@ function searchableProjectText(project: ProjectDocument): string {
     ...stewardValues,
     ...(project.tags ?? []),
     project.labels?.domain,
+    // Both axes: naming the part of the tree a space sits under finds
+    // everything under it, whichever tree that is.
     ...(project.labels?.initiatives ?? []),
     ...(project.labels?.areas ?? []),
+    ...(project.labels?.functions ?? []),
+    ...(project.labels?.categories ?? []),
     ...(project.sources?.repos ?? []),
     ...(project.sources?.github_repos ?? []).map((repo) => repo.full_name),
     ...(project.sources?.confluence_spaces ?? []).flatMap((space) => [

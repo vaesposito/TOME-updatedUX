@@ -132,12 +132,18 @@ export function isSynthesizedType(type: ProjectType | undefined): boolean {
  * Label dimensions for discovery + the executive dashboard. Free-form,
  * multi-value (except domain). `domain` is denormalized from the structural
  * domain (mirrors the top-level `domain` field) so the dashboard can facet by it.
+ *
+ * `initiatives`/`areas` and `functions`/`categories` are the two levels of the
+ * two axes a space can be organised on — BHAG → Area → Project, and
+ * Function → Category → Subject. A space sits on exactly one of them;
+ * `placementOf` in `lib/projects/placement` is the single reading of which.
  */
 export interface ProjectLabels {
   domain?: string;
   initiatives?: string[]; // BHAG / Initiative
   areas?: string[]; // Area
   functions?: string[]; // The part of the organisation that owns the space
+  categories?: string[]; // How that part of the organisation divides its own work
 }
 
 /**
@@ -429,6 +435,9 @@ export interface CreateProjectRequest {
   domain?: string;
   initiatives?: string[];
   areas?: string[];
+  /** Names a function to create the space on the function axis, as a subject. */
+  functions?: string[];
+  categories?: string[];
   tags?: string[];
   manager?: string;
   // Data sources the user shares at onboarding (forwarded to connected external apps).

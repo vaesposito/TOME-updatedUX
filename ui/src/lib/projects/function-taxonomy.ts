@@ -1,12 +1,13 @@
 /**
- * The organisation as functions, the categories a function keeps, and which
- * spaces sit in each.
+ * The organisation as functions, and the categories a function keeps.
  *
- * Two levels rather than one flat set of tags. A function is the part of the
- * organisation that owns a space and the list of them barely changes;
- * a category is how that part of the organisation divides its own work, and
- * only the people in it know what those divisions are. So functions ship
- * fixed and categories are made by whoever needs them.
+ * A vocabulary, not a placement. A function is the part of the organisation
+ * that owns a space and the list of them barely changes; a category is how
+ * that part of the organisation divides its own work, and only the people in
+ * it know what those divisions are. So functions ship fixed and categories
+ * are made by whoever needs them. Which subject sits in which category is not
+ * decided here — a subject names its own function and category on itself, and
+ * `lib/projects/placement` reads that.
  *
  * Pure: no React, no storage, no fetch. Everything here is a reading of a
  * taxonomy or a new taxonomy derived from an old one, which is what makes it
@@ -14,13 +15,12 @@
  */
 
 import { normLabel } from "@/lib/projects/labels";
+import { namesUsedBy, type PlaceableSpace } from "@/lib/projects/placement";
 
-/** A division of one function's work, holding whichever spaces were tagged into it. */
+/** A division of one function's work. */
 export interface FunctionCategory {
   id: string;
   name: string;
-  /** Project slugs, in the order they were tagged. */
-  spaces: string[];
 }
 
 /** A part of the organisation, and how it divides its own work. */
@@ -39,7 +39,7 @@ export interface FunctionTaxonomy {
 /**
  * The functions that ship.
  *
- * Fixed rather than derived from whatever spaces happen to be tagged: the
+ * Fixed rather than derived from whatever subjects happen to exist: the
  * point of the view is to show the whole organisation, including the parts
  * with nothing in TOME yet, since an absent function and an empty one read
  * identically once the list is only what was found.
@@ -152,13 +152,9 @@ function readCategory(raw: unknown): FunctionCategory | null {
   const entry = raw as Record<string, unknown>;
   const name = typeof entry.name === "string" ? entry.name.trim() : "";
   if (!name) return null;
-  const spaces = Array.isArray(entry.spaces)
-    ? entry.spaces.filter((s): s is string => typeof s === "string" && s.length > 0)
-    : [];
   return {
     id: typeof entry.id === "string" && entry.id ? entry.id : idFor(name),
     name,
-    spaces: [...new Set(spaces)],
   };
 }
 
@@ -226,69 +222,31 @@ export function withConfiguredCategories(
   return next;
 }
 
-/** One category, and the projects a deployment says sit in it. */
-export interface ConfiguredTag {
-  function: string;
-  category: string;
-  spaces: string[];
-}
-
 /**
- * Read which projects a deployment puts in which category.
+ * The configured vocabulary widened by the words the subjects actually use.
  *
- * Written as `Function > Category: slug, other-slug | …`. The function is
- * named as well as the category because two functions may divide their work
- * by the same word and mean different things by it.
+ * A subject naming a function or a category this deployment never configured
+ * is still somewhere, and that somewhere has to be drawn or the subject is
+ * invisible. Added rather than configured, so the vocabulary a view renders
+ * from is always at least as wide as the records it is rendering.
  */
-export function parseConfiguredTags(raw: string | undefined | null): ConfiguredTag[] {
-  if (!raw) return [];
-  const tags: ConfiguredTag[] = [];
-  for (const chunk of raw.split("|")) {
-    const at = chunk.indexOf(":");
-    if (at < 0) continue;
-    const [fn, category] = chunk.slice(0, at).split(">").map((part) => part.trim());
-    if (!fn || !category) continue;
-    const spaces = chunk
-      .slice(at + 1)
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-    if (spaces.length > 0) tags.push({ function: fn, category, spaces });
-  }
-  return tags;
-}
-
-/** The category this tag names, if the taxonomy has it. */
-function categoryFor(
+export function withSubjectNames(
   taxonomy: FunctionTaxonomy,
-  tag: { function: string; category: string },
-): FunctionCategory | undefined {
-  const fn = taxonomy.functions.find(
-    (candidate) => normLabel(candidate.name) === normLabel(tag.function),
-  );
-  return fn?.categories.find(
-    (category) => normLabel(category.name) === normLabel(tag.category),
-  );
-}
-
-/**
- * Put the configured projects into their categories, keeping what is there.
- *
- * A tag naming a category that does not exist is ignored rather than
- * creating one: the categories line says what exists, and a typo in a tag
- * should not quietly invent a division of the work.
- */
-export function withConfiguredTags(
-  taxonomy: FunctionTaxonomy,
-  raw: string | undefined | null,
+  subjects: readonly PlaceableSpace[],
 ): FunctionTaxonomy {
   let next = taxonomy;
-  for (const tag of parseConfiguredTags(raw)) {
-    const category = categoryFor(next, tag);
-    if (!category) continue;
-    const wanted = tag.spaces.filter((slug) => !category.spaces.includes(slug));
-    if (wanted.length === 0) continue;
-    next = setSpaces(next, category.id, [...category.spaces, ...wanted]);
+  for (const used of namesUsedBy(subjects)) {
+    let target = next.functions.find(
+      (fn) => normLabel(fn.name) === normLabel(used.function),
+    );
+    if (!target) {
+      const made = addFunction(next, used.function);
+      next = made.taxonomy;
+      target = next.functions.find((fn) => fn.id === made.id);
+    }
+    if (!target || !used.category) continue;
+    if (hasCategoryNamed(next, target.id, used.category)) continue;
+    next = addCategory(next, target.id, used.category).taxonomy;
   }
   return next;
 }
@@ -298,8 +256,8 @@ export function withConfiguredTags(
  *
  * A category the configuration has stopped naming is taken out, so renaming
  * one in configuration reads as a rename rather than leaving the old name
- * beside the new. Only while it is empty, though: once someone has tagged a
- * space into it, it is theirs, and configuration no longer gets to delete it.
+ * beside the new. Nothing is lost by taking one out: a category subjects
+ * still name comes back from the subjects themselves.
  */
 export function reconcileConfiguredCategories(
   taxonomy: FunctionTaxonomy,
@@ -324,66 +282,13 @@ export function reconcileConfiguredCategories(
         (candidate) => normLabel(candidate.name) === normLabel(group.function),
       );
       const retired = fn?.categories.find(
-        (category) =>
-          normLabel(category.name) === normLabel(name) &&
-          category.spaces.length === 0,
+        (category) => normLabel(category.name) === normLabel(name),
       );
       if (retired) next = removeCategory(next, retired.id);
     }
   }
 
   return withConfiguredCategories(next, current);
-}
-
-/** Everything a deployment says about the organisation, in two lines. */
-export interface TaxonomyConfig {
-  categories?: string | null;
-  tags?: string | null;
-}
-
-/**
- * Bring a taxonomy from one whole configuration to the next.
- *
- * Tags are retired before categories, so a category emptied by the change is
- * free to be retired itself and a rename of both reads as a rename. Only
- * pairs the previous configuration named are taken out: a project someone
- * tagged by hand was never configuration's to remove.
- */
-export function reconcileConfiguration(
-  taxonomy: FunctionTaxonomy,
-  previous: TaxonomyConfig,
-  current: TaxonomyConfig,
-): FunctionTaxonomy {
-  const stillTagged = new Map<string, Set<string>>();
-  for (const tag of parseConfiguredTags(current.tags)) {
-    const key = `${normLabel(tag.function)}>${normLabel(tag.category)}`;
-    const set = stillTagged.get(key) ?? new Set<string>();
-    for (const slug of tag.spaces) set.add(slug);
-    stillTagged.set(key, set);
-  }
-
-  let next = taxonomy;
-  for (const tag of parseConfiguredTags(previous.tags)) {
-    const key = `${normLabel(tag.function)}>${normLabel(tag.category)}`;
-    const keep = stillTagged.get(key) ?? new Set<string>();
-    const retired = tag.spaces.filter((slug) => !keep.has(slug));
-    if (retired.length === 0) continue;
-    const category = categoryFor(next, tag);
-    if (!category) continue;
-    next = setSpaces(
-      next,
-      category.id,
-      category.spaces.filter((slug) => !retired.includes(slug)),
-    );
-  }
-
-  next = reconcileConfiguredCategories(next, previous.categories, current.categories);
-  return withConfiguredTags(next, current.tags);
-}
-
-/** Whether a function of this name already exists, however it was capitalised. */
-export function hasFunctionNamed(taxonomy: FunctionTaxonomy, name: string): boolean {
-  return taxonomy.functions.some((fn) => normLabel(fn.name) === normLabel(name));
 }
 
 /** Whether this function already divides its work that way. */
@@ -422,12 +327,11 @@ export function addFunction(
   };
 }
 
-/** Add a category to a function, with the spaces it starts out holding. */
+/** Add a category to a function, or return the one already named that. */
 export function addCategory(
   taxonomy: FunctionTaxonomy,
   functionId: string,
   name: string,
-  spaces: readonly string[] = [],
 ): { taxonomy: FunctionTaxonomy; id: string } {
   const trimmed = name.trim();
   const target = taxonomy.functions.find((fn) => fn.id === functionId);
@@ -436,61 +340,19 @@ export function addCategory(
   const existing = target.categories.find(
     (c) => normLabel(c.name) === normLabel(trimmed),
   );
-  if (existing) {
-    return {
-      taxonomy: setSpaces(taxonomy, existing.id, [...existing.spaces, ...spaces]),
-      id: existing.id,
-    };
-  }
+  if (existing) return { taxonomy, id: existing.id };
 
   const id = uniqueId(`${target.name}-${trimmed}`, allIds(taxonomy));
   return {
     taxonomy: mapFunction(taxonomy, functionId, (fn) => ({
       ...fn,
-      categories: [...fn.categories, { id, name: trimmed, spaces: [...new Set(spaces)] }],
+      categories: [...fn.categories, { id, name: trimmed }],
     })),
     id,
   };
 }
 
-/** Rename a category, leaving what it holds alone. */
-export function renameCategory(
-  taxonomy: FunctionTaxonomy,
-  categoryId: string,
-  name: string,
-): FunctionTaxonomy {
-  const trimmed = name.trim();
-  if (!trimmed) return taxonomy;
-  return mapCategory(taxonomy, categoryId, (c) => ({ ...c, name: trimmed }));
-}
-
-/** Replace what a category holds, dropping repeats. */
-export function setSpaces(
-  taxonomy: FunctionTaxonomy,
-  categoryId: string,
-  spaces: readonly string[],
-): FunctionTaxonomy {
-  return mapCategory(taxonomy, categoryId, (c) => ({
-    ...c,
-    spaces: [...new Set(spaces)],
-  }));
-}
-
-/** Tag a space into a category, or untag it if it is already there. */
-export function toggleSpace(
-  taxonomy: FunctionTaxonomy,
-  categoryId: string,
-  slug: string,
-): FunctionTaxonomy {
-  return mapCategory(taxonomy, categoryId, (c) => ({
-    ...c,
-    spaces: c.spaces.includes(slug)
-      ? c.spaces.filter((s) => s !== slug)
-      : [...c.spaces, slug],
-  }));
-}
-
-/** Remove a category, and with it the tags that pointed at it. */
+/** Remove a category from the vocabulary. */
 export function removeCategory(
   taxonomy: FunctionTaxonomy,
   categoryId: string,
@@ -500,18 +362,6 @@ export function removeCategory(
       ...fn,
       categories: fn.categories.filter((c) => c.id !== categoryId),
     })),
-  };
-}
-
-/** Remove a function that was added here. The five that ship stay. */
-export function removeFunction(
-  taxonomy: FunctionTaxonomy,
-  functionId: string,
-): FunctionTaxonomy {
-  return {
-    functions: taxonomy.functions.filter(
-      (fn) => fn.id !== functionId || fn.builtIn,
-    ),
   };
 }
 
@@ -525,23 +375,6 @@ function mapFunction(
   };
 }
 
-function mapCategory(
-  taxonomy: FunctionTaxonomy,
-  categoryId: string,
-  fn: (c: FunctionCategory) => FunctionCategory,
-): FunctionTaxonomy {
-  return {
-    functions: taxonomy.functions.map((f) => ({
-      ...f,
-      categories: f.categories.map((c) => (c.id === categoryId ? fn(c) : c)),
-    })),
-  };
-}
-
-/** Every space held anywhere under a function, counted once however many categories hold it. */
-export function spacesInFunction(fn: OrgFunction): string[] {
-  return [...new Set(fn.categories.flatMap((c) => c.spaces))];
-}
 
 /**
  * A category's address.
@@ -569,68 +402,4 @@ export function findCategoryBySlug(
     }
   }
   return null;
-}
-
-/** Where one space was tagged, named so it can be said aloud. */
-export interface SpacePlacement {
-  functionId: string;
-  functionName: string;
-  categoryId: string;
-  categoryName: string;
-}
-
-/** Every category a space was tagged into, across every function. */
-export function placementsOf(
-  taxonomy: FunctionTaxonomy,
-  slug: string,
-): SpacePlacement[] {
-  const found: SpacePlacement[] = [];
-  for (const fn of taxonomy.functions) {
-    for (const category of fn.categories) {
-      if (!category.spaces.includes(slug)) continue;
-      found.push({
-        functionId: fn.id,
-        functionName: fn.name,
-        categoryId: category.id,
-        categoryName: category.name,
-      });
-    }
-  }
-  return found;
-}
-
-/** Another space sharing a category with this one, and the category they share. */
-export interface RelatedSpace {
-  slug: string;
-  /** The categories both are tagged into, in the order the taxonomy lists them. */
-  through: string[];
-}
-
-/**
- * The spaces tagged alongside this one.
- *
- * What a reader standing in one space wants from a tag: not the tag itself,
- * but what else carries it. A space never counts as related to itself, and a
- * pair sharing two categories is named once, through both.
- */
-export function relatedSpaces(
-  taxonomy: FunctionTaxonomy,
-  slug: string,
-): RelatedSpace[] {
-  const through = new Map<string, string[]>();
-  for (const fn of taxonomy.functions) {
-    for (const category of fn.categories) {
-      if (!category.spaces.includes(slug)) continue;
-      for (const other of category.spaces) {
-        if (other === slug) continue;
-        const names = through.get(other) ?? [];
-        names.push(category.name);
-        through.set(other, names);
-      }
-    }
-  }
-  return [...through.entries()].map(([other, names]) => ({
-    slug: other,
-    through: names,
-  }));
 }

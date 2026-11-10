@@ -11,8 +11,8 @@ const SEEDED_KEY = "tome.function-taxonomy.seeded.v1";
 const CONFIG = "Marketing: Example Campaigns, Example Field Events";
 
 /** The browser arriving at TOME with this deployment's configuration. */
-function arrive(categories: string | undefined, tags?: string) {
-  applyConfiguredCategories({ categories, tags });
+function arrive(categories: string | undefined) {
+  applyConfiguredCategories(categories);
   return renderHook(() => useFunctionTaxonomy());
 }
 
@@ -20,7 +20,7 @@ function marketingIn(taxonomy: { functions: { name: string }[] }) {
   return taxonomy.functions.find((fn) => fn.name === "Marketing") as {
     id: string;
     name: string;
-    categories: { id: string; name: string; spaces: string[] }[];
+    categories: { id: string; name: string }[];
   };
 }
 
@@ -67,24 +67,23 @@ describe("useFunctionTaxonomy", () => {
     const { result } = arrive(CONFIG);
     const first = marketingIn(result.current.taxonomy);
 
-    // Something tagged by hand into a configured category, to be kept.
+    // Something named by hand, to be kept across the change.
     act(() => {
-      result.current.update((current) =>
-        addCategory(current, first.id, first.categories[0].name, [
-          "example-project",
-        ]).taxonomy,
+      result.current.update(
+        (current) => addCategory(current, first.id, "Example Webinars").taxonomy,
       );
     });
 
-    const later = arrive(`${CONFIG}, Example Webinars`);
-    const categories = marketingIn(later.result.current.taxonomy).categories;
+    const later = arrive(`${CONFIG}, Example Partner Events`);
 
-    expect(categories.map((c) => c.name)).toEqual([
+    expect(
+      marketingIn(later.result.current.taxonomy).categories.map((c) => c.name),
+    ).toEqual([
       "Example Campaigns",
       "Example Field Events",
       "Example Webinars",
+      "Example Partner Events",
     ]);
-    expect(categories[0].spaces).toEqual(["example-project"]);
   });
 
   it("renames rather than doubles when configuration renames a category", () => {
@@ -100,9 +99,21 @@ describe("useFunctionTaxonomy", () => {
   it("remembers which configuration this browser has been given", () => {
     arrive(CONFIG);
 
-    expect(window.localStorage.getItem(SEEDED_KEY)).toContain(CONFIG);
+    expect(window.localStorage.getItem(SEEDED_KEY)).toBe(CONFIG);
     expect(window.localStorage.getItem(STORAGE_KEY)).toContain(
       "Example Campaigns",
     );
+  });
+
+  it("holds names and nothing else, so nothing here places a space", () => {
+    const { result } = arrive(CONFIG);
+
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!);
+    expect(
+      marketingIn(result.current.taxonomy).categories.every(
+        (category) => Object.keys(category).sort().join() === "id,name",
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(stored)).not.toContain("spaces");
   });
 });

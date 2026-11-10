@@ -558,7 +558,13 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     ...(body.optionality?.length ? { optionality: body.optionality } : {}),
     domain,
     labels: sanitizeLabels(
-      { domain, initiatives: body.initiatives, areas: body.areas },
+      {
+        domain,
+        initiatives: body.initiatives,
+        areas: body.areas,
+        functions: body.functions,
+        categories: body.categories,
+      },
       domain,
     ),
     tags,

@@ -7,14 +7,13 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * A group of projects, as the catalogue draws one.
+ * A group of spaces, as the catalogue draws one.
  *
- * Two levels, and the same two whichever vocabulary names them: the
- * catalogue reads BHAG → Area → Project, the organisation reads Function →
- * Category → Project. One component for both, because a reader moving
- * between the two readings is moving through one hierarchy, and a caret
- * indented differently or a count set differently on the other side would
- * say they had arrived somewhere else.
+ * Two levels, and the same two on either axis: the catalogue reads BHAG →
+ * Area → Project, the organisation reads Function → Category → Subject. One
+ * component for both, because a reader moving between the two axes is moving
+ * through the same shape, and a caret indented differently or a count set
+ * differently on the other side would say they had arrived somewhere else.
  */
 
 /** The one control that opens and closes a group. */

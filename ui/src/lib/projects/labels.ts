@@ -45,6 +45,13 @@ export function sanitizeLabels(
     initiatives: cleanLabelList(obj.initiatives),
     areas: cleanLabelList(obj.areas),
   };
+  // The function axis is set only when asked for, so a space that never named
+  // a function carries no empty claim to one: naming a function is what puts
+  // a record on that axis, and an absent field is the plainest way to say no.
+  const functions = cleanLabelList(obj.functions);
+  const categories = cleanLabelList(obj.categories);
+  if (functions.length > 0) labels.functions = functions;
+  if (categories.length > 0) labels.categories = categories;
   if (domainRaw) labels.domain = domainRaw;
   return labels;
 }

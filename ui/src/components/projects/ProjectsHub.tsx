@@ -11,13 +11,14 @@ import {
   HelpCircle,
   Layers,
   ListOrdered,
+  Plus,
   RotateCcw,
   Search,
   Settings,
   Target,
 } from "lucide-react";
 
-import { ProjectOnboardingWizard } from "@/components/projects/ProjectOnboardingWizard";
+import { SpaceCreationFlow } from "@/components/projects/SpaceCreationFlow";
 import { McpConnectDialog } from "@/components/tome/McpConnectDialog";
 import { OnboardingModal } from "@/components/tome/OnboardingModal";
 import { OpenFgaModelRepairBanner } from "@/components/tome/OpenFgaModelRepairBanner";
@@ -56,6 +57,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/toast";
 import { normLabel } from "@/lib/projects/labels";
+import { partitionSpaces } from "@/lib/projects/placement";
 import { projectMatchesQuery } from "@/lib/tome/project-search";
 import { projectGridClassName } from "@/lib/tome/project-grid";
 import {
@@ -467,9 +469,12 @@ export function ProjectsHub() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const [projects, setProjects] = useState<EnrichedProject[]>([]);
+  const [spaces, setSpaces] = useState<EnrichedProject[]>([]);
   const [bhags, setBhags] = useState<EnrichedProject[]>([]);
   const [areas, setAreas] = useState<EnrichedProject[]>([]);
+  // Opened by this tab's own Add project, or by the ?onboard=1 link that
+  // the welcome tour hands out.
+  const [creating, setCreating] = useState(searchParams.get("onboard") === "1");
   const [creatingBhag, setCreatingBhag] = useState<string | null>(null);
   const [creatingArea, setCreatingArea] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -555,7 +560,7 @@ export function ProjectsHub() {
       ]);
       const projBody = await projRes.json();
       if (!projRes.ok) throw new Error(projBody.error ?? "Failed to load projects");
-      setProjects((projBody.data?.projects ?? []) as EnrichedProject[]);
+      setSpaces((projBody.data?.projects ?? []) as EnrichedProject[]);
       if (bhagRes.ok) {
         const bhagBody = await bhagRes.json();
         setBhags((bhagBody.data?.projects ?? []) as EnrichedProject[]);
@@ -598,6 +603,17 @@ export function ProjectsHub() {
       areasByBhagLabel.get(key)!.push(a);
     }
   }
+
+  /**
+   * The two axes, separated once.
+   *
+   * `/api/projects` answers with every space it holds, and a space sits on
+   * either the hierarchy axis or the function one. A project and a subject
+   * are different entities, so the catalogue and By function are handed
+   * disjoint lists here rather than each filtering the same list its own way,
+   * which is how one space ends up in both.
+   */
+  const { hierarchy: projects, subjects } = partitionSpaces(spaces);
 
   const normalizedProjectQuery = projectQuery.trim();
   const filteredProjects = normalizedProjectQuery
@@ -878,11 +894,12 @@ export function ProjectsHub() {
           the digest for a moment would be a poor trade. */}
       {tab === "overview" && <WorkspaceOverview />}
       {tab === "digest" && <WorkspaceDigest />}
-      {/* Reads the catalogue the hub already loaded, so moving between the
-          two readings costs nothing, but draws the functions rather than the
-          projects: the reader asked what each part of the organisation
-          keeps, and a wall of project cards answers the other question. */}
-      {tab === "functions" && <FunctionsView projects={projects} />}
+      {/* The subjects the hub already loaded, so moving between the two axes
+          costs nothing. Not the catalogue's projects read another way: a
+          subject is its own entity and appears here and nowhere else. */}
+      {tab === "functions" && (
+        <FunctionsView subjects={subjects} onSubjectCreated={() => void load()} />
+      )}
 
       <section className={cn("space-y-6", tab !== "projects" && "hidden")}>
         <HubToolbar
@@ -922,10 +939,18 @@ export function ProjectsHub() {
               <TooltipContent side="bottom">What is TOME?</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <ProjectOnboardingWizard
-            onComplete={() => void load()}
-            initialOpen={searchParams.get("onboard") === "1"}
-          />
+          {/* The same flow By function opens, carrying no placement: what
+              differs between the two tabs is which axis the result lands on,
+              not how it is made. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setCreating(true)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add project
+          </Button>
           <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
           {isTomeAdmin && groupBy === "initiative" && (
             <>
@@ -1112,6 +1137,12 @@ export function ProjectsHub() {
           <AskTomePlaceholder />
         </>
       )}
+      <SpaceCreationFlow
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={() => void load()}
+      />
+
       <OnboardingModal open={onboardingOpen} onOpenChange={handleOnboardingChange} />
     </div>
   );

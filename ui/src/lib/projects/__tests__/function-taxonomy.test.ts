@@ -8,25 +8,30 @@ import {
   hasCategoryNamed,
   normaliseTaxonomy,
   parseConfiguredCategories,
-  parseConfiguredTags,
-  placementsOf,
-  reconcileConfiguration,
   reconcileConfiguredCategories,
-  relatedSpaces,
   removeCategory,
-  removeFunction,
-  renameCategory,
-  setSpaces,
-  spacesInFunction,
-  toggleSpace,
   withConfiguredCategories,
-  withConfiguredTags,
+  withSubjectNames,
   type FunctionTaxonomy,
 } from "@/lib/projects/function-taxonomy";
 
 /** The id the library derives for a built-in, so tests can address one. */
 function idOf(taxonomy: FunctionTaxonomy, name: string): string {
   return taxonomy.functions.find((fn) => fn.name === name)!.id;
+}
+
+/** The category names one function keeps, in the order it keeps them. */
+function categoriesOf(taxonomy: FunctionTaxonomy, name: string): string[] {
+  return taxonomy.functions
+    .find((fn) => fn.name === name)!
+    .categories.map((c) => c.name);
+}
+
+/** A subject, as the only thing this module needs to see of one. */
+function subject(fn: string, category?: string) {
+  return {
+    labels: { functions: [fn], ...(category ? { categories: [category] } : {}) },
+  };
 }
 
 describe("function taxonomy", () => {
@@ -57,14 +62,11 @@ describe("function taxonomy", () => {
   it("folds a second category of the same name into the first", () => {
     const base = defaultTaxonomy();
     const marketing = idOf(base, "Marketing");
-    const once = addCategory(base, marketing, "Events", ["first-space"]);
-    const twice = addCategory(once.taxonomy, marketing, "  events  ", ["second-space"]);
+    const once = addCategory(base, marketing, "Events");
+    const twice = addCategory(once.taxonomy, marketing, "  events  ");
 
-    const fn = twice.taxonomy.functions.find((f) => f.id === marketing)!;
-    expect(fn.categories).toHaveLength(1);
-    // The spaces of both, because the reader meant to add to the one that
-    // was already there.
-    expect(fn.categories[0].spaces).toEqual(["first-space", "second-space"]);
+    expect(categoriesOf(twice.taxonomy, "Marketing")).toEqual(["Events"]);
+    expect(twice.id).toBe(once.id);
   });
 
   it("adds a function once, however it was capitalised", () => {
@@ -76,102 +78,11 @@ describe("function taxonomy", () => {
     expect(second.id).toBe(first.id);
   });
 
-  it("keeps the five that ship and drops the ones that were added", () => {
-    const { taxonomy, id } = addFunction(defaultTaxonomy(), "Developer Relations");
-
-    expect(removeFunction(taxonomy, id).functions).toHaveLength(
-      BUILT_IN_FUNCTIONS.length,
-    );
-    expect(
-      removeFunction(taxonomy, idOf(taxonomy, "Marketing")).functions,
-    ).toHaveLength(BUILT_IN_FUNCTIONS.length + 1);
-  });
-
-  it("tags and untags a space from the same call", () => {
+  it("removes a category from the vocabulary", () => {
     const base = defaultTaxonomy();
     const { taxonomy, id } = addCategory(base, idOf(base, "Marketing"), "Events");
 
-    const tagged = toggleSpace(taxonomy, id, "example-project");
-    expect(placementsOf(tagged, "example-project")).toEqual([
-      expect.objectContaining({
-        functionName: "Marketing",
-        categoryName: "Events",
-      }),
-    ]);
-
-    expect(placementsOf(toggleSpace(tagged, id, "example-project"), "example-project"))
-      .toEqual([]);
-  });
-
-  it("counts a space once in a function however many of its categories hold it", () => {
-    const base = defaultTaxonomy();
-    const marketing = idOf(base, "Marketing");
-    const one = addCategory(base, marketing, "Events", ["example-project"]);
-    const two = addCategory(one.taxonomy, marketing, "Webinars", ["example-project"]);
-
-    const fn = two.taxonomy.functions.find((f) => f.id === marketing)!;
-    expect(spacesInFunction(fn)).toEqual(["example-project"]);
-  });
-
-  it("relates the spaces sharing a category, never a space to itself", () => {
-    const base = defaultTaxonomy();
-    const { taxonomy } = addCategory(base, idOf(base, "Marketing"), "Events", [
-      "first-space",
-      "second-space",
-      "third-space",
-    ]);
-
-    expect(relatedSpaces(taxonomy, "first-space")).toEqual([
-      { slug: "second-space", through: ["Events"] },
-      { slug: "third-space", through: ["Events"] },
-    ]);
-    expect(relatedSpaces(taxonomy, "other-space")).toEqual([]);
-  });
-
-  it("names a pair once, through every category they share", () => {
-    const base = defaultTaxonomy();
-    const marketing = idOf(base, "Marketing");
-    const one = addCategory(base, marketing, "Events", ["first-space", "second-space"]);
-    const two = addCategory(one.taxonomy, marketing, "Webinars", [
-      "first-space",
-      "second-space",
-    ]);
-
-    expect(relatedSpaces(two.taxonomy, "first-space")).toEqual([
-      { slug: "second-space", through: ["Events", "Webinars"] },
-    ]);
-  });
-
-  it("renames a category without disturbing what it holds", () => {
-    const base = defaultTaxonomy();
-    const { taxonomy, id } = addCategory(base, idOf(base, "Marketing"), "Events", [
-      "example-project",
-    ]);
-
-    const renamed = renameCategory(taxonomy, id, "Field Events");
-    expect(placementsOf(renamed, "example-project")[0].categoryName).toBe(
-      "Field Events",
-    );
-  });
-
-  it("takes the tags with the category when it goes", () => {
-    const base = defaultTaxonomy();
-    const { taxonomy, id } = addCategory(base, idOf(base, "Marketing"), "Events", [
-      "example-project",
-    ]);
-
-    expect(placementsOf(removeCategory(taxonomy, id), "example-project")).toEqual([]);
-  });
-
-  it("replaces what a category holds without keeping repeats", () => {
-    const base = defaultTaxonomy();
-    const { taxonomy, id } = addCategory(base, idOf(base, "Marketing"), "Events");
-
-    const filled = setSpaces(taxonomy, id, ["a-space", "a-space", "b-space"]);
-    expect(filled.functions.flatMap((f) => f.categories)[0].spaces).toEqual([
-      "a-space",
-      "b-space",
-    ]);
+    expect(categoriesOf(removeCategory(taxonomy, id), "Marketing")).toEqual([]);
   });
 
   describe("reading a stored copy", () => {
@@ -186,12 +97,10 @@ describe("function taxonomy", () => {
 
     it("keeps the categories a stored function had", () => {
       const base = defaultTaxonomy();
-      const { taxonomy } = addCategory(base, idOf(base, "Marketing"), "Events", [
-        "example-project",
-      ]);
+      const { taxonomy } = addCategory(base, idOf(base, "Marketing"), "Events");
 
       const read = normaliseTaxonomy(JSON.parse(JSON.stringify(taxonomy)));
-      expect(placementsOf(read, "example-project")[0].categoryName).toBe("Events");
+      expect(categoriesOf(read, "Marketing")).toEqual(["Events"]);
     });
 
     it("puts back a function the stored copy never had", () => {
@@ -220,14 +129,32 @@ describe("function taxonomy", () => {
           {
             id: "dev-rel",
             name: "Developer Relations",
-            categories: [{ name: "Talks", spaces: ["a-space", 7, "a-space"] }],
+            categories: [null, { name: "" }, { name: "Talks" }],
           },
         ],
       });
 
       const added = read.functions.find((f) => f.name === "Developer Relations")!;
-      expect(added.categories[0].spaces).toEqual(["a-space"]);
+      expect(added.categories.map((c) => c.name)).toEqual(["Talks"]);
       expect(read.functions).toHaveLength(BUILT_IN_FUNCTIONS.length + 1);
+    });
+
+    it("drops what a copy written before the split put inside a category", () => {
+      // A category places nothing now, so a stored list of spaces is read as
+      // a name and nothing else.
+      const read = normaliseTaxonomy({
+        functions: [
+          {
+            id: "marketing",
+            name: "Marketing",
+            categories: [{ id: "m-events", name: "Events", spaces: ["a-space"] }],
+          },
+        ],
+      });
+
+      expect(
+        read.functions.find((f) => f.name === "Marketing")!.categories[0],
+      ).toEqual({ id: "m-events", name: "Events" });
     });
   });
 
@@ -263,28 +190,23 @@ describe("function taxonomy", () => {
 
     it("creates a function configuration names that TOME does not ship", () => {
       const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
-      const added = seeded.functions.find((fn) => fn.name === "Developer Relations")!;
 
-      expect(added.categories.map((c) => c.name)).toEqual(["Example Talks"]);
+      expect(categoriesOf(seeded, "Developer Relations")).toEqual(["Example Talks"]);
       // Added, so it sorts after the five that ship.
       expect(seeded.functions.map((f) => f.name).at(-1)).toBe("Developer Relations");
     });
 
-    it("adds only what is missing, keeping what was made and tagged by hand", () => {
+    it("adds only what is missing, keeping what was named by hand", () => {
       const base = defaultTaxonomy();
-      const marketingId = idOf(base, "Marketing");
-      const withOwn = addCategory(base, marketingId, "Example Campaigns", [
-        "example-project",
-      ]).taxonomy;
+      const withOwn = addCategory(base, idOf(base, "Marketing"), "Example Campaigns")
+        .taxonomy;
 
       const seeded = withConfiguredCategories(withOwn, CONFIG);
-      const marketing = seeded.functions.find((fn) => fn.name === "Marketing")!;
 
-      expect(marketing.categories.map((c) => c.name)).toEqual([
+      expect(categoriesOf(seeded, "Marketing")).toEqual([
         "Example Campaigns",
         "Example Field Events",
       ]);
-      expect(marketing.categories[0].spaces).toEqual(["example-project"]);
     });
 
     it("leaves a taxonomy alone when nothing is configured", () => {
@@ -300,161 +222,102 @@ describe("function taxonomy", () => {
         "Marketing: Campaigns, Field Events | Developer Relations: Example Talks",
       );
 
-      expect(
-        renamed.functions.find((fn) => fn.name === "Marketing")!.categories.map((c) => c.name),
-      ).toEqual(["Campaigns", "Field Events"]);
-    });
-
-    it("keeps a retired category once a space has been tagged into it", () => {
-      const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
-      const marketingId = idOf(seeded, "Marketing");
-      const used = addCategory(seeded, marketingId, "Example Campaigns", [
-        "example-project",
-      ]).taxonomy;
-
-      const renamed = reconcileConfiguredCategories(
-        used,
-        CONFIG,
-        "Marketing: Campaigns, Example Field Events",
-      );
-      const marketing = renamed.functions.find((fn) => fn.name === "Marketing")!;
-
-      // Still named by nothing in configuration, but someone is using it.
-      expect(marketing.categories.map((c) => c.name)).toEqual([
-        "Example Campaigns",
-        "Example Field Events",
-        "Campaigns",
-      ]);
+      expect(categoriesOf(renamed, "Marketing")).toEqual(["Campaigns", "Field Events"]);
     });
 
     it("takes out everything when configuration stops naming any of it", () => {
       const seeded = withConfiguredCategories(defaultTaxonomy(), CONFIG);
       const emptied = reconcileConfiguredCategories(seeded, CONFIG, undefined);
 
-      expect(
-        emptied.functions.find((fn) => fn.name === "Marketing")!.categories,
-      ).toEqual([]);
+      expect(categoriesOf(emptied, "Marketing")).toEqual([]);
     });
 
-    it("leaves categories made by hand out of it entirely", () => {
+    it("leaves categories named by hand out of it entirely", () => {
       const base = defaultTaxonomy();
       const own = addCategory(base, idOf(base, "Engineering"), "Example Platform").taxonomy;
 
       const reconciled = reconcileConfiguredCategories(own, CONFIG, undefined);
 
-      expect(
-        reconciled.functions.find((fn) => fn.name === "Engineering")!.categories.map((c) => c.name),
-      ).toEqual(["Example Platform"]);
+      expect(categoriesOf(reconciled, "Engineering")).toEqual(["Example Platform"]);
     });
   });
 
-  describe("projects a deployment puts in its categories", () => {
-    const CATEGORIES = "Marketing: Example Campaigns | Engineering: Example Campaigns";
-    const TAGS =
-      "Marketing > Example Campaigns: first-example-project, second-example-project";
+  describe("the words the subjects themselves use", () => {
+    it("widens the vocabulary with a category no configuration named", () => {
+      const base = defaultTaxonomy();
 
-    function seeded(tags = TAGS) {
-      return withConfiguredTags(
-        withConfiguredCategories(defaultTaxonomy(), CATEGORIES),
-        tags,
+      const widened = withSubjectNames(base, [subject("Marketing", "Example Events")]);
+
+      expect(categoriesOf(widened, "Marketing")).toEqual(["Example Events"]);
+    });
+
+    it("creates a function nothing has heard of, so its subjects are drawn", () => {
+      const widened = withSubjectNames(defaultTaxonomy(), [
+        subject("Developer Relations", "Example Talks"),
+      ]);
+
+      expect(widened.functions.map((fn) => fn.name).at(-1)).toBe(
+        "Developer Relations",
       );
-    }
+      expect(categoriesOf(widened, "Developer Relations")).toEqual(["Example Talks"]);
+    });
 
-    function categoryIn(taxonomy: FunctionTaxonomy, fnName: string) {
-      return taxonomy.functions.find((fn) => fn.name === fnName)!.categories[0];
-    }
+    it("adds a name once, however the subjects spelled it", () => {
+      const widened = withSubjectNames(defaultTaxonomy(), [
+        subject("Marketing", "Example Events"),
+        subject("marketing", "example events"),
+        subject("MARKETING"),
+      ]);
 
-    it("reads a tagging line into a function, a category and its projects", () => {
-      expect(parseConfiguredTags(TAGS)).toEqual([
-        {
-          function: "Marketing",
-          category: "Example Campaigns",
-          spaces: ["first-example-project", "second-example-project"],
-        },
+      expect(categoriesOf(widened, "Marketing")).toEqual(["Example Events"]);
+      expect(widened.functions).toHaveLength(BUILT_IN_FUNCTIONS.length);
+    });
+
+    it("keeps a configured category the subjects have not reached yet", () => {
+      const configured = withConfiguredCategories(
+        defaultTaxonomy(),
+        "Marketing: Example Campaigns",
+      );
+
+      const widened = withSubjectNames(configured, [
+        subject("Marketing", "Example Events"),
+      ]);
+
+      expect(categoriesOf(widened, "Marketing")).toEqual([
+        "Example Campaigns",
+        "Example Events",
       ]);
     });
 
-    it("reads nothing out of a line missing the function or the projects", () => {
-      expect(parseConfiguredTags(undefined)).toEqual([]);
-      expect(parseConfiguredTags("Example Campaigns: a-project")).toEqual([]);
-      expect(parseConfiguredTags("Marketing > Example Campaigns:")).toEqual([]);
+    it("gets back a category configuration retired but a subject still names", () => {
+      const seeded = withConfiguredCategories(
+        defaultTaxonomy(),
+        "Marketing: Example Campaigns",
+      );
+      const retired = reconcileConfiguredCategories(
+        seeded,
+        "Marketing: Example Campaigns",
+        undefined,
+      );
+
+      expect(categoriesOf(retired, "Marketing")).toEqual([]);
+      expect(
+        categoriesOf(
+          withSubjectNames(retired, [subject("Marketing", "Example Campaigns")]),
+          "Marketing",
+        ),
+      ).toEqual(["Example Campaigns"]);
     });
 
-    it("puts the projects in the named function's category, not the other's", () => {
-      const taxonomy = seeded();
+    it("takes no notice of a space on the hierarchy axis", () => {
+      const base = defaultTaxonomy();
 
-      expect(categoryIn(taxonomy, "Marketing").spaces).toEqual([
-        "first-example-project",
-        "second-example-project",
+      const widened = withSubjectNames(base, [
+        { labels: { initiatives: ["example-goal"], areas: ["example-area"] } },
+        { labels: {} },
       ]);
-      // Same category name under another function means something else.
-      expect(categoryIn(taxonomy, "Engineering").spaces).toEqual([]);
-    });
 
-    it("ignores a tag naming a category that does not exist", () => {
-      const taxonomy = withConfiguredTags(
-        withConfiguredCategories(defaultTaxonomy(), CATEGORIES),
-        "Marketing > Not A Category: first-example-project",
-      );
-
-      expect(categoryIn(taxonomy, "Marketing").spaces).toEqual([]);
-    });
-
-    it("keeps what someone tagged by hand beside what is configured", () => {
-      const base = withConfiguredCategories(defaultTaxonomy(), CATEGORIES);
-      const byHand = toggleSpace(
-        base,
-        categoryIn(base, "Marketing").id,
-        "third-example-project",
-      );
-
-      const taxonomy = withConfiguredTags(byHand, TAGS);
-
-      expect(categoryIn(taxonomy, "Marketing").spaces).toEqual([
-        "third-example-project",
-        "first-example-project",
-        "second-example-project",
-      ]);
-    });
-
-    it("takes out a project configuration has stopped naming, and only that one", () => {
-      const before = seeded();
-      const byHand = toggleSpace(
-        before,
-        categoryIn(before, "Marketing").id,
-        "third-example-project",
-      );
-
-      const after = reconcileConfiguration(
-        byHand,
-        { categories: CATEGORIES, tags: TAGS },
-        {
-          categories: CATEGORIES,
-          tags: "Marketing > Example Campaigns: first-example-project",
-        },
-      );
-
-      expect(categoryIn(after, "Marketing").spaces).toEqual([
-        "first-example-project",
-        "third-example-project",
-      ]);
-    });
-
-    it("empties a category first, so renaming both reads as a rename", () => {
-      const before = seeded();
-
-      const after = reconcileConfiguration(
-        before,
-        { categories: CATEGORIES, tags: TAGS },
-        {
-          categories: "Marketing: Campaigns | Engineering: Example Campaigns",
-          tags: "Marketing > Campaigns: first-example-project",
-        },
-      );
-      const marketing = after.functions.find((fn) => fn.name === "Marketing")!;
-
-      expect(marketing.categories.map((c) => c.name)).toEqual(["Campaigns"]);
-      expect(marketing.categories[0].spaces).toEqual(["first-example-project"]);
+      expect(widened).toBe(base);
     });
   });
 
@@ -462,9 +325,7 @@ describe("function taxonomy", () => {
     /** A marketing function divided once, as a view would divide it. */
     function divided() {
       const base = defaultTaxonomy();
-      return addCategory(base, idOf(base, "Marketing"), "Field Events", [
-        "first-example-project",
-      ]).taxonomy;
+      return addCategory(base, idOf(base, "Marketing"), "Field Events").taxonomy;
     }
 
     function only(taxonomy: FunctionTaxonomy) {
@@ -489,7 +350,6 @@ describe("function taxonomy", () => {
 
       expect(found?.fn.name).toBe("Marketing");
       expect(found?.category.name).toBe("Field Events");
-      expect(found?.category.spaces).toEqual(["first-example-project"]);
     });
 
     it("finds nothing for a slug this taxonomy does not hold", () => {
@@ -502,6 +362,24 @@ describe("function taxonomy", () => {
       expect(
         findCategoryBySlug(taxonomy, `engineering--${category.id}`),
       ).toBeNull();
+    });
+
+    it("addresses a category the subjects named exactly as a configured one", () => {
+      const base = defaultTaxonomy();
+      const configured = addCategory(base, idOf(base, "Marketing"), "Field Events");
+      const widened = withSubjectNames(defaultTaxonomy(), [
+        subject("Marketing", "Field Events"),
+      ]);
+      const { fn, category } = only(widened);
+
+      // The same address either way, so a link written from one view opens
+      // in a browser that only learned the name from the records.
+      expect(categorySlug(fn, category)).toBe(
+        categorySlug(
+          { id: idOf(configured.taxonomy, "Marketing") },
+          { id: configured.id },
+        ),
+      );
     });
   });
 });

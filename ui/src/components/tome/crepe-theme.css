@@ -87,6 +87,32 @@
   margin-left: auto;
 }
 
+/* Give the app's own styles back inside those slots.
+   Crepe resets every descendant with `.milkdown * { margin: 0; padding: 0 }`
+   and strips buttons and inputs of their frame. Those rules are unlayered,
+   and unlayered styles outrank every layered one, so in Tailwind v4 they beat
+   utility classes however specific those are — a panel portalled in here
+   loses its padding and its buttons come out as bare text. Crepe's reset is
+   for Crepe's own markup; these two slots hold ours. Each declaration is
+   rolled back to the layer the app's styles live in rather than overwritten
+   with a second set of values, so the components keep saying how they look. */
+.milkdown .tome-top-bar-slot *,
+.milkdown .tome-document-header-slot * {
+  margin: revert-layer;
+  padding: revert-layer;
+}
+
+.milkdown .tome-top-bar-slot button,
+.milkdown .tome-top-bar-slot input,
+.milkdown .tome-top-bar-slot textarea,
+.milkdown .tome-document-header-slot button,
+.milkdown .tome-document-header-slot input,
+.milkdown .tome-document-header-slot textarea {
+  border: revert-layer;
+  background: revert-layer;
+  box-shadow: revert-layer;
+}
+
 /* Crepe fills every toolbar SVG by default. Tome's media-library icon uses
    strokes for the frame and stack, with only the play symbol filled. */
 .milkdown .milkdown-top-bar .top-bar-item svg[data-tome-media-icon] {

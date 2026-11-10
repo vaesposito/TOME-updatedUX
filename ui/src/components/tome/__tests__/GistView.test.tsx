@@ -82,9 +82,11 @@ jest.mock("@/components/tome/CrepeEditor", () => {
       {
         initialMarkdown,
         onChange,
+        toolbarExtras,
       }: {
         initialMarkdown: string;
         onChange?: (value: string) => void;
+        toolbarExtras?: React.ReactNode;
       },
       ref: React.ForwardedRef<{
         getMarkdown: () => string;
@@ -108,14 +110,19 @@ jest.mock("@/components/tome/CrepeEditor", () => {
         },
       }), [onChange, value]);
       return (
-        <textarea
-          aria-label="Gist body"
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            onChange?.(event.target.value);
-          }}
-        />
+        <>
+          {/* Stands in for Crepe's formatting bar, which the real editor
+              hands to its host for controls of its own. */}
+          {toolbarExtras ? <div data-testid="mock-crepe-toolbar">{toolbarExtras}</div> : null}
+          <textarea
+            aria-label="Gist body"
+            value={value}
+            onChange={(event) => {
+              setValue(event.target.value);
+              onChange?.(event.target.value);
+            }}
+          />
+        </>
       );
     }),
   };

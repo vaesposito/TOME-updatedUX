@@ -535,6 +535,38 @@ export function WikiPageView({
     setEditorMode(nextMode);
   }, [draftBody, draftFrontmatter, editorMode, fmDraft]);
 
+  /**
+   * The editor's own controls: which way the document is being written, and
+   * in source mode the media picker that the rich editor keeps in its bar.
+   * They act on the document rather than on the page, so they belong with
+   * the formatting buttons rather than up beside Save.
+   */
+  const editorControls = (
+    <>
+      <MarkdownEditorModeToggle
+        value={editorMode}
+        options={MARKDOWN_DOCUMENT_EDITOR_MODES}
+        onChange={handleModeChange}
+        disabled={saving}
+        ariaLabel="Tome editor mode"
+        testId="tome-editor-mode-toggle"
+      />
+      {editorMode === "source" && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs"
+          onClick={() => setMediaOpen(true)}
+          disabled={saving}
+        >
+          <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+          Media
+        </Button>
+      )}
+    </>
+  );
+
   const insertMediaMarkdown = useCallback((embedMarkdown: string) => {
     if (editorMode === "rich") {
       editorRef.current?.insertMarkdown(embedMarkdown);
@@ -839,27 +871,6 @@ export function WikiPageView({
           )}
           {isEditing ? (
             <div className="flex items-center gap-1">
-              <MarkdownEditorModeToggle
-                value={editorMode}
-                options={MARKDOWN_DOCUMENT_EDITOR_MODES}
-                onChange={handleModeChange}
-                disabled={saving}
-                ariaLabel="Tome editor mode"
-                testId="tome-editor-mode-toggle"
-              />
-              {editorMode === "source" && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setMediaOpen(true)}
-                  disabled={saving}
-                >
-                  <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
-                  Media
-                </Button>
-              )}
               {/* Beside Save, because that is what it qualifies: who hears
                   about this edit is part of saving it, not a property of the
                   page sitting among the badges at the other end of the bar. */}
@@ -970,6 +981,14 @@ export function WikiPageView({
             "ring-2 ring-inset ring-amber-400/70 dark:ring-amber-700/60",
         )}
       >
+        {/* Markdown and Preview have no bar of their own, so they draw one
+            where the rich editor's sits, rather than letting the controls
+            jump to the header whenever the mode changes. */}
+        {isEditing && editorMode !== "rich" && (
+          <div className="flex items-center justify-end gap-1 border-b bg-muted/20 px-2 py-1">
+            {editorControls}
+          </div>
+        )}
         <ScrollArea
           data-testid="tome-page-editor-scroll"
           className="min-h-0 flex-1"
@@ -1032,6 +1051,7 @@ export function WikiPageView({
                 onInsertMedia={() => setMediaOpen(true)}
                 onMentionQuery={setMentionQuery}
                 enableColumns
+                toolbarExtras={editorControls}
               />
             )}
           </div>

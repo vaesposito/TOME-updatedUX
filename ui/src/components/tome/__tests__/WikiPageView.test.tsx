@@ -87,10 +87,12 @@ jest.mock("@/components/tome/CrepeEditor", () => {
         initialMarkdown,
         readonly,
         onChange,
+        toolbarExtras,
       }: {
         initialMarkdown: string;
         readonly: boolean;
         onChange?: (value: string) => void;
+        toolbarExtras?: React.ReactNode;
       },
       ref: React.ForwardedRef<{
         getMarkdown: () => string;
@@ -104,6 +106,9 @@ jest.mock("@/components/tome/CrepeEditor", () => {
       }), [value]);
       return (
         <>
+          {/* Stands in for Crepe's formatting bar, which the real editor
+              hands to its host for controls of its own. */}
+          {toolbarExtras ? <div data-testid="mock-crepe-toolbar">{toolbarExtras}</div> : null}
           <textarea
             aria-label={readonly ? "Wiki preview" : "Wiki editor"}
             value={value}
@@ -253,6 +258,36 @@ describe("WikiPageView", () => {
     const warning = screen.getByTestId("tome-dynamic-warning");
     expect(titleRow).toContainElement(warning);
     expect(warning).toHaveTextContent("Agent rewrites on ingest");
+  });
+
+  it("keeps the editor mode toggle with the editor's own controls", async () => {
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="charter.md"
+        markdown={"---\ntitle: Charter\n---\nCharter content"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    await openEditor();
+
+    // Where the formatting buttons are, not up beside Save.
+    const toggle = screen.getByTestId("tome-editor-mode-toggle");
+    expect(screen.getByTestId("tome-page-editor")).toContainElement(toggle);
+    expect(screen.getByTestId("tome-page-actions")).not.toContainElement(toggle);
+
+    // Markdown and Preview have no formatting bar of their own, so the
+    // toggle has to survive the mode it switches to.
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+    expect(screen.getByTestId("tome-page-editor")).toContainElement(
+      screen.getByTestId("tome-editor-mode-toggle"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByTestId("tome-page-editor")).toContainElement(
+      screen.getByTestId("tome-editor-mode-toggle"),
+    );
   });
 
   it("contains long revision metadata and offers no reading-width control", async () => {

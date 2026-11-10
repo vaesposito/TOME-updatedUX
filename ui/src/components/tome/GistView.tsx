@@ -283,6 +283,36 @@ export function GistView({
     setEditorMode(nextMode);
   }, [editorMode, rawDraft]);
 
+  /**
+   * The editor's own controls, kept with the formatting buttons rather than
+   * up beside Save: they act on the note being written, not on the note.
+   */
+  const editorControls = (
+    <>
+      <MarkdownEditorModeToggle
+        value={editorMode}
+        options={MARKDOWN_DOCUMENT_EDITOR_MODES}
+        onChange={handleModeChange}
+        disabled={saving}
+        ariaLabel="Note editor mode"
+        testId="gist-editor-mode-toggle"
+      />
+      {editorMode === "source" && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs"
+          onClick={() => setMediaOpen(true)}
+          disabled={saving}
+        >
+          <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+          Media
+        </Button>
+      )}
+    </>
+  );
+
   const insertMediaMarkdown = useCallback((embedMarkdown: string) => {
     if (editorMode === "rich") {
       editorRef.current?.insertMarkdown(embedMarkdown);
@@ -471,27 +501,6 @@ export function GistView({
           )}
           {editing ? (
             <>
-              <MarkdownEditorModeToggle
-                value={editorMode}
-                options={MARKDOWN_DOCUMENT_EDITOR_MODES}
-                onChange={handleModeChange}
-                disabled={saving}
-                ariaLabel="Note editor mode"
-                testId="gist-editor-mode-toggle"
-              />
-              {editorMode === "source" && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setMediaOpen(true)}
-                  disabled={saving}
-                >
-                  <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
-                  Media
-                </Button>
-              )}
               <button
                 type="button"
                 onClick={cancelEditing}
@@ -726,6 +735,13 @@ export function GistView({
               )}
               data-testid="gist-editor-canvas"
             >
+              {/* Markdown and Preview have no bar of their own, so they draw
+                  one where the rich editor's sits. */}
+              {editing && editorMode !== "rich" && (
+                <div className="flex items-center justify-end gap-1 border-b bg-muted/20 px-2 py-1">
+                  {editorControls}
+                </div>
+              )}
               {editing && editorMode === "source" ? (
                 <div className="h-full min-h-[28rem] p-3">
                   <RichCodeEditor
@@ -758,6 +774,7 @@ export function GistView({
                   onChange={setRawDraft}
                   onInsertMedia={() => setMediaOpen(true)}
                   enableColumns
+                  toolbarExtras={editorControls}
                 />
               ) : gist ? (
                 <MarkdownRenderer

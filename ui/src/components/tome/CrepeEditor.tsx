@@ -25,7 +25,9 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { classifyCitationHref } from "@/lib/tome/citations";
 import { renderInlineMarkdown } from "@/components/shared/timeline/MarkdownRenderer";
@@ -116,6 +118,14 @@ type Props = {
   onChange?: (markdown: string) => void;
   /** Show Crepe's full formatting toolbar above editable documents. */
   showToolbar?: boolean;
+  /**
+   * Host controls rendered at the end of that toolbar.
+   *
+   * Crepe owns the bar's markup, so anything of ours has to be placed into
+   * it after it mounts. A control that acts on the document belongs among
+   * the document's own buttons rather than in the page header above them.
+   */
+  toolbarExtras?: ReactNode;
   /** Open a host-owned media picker. Defaults to Crepe's built-in picker. */
   onInsertMedia?: () => void;
   /**
@@ -726,6 +736,7 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
     hideHtmlComments = false,
     onChange,
     showToolbar,
+    toolbarExtras,
     onInsertMedia,
     onMentionQuery,
     enableColumns = false,
@@ -1002,6 +1013,36 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
   useEffect(() => {
     crepeRef.current?.setReadonly(readonly);
   }, [readonly]);
+
+  // Somewhere inside Crepe's formatting bar for the host's own controls.
+  // The bar is built by Crepe after the editor is created, so the slot is
+  // appended once it exists and the host's nodes are portalled into it.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  const wantsToolbarSlot = toolbarExtras !== undefined && toolbarExtras !== null;
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !wantsToolbarSlot) return;
+    const attach = () => {
+      const bar = host.querySelector<HTMLElement>(".milkdown-top-bar");
+      if (!bar) return false;
+      const existing = bar.querySelector<HTMLElement>(":scope > .tome-top-bar-slot");
+      if (existing) {
+        setToolbarSlot(existing);
+        return true;
+      }
+      const slot = document.createElement("div");
+      slot.className = "tome-top-bar-slot";
+      bar.appendChild(slot);
+      setToolbarSlot(slot);
+      return true;
+    };
+    if (attach()) return;
+    const observer = new MutationObserver(() => {
+      if (attach()) observer.disconnect();
+    });
+    observer.observe(host, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [wantsToolbarSlot]);
 
   // Code-block previews are sanitized by Crepe, which intentionally strips
   // iframes. Hydrate only the inert provider placeholders produced by our
@@ -1718,6 +1759,7 @@ export const CrepeEditor = forwardRef<CrepeEditorHandle, Props>(function CrepeEd
         ref={hostRef}
         className={hideHtmlComments ? "milkdown-host milkdown-hide-comments" : "milkdown-host"}
       />
+      {toolbarSlot && toolbarExtras ? createPortal(toolbarExtras, toolbarSlot) : null}
       <TomeMediaInsertDialog
         open={mediaOpen}
         onOpenChange={setMediaOpen}

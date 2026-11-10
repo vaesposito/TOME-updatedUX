@@ -24,7 +24,7 @@ describe("MeetingsView", () => {
     await waitFor(() =>
       expect(screen.getByText("No meetings yet")).toBeInTheDocument(),
     );
-    expect(screen.getByRole("link", { name: /Set up meetings/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Set up Webex/ })).toHaveAttribute(
       "href",
       "/projects/example-project/tome/settings",
     );

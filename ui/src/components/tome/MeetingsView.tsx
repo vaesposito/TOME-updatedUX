@@ -110,8 +110,11 @@ export function MeetingsView({ slug }: { slug: string }) {
           icon={<CalendarDays />}
           headline="No meetings yet"
           hint="Subscribe this space to a recurring Webex meeting and its transcripts will be written up here after each call."
+          // Named for where it goes: Settings, where a Webex meeting series
+          // is subscribed to. "Set up meetings" promised a meeting-shaped
+          // form that is not what waits on the other side of it.
           action={{
-            label: "Set up meetings",
+            label: "Set up Webex",
             href: `/projects/${encodeURIComponent(slug)}/tome/settings`,
           }}
         />

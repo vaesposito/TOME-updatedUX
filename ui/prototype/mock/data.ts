@@ -440,6 +440,45 @@ updated_by: tome-agent
 Working notes the agent keeps for itself between ingests.
 `,
   },
+  // The fleet's roadmap is named by a notification about it being reordered,
+  // so the page that notification opens has to exist.
+  "environment-fleet": {
+    "overview.md": `---
+title: Overview
+kind: dynamic
+order: 0
+updated_by: tome-agent
+---
+
+Every environment a service runs in before production, and who is allowed to
+change one. Read from the fleet repository and the access reviews.
+
+## What people ask
+
+Preview environments are per branch and expire after seven days. A longer
+lease needs a named approver and shows up in the quarterly exceptions.
+`,
+    "roadmap.md": `---
+title: Roadmap
+kind: stable
+order: -4
+updated_by: sam.okafor@example.com
+---
+
+## Now
+
+- Preview environments per branch, expiring on their own.
+
+## Next
+
+- Per-service capacity budgets, moved behind previews after the capacity
+  review: nothing was waiting on budgets and previews were holding up review.
+
+## Not now
+
+- A second region. Not until the fleet is reproducible in one.
+`,
+  },
   "incident-response": {
     "overview.md": `---
 title: Overview

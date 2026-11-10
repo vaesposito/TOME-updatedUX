@@ -377,7 +377,8 @@ function TreeNode({
               <UnreadDot unread label="New activity" />
             )}
           </button>
-          {node.folderId && (onCreatePage || onEditFolder || onMoveItem) && (
+          {node.folderId &&
+            (onCreatePage || onCreateFolder || onEditFolder || onMoveItem) && (
             <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
               {onMoveItem && navigationItem && (
                 <DragHandle

@@ -2054,13 +2054,15 @@ export function TomeWiki({ slug }: { slug: string }) {
     }: {
       editable: boolean;
       /**
-       * Whether a folder row can have a page made inside it.
+       * Whether a folder row can have a page or a subfolder made inside it.
        *
        * Its own gate rather than `editable`'s: creation is the one thing a
        * reader browsing the wiki asked to be able to do without going to
        * Settings, and letting it through on its own does not hand back the
        * deleting, moving and folder editing the new rail deliberately moved
-       * there.
+       * there. Making a folder is of a piece with making a page — somewhere
+       * to put the page is part of writing it — so it is gated here rather
+       * than with the destructive actions.
        */
       creatable?: boolean;
       emptyNote?: string;
@@ -2098,7 +2100,7 @@ export function TomeWiki({ slug }: { slug: string }) {
         onSelectFolder={openFolder}
         showHidden={showHidden}
         onDelete={editable && canEdit ? deletePage : undefined}
-        onCreateFolder={editable && canEdit ? openCreateFolder : undefined}
+        onCreateFolder={creatable && canEdit ? openCreateFolder : undefined}
         onCreatePage={creatable && canEdit ? openNewPage : undefined}
         onEditFolder={editable && canEdit ? openEditFolder : undefined}
         onDeleteFolder={editable && canEdit ? deleteWikiFolder : undefined}
@@ -2543,9 +2545,21 @@ export function TomeWiki({ slug }: { slug: string }) {
                       }
                       controlsId={`tome-v2-wiki-${slug}`}
                       actions={canEdit ? (
-                        <NavSectionAction label="New page" onClick={() => openNewPage()}>
-                          <FilePlus2 className="h-3.5 w-3.5" />
-                        </NavSectionAction>
+                        <>
+                          {/* Both, and in this order: a reader organising the
+                              wiki reaches for a folder before the page that
+                              goes in it, and until now the only way to make
+                              one was through Settings. */}
+                          <NavSectionAction
+                            label="New folder"
+                            onClick={() => openCreateFolder(null)}
+                          >
+                            <FolderPlus className="h-3.5 w-3.5" />
+                          </NavSectionAction>
+                          <NavSectionAction label="New page" onClick={() => openNewPage()}>
+                            <FilePlus2 className="h-3.5 w-3.5" />
+                          </NavSectionAction>
+                        </>
                       ) : undefined}
                     >
                       {renderWikiTree(wikiSplit.authored, {

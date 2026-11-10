@@ -65,6 +65,30 @@ describe("WikiSidebar drag and drop", () => {
     expect(screen.queryByRole("button", { name: "Move Planning up" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Move Planning down" })).not.toBeInTheDocument();
   });
+
+  it("offers a subfolder on a folder given nothing else to do", () => {
+    const onCreateFolder = jest.fn();
+    const folder: PageTreeNode = {
+      path: "@folder/folder-1",
+      title: "Planning",
+      kind: "folder",
+      order: 0,
+      folderId: "folder-1",
+      children: [],
+    };
+    render(
+      <WikiSidebar
+        tree={[folder]}
+        selectedPath={null}
+        onSelect={jest.fn()}
+        showHidden={false}
+        onCreateFolder={onCreateFolder}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New folder in Planning" }));
+    expect(onCreateFolder).toHaveBeenCalledWith("folder-1");
+  });
 });
 
 describe("SharePoint document navigation", () => {

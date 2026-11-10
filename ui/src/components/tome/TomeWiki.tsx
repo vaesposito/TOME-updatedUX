@@ -37,6 +37,8 @@ import {
   Gauge,
   House,
   Newspaper,
+  Building2,
+  FolderTree,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
@@ -119,6 +121,9 @@ import { IngestRunView } from "@/components/tome/IngestRunView";
 import { DraftReviewView } from "@/components/tome/DraftReviewView";
 import { EngagementPanel } from "@/components/tome/EngagementPanel";
 import { PageHistoryView } from "@/components/tome/PageHistoryView";
+import { placementOf } from "@/lib/projects/placement";
+import { spaceTrail, type AncestorRow } from "@/lib/tome/space-trail";
+import { useFunctionTaxonomy } from "@/hooks/use-function-taxonomy";
 import {
   inFlightLabel,
   ingestEndpoint,
@@ -130,7 +135,6 @@ import { Breadcrumb, type Crumb } from "@/components/tome/Breadcrumb";
 import { FollowMenu } from "@/components/tome/FollowMenu";
 import { isTourRunning } from "@/components/tour/notification-tour";
 import { TomeProductFeedback } from "@/components/tome/TomeProductFeedback";
-import type { AncestorRow } from "@/components/tome/home/HomePartOf";
 import { ProjectHomeView } from "@/components/tome/home/ProjectHomeView";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import {
@@ -172,6 +176,7 @@ import {
   dataStewardLabel,
   isSynthesizedType,
   type ProjectDocument,
+  type ProjectLabels,
   type ProjectType,
   type TomeReportVisibility,
 } from "@/types/projects";
@@ -368,6 +373,34 @@ function pageTitleOf(path: string, markdown: string): string {
     : (SPEC_BY_PATH.get(path)?.title ?? pageDisplayName(path));
 }
 
+/**
+ * How each level of each axis is drawn in the trail at the top of the page.
+ *
+ * One table for both axes, so adding a level cannot leave the crumb and the
+ * "Part of" card colouring the same thing two different ways.
+ */
+const CRUMB_STYLE: Record<
+  AncestorRow["type"],
+  { icon: React.ReactNode; colorClass: string }
+> = {
+  bhag: {
+    icon: <Target className="h-3.5 w-3.5 shrink-0 text-primary" />,
+    colorClass: "text-primary",
+  },
+  area: {
+    icon: <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />,
+    colorClass: "text-sky-600 dark:text-sky-400",
+  },
+  function: {
+    icon: <Building2 className="h-3.5 w-3.5 shrink-0 text-violet-500" />,
+    colorClass: "text-violet-600 dark:text-violet-400",
+  },
+  category: {
+    icon: <FolderTree className="h-3.5 w-3.5 shrink-0 text-violet-500" />,
+    colorClass: "text-violet-600 dark:text-violet-400",
+  },
+};
+
 export function TomeWiki({ slug }: { slug: string }) {
   // The active view lives in the URL (deep-linkable, back/forward works), but we
   // navigate with `history.pushState` rather than `router.push` so this client
@@ -459,6 +492,20 @@ export function TomeWiki({ slug }: { slug: string }) {
   const [projectType, setProjectType] = useState<ProjectType>("project");
   const [initiatives, setInitiatives] = useState<string[]>([]);
   const [areaTags, setAreaTags] = useState<string[]>([]);
+  /**
+   * Everything the space says about where it belongs.
+   *
+   * Kept whole rather than picked apart into one state per level, because
+   * which axis a space is on is read off the labels together: naming a
+   * function makes a space a subject whatever else it carries.
+   */
+  const [spaceLabels, setSpaceLabels] = useState<ProjectLabels | undefined>(undefined);
+  // Read, never written here: the crumb needs the ids behind a subject's
+  // function and category names, and this device's taxonomy is what holds
+  // them. Configuring the taxonomy happens in the catalogue.
+  const { taxonomy } = useFunctionTaxonomy();
+  /** Whether this space is a Subject rather than part of the hierarchy. */
+  const onFunctionAxis = placementOf(spaceLabels).axis === "function";
   const [parentBhags, setParentBhags] = useState<{ slug: string; name?: string; title?: string }[]>([]);
   const [parentAreas, setParentAreas] = useState<
     { slug: string; name?: string; title?: string; parentBhagSlug?: string }[]
@@ -696,6 +743,7 @@ export function TomeWiki({ slug }: { slug: string }) {
     setProjectType(p.type ?? "project");
     setInitiatives(Array.isArray(p.labels?.initiatives) ? p.labels.initiatives : []);
     setAreaTags(Array.isArray(p.labels?.areas) ? p.labels.areas : []);
+    setSpaceLabels(p.labels ?? undefined);
     setReportVisibility(resolveTomeReportVisibility(p));
     setProjectMeta({
       description: typeof p.description === "string" ? p.description : null,
@@ -1803,47 +1851,49 @@ export function TomeWiki({ slug }: { slug: string }) {
     [parentAreas],
   );
 
-  // BHAG → Area → Project up-links, shown as breadcrumb segments instead of
-  // badge chips now that the hierarchy is explicit. Only the first tag at
-  // each level is shown — a breadcrumb is inherently a single path, unlike
-  // the badge cluster which could list every tag.
-  // Resolved as data first, because Home's "Part of" card reads the same
-  // trail: two walks up one hierarchy are two chances to disagree about it.
+  /**
+   * What sits above this space, resolved as data.
+   *
+   * Only the first tag at each level is looked up: a breadcrumb is a single
+   * path, unlike the badge cluster it replaced, which could list every tag.
+   * Which of those lookups the trail actually uses is `spaceTrail`'s call,
+   * since a subject climbs the function axis and names no BHAG at all.
+   */
   const ancestors = useMemo<AncestorRow[]>(() => {
-    const out: AncestorRow[] = [];
-    const named = (entity: { slug: string; name?: string; title?: string }) =>
-      entity.title ?? entity.name ?? entity.slug;
-    if (isArea) {
-      const b = initiatives.length > 0 ? bhagByInitiative.get(initiatives[0]) : undefined;
-      if (b) out.push({ slug: b.slug, title: named(b), type: "bhag" });
-    } else if (!isBhag) {
-      const directBhag =
+    const bhagFor = () => {
+      if (isArea) {
+        return initiatives.length > 0 ? bhagByInitiative.get(initiatives[0]) : undefined;
+      }
+      if (isBhag) return undefined;
+      const direct =
         initiatives.length > 0 ? bhagByInitiative.get(initiatives[0]) : undefined;
-      const bhag = directBhag ?? transitiveBhags[0];
-      if (bhag) out.push({ slug: bhag.slug, title: named(bhag), type: "bhag" });
-      const area = areaTags.length > 0 ? areaByLabel.get(areaTags[0]) : undefined;
-      if (area) out.push({ slug: area.slug, title: named(area), type: "area" });
-    }
-    return out;
-  }, [isArea, isBhag, initiatives, bhagByInitiative, transitiveBhags, areaTags, areaByLabel]);
+      return direct ?? transitiveBhags[0];
+    };
+    return spaceTrail({
+      labels: spaceLabels,
+      taxonomy,
+      bhag: bhagFor(),
+      area:
+        isArea || isBhag
+          ? undefined
+          : areaTags.length > 0
+            ? areaByLabel.get(areaTags[0])
+            : undefined,
+    });
+  }, [
+    spaceLabels,
+    taxonomy,
+    isArea,
+    isBhag,
+    initiatives,
+    bhagByInitiative,
+    transitiveBhags,
+    areaTags,
+    areaByLabel,
+  ]);
 
   const hierarchyCrumbs = useMemo<Crumb[]>(
-    () =>
-      ancestors.map((node) =>
-        node.type === "bhag"
-          ? {
-              label: node.title,
-              href: `/projects/${node.slug}/tome`,
-              icon: <Target className="h-3.5 w-3.5 shrink-0 text-primary" />,
-              colorClass: "text-primary",
-            }
-          : {
-              label: node.title,
-              href: `/projects/${node.slug}/tome`,
-              icon: <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />,
-              colorClass: "text-sky-600 dark:text-sky-400",
-            },
-      ),
+    () => ancestors.map((node) => ({ label: node.title, href: node.href, ...CRUMB_STYLE[node.type] })),
     [ancestors],
   );
 
@@ -2329,12 +2379,23 @@ export function TomeWiki({ slug }: { slug: string }) {
                 {
                   label: projectTitle ?? slug,
                   onClick: () => navigate({ kind: "summary" }),
-                  icon: isBhag ? (
+                  // A Subject is the leaf of the function axis, as a project
+                  // is the leaf of the hierarchy, and a leaf wears no mark of
+                  // its own in the trail. Named explicitly so a record that
+                  // still carries an area tag from an earlier life cannot
+                  // wear an Area mark under a Function → Category trail.
+                  icon: onFunctionAxis ? undefined : isBhag ? (
                     <Target className="h-3.5 w-3.5 shrink-0 text-primary" />
                   ) : isArea ? (
                     <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />
                   ) : undefined,
-                  colorClass: isBhag ? "text-primary" : isArea ? "text-sky-600 dark:text-sky-400" : undefined,
+                  colorClass: onFunctionAxis
+                    ? undefined
+                    : isBhag
+                      ? "text-primary"
+                      : isArea
+                        ? "text-sky-600 dark:text-sky-400"
+                        : undefined,
                 },
                 ...crumbs,
               ]}

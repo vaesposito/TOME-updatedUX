@@ -1,8 +1,22 @@
 "use client";
 
-import { ChevronRight, Layers, Network, Target } from "lucide-react";
+import {
+  Building2,
+  ChevronRight,
+  FolderTree,
+  Layers,
+  Network,
+  Target,
+} from "lucide-react";
 import Link from "next/link";
+
+import type { AncestorRow } from "@/lib/tome/space-trail";
+
+// Re-exported where the card used to own it, for the surfaces that read the
+// row type from here.
+export type { AncestorRow };
 import * as React from "react";
+import type { ReactNode } from "react";
 
 import {
   HomeCard,
@@ -26,11 +40,19 @@ import {
  * an empty one.
  */
 
-export interface AncestorRow {
-  slug: string;
-  title: string;
-  type: "bhag" | "area";
-}
+/** What each level of each axis is called and coloured as. */
+const LEVELS: Record<AncestorRow["type"], { label: string; icon: ReactNode }> = {
+  bhag: { label: "Goal", icon: <Target className="h-3.5 w-3.5 shrink-0 text-primary" /> },
+  area: { label: "Area", icon: <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" /> },
+  function: {
+    label: "Function",
+    icon: <Building2 className="h-3.5 w-3.5 shrink-0 text-violet-500" />,
+  },
+  category: {
+    label: "Category",
+    icon: <FolderTree className="h-3.5 w-3.5 shrink-0 text-violet-500" />,
+  },
+};
 
 export function HomePartOf({
   ancestors,
@@ -74,7 +96,7 @@ export function HomePartOf({
            names matter more than the one line. */
         <ul className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1.5">
           {ancestors.map((ancestor, index) => (
-            <li key={ancestor.slug} className="flex min-w-0 items-center gap-1">
+            <li key={ancestor.href} className="flex min-w-0 items-center gap-1">
               {index > 0 ? (
                 <ChevronRight
                   className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -82,21 +104,17 @@ export function HomePartOf({
                 />
               ) : null}
               <Link
-                href={`/projects/${ancestor.slug}/tome`}
+                href={ancestor.href}
                 className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted/60"
               >
                 {/* Coloured as the breadcrumb colours them, so the two
                     readings of the same trail look like one thing. */}
-                {ancestor.type === "bhag" ? (
-                  <Target className="h-3.5 w-3.5 shrink-0 text-primary" />
-                ) : (
-                  <Layers className="h-3.5 w-3.5 shrink-0 text-sky-500" />
-                )}
+                {LEVELS[ancestor.type].icon}
                 <span className="min-w-0 truncate font-medium text-foreground">
                   {ancestor.title}
                 </span>
                 <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {ancestor.type === "bhag" ? "Goal" : "Area"}
+                  {LEVELS[ancestor.type].label}
                 </span>
               </Link>
             </li>

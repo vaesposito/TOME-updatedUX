@@ -121,8 +121,18 @@ const CHILDREN = {
 };
 
 const ANCESTORS = [
-  { slug: "example-goal", title: "Example Goal", type: "bhag" as const },
-  { slug: "example-area", title: "Example Area", type: "area" as const },
+  { href: "/projects/example-goal/tome", title: "Example Goal", type: "bhag" as const },
+  { href: "/projects/example-area/tome", title: "Example Area", type: "area" as const },
+];
+
+/** The same card for a space on the function axis rather than the hierarchy. */
+const SUBJECT_ANCESTORS = [
+  { href: "/projects?tab=functions", title: "Example Function", type: "function" as const },
+  {
+    href: "/projects/functions/example-function--example-function-example-category",
+    title: "Example Category",
+    type: "category" as const,
+  },
 ];
 
 function serve(children: unknown = CHILDREN): void {
@@ -243,6 +253,19 @@ describe("what a space belongs to", () => {
     expect(await screen.findByText("Part of")).toBeInTheDocument();
     expect(screen.getByText("Example Goal")).toBeInTheDocument();
     expect(screen.getByText("Example Area")).toBeInTheDocument();
+  });
+
+  it("names the function and the category above a subject", async () => {
+    home({ kind: "project", ancestors: SUBJECT_ANCESTORS });
+    expect(await screen.findByText("Part of")).toBeInTheDocument();
+    // The function axis read in the function axis's own words, and pointing
+    // at the function view rather than at a space.
+    expect(screen.getByText("Function")).toBeInTheDocument();
+    expect(screen.getByText("Category")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Example Function/ })).toHaveAttribute(
+      "href",
+      "/projects?tab=functions",
+    );
   });
 
   it("offers a way to say so when nothing is named yet", async () => {

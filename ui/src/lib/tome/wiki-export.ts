@@ -1,7 +1,7 @@
 import { Marked } from "marked";
 
 import {
-  DEFAULT_PAGES,
+  KNOWN_TOP_LEVEL_PAGES,
   parseFrontmatter,
   SPEC_BY_PATH,
   type FrontmatterValue,
@@ -53,9 +53,12 @@ function orderedPaths(pages: Record<string, string>, tree: PageTreeNode[]): stri
   };
 
   // Report surfaces (notably standup.md) are intentionally absent from the
-  // sidebar tree. Seed specs put those and the ordinary top-level pages into
-  // their canonical relative positions before the rest of the sidebar order.
-  [...DEFAULT_PAGES].sort((a, b) => a.order - b.order).forEach((page) => add(page.path));
+  // sidebar tree. The known top-level pages go into their canonical relative
+  // positions before the rest of the sidebar order — all of them, not only
+  // the two a new space is founded with, since an older wiki holds more.
+  [...KNOWN_TOP_LEVEL_PAGES]
+    .sort((a, b) => a.order - b.order)
+    .forEach((page) => add(page.path));
   flattenTree(tree).forEach(add);
   Object.keys(pages).sort().forEach(add);
   return result;

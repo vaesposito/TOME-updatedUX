@@ -77,6 +77,15 @@ const FALLBACK_TEMPLATES: Record<TemplateScope, readonly PageSpec[]> = {
  */
 const DEFAULT_GUIDANCE: Record<TemplateScope, Record<string, string>> = {
   "top-level": {
+    // The only page a new space is seeded with, so it carries the whole of
+    // the first impression: what this is, where it stands, what is next.
+    "overview.md":
+      "What this space is and where it stands — the page someone reads first, and often the only one.\n" +
+      "Write it as prose a new teammate could follow, not as a source digest, and cite what you read.\n" +
+      "## What this is\nOne short paragraph: the effort, who it is for, and why it exists.\n\n" +
+      "## Where it stands\nThe current state in a few sentences — what has shipped, what is in flight, what is at risk.\n\n" +
+      "## What is next\nThe nearest commitments, with owners or dates where the sources give them.\n\n" +
+      "Anything the sources do not support, leave out rather than guess at. If a section has nothing behind it yet, say so in one sentence.",
     "standup.md":
       "A real stand-up update — keep this EXACT Markdown structure; it is parsed by the UI. Under 160 words total.\n" +
       "Put every heading on its own line with a blank line after it. Do not use bold labels as headings.\n" +

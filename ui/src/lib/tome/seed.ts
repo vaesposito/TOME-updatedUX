@@ -1,9 +1,10 @@
 /**
  * Greenfield wiki seeding.
  *
- * CAIPE `project.description` feeds the charter intro. Stable pages stay
- * human-edited; dynamic pages seed as empty placeholders for the ingest
- * agent to fill later.
+ * A new space is seeded with the one agent-written page the default template
+ * carries, and the space's description leads it so the page says something
+ * before the first ingest has run. Where a template still includes the older
+ * stable pages, they seed with their scaffolds and stay human-edited.
  *
  * Server-only.
  */
@@ -29,10 +30,12 @@ export function missingPageTemplates(
 /**
  * Build the initial `{path: markdown}` for a fresh project from the live
  * top-level template config (admin-editable; falls back to the hardcoded
- * defaults). Stable/hidden pages seed with their configured body scaffold;
- * dynamic/report pages seed as empty placeholders the ingest agent fills.
+ * defaults, which are one agent-written overview and the hidden memory
+ * page). Stable/hidden pages seed with their configured body scaffold;
+ * dynamic/report pages seed with their guidance, or as empty placeholders
+ * the ingest agent fills.
  *
- * @param description CAIPE `project.description`, prepended to the charter.
+ * @param description CAIPE `project.description`, leading the overview.
  */
 export async function buildGreenfieldPages(
   description: string,
@@ -46,8 +49,17 @@ export async function buildGreenfieldPages(
     // page, or a dynamic/report guidance comment); pages without one seed as an
     // empty placeholder the ingest agent fills.
     const bodyText = spec.body ?? (spec.kind === "hidden" ? MEMORY_SEED : EMPTY_PAGE_PLACEHOLDER);
-    let body = pageWithFrontmatter(spec, bodyText);
-    // Seed the charter's intro from the project description (decision A).
+    // The description is what the space's own people wrote about it, and on
+    // the overview it is the whole of the page until an ingest has run.
+    // Above the guidance comment rather than inside it, so it is what a
+    // reader sees and what the agent writes around.
+    const lead =
+      spec.path === "overview.md" && description.trim()
+        ? `${description.trim()}\n\n${bodyText}`
+        : bodyText;
+    let body = pageWithFrontmatter(spec, lead);
+    // Older templates still carry a charter, which takes the description in
+    // its own intro section instead.
     if (spec.path === "charter.md" && description.trim()) {
       body = injectCharterIntro(body, description.trim());
     }

@@ -30,26 +30,48 @@ function spec(
 }
 
 /**
- * Top-level seed pages for a Project — these describe the strategic effort as
- * a whole, cross-cutting across all attached sources. Per-source detail lives
- * under `repos/<slug>/...` etc. (see templates below).
+ * What a new space starts with: one page, written by the agent.
+ *
+ * A founding wiki used to be seven pages — a charter, a roadmap, a team
+ * assignment, a stand-up and two more — and all but the stand-up arrived
+ * empty, so a space opened on a shelf of blank documents that someone had
+ * to either fill or explain away. One agent-written page says what the
+ * space is as soon as there is anything to say, and everything else is
+ * added when there is a reason for it, by hand or by the agent.
+ *
+ * `overview.md` is `dynamic`: the agent rewrites it on each ingest, and it
+ * stays editable in the meantime. The scaffolds for the pages that are no
+ * longer seeded are kept in STABLE_SEED_BODIES and in the guidance table,
+ * so adding any of them back — in the template editor, or as a page someone
+ * writes — still starts them off properly.
+ *
+ * `memory.md` is `hidden`: the agent's own notes, which the wiki does not
+ * show. It is not one of the pages a reader meets.
  *
  * Order is sidebar order at the same depth; nesting is path-derived
  * (`a/b.md` is a child of `a.md`).
- *
- * `charter.md` / `roadmap.md` / `team-assignments.md` seed as `kind=stable`:
- * the agent drafts them once at founding (from the charter field + sources),
- * then the autonomous ingest loop only preserves them. Dynamic pages are
- * grounded by them.
  */
 export const DEFAULT_PAGES: readonly PageSpec[] = [
+  spec("overview.md", "dynamic", "Overview", 0),
+  spec("memory.md", "hidden", "Memory", 100),
+];
+
+/**
+ * Every top-level page TOME knows by name, in the order it reads them.
+ *
+ * Wider than DEFAULT_PAGES, which is only what a new space is founded with.
+ * Spaces founded before that shrank still hold a charter, a roadmap and the
+ * rest, a template can put them back, and anyone can write one by hand — so
+ * their kind, title and canonical position are kept here, where an export
+ * and a page written without frontmatter can still find them.
+ */
+export const KNOWN_TOP_LEVEL_PAGES: readonly PageSpec[] = [
   spec("standup.md", "report", "The Standup", -10),
-  // 3 stable — human-curated beliefs & commitments.
   spec("charter.md", "stable", "Charter", -5),
   spec("roadmap.md", "stable", "Roadmap", -4),
   spec("team-assignments.md", "stable", "Team Assignment", -3),
-  // 2 dynamic flat pages (glossary is a directory, agent-maintained per term).
-  spec("activity.md", "dynamic", "Activity", 0),
+  spec("overview.md", "dynamic", "Overview", 0),
+  spec("activity.md", "dynamic", "Activity", 1),
   spec("architecture.md", "dynamic", "Architecture", 10),
   spec("memory.md", "hidden", "Memory", 100),
 ];
@@ -240,8 +262,10 @@ export const REQUIRED_PATHS: ReadonlySet<string> = new Set(
   DEFAULT_PAGES.map((p) => p.path),
 );
 
+// Every page we know, not only the ones we seed: a charter that predates
+// the one-page founding wiki still has a kind and a title.
 export const SPEC_BY_PATH: ReadonlyMap<string, PageSpec> = new Map(
-  DEFAULT_PAGES.map((p) => [p.path, p]),
+  KNOWN_TOP_LEVEL_PAGES.map((p) => [p.path, p]),
 );
 
 export const EMPTY_PAGE_PLACEHOLDER = "_(no content yet)_";

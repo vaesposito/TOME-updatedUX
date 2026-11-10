@@ -1,0 +1,14 @@
+/**
+ * The application's own stylesheet, told where to look.
+ *
+ * Tailwind v4 finds the classes it must generate by scanning from the file
+ * the stylesheet lives in. This one lives in the prototype while the markup
+ * lives in the application, so the sources are named explicitly — otherwise
+ * the build produces a stylesheet for an empty project and every screen
+ * arrives unstyled.
+ */
+@import "../../src/app/globals.css";
+
+@source "../../src";
+@source "../app";
+@source "../mock";

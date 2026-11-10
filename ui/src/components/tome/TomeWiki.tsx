@@ -24,6 +24,7 @@ import {
   FolderKanban,
   FolderPlus,
   HelpCircle,
+  Info,
   Layers,
   LayoutTemplate,
   Link2,
@@ -2398,6 +2399,30 @@ export function TomeWiki({ slug }: { slug: string }) {
                 )}
                 {inFlightRun ? inFlightLabel(inFlightRun.status) : "Run ingest"}
               </Button>
+            )}
+            {/* What the run actually does to the space, beside the button
+                rather than inside its label: "Run ingest" says nothing about
+                which pages change, and a reader who has pinned a stable page
+                deserves to know that only the agent-written ones are
+                rewritten. A real control so it can be reached by keyboard,
+                rather than an icon that only answers a pointer. */}
+            {canEdit && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-muted-foreground"
+                    aria-label="What Run ingest does"
+                  >
+                    <Info className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-64">
+                  This will update your dynamic content, pulling from connected
+                  sources.
+                </TooltipContent>
+              </Tooltip>
             )}
             {!navV2 && (
               <Button

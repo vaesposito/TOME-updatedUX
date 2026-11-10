@@ -924,7 +924,13 @@ describe("WikiPageView", () => {
   });
 });
 
-describe("renaming a page", () => {
+describe("naming a page while editing it", () => {
+  const openEdit = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    });
+  };
+
   const page = (
     props: Partial<React.ComponentProps<typeof WikiPageView>> = {},
   ) => (
@@ -938,53 +944,90 @@ describe("renaming a page", () => {
     />
   );
 
-  it("names the page without moving it", async () => {
+  it("saves the new title with the body, and leaves the path alone", async () => {
     const onWrite = jest.fn().mockResolvedValue(undefined);
     render(page({ onWrite }));
+    await openEdit();
 
     fireEvent.click(screen.getByRole("button", { name: "Rename page" }));
     const field = screen.getByRole("textbox", { name: "Page title" });
     expect(field).toHaveValue("Weekly sync");
-
     fireEvent.change(field, { target: { value: "Monday sync" } });
     fireEvent.keyDown(field, { key: "Enter" });
 
+    // Typed in place: the header reads the new name before anything is saved.
+    expect(await screen.findByText("Monday sync")).toBeInTheDocument();
+    expect(onWrite).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    });
+
     await waitFor(() => expect(onWrite).toHaveBeenCalled());
     const [writtenPath, writtenMarkdown] = onWrite.mock.calls[0];
-    // The address is what links point at, so it stays; only the name the
-    // page is read by changes, and the body is carried through untouched.
+    // Its address is what links point at, so only the name changes.
     expect(writtenPath).toBe("meetings/17.08.2026.md");
     expect(writtenMarkdown).toContain("title: Monday sync");
     expect(writtenMarkdown).toContain("Original markdown");
-    await waitFor(() =>
-      expect(screen.queryByRole("textbox", { name: "Page title" })).toBeNull(),
-    );
   });
 
-  it("puts the name back on Escape", async () => {
+  it("puts the old title back when the edit is abandoned", async () => {
     const onWrite = jest.fn().mockResolvedValue(undefined);
     render(page({ onWrite }));
+    await openEdit();
 
     fireEvent.click(screen.getByRole("button", { name: "Rename page" }));
     const field = screen.getByRole("textbox", { name: "Page title" });
     fireEvent.change(field, { target: { value: "Abandoned" } });
-    fireEvent.keyDown(field, { key: "Escape" });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(await screen.findByText("Abandoned")).toBeInTheDocument();
 
-    expect(onWrite).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    });
+
+    // An unsaved title goes the way of any other unsaved change.
     expect(await screen.findByText("Weekly sync")).toBeInTheDocument();
+    expect(onWrite).not.toHaveBeenCalled();
   });
 
-  it("offers no rename to a reader who cannot write here", () => {
+  it("keeps what was typed out of the draft when the field is escaped", async () => {
+    render(page());
+    await openEdit();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename page" }));
+    const field = screen.getByRole("textbox", { name: "Page title" });
+    fireEvent.change(field, { target: { value: "Escaped" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+
+    expect(await screen.findByText("Weekly sync")).toBeInTheDocument();
+    expect(screen.queryByText("Escaped")).toBeNull();
+  });
+
+  it("offers no title field while the page is only being read", () => {
+    render(page());
+
+    expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();
+  });
+
+  it("offers no title field while the wiki is locked", async () => {
+    render(page({ locked: true }));
+
+    expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();
+    // The title rides with the edit, and the edit itself is barred while an
+    // ingest is rewriting the wiki.
+    expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
+  });
+
+  it("offers no title field to a reader who cannot write here", () => {
     render(page({ canEdit: false }));
 
     expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();
   });
 
-  it("offers no rename on a page whose name belongs to what it mirrors", () => {
+  it("offers no title field on a page whose name belongs to what it mirrors", () => {
     render(
-      page({
-        markdown: "---\ntitle: Mirrored page\nmirror: true\n---\nBody",
-      }),
+      page({ markdown: "---\ntitle: Mirrored page\nmirror: true\n---\nBody" }),
     );
 
     expect(screen.queryByRole("button", { name: "Rename page" })).toBeNull();

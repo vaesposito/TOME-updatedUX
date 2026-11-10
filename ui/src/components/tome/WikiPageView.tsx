@@ -230,7 +230,6 @@ export function WikiPageView({
   const [isEditing, setIsEditing] = useState(false);
   const [renamingTitle, setRenamingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
-  const [titleSaving, setTitleSaving] = useState(false);
   const [editorMode, setEditorMode] = useState<MarkdownDocumentEditorMode>("rich");
   const [rawDraft, setRawDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -322,6 +321,18 @@ export function WikiPageView({
     const [fm, draftBodyValue] = parseFrontmatter(rawDraft);
     return [fm as Record<string, FrontmatterValue>, draftBodyValue] as const;
   }, [rawDraft]);
+
+  /**
+   * The name the page is shown by here.
+   *
+   * Read from the draft while editing, so a title just typed is the title on
+   * screen, and from the saved page otherwise.
+   */
+  const shownTitle = useMemo(() => {
+    if (!isEditing) return title;
+    const drafted = draftFrontmatter.title;
+    return typeof drafted === "string" && drafted.trim() ? drafted : title;
+  }, [draftFrontmatter.title, isEditing, title]);
 
   const isGlossary = useMemo(() => isGlossaryTerm(frontmatter), [frontmatter]);
   const isEdgeEntry = useMemo(() => isEdge(frontmatter), [frontmatter]);
@@ -672,59 +683,40 @@ export function WikiPageView({
   }, [conflict, draftBody, draftStorageKey, editorMode, fmDraft, onWrite, path, refreshLastRevision]);
 
   const startTitleRename = useCallback(() => {
-    setTitleDraft(title);
+    setTitleDraft(shownTitle);
     setRenamingTitle(true);
-  }, [title]);
+  }, [shownTitle]);
 
+  /** Leave the field without taking what was typed in it. */
   const cancelTitleRename = useCallback(() => {
     setRenamingTitle(false);
   }, []);
 
   /**
-   * Name the page, which is not the same as moving it.
+   * Take the typed name into the edit in progress.
    *
-   * The name is the page's own `title`, which is what the tree, this header
-   * and the breadcrumb all read it by. Its path is its address and is left
-   * exactly as it was, so every link already written to this page still
-   * resolves and no filename is put in front of a reader.
+   * The name goes into the frontmatter draft and is saved by the same Save
+   * that saves the body, so a title and the paragraph explaining it land
+   * together and abandoning the edit abandons both.
    *
-   * Mid-edit the new name goes into the draft and is saved with the rest,
-   * because writing it now would write it over whatever is still being typed.
+   * It is the page's `title` — what the tree, this header and the breadcrumb
+   * all read it by. The page's path is its address and is deliberately left
+   * alone: links already written to this page keep resolving, and no filename
+   * is put in front of a reader.
    */
-  const commitTitleRename = useCallback(async () => {
+  const commitTitleRename = useCallback(() => {
     const next = titleDraft.trim();
-    if (!next || next === title) {
-      setRenamingTitle(false);
-      return;
-    }
-    if (isEditing) {
-      setFmDraft((current) => ({ ...current, title: next }));
-      setRawDraft((current) => {
-        const [fm, bodyContent] = parseFrontmatter(current);
-        return serializeFrontmatter(
-          { ...(fm as Record<string, FrontmatterValue>), title: next },
-          bodyContent,
-        );
-      });
-      setRenamingTitle(false);
-      return;
-    }
-    setTitleSaving(true);
-    setError(null);
-    try {
-      await onWrite(
-        path,
-        serializeFrontmatter({ ...frontmatter, title: next }, body),
-        `rename ${path} to ${next}`,
+    setRenamingTitle(false);
+    if (!next || next === shownTitle) return;
+    setFmDraft((current) => ({ ...current, title: next }));
+    setRawDraft((current) => {
+      const [fm, bodyContent] = parseFrontmatter(current);
+      return serializeFrontmatter(
+        { ...(fm as Record<string, FrontmatterValue>), title: next },
+        bodyContent,
       );
-      await onReload();
-      setRenamingTitle(false);
-    } catch (caught) {
-      setError(String((caught as Error)?.message ?? caught));
-    } finally {
-      setTitleSaving(false);
-    }
-  }, [body, frontmatter, isEditing, onReload, onWrite, path, title, titleDraft]);
+    });
+  }, [shownTitle, titleDraft]);
 
   const handleChangeKind = useCallback(
     async (newKind: PageKind) => {
@@ -764,35 +756,29 @@ export function WikiPageView({
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    void commitTitleRename();
+                    commitTitleRename();
                   } else if (event.key === "Escape") {
                     event.preventDefault();
                     cancelTitleRename();
                   }
                 }}
-                onBlur={() => void commitTitleRename()}
+                onBlur={commitTitleRename}
                 className="h-auto min-w-0 flex-1 border-0 px-0 py-0 text-base font-semibold leading-tight shadow-none focus-visible:ring-0"
                 autoFocus
-                disabled={titleSaving}
               />
             ) : (
               <div className="group/title flex min-w-0 items-center gap-1.5">
-                <h2 className="min-w-0 truncate text-base font-semibold leading-tight">{title}</h2>
-                {canEdit && !locked && !isMirror && (
+                <h2 className="min-w-0 truncate text-base font-semibold leading-tight">{shownTitle}</h2>
+                {isEditing && canEdit && !locked && !isMirror && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
                         onClick={startTitleRename}
-                        disabled={titleSaving}
                         aria-label="Rename page"
                         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within/title:opacity-100 group-hover/title:opacity-100 disabled:opacity-40"
                       >
-                        {titleSaving ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
+                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="text-xs">

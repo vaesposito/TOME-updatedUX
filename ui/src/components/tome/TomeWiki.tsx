@@ -46,7 +46,6 @@ import {
   RefreshCw,
   NotebookPen,
   Settings,
-  Sparkles,
   Target,
   Upload,
 } from "lucide-react";
@@ -158,7 +157,6 @@ import { useResponsiveProjectSidebar } from "@/lib/tome/responsive-project-sideb
 import { useElementFullscreen } from "@/lib/tome/use-element-fullscreen";
 import { cn } from "@/lib/utils";
 import { getProjectsNavigationLabel } from "@/lib/navigation-labels";
-import { buildPageCreationAgentPrompt } from "@/lib/tome/page-creation";
 import {
   DEFAULT_TOME_REPORT_VISIBILITY,
   resolveTomeReportVisibility,
@@ -1225,19 +1223,6 @@ export function TomeWiki({ slug }: { slug: string }) {
     setNewPageOpen(true);
   }, []);
 
-  const promptAgentForPage = useCallback((rawPath: string) => {
-    if (!rawPath.trim()) return;
-    setAgentPrefill(buildPageCreationAgentPrompt({
-      projectSlug: slug,
-      rawPath,
-      folderId: newPageParentFolder?.id,
-      folders: data?.folders ?? [],
-    }));
-    setNewPageOpen(false);
-    setNewPageName("");
-    setNewPageParentFolder(null);
-    navigate({ kind: "agent" });
-  }, [data?.folders, navigate, newPageParentFolder, slug]);
 
   const openNewGist = useCallback((rawTitle: string) => {
     const title = rawTitle.trim();
@@ -2244,7 +2229,7 @@ export function TomeWiki({ slug }: { slug: string }) {
                   : "New wiki page"}
               </DialogTitle>
               <DialogDescription>
-                Enter a page name, then draft it in the editor or ask the agent to help.
+                Enter a page name, then draft it in the editor.
               </DialogDescription>
             </DialogHeader>
             <form
@@ -2273,8 +2258,8 @@ export function TomeWiki({ slug }: { slug: string }) {
                   ref={newPageInputRef}
                   value={newPageName}
                   onChange={(e) => setNewPageName(e.target.value)}
-                  placeholder="new-page.md"
-                  className="font-mono text-sm"
+                  placeholder="Release plan"
+                  className="text-sm"
                   aria-label="New page name"
                 />
               </div>
@@ -2291,21 +2276,9 @@ export function TomeWiki({ slug }: { slug: string }) {
                   <Upload className="h-4 w-4" />
                   Import instead
                 </button>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!newPageName.trim()}
-                    onClick={() => promptAgentForPage(newPageName)}
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Ask agent
-                  </Button>
-                  <Button type="submit" size="sm" disabled={!newPageName.trim()}>
-                    Write in editor
-                  </Button>
-                </div>
+                <Button type="submit" size="sm" disabled={!newPageName.trim()}>
+                  Write in editor
+                </Button>
               </div>
             </form>
           </DialogContent>

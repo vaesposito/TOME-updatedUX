@@ -55,9 +55,12 @@ export function CustomPromptsPanel() {
         aria-controls={bodyId}
         className="flex w-full items-start gap-3 px-5 py-2.5 text-left"
       >
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">Custom prompts</span>
-          <span className="block text-xs text-muted-foreground">
+        {/* A column rather than two blocks: the name and what it is for are
+            two lines with air between them, and stacking that a stylesheet
+            cannot flatten back into one. */}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-sm font-semibold leading-tight">Custom prompts</span>
+          <span className="text-xs leading-snug text-muted-foreground">
             Configure what you would like to display on your page and specify
             where the sources should be retrieved from.
           </span>

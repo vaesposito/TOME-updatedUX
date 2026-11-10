@@ -154,10 +154,10 @@ function FollowRow({
           onCheckedChange={(next) => onFollowChange(slugs, next)}
           label={
             children.length > 0
-              ? `Watch ${node.title} and everything in it`
+              ? `Follow ${node.title} and everything in it`
               : isPage
-                ? `Watch the page ${node.title}`
-                : `Watch ${node.title}`
+                ? `Follow the page ${node.title}`
+                : `Follow ${node.title}`
           }
         />
 
@@ -306,7 +306,7 @@ export function NotificationFollowTree({
             indeterminate={followed.size > 0 && !allFollowed}
             disabled={busy}
             onCheckedChange={(next) => onFollowChange(allSlugs, next)}
-            label="Watch everything"
+            label="Follow everything"
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
             Select all

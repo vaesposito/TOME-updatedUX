@@ -373,7 +373,7 @@ describe("HomeTeam", () => {
     answer(roster);
     render(<HomeTeam slug="example-project" settingsHref="/settings" />);
     expect(await screen.findByText("Platform Guild can edit")).toBeInTheDocument();
-    expect(screen.getByText("1 person is watching")).toBeInTheDocument();
+    expect(screen.getByText("1 person is following")).toBeInTheDocument();
   });
 
   it("reports an unowned space rather than an empty list", async () => {

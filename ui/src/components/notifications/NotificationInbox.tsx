@@ -254,7 +254,7 @@ export function NotificationInbox() {
     mutate(
       "/api/notifications/following",
       { slugs, following },
-      following ? "Could not start watching" : "Could not stop watching",
+      following ? "Could not start following" : "Could not stop following",
     );
 
   const setMuted = (slugs: string[], muted: boolean) =>
@@ -285,7 +285,7 @@ export function NotificationInbox() {
             <TabsList className="h-9">
               <TabsTrigger value="inbox">Inbox</TabsTrigger>
               <TabsTrigger value="following" data-tour="notifications-watching">
-                Watching
+                Following
               </TabsTrigger>
             </TabsList>
           </Tabs>

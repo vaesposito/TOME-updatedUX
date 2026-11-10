@@ -7,7 +7,7 @@
  * that the reader can click the thing being explained while it is explained.
  *
  * The order runs outwards: first where notifications arrive (the bell, the
- * inbox), then where they are chosen (Watching, a project's own Watch
+ * inbox), then where they are chosen (Following, a project's own Follow
  * button), then where they are created (saving a page), and finally where
  * they are read in bulk (a project's Home). Reading it through should
  * answer both "where do I see these" and "why am I getting them".
@@ -47,20 +47,20 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
     // the step points at the tab until the reader opens it.
     anchor: "notifications-watching-tree",
     waitingAnchor: "notifications-watching",
-    hint: "Open Watching to choose what reaches you.",
+    hint: "Open Following to choose what reaches you.",
     route: () => "/notifications",
-    title: "Watching decides what you are sent",
+    title: "Following decides what you are sent",
     body:
-      "Tick a BHAG, an area or a project and its changes reach you. Each watched row also carries a Webex button, for sending that project's updates on to a team space or to your own direct messages.",
+      "Tick a BHAG, an area or a project and its changes reach you. Each followed row also carries a Webex button, for sending that project's updates on to a team space or to your own direct messages.",
   },
   {
     id: "watch",
     anchor: "watch-toggle",
     route: (subject) =>
       subject.slug ? `/projects/${subject.slug}/tome` : null,
-    title: "Or watch a project from the project",
+    title: "Or follow a project from the project",
     body:
-      "The same choice as the Watching tab, made on the thing it concerns. The count beside it is how many other people are watching, so you can tell whether a change will be noticed.",
+      "The same choice as the Following tab, made on the thing it concerns. The count beside it is how many other people are following, so you can tell whether a change will be noticed.",
     unavailable: "This step needs a project you can read, and there is not one yet.",
   },
   {

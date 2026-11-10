@@ -2352,17 +2352,22 @@ export function TomeWiki({ slug }: { slug: string }) {
                 <TooltipContent side="bottom">What is TOME?</TooltipContent>
               </Tooltip>
             )}
-            {/* Watching the whole space moved to Settings, Notifications on
-                the new navigation, beside the rest of what is configured
-                here; a page keeps its own toggle, which is the one most
-                people reach for. Full screen went with it: a reader who
-                wants the chrome gone has the browser's own. */}
-            {!navV2 && <FollowMenu slug={slug} />}
-            {/* What the header offers about the space as a whole: bring it up
-                to date. Absent rather than disabled for a reader who cannot
-                start a run — an action nobody here can take is not an action.
-                Connecting over MCP is not per-space and is offered once, in
-                the catalogue header. */}
+            {/* What the header offers about the space as a whole: hear about
+                it, and bring it up to date.
+
+                Following had been moved into the Notifications settings when
+                the new rail arrived, which is where it is configured but not
+                where it is decided: a reader working out whether they want to
+                hear about the space in front of them had no reason to go
+                looking two clicks away. Settings keeps its copy; both read
+                the same state. Full screen stayed gone — a reader who wants
+                the chrome gone has the browser's own.
+
+                Run ingest is absent rather than disabled for a reader who
+                cannot start a run: an action nobody here can take is not an
+                action. Connecting over MCP is not per-space and is offered
+                once, in the catalogue header. */}
+            <FollowMenu slug={slug} className="h-9 px-3" />
             {canEdit && (
               <Button
                 size="sm"

@@ -324,8 +324,8 @@ export function HomeTeam({
               <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">
                 {roster.watchers === 1
-                  ? "1 person is watching"
-                  : `${roster.watchers} people are watching`}
+                  ? "1 person is following"
+                  : `${roster.watchers} people are following`}
               </span>
             </p>
           </div>

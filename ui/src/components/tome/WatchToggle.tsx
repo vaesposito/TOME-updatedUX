@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { Bell, BellOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ function unwrap(value: unknown): WatchState {
 }
 
 /**
- * "Watch" / "Watching" toggle, for a Tome entity or for one wiki page inside
+ * "Follow" / "Following" toggle, for a Tome entity or for one wiki page inside
  * it. Watching subscribes the signed-in user to in-app notifications when the
  * thing changes.
  *
@@ -105,7 +105,7 @@ export function WatchToggle({
 
   if (!state) return null;
 
-  const label = state.watching ? "Watching" : "Watch";
+  const label = state.watching ? "Following" : "Follow";
   const noun = pagePath ? "This page." : "This space.";
   return (
     <Tooltip>
@@ -122,9 +122,9 @@ export function WatchToggle({
           aria-pressed={state.watching}
         >
           {state.watching ? (
-            <Eye className="h-3.5 w-3.5" />
+            <Bell className="h-3.5 w-3.5" />
           ) : (
-            <EyeOff className="h-3.5 w-3.5" />
+            <BellOff className="h-3.5 w-3.5" />
           )}
           {label}
           {state.watcher_count > 0 && (
@@ -134,7 +134,7 @@ export function WatchToggle({
       </TooltipTrigger>
       <TooltipContent side="bottom">
         {noun} {state.watching
-          ? "You get a notification when it changes. Click to stop watching."
+          ? "You get a notification when it changes. Click to stop following."
           : "Get a notification when it changes."}
       </TooltipContent>
     </Tooltip>

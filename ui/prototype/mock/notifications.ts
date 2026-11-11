@@ -286,23 +286,6 @@ export function followTree(following: ReadonlySet<string>): NotificationFollowTr
   };
   walk(undefined);
 
-  // One followed page, so the tab shows that a page can be followed on its own.
-  if (following.has("build-pipeline")) {
-    const at = nodes.findIndex((node) => node.slug === "build-pipeline");
-    nodes.splice(at + 1, 0, {
-      slug: "build-pipeline#decisions/cache-key.md",
-      title: "What goes into a cache key",
-      type: "page",
-      parent_slug: "build-pipeline",
-      entity_slug: "build-pipeline",
-      page_path: "decisions/cache-key.md",
-      following: true,
-      muted: false,
-      unread: 0,
-      subtree_unread: 0,
-    });
-  }
-
   return { nodes, total_unread: ROWS.filter((row) => !row.read).length };
 }
 

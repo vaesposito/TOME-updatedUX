@@ -1,11 +1,11 @@
 /**
- * Per-user watch subscriptions on Tome entities (Projects, Areas, BHAGs) and
- * on individual wiki pages.
+ * Per-user watch subscriptions on Tome entities (Projects, Areas, BHAGs).
  *
- * Both live in one collection, distinguished by `page_path`: a row without it
- * subscribes to the whole entity, a row with it to that one page. Entity-level
- * queries therefore have to say `page_path: { $exists: false }` explicitly, or
- * watching a single page would read as watching everything.
+ * A subscription covers a whole entity. Single wiki pages cannot be watched,
+ * and nothing here writes a row for one, but a collection that has been live
+ * may still hold rows carrying `page_path` from when they could. Those rows
+ * subscribe to nobody and must never be read as a subscription to the entity
+ * they name, which is why every query below filters on `ENTITY_ONLY`.
  *
  * Watching is a notification routing choice, not an access grant: a watcher
  * only ever receives notifications for an entity they could already read, and
@@ -72,16 +72,20 @@ export interface TomeWatcherDocument {
   _id: string;
   entity_slug: string;
   entity_type: ProjectType;
-  /** Set only on page subscriptions; absent means the whole entity. */
+  /**
+   * Never written any more: a page cannot be followed. Declared so that the
+   * filters excluding these rows keep type-checking against the shape they
+   * exclude.
+   */
   page_path?: string;
   subject: string;
   email?: string;
   created_at: string;
-  /** Entity-level rows only: where this watch's notifications go in Webex. */
+  /** Where this watch's notifications go in Webex. */
   webex_delivery?: TomeWatcherWebexDelivery;
 }
 
-/** Matches entity-level rows only, never a page subscription. */
+/** Matches live rows only, never a page row left behind by an older schema. */
 const ENTITY_ONLY = { page_path: { $exists: false } } as const;
 
 export interface TomeWatchState {
@@ -93,41 +97,34 @@ async function watchers() {
   return getCollection<TomeWatcherDocument>(WATCHER_COLLECTION);
 }
 
-/** Scope for one subscription: an entity, or one page within it. */
-function scope(entitySlug: string, pagePath?: string) {
-  return pagePath
-    ? { entity_slug: entitySlug, page_path: pagePath }
-    : { entity_slug: entitySlug, ...ENTITY_ONLY };
+/** Scope for one subscription: the whole entity. */
+function scope(entitySlug: string) {
+  return { entity_slug: entitySlug, ...ENTITY_ONLY };
 }
 
 export async function isWatchingEntity(
   entitySlug: string,
   subject: string,
-  pagePath?: string,
 ): Promise<boolean> {
   if (!entitySlug || !subject) return false;
   const collection = await watchers();
-  const row = await collection.findOne({ ...scope(entitySlug, pagePath), subject });
+  const row = await collection.findOne({ ...scope(entitySlug), subject });
   return Boolean(row);
 }
 
-export async function countEntityWatchers(
-  entitySlug: string,
-  pagePath?: string,
-): Promise<number> {
+export async function countEntityWatchers(entitySlug: string): Promise<number> {
   if (!entitySlug) return 0;
   const collection = await watchers();
-  return collection.countDocuments(scope(entitySlug, pagePath));
+  return collection.countDocuments(scope(entitySlug));
 }
 
 export async function getEntityWatchState(
   entitySlug: string,
   subject: string,
-  pagePath?: string,
 ): Promise<TomeWatchState> {
   const [watching, watcher_count] = await Promise.all([
-    isWatchingEntity(entitySlug, subject, pagePath),
-    countEntityWatchers(entitySlug, pagePath),
+    isWatchingEntity(entitySlug, subject),
+    countEntityWatchers(entitySlug),
   ]);
   return { watching, watcher_count };
 }
@@ -138,19 +135,16 @@ export async function watchEntity(input: {
   entityType: ProjectType;
   subject: string;
   email?: string;
-  /** Subscribe to one wiki page instead of the whole entity. */
-  pagePath?: string;
 }): Promise<void> {
   if (!input.entitySlug || !input.subject) return;
   const collection = await watchers();
   await collection.updateOne(
-    { ...scope(input.entitySlug, input.pagePath), subject: input.subject },
+    { ...scope(input.entitySlug), subject: input.subject },
     {
       $setOnInsert: {
         _id: randomUUID(),
         entity_slug: input.entitySlug,
         entity_type: input.entityType,
-        ...(input.pagePath ? { page_path: input.pagePath } : {}),
         subject: input.subject,
         ...(input.email ? { email: input.email } : {}),
         created_at: new Date().toISOString(),
@@ -163,16 +157,15 @@ export async function watchEntity(input: {
 export async function unwatchEntity(
   entitySlug: string,
   subject: string,
-  pagePath?: string,
 ): Promise<void> {
   if (!entitySlug || !subject) return;
   const collection = await watchers();
-  await collection.deleteOne({ ...scope(entitySlug, pagePath), subject });
+  await collection.deleteOne({ ...scope(entitySlug), subject });
 }
 
 /**
- * Drop every subscription for an entity, pages included — call when the
- * entity is deleted.
+ * Drop every row for an entity, page rows from the older schema included —
+ * call when the entity is deleted.
  */
 export async function removeAllEntityWatchers(entitySlug: string): Promise<void> {
   if (!entitySlug) return;
@@ -270,28 +263,6 @@ async function deliverImmediateWebex(input: {
       return address ? sendWebexMessage({ to: address, markdown }) : undefined;
     }),
   );
-}
-
-/**
- * Everyone to tell about a change to one page: the people watching the page
- * and the people watching the entity it lives in.
- *
- * Watching an entity has always meant "tell me when its wiki changes", so
- * page subscriptions add readers rather than replacing the entity's own.
- */
-export async function listPageWatcherSubjects(
-  entitySlug: string,
-  pagePath: string,
-): Promise<string[]> {
-  if (!entitySlug) return [];
-  const collection = await watchers();
-  const rows = await collection
-    .find({
-      entity_slug: entitySlug,
-      $or: [{ page_path: { $exists: false } }, { page_path: pagePath }],
-    })
-    .toArray();
-  return [...new Set(rows.map((row) => row.subject).filter(Boolean))];
 }
 
 export interface WatchedEntity {

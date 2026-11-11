@@ -3,14 +3,14 @@ import {
   parsePageNotifySelection,
 } from "@/lib/tome/page-notifications";
 import { createInAppNotification } from "@/lib/in-app-notifications.server";
-import { listPageWatcherSubjects } from "@/lib/tome/watchers";
+import { listEntityWatcherSubjects } from "@/lib/tome/watchers";
 import { PAGE_NOTIFY_NOTE_MAX } from "@/types/tome";
 
 jest.mock("@/lib/in-app-notifications.server",() => ({
   createInAppNotification: jest.fn(async () => undefined),
 }));
 jest.mock("@/lib/tome/watchers",() => ({
-  listPageWatcherSubjects: jest.fn(async () => ["watcher-subject"]),
+  listEntityWatcherSubjects: jest.fn(async () => ["watcher-subject"]),
 }));
 // Stands in for the `users` collection, so a test can decide which tagged
 // emails resolve to a CAIPE identity and which cannot be reached.
@@ -24,8 +24,8 @@ jest.mock("@/lib/mongodb",() => ({
 const created = createInAppNotification as jest.MockedFunction<
   typeof createInAppNotification
 >;
-const watchers = listPageWatcherSubjects as jest.MockedFunction<
-  typeof listPageWatcherSubjects
+const watchers = listEntityWatcherSubjects as jest.MockedFunction<
+  typeof listEntityWatcherSubjects
 >;
 
 const SAVE = {

@@ -8,7 +8,6 @@ import {
 } from "@/lib/api-middleware";
 import { isMongoDBConfigured } from "@/lib/mongodb";
 import { getTomeProjectPermissions } from "@/lib/tome/data-steward";
-import { safePagePath } from "@/lib/tome/page-store";
 import { resolveUniqueTomeProjectBySlug } from "@/lib/tome/project-resolver";
 import { requireInteractiveTomePrincipal } from "@/lib/tome/principal";
 import {
@@ -61,30 +60,17 @@ async function requireReadableEntity(request: NextRequest, slug: string): Promis
   return { project, subject, email: user.email ?? undefined };
 }
 
-/**
- * `?page=` narrows the subscription to one wiki page inside the entity.
- *
- * The path is pushed through the same validator the page routes use, so a
- * traversal attempt cannot be stored as a subscription and later echoed back
- * into a link. An absent or blank parameter means the whole entity.
+/*
+ * A subscription covers the whole entity. There is no way to ask for one wiki
+ * page: any `?page=` on these requests is ignored, so a stale link cannot
+ * narrow a follow to something the product no longer offers.
  */
-function pageParam(request: NextRequest): string | undefined {
-  const raw = new URL(request.url).searchParams.get("page")?.trim();
-  if (!raw) return undefined;
-  try {
-    return safePagePath(raw);
-  } catch {
-    throw new ApiError("Invalid page path", 400, "INVALID_PAGE_PATH");
-  }
-}
 
 export const GET = withErrorHandler(
   async (request: NextRequest, context: { params: Promise<{ slug: string }> }) => {
     const { slug } = await context.params;
     const { project, subject } = await requireReadableEntity(request, slug);
-    return successResponse(
-      await getEntityWatchState(project.slug, subject, pageParam(request)),
-    );
+    return successResponse(await getEntityWatchState(project.slug, subject));
   },
 );
 
@@ -92,17 +78,13 @@ export const POST = withErrorHandler(
   async (request: NextRequest, context: { params: Promise<{ slug: string }> }) => {
     const { slug } = await context.params;
     const { project, subject, email } = await requireReadableEntity(request, slug);
-    const pagePath = pageParam(request);
     await watchEntity({
       entitySlug: project.slug,
       entityType: project.type ?? "project",
       subject,
       email,
-      ...(pagePath ? { pagePath } : {}),
     });
-    return successResponse(
-      await getEntityWatchState(project.slug, subject, pagePath),
-    );
+    return successResponse(await getEntityWatchState(project.slug, subject));
   },
 );
 
@@ -110,10 +92,7 @@ export const DELETE = withErrorHandler(
   async (request: NextRequest, context: { params: Promise<{ slug: string }> }) => {
     const { slug } = await context.params;
     const { project, subject } = await requireReadableEntity(request, slug);
-    const pagePath = pageParam(request);
-    await unwatchEntity(project.slug, subject, pagePath);
-    return successResponse(
-      await getEntityWatchState(project.slug, subject, pagePath),
-    );
+    await unwatchEntity(project.slug, subject);
+    return successResponse(await getEntityWatchState(project.slug, subject));
   },
 );

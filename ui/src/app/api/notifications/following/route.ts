@@ -17,7 +17,6 @@ import {
   filterReadableTomeProjects,
   isTomeAdminSubject,
 } from "@/lib/tome/access";
-import { safePagePath } from "@/lib/tome/page-store";
 import { unwatchEntity, watchEntity } from "@/lib/tome/watchers";
 import type { ProjectDocument } from "@/types/projects";
 
@@ -58,50 +57,30 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
   const following = body?.following === true;
 
-  // The tree addresses a page as `<entity-slug>#<page-path>`; everything else
-  // is an entity. Both resolve to the same entity for the permission check.
-  const targets = requested.map((slug) => {
-    const hash = slug.indexOf("#");
-    return hash === -1
-      ? { entitySlug: slug, pagePath: undefined as string | undefined }
-      : { entitySlug: slug.slice(0, hash), pagePath: slug.slice(hash + 1) };
-  });
-
   // Re-check every slug against the caller's own read permission. The client
   // sends whatever subtree it drew, and watching an entity makes its activity
   // flow into an inbox — so an unreadable slug must not slip through.
   const catalog = await getCollection<ProjectDocument>("projects");
-  const rows = await catalog
-    .find({ slug: { $in: [...new Set(targets.map((t) => t.entitySlug))] } })
-    .toArray();
+  const rows = await catalog.find({ slug: { $in: requested } }).toArray();
   const allowed = await filterReadableTomeProjects(subject, rows, {
     isAdmin: await isTomeAdminSubject(subject),
   });
   const bySlug = new Map(allowed.map((project) => [project.slug, project]));
 
-  for (const target of targets) {
-    const project = bySlug.get(target.entitySlug);
+  // Anything that is not an entity slug matches nothing and is skipped, so a
+  // stale client asking to follow a page inside a space changes nothing.
+  for (const slug of requested) {
+    const project = bySlug.get(slug);
     if (!project) continue;
-    // A malformed page path is dropped rather than failing the whole batch:
-    // ticking a BHAG should not be refused because one stale row is bad.
-    let pagePath: string | undefined;
-    if (target.pagePath) {
-      try {
-        pagePath = safePagePath(target.pagePath);
-      } catch {
-        continue;
-      }
-    }
     if (following) {
       await watchEntity({
         entitySlug: project.slug,
         entityType: project.type ?? "project",
         subject,
         email: email || undefined,
-        ...(pagePath ? { pagePath } : {}),
       });
     } else {
-      await unwatchEntity(project.slug, subject, pagePath);
+      await unwatchEntity(project.slug, subject);
     }
   }
 

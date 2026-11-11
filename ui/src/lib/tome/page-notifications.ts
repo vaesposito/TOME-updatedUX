@@ -18,7 +18,7 @@ import { createInAppNotification } from "@/lib/in-app-notifications.server";
 import { getCollection } from "@/lib/mongodb";
 import { pageIsImportant } from "@/lib/tome/criticality";
 import { wikiPageHref } from "@/lib/tome/wiki-page-href";
-import { listPageWatcherSubjects } from "@/lib/tome/watchers";
+import { listEntityWatcherSubjects } from "@/lib/tome/watchers";
 import type { User } from "@/types/mongodb";
 import {
   PAGE_NOTIFY_NOTE_MAX,
@@ -130,7 +130,7 @@ export async function notifyPageSaved(input: {
   const [{ byEmail, subjects: taggedSubjects, unresolved }, watcherSubjects] =
     await Promise.all([
       resolveSubjects(taggedEmails),
-      listPageWatcherSubjects(input.entitySlug, input.pagePath),
+      listEntityWatcherSubjects(input.entitySlug),
     ]);
 
   // One message per person, first tag winning, so re-tagging someone in two

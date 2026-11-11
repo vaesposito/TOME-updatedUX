@@ -239,12 +239,14 @@ async function createIndexes(db: Db) {
     safeCreateIndex(db, 'tome_usage_events', { occurred_at: -1 }),
     safeCreateIndex(db, 'tome_usage_events', { project_id: 1, view_kind: 1, page_path: 1, occurred_at: -1 }),
     safeCreateIndex(db, 'tome_usage_events', { subject_hash: 1, occurred_at: -1 }),
-    // Watch subscriptions — one row per (entity, page, watcher); the unique
-    // index keeps repeated watch clicks idempotent, and the slug index backs
-    // the recipient fan-out when a watched entity changes. `page_path` is part
-    // of the key because a subscription to one wiki page is a separate row
-    // from one to the whole entity; it indexes as null when absent, so an
-    // entity is still watchable only once per person.
+    // Watch subscriptions — one row per (entity, watcher); the unique index
+    // keeps repeated watch clicks idempotent, and the slug index backs the
+    // recipient fan-out when a watched entity changes. `page_path` stays in
+    // the key even though pages can no longer be watched: it indexes as null
+    // on every row written now, so the key still allows one row per person
+    // per entity, while a collection holding page rows from the older schema
+    // can keep them. Narrowing the key to (entity_slug, subject) would see
+    // those rows as duplicates and the index would fail to build.
     safeCreateIndex(
       db,
       'tome_watchers',

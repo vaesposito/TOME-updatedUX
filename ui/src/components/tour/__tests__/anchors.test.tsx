@@ -9,8 +9,9 @@
  * reader at the wrong thing. Each of these was one of those.
  */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
+import { AskTomePlaceholder } from "@/components/tome/AskTomePlaceholder";
 import { FunctionsView } from "@/components/projects/FunctionsView";
 import { HubTabs } from "@/components/projects/HubTabs";
 import { PageSpaceTags } from "@/components/tome/PageSpaceTags";
@@ -19,6 +20,14 @@ import { NavSection } from "@/components/tome/RailNav";
 import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { WebexMeetingSeriesSettings } from "@/components/tome/WebexMeetingSeriesSettings";
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
+import { ASK_TOME_DEFAULT_SIZE, useAskTomeStore } from "@/store/ask-tome-store";
+
+jest.mock("@/hooks/use-tome-assistant-settings", () => ({
+  useTomeAssistantSettings: () => ({
+    tome_assistant_popup_enabled: false,
+    agent_id: null,
+  }),
+}));
 
 /** The element a step with this anchor would be measured against. */
 const anchored = (id: string) => document.querySelector(`[data-tour="${id}"]`);
@@ -143,6 +152,59 @@ describe("the far end of a connection", () => {
     expect(anchored("space-related-list")).toContainElement(
       screen.getByText("No page tags this space yet"),
     );
+  });
+});
+
+describe("the agent's own panel", () => {
+  beforeEach(() => {
+    // The panel's state outlives the component on purpose, so each test has
+    // to put it back or it inherits the last one's panel.
+    useAskTomeStore.setState({
+      open: false,
+      tab: "chat",
+      expanded: false,
+      size: ASK_TOME_DEFAULT_SIZE,
+    });
+  });
+
+  it("anchors the Webex step on the note, not on the button that opens it", () => {
+    // What the step has to say is the three lines inside the note, so the
+    // button is only something for the runner to press on the way in.
+    render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+
+    const control = screen.getByRole("button", { name: /Configure Webex/ });
+    expect(anchored("ask-webex")).toBe(control);
+    expect(anchored("ask-webex-note")).toBeNull();
+
+    fireEvent.click(control);
+    expect(anchored("ask-webex-note")).toContainElement(
+      screen.getByText(/Start a conversation/),
+    );
+  });
+
+  it("anchors the history step on the tab, not on the tab bar", () => {
+    render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+
+    expect(anchored("ask-history")).toBe(
+      screen.getByRole("tab", { name: "History" }),
+    );
+    // Chat carries none: it is the tab the reader is already looking at.
+    expect(screen.getByRole("tab", { name: "Chat" })).not.toHaveAttribute(
+      "data-tour",
+    );
+  });
+
+  it("anchors the way out on the control that is shut by design", () => {
+    render(<AskTomePlaceholder />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Tome" }));
+
+    const control = screen.getByRole("button", {
+      name: "Open Ask Tome in the chat space",
+    });
+    expect(anchored("ask-new-window")).toBe(control);
+    expect(control).toBeDisabled();
   });
 });
 

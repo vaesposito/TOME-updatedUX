@@ -44,7 +44,7 @@ export const TOURS: readonly Tour[] = [
   {
     id: "agent",
     name: "The agent and Webex",
-    blurb: "Asking TOME, subscribing to calls, and connecting a coding agent.",
+    blurb: "Asking TOME, reaching it in Webex, and where else it is listed.",
     steps: AGENT_TOUR,
   },
 ];

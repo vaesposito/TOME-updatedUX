@@ -1032,6 +1032,55 @@ describe("a step that opens the editor", () => {
   });
 });
 
+describe("a panel a whole walkthrough is inside", () => {
+  it("is opened once and held open across the steps about it", async () => {
+    // Four steps in a row are inside the agent's panel, and each of them
+    // names the launcher first in what it opens. Shutting it after every one
+    // would have the reader watching the panel blink, and would leave the
+    // step arriving looking for its control on a panel still closing.
+    const presses: boolean[] = [];
+    const launcher = plant(
+      "ask-tome",
+      { top: 820, left: 1240, width: 120, height: 36 },
+      "button",
+    );
+    launcher.setAttribute("aria-expanded", "false");
+    launcher.addEventListener("click", () => {
+      const open = launcher.getAttribute("aria-expanded") !== "true";
+      presses.push(open);
+      launcher.setAttribute("aria-expanded", String(open));
+      if (open) {
+        plant("ask-webex", { top: 120, left: 1100, width: 130, height: 28 }, "button");
+        plant("ask-webex-note", { top: 160, left: 1000, width: 272, height: 140 });
+      }
+    });
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({ tour: "agent", index: 0, subject: null }),
+    );
+
+    render(<TourRunner />);
+    await waitFor(() => expect(presses).toEqual([true]));
+    await screen.findByRole("dialog");
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    });
+    await screen.findByText("Or reach the same agent in Webex");
+
+    expect(presses).toEqual([true]);
+    expect(launcher.getAttribute("aria-expanded")).toBe("true");
+
+    // And it is still given back at the end.
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await waitFor(() => expect(presses).toEqual([true, false]));
+  });
+});
+
 describe("a walkthrough that asks rather than presses", () => {
   it("rings New page, leaves it alone, and stays where the reader lands", async () => {
     // Everything a tour opens it puts back, and a page is the one thing it

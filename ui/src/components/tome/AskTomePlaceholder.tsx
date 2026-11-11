@@ -297,6 +297,9 @@ export function AskTomePlaceholder({
                 ref={webexButtonRef}
                 type="button"
                 aria-expanded={webexHelpOpen}
+                // Opened by the walkthrough rather than rung by it: what the
+                // step is about is the note, not the button that produces it.
+                data-tour="ask-webex"
                 onClick={() => (webexHelpOpen ? closeWebexHelp() : openWebexHelp())}
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-cyan-500/50 hover:bg-cyan-500/10 hover:text-foreground dark:border-cyan-200/30 dark:hover:border-cyan-200/60",
@@ -343,7 +346,13 @@ export function AskTomePlaceholder({
                   same question in the chat space; there is no conversation
                   here to carry over, and a button that looks live and does
                   nothing is worse than one that says it is shut. */}
-              <HeaderButton label="Open Ask Tome in the chat space" disabled>
+              <HeaderButton
+                label="Open Ask Tome in the chat space"
+                disabled
+                // Ringed by the walkthrough and never pressed: it is shut by
+                // design, and the runner leaves a disabled control alone.
+                anchor="ask-new-window"
+              >
                 <ExternalLink className="h-4 w-4" />
               </HeaderButton>
               <HeaderButton label="Close Ask Tome" onClick={() => setOpen(false)}>
@@ -365,6 +374,9 @@ export function AskTomePlaceholder({
                 id={`ask-tome-tab-${id}`}
                 aria-controls={`ask-tome-panel-${id}`}
                 aria-selected={tab === id}
+                // The walkthrough has a step on History and none on Chat,
+                // which is the tab a reader is already looking at.
+                data-tour={id === "history" ? "ask-history" : undefined}
                 onClick={() => setTab(id)}
                 className={cn(
                   "-mb-px border-b-2 border-transparent py-2.5 text-sm transition-colors",
@@ -454,6 +466,10 @@ export function AskTomePlaceholder({
       {open && webexHelpOpen && webexHelpAt && (
         <section
           aria-label="Configure Webex"
+          // The whole of what the walkthrough's step is about, so the step
+          // rings this and leaves the button to `opens`. The three lines
+          // inside are the answer to "how do I reach the agent in Webex".
+          data-tour="ask-webex-note"
           style={{ left: webexHelpAt.x, top: webexHelpAt.y, width: WEBEX_HELP_WIDTH }}
           className="pointer-events-auto fixed z-50 rounded-xl border border-border bg-popover shadow-xl ring-1 ring-cyan-500/20 dark:border-cyan-200/40 dark:ring-cyan-200/30"
         >
@@ -574,6 +590,7 @@ function HeaderButton({
   // Forwarded so PopoverTrigger can anchor its menu to the button it opened
   // from; without it the menu has nothing to measure itself against.
   ref,
+  anchor,
   children,
 }: {
   label: string;
@@ -581,6 +598,8 @@ function HeaderButton({
   disabled?: boolean;
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
   ref?: React.Ref<HTMLButtonElement>;
+  /** Marks this control as a walkthrough step's subject. */
+  anchor?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -590,6 +609,7 @@ function HeaderButton({
       aria-label={label}
       aria-pressed={pressed}
       disabled={disabled}
+      data-tour={anchor}
       onClick={onClick}
       className="rounded-full p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >

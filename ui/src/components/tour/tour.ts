@@ -36,6 +36,10 @@ export type TourAnchor =
   | "custom-prompts"
   | "page-tags"
   | "ask-tome"
+  | "ask-webex"
+  | "ask-webex-note"
+  | "ask-history"
+  | "ask-new-window"
   | "home-ask"
   | "webex-settings";
 

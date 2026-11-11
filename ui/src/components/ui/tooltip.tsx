@@ -437,7 +437,15 @@ export function TooltipContent({
         // default) so the cursor can land on the tooltip and read
         // / scroll the body — keeping the tooltip open via the
         // hover-hold counter above.
-        "fixed z-[9999] max-w-[calc(100vw-1rem)] overflow-x-auto whitespace-nowrap px-2 py-1 text-xs font-medium text-popover-foreground bg-popover border border-border rounded-md shadow-lg",
+        //
+        // The body wraps, and takes its width from the text rather
+        // than from the room left between its `left` and the edge of
+        // the window — a tooltip near the right edge would otherwise
+        // collapse into a column one word wide. So a short tooltip
+        // still sits on one line, and a sentence given a width to live
+        // in uses the lines it needs instead of running past the edge
+        // of a box that was asked to be narrow.
+        "fixed z-[9999] w-max max-w-[calc(100vw-1rem)] overflow-x-auto px-2 py-1 text-xs font-medium text-popover-foreground bg-popover border border-border rounded-md shadow-lg",
         // Cap the tooltip height to ~60% of the viewport (with a
         // hard upper bound) and scroll internally when the body
         // overflows. Short tooltips are well under this cap, so

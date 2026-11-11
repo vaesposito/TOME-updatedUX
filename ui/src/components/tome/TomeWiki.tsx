@@ -2467,7 +2467,10 @@ export function TomeWiki({ slug }: { slug: string }) {
                     <Info className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-64">
+                <TooltipContent
+                  side="bottom"
+                  className="max-w-64 px-3 py-2 font-normal leading-relaxed"
+                >
                   This will update your dynamic content, pulling from connected
                   sources.
                 </TooltipContent>

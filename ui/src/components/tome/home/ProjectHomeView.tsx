@@ -39,6 +39,7 @@ import {
   HomePartOf,
   type AncestorRow,
 } from "@/components/tome/home/HomePartOf";
+import { HomeRelatedContent } from "@/components/tome/home/HomeRelatedContent";
 import {
   HomeSources,
   type SourceReading,
@@ -47,6 +48,7 @@ import { HomeTeam } from "@/components/tome/home/HomeTeam";
 import { HomeWidgetFrame } from "@/components/tome/home/HomeWidgetFrame";
 import { splitHomeFeeds } from "@/components/tome/home/home-feeds";
 import { PanelHeader } from "@/components/tome/PanelHeader";
+import type { RelatedContentRow } from "@/hooks/use-related-content";
 import { computeReorder } from "@/lib/reorder";
 import {
   cronToSchedule,
@@ -117,12 +119,14 @@ export function ProjectHomeView({
   sources,
   autoIngest,
   ancestors,
+  related,
   onAsk,
   onOpenPage,
   onOpenStandup,
   onOpenSettings,
   onOpenIngest,
   onOpenFeed,
+  onOpenRelated,
   onNavigate,
 }: {
   slug: string;
@@ -161,12 +165,21 @@ export function ProjectHomeView({
    * are two chances to disagree about it.
    */
   ancestors?: readonly AncestorRow[];
+  /**
+   * The pages elsewhere that tag this space, `undefined` until they are in.
+   *
+   * Passed down for the same reason the trail is: the shell around this
+   * already reads them to count its rail entry, and a card fetching them
+   * again would ask the index twice for one answer.
+   */
+  related?: readonly RelatedContentRow[];
   onAsk: (question: string) => void;
   onOpenPage?: (path: string) => void;
   onOpenStandup?: () => void;
   onOpenSettings?: () => void;
   onOpenIngest?: () => void;
   onOpenFeed?: () => void;
+  onOpenRelated?: () => void;
   onNavigate?: (href: string) => void;
 }) {
   const [summary, setSummary] = React.useState<TomeSummary | null>(null);
@@ -230,6 +243,7 @@ export function ProjectHomeView({
   const ingestHref = `/projects/${encodeURIComponent(slug)}/tome/ingest`;
   const settingsHref = `/projects/${encodeURIComponent(slug)}/tome/settings`;
   const feedHref = `/projects/${encodeURIComponent(slug)}/tome/feed`;
+  const relatedHref = `/projects/${encodeURIComponent(slug)}/tome/related`;
 
   /**
    * What the three notification cards show before their own answer is in.
@@ -521,6 +535,14 @@ export function ProjectHomeView({
         loading={metaLoading || ancestors === undefined}
         settingsHref={settingsHref}
         onOpenSettings={onOpenSettings}
+      />
+    ),
+
+    related: (
+      <HomeRelatedContent
+        related={related}
+        relatedHref={relatedHref}
+        onOpenRelated={onOpenRelated}
       />
     ),
 

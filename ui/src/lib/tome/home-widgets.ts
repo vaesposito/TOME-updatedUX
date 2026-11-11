@@ -33,6 +33,7 @@ export type TomeHomeWidgetId =
   | "updates"
   | "children"
   | "partof"
+  | "related"
   | "glance"
   | "milestones"
   | "team"
@@ -107,6 +108,19 @@ export const TOME_HOME_WIDGETS: readonly TomeHomeWidget[] = [
   // that true if it is a row of its own. It reads across anyway — a trail is
   // a path, not a list.
   { id: "partof", label: "Part of", width: 3, kinds: ["project", "area"] },
+  // Closing the band about how this space is attached to others: "Part of"
+  // reads up the tree, this reads sideways at the spaces that have pointed
+  // here. Sources answers the same shape of question about knowledge coming
+  // in, but it is a column in the last band and this is a list of pages in
+  // other wikis, which needs the width to name both the page and its space.
+  //
+  // Whole-width for the reason the band above it is: the page is three
+  // columns and the shipped set fills whole rows of them, so a fourteenth
+  // card of width one would leave a row of one wherever it landed.
+  //
+  // No `workspace`, because the card is about what tags *this* space and
+  // there is no this space when every space is in view.
+  { id: "related", label: "Related content", width: 3 },
   { id: "glance", label: "At a glance", width: 2 },
   { id: "milestones", label: "Milestones", width: 1 },
   { id: "team", label: "Team", width: 1, workspace: true },

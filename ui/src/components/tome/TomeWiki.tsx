@@ -1935,7 +1935,7 @@ export function TomeWiki({ slug }: { slug: string }) {
   // Spaces tagged into the same category as this one. They sit in
   // Connections beside the sources, both being things this space is attached
   // to rather than things inside it.
-  const { related } = useRelatedContent(slug);
+  const { related, ready: relatedReady } = useRelatedContent(slug);
 
   const navActive = {
     summary: view.kind === "summary",
@@ -3084,6 +3084,11 @@ export function TomeWiki({ slug }: { slug: string }) {
                   // The same trail the breadcrumb above walks, left undefined
                   // until the tags it is read from are in.
                   ancestors={projectMetaLoading ? undefined : ancestors}
+                  // The one read of the tagging index, shared with the rail
+                  // beside it. Left undefined until it is in, so the card
+                  // waits rather than reporting a space nobody points at.
+                  related={relatedReady ? related : undefined}
+                  onOpenRelated={() => navigate({ kind: "related" })}
                   onAsk={(question) => {
                     setAgentPrefill(question);
                     navigate({ kind: "agent" });

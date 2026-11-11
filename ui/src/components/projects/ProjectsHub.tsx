@@ -875,6 +875,10 @@ export function ProjectsHub() {
                   whole of TOME, not to the list of projects, and here it is
                   offered from every tab instead of only one. */}
               <McpConnectDialog initialOpen={searchParams.get("mcp") === "1"} />
+              {/* Next to connecting an agent, because both are things a
+                  reader does to TOME itself rather than to a project, and
+                  the two read as a pair at the same size. */}
+              <TomeProductFeedback variant="link" />
               {/* Offered where a newcomer arrives, in the band that greets
                   them, and asking which walkthrough rather than assuming.
                   Every tour's first step is on the catalogue, so the tab is
@@ -887,7 +891,6 @@ export function ProjectsHub() {
                 )}
                 onStart={() => setTab("projects")}
               />
-              <TomeProductFeedback variant="link" />
             </div>
           </div>
 

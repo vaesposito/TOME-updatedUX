@@ -7,14 +7,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { HUB_CTA_CLASS } from "@/components/projects/hub-cta";
 import { getConfig } from "@/lib/config";
+import { cn } from "@/lib/utils";
 import { MessageSquareWarning } from "lucide-react";
 import { useState } from "react";
 
 export interface TomeProductFeedbackProps {
   projectSlug?: string;
   pagePath?: string;
-  /** ghost icon in toolbars; link as text button in hero sections */
+  /** ghost icon in toolbars; link as a labelled button in hero bands */
   variant?: "icon" | "link";
   className?: string;
 }
@@ -37,17 +39,22 @@ export function TomeProductFeedback({
 
   const trigger =
     variant === "link" ? (
-      <button
+      // Shaped from the welcome band's one definition, so it stands level
+      // with Connect via MCP next to it rather than at a size of its own.
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() => setOpen(true)}
-        className={
-          className ??
-          "inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-        }
+        className={cn(
+          HUB_CTA_CLASS,
+          "text-muted-foreground hover:text-foreground",
+          className,
+        )}
       >
-        <MessageSquareWarning className="h-3.5 w-3.5" />
-        Provide feedback
-      </button>
+        <MessageSquareWarning className="h-4 w-4" />
+        Send feedback
+      </Button>
     ) : (
       <Tooltip>
         <TooltipTrigger asChild>

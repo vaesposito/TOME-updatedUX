@@ -87,9 +87,18 @@ const EMPTY: NotificationInboxResponse = {
   preferences: { muted_entity_slugs: [] },
 };
 
-function unwrap<T>(value: unknown, fallback: T): T {
-  const body = value as { data?: T } | null;
-  return (body?.data ?? fallback) as T;
+/**
+ * The payload of an API envelope, or the fallback.
+ *
+ * `valid` is the shape the caller goes on to read. A payload that does not
+ * answer it is discarded rather than handed to the render: an empty list is
+ * the honest reading of a response nothing can be made of, and the page's own
+ * empty state says more to a reader than the error boundary would.
+ */
+function unwrap<T>(value: unknown, fallback: T, valid?: (data: T) => boolean): T {
+  const data = (value as { data?: T } | null)?.data;
+  if (data === null || data === undefined) return fallback;
+  return !valid || valid(data) ? data : fallback;
 }
 
 /** Every active dimension becomes its own parameter, so the filter is shareable. */
@@ -181,12 +190,20 @@ export function NotificationInbox() {
         fetch("/api/notifications/following", { cache: "no-store" }),
       ]);
       if (!inboxResponse.ok) throw new Error(`inbox ${inboxResponse.status}`);
-      setData(unwrap(await inboxResponse.json(), EMPTY));
+      setData(
+        unwrap(
+          await inboxResponse.json(),
+          EMPTY,
+          (body) =>
+            Array.isArray(body.notifications) && !!body.facets && !!body.counts,
+        ),
+      );
       if (followingResponse.ok) {
         setFollowTree(
           unwrap<FollowTreeData>(
             await followingResponse.json(),
             EMPTY_FOLLOW_TREE,
+            (body) => Array.isArray(body.nodes),
           ),
         );
       }

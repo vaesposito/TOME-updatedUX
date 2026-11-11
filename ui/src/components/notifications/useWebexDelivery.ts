@@ -17,9 +17,23 @@ const EMPTY: WebexDeliverySettings = {
   rules: [],
 };
 
-function unwrap<T>(value: unknown, fallback: T): T {
-  const body = value as { data?: T } | null;
-  return (body?.data ?? fallback) as T;
+/**
+ * The payload of an API envelope, or the fallback.
+ *
+ * `valid` is the shape the caller goes on to read. A payload that does not
+ * answer it is discarded rather than handed to the render: an unconfigured
+ * tab is the honest reading of a response nothing can be made of, and it is
+ * the one a reader can still act on.
+ */
+function unwrap<T>(value: unknown, fallback: T, valid?: (data: T) => boolean): T {
+  const data = (value as { data?: T } | null)?.data;
+  if (data === null || data === undefined) return fallback;
+  return !valid || valid(data) ? data : fallback;
+}
+
+/** Everything this hook hands out, so a partial answer is not one. */
+function isSettings(data: WebexDeliverySettings): boolean {
+  return Array.isArray(data.rules) && !!data.capability;
 }
 
 /** The reader's own zone, which is the only one a chosen hour can mean. */
@@ -77,7 +91,11 @@ export function useWebexDelivery(): WebexDeliveryState {
           cache: "no-store",
         });
         if (!response.ok) throw new Error(String(response.status));
-        const body = unwrap<WebexDeliverySettings>(await response.json(), EMPTY);
+        const body = unwrap<WebexDeliverySettings>(
+          await response.json(),
+          EMPTY,
+          isSettings,
+        );
         if (!cancelled) setSettings(body);
       } catch {
         if (!cancelled) toast("Could not load Webex settings", "error");
@@ -190,7 +208,7 @@ export function useWebexDelivery(): WebexDeliveryState {
               typeof body?.error === "string" ? body.error : "Could not save",
             );
           }
-          setSettings(unwrap<WebexDeliverySettings>(body, previous));
+          setSettings(unwrap<WebexDeliverySettings>(body, previous, isSettings));
         } catch (error) {
           setSettings(previous);
           toast(error instanceof Error ? error.message : "Could not save", "error");

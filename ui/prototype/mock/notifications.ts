@@ -22,6 +22,12 @@ import type {
   TomeSummaryItem,
   TomeSummarySectionKey,
 } from "@/types/tome-summary";
+import {
+  DEFAULT_WEBEX_DELIVERY_HOUR,
+  DEFAULT_WEBEX_DELIVERY_WEEKDAY,
+  type WebexDeliveryRule,
+  type WebexDeliverySpace,
+} from "@/types/webex-delivery";
 
 import { PARENT_OF, SPACES, spaceBySlug, USER } from "./data";
 
@@ -385,6 +391,49 @@ export function followTree(following: ReadonlySet<string>): NotificationFollowTr
 
   return { nodes, total_unread: ROWS.filter((row) => !row.read).length };
 }
+
+/**
+ * The spaces the platform's bot has been added to, for the destination
+ * picker. A short list on purpose: what the picker has to get across is that
+ * the bot's reach is narrower than the reader's.
+ */
+export const WEBEX_SPACES: WebexDeliverySpace[] = [
+  { id: "space-delivery", name: "Delivery platform" },
+  { id: "space-standup", name: "Pipeline standup" },
+  { id: "space-incidents", name: "Incident response" },
+];
+
+/**
+ * Where this reader's updates already go in Webex.
+ *
+ * Two rules rather than one per watched space, so the Watching tab arrives
+ * showing both of its states: rows that are routed somewhere, and rows still
+ * offering the choice.
+ */
+export const WEBEX_RULES: WebexDeliveryRule[] = [
+  {
+    entity_slug: "build-pipeline",
+    entity_title: "Build pipeline",
+    entity_type: "project",
+    destination: "space",
+    space_id: "space-standup",
+    space_name: "Pipeline standup",
+    cadence: "immediate",
+    hour: DEFAULT_WEBEX_DELIVERY_HOUR,
+    weekday: DEFAULT_WEBEX_DELIVERY_WEEKDAY,
+    timezone: "UTC",
+  },
+  {
+    entity_slug: "ship-weekly",
+    entity_title: "Ship something every week",
+    entity_type: "bhag",
+    destination: "direct",
+    cadence: "weekly",
+    hour: DEFAULT_WEBEX_DELIVERY_HOUR,
+    weekday: DEFAULT_WEBEX_DELIVERY_WEEKDAY,
+    timezone: "UTC",
+  },
+];
 
 /** Which bucket of a space's digest a row belongs in. */
 function sectionOf(row: InAppNotificationView): TomeSummarySectionKey {

@@ -14,6 +14,7 @@
  */
 
 import { buildTree } from "@/lib/tome/schema";
+import type { WebexDeliveryRule } from "@/types/webex-delivery";
 
 import {
   childrenOf,
@@ -32,7 +33,15 @@ import {
   USER,
 } from "./data";
 import { PROTOTYPE_PREFERENCES } from "./browser-state";
-import { FOLLOWED, followTree, inbox, ROWS, summaryFor } from "./notifications";
+import {
+  FOLLOWED,
+  followTree,
+  inbox,
+  ROWS,
+  summaryFor,
+  WEBEX_RULES,
+  WEBEX_SPACES,
+} from "./notifications";
 
 type Json = Record<string, unknown>;
 
@@ -42,6 +51,9 @@ const session = {
   folders: new Map<string, SessionFolder[]>(),
   following: new Set<string>(FOLLOWED),
   read: new Set<string>(),
+  webex: new Map<string, WebexDeliveryRule>(
+    WEBEX_RULES.map((rule) => [rule.entity_slug, rule]),
+  ),
 };
 
 function pages(slug: string): Record<string, string> {
@@ -130,6 +142,28 @@ function projects(url: URL) {
   return { projects: found };
 }
 
+/** A delivery rule as the route stores one, from what the row sent. */
+function webexRule(body: Json): WebexDeliveryRule {
+  const slug = String(body.entity_slug ?? "");
+  const space = spaceBySlug(slug);
+  return {
+    entity_slug: slug,
+    entity_title: space?.title ?? slug,
+    entity_type: (space?.type === "subject"
+      ? "project"
+      : space?.type ?? "project") as WebexDeliveryRule["entity_type"],
+    destination: body.destination as WebexDeliveryRule["destination"],
+    // Named only while a space is the destination, so a rule moved to a
+    // direct message stops carrying the space it used to post in.
+    ...(body.space_id ? { space_id: String(body.space_id) } : {}),
+    ...(body.space_name ? { space_name: String(body.space_name) } : {}),
+    cadence: body.cadence as WebexDeliveryRule["cadence"],
+    hour: Number(body.hour),
+    weekday: Number(body.weekday),
+    timezone: String(body.timezone ?? "UTC"),
+  };
+}
+
 /** Everything the prototype knows how to answer, in the order it is tried. */
 const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) => Json | null][] = [
   // The shell: who is signed in, and what this deployment calls itself.
@@ -183,7 +217,29 @@ const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) =>
   // Following, and what has arrived.
   [/^\/api\/notifications\/following$/, () => followTree(session.following) as unknown as Json],
   [/^\/api\/notifications\/inbox$/, (_m, url) => inbox(url) as unknown as Json],
-  [/^\/api\/notifications\/delivery$/, () => ({ targets: [], webex: null })],
+  // Webex delivery, in the same three calls the real route answers: read the
+  // rules, list the bot's spaces while a destination is being picked, and
+  // save one rule. The reply has to carry `capability` and `rules`, because
+  // the Watching tab builds its chips from them the moment it opens.
+  [
+    /^\/api\/notifications\/delivery$/,
+    (_m, url, init) => {
+      if (init.method === "POST") {
+        return url.searchParams.get("action") === "spaces"
+          ? { spaces: WEBEX_SPACES }
+          : {};
+      }
+      if (init.method === "PATCH") {
+        const body = init.body ? (JSON.parse(String(init.body)) as Json) : {};
+        const rule = webexRule(body);
+        session.webex.set(rule.entity_slug, rule);
+      }
+      return {
+        capability: { available: true },
+        rules: [...session.webex.values()],
+      };
+    },
+  ],
   [/^\/api\/notifications\/preferences$/, () => ({ muted_entity_slugs: [] })],
   [
     /^\/api\/notifications\/(read-all|bulk)$/,

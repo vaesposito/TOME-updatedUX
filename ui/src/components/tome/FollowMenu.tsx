@@ -4,6 +4,7 @@ import { Bell, BellOff, Check, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { NOTIFICATION_SETTINGS_HREF } from "@/components/settings/settings-routes";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -171,7 +172,7 @@ export function FollowMenu({
         </div>
         <div className="border-t px-3 py-2.5">
           <Link
-            href="/notifications?tab=following"
+            href={NOTIFICATION_SETTINGS_HREF}
             className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:no-underline"
           >
             Manage notifications

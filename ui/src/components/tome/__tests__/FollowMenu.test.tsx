@@ -87,6 +87,6 @@ describe("FollowMenu", () => {
     render(<FollowMenu slug="example-project" />);
     fireEvent.click(await screen.findByRole("button", { name: /Follow/ }));
     expect(await screen.findByRole("link", { name: /Manage notifications/ }))
-      .toHaveAttribute("href", "/notifications?tab=following");
+      .toHaveAttribute("href", "/settings/notifications");
   });
 });

@@ -70,8 +70,6 @@ interface OverviewResponse {
 /** Rows per card, as on a space's own home. */
 const ROWS = 4;
 
-const INBOX = "/notifications";
-
 /** The catalogue, which is the only "settings" an altitude above every space has. */
 const SPACES = "/projects";
 
@@ -193,7 +191,6 @@ export function WorkspaceOverview() {
         title="Needs attention"
         icon={<CircleAlert className="h-4 w-4" />}
         count={feeds.attention.length}
-        action={{ label: "All", href: `${INBOX}?filter=attention` }}
       >
         {before ?? (
           <HomeNotificationList
@@ -207,7 +204,6 @@ export function WorkspaceOverview() {
                 icon={<CircleAlert />}
                 headline="Nothing needs attention"
                 hint="Problems still unresolved and decisions still to be made collect here, from every space you can see."
-                action={{ label: "Open the inbox", href: INBOX }}
               />
             }
           />
@@ -220,7 +216,6 @@ export function WorkspaceOverview() {
         title="Tagged for you"
         icon={<AtSign className="h-4 w-4" />}
         count={feeds.tagged.length}
-        action={{ label: "All", href: `${INBOX}?filter=tagged` }}
       >
         {before ?? (
           <HomeNotificationList
@@ -234,7 +229,6 @@ export function WorkspaceOverview() {
                 icon={<AtSign />}
                 headline="Nothing tagged you"
                 hint="A page or a decision that names you lands here, wherever it was written."
-                action={{ label: "Open the inbox", href: INBOX }}
               />
             }
           />
@@ -247,7 +241,6 @@ export function WorkspaceOverview() {
         title="Latest updates"
         icon={<Newspaper className="h-4 w-4" />}
         count={feeds.updates.length}
-        action={{ label: "All", href: INBOX }}
       >
         {before ?? (
           <HomeNotificationList
@@ -261,7 +254,6 @@ export function WorkspaceOverview() {
                 icon={<Newspaper />}
                 headline="Nothing has happened yet"
                 hint="Pages written, decisions recorded and milestones moved appear here as they happen."
-                action={{ label: "Open the inbox", href: INBOX }}
               />
             }
           />

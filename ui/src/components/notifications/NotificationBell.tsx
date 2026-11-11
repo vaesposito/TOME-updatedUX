@@ -15,6 +15,7 @@ import {
   notificationType,
 } from "@/components/notifications/notification-presentation";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
+import { NOTIFICATION_SETTINGS_HREF } from "@/components/settings/settings-routes";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -38,7 +39,7 @@ const EMPTY_PAGE: GroupedInAppNotificationPage = {
   groups: [],
 };
 
-/** Rows shown per section before the reader has to open the full inbox. */
+/** Rows shown per section, newest first. */
 const PER_GROUP = 6;
 
 const COLLAPSED_GROUPS_KEY = "notification-bell:collapsed-groups";
@@ -176,15 +177,15 @@ function NotificationItem({
           "flex w-full items-start gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         )}
       >
-        {/* Beside the whole block, not beside the title, so the dot lines up
-            with the inbox's and the rows keep one left margin. */}
+        {/* Beside the whole block, not beside the title, so the dots line
+            up down the list and the rows keep one left margin. */}
         <UnreadDot unread={!notification.read} className="mt-[0.4375rem]" />
 
         <span className="min-w-0 flex-1">
-          {/* Same order as a row in the full inbox: where it came from, what
-              happened, which project, and when; then the headline; then what
-              it says. A notification should not rearrange itself depending
-              on which surface the reader happens to be looking at. */}
+          {/* Where it came from, what happened, which project, and when;
+              then the headline; then what it says. The same order a row
+              takes on a project's Home, so a notification does not rearrange
+              itself depending on where it is met. */}
           <span className="flex items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate text-xs">
               {showOrigin ? (
@@ -211,8 +212,8 @@ function NotificationItem({
             </span>
           </span>
 
-          {/* Two lines rather than the inbox's one: the dropdown is less than
-              half as wide, and a truncated headline there loses the point. */}
+          {/* Two lines: the dropdown is narrow, and a headline cut off at
+              one line loses the point of being sent. */}
           <span
             className={cn(
               "mt-0.5 line-clamp-2 text-sm leading-snug",
@@ -323,8 +324,9 @@ export function NotificationBell({ enabled }: { enabled: boolean }) {
     });
   }, []);
 
-  // The dropdown is a peek at the most recent notifications; paging and
-  // filtering live on /notifications, which "See more" opens.
+  // The most recent, grouped by where they came from. This is the only
+  // place notifications are read, so what it does not show is older than
+  // what it does, never elsewhere.
   const load = React.useCallback(async () => {
     if (!enabled) {
       setData(EMPTY_PAGE);
@@ -482,6 +484,9 @@ export function NotificationBell({ enabled }: { enabled: boolean }) {
           )}
         </div>
 
+        {/* Settings, not a longer list: the bell is where notifications are
+            read, so the thing left to offer is the decision about which ones
+            arrive. */}
         <div className="flex justify-center border-t px-3 py-2">
           <Button
             type="button"
@@ -490,7 +495,7 @@ export function NotificationBell({ enabled }: { enabled: boolean }) {
             asChild
             onClick={() => setOpen(false)}
           >
-            <Link href="/notifications">See more</Link>
+            <Link href={NOTIFICATION_SETTINGS_HREF}>Manage notifications</Link>
           </Button>
         </div>
       </PopoverContent>

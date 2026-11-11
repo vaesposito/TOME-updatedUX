@@ -23,6 +23,12 @@ export interface SettingsRouteDefinition {
   segment: string;
 }
 
+/**
+ * Where notification settings are, named for the surfaces that send a reader
+ * there: the bell, and the follow menu on a space.
+ */
+export const NOTIFICATION_SETTINGS_HREF = "/settings/notifications";
+
 export const PERSONAL_SETTINGS_ROUTES: SettingsRouteDefinition[] = [
   {
     id: "appearance",
@@ -42,7 +48,7 @@ export const PERSONAL_SETTINGS_ROUTES: SettingsRouteDefinition[] = [
   },
   {
     id: "notifications",
-    href: "/settings/notifications",
+    href: NOTIFICATION_SETTINGS_HREF,
     segment: "notifications",
     label: "Notifications",
     description: "Choose the updates you want to see.",

@@ -61,6 +61,16 @@ const NAVIGATION_TIMEOUT_MS = 6000;
  */
 const SETTLE_MS = 1000;
 
+/**
+ * How many times a step will scroll for the same anchor.
+ *
+ * More than once because a page still filling in moves what the step is
+ * reaching for, and few because each attempt waits out a settle: a reader
+ * should be looking at the control within a moment of arriving, not watching
+ * the page hunt for it.
+ */
+const SCROLL_TRIES = 3;
+
 interface Rect {
   top: number;
   left: number;
@@ -229,9 +239,9 @@ function pressWhenReady(anchor: string): void {
  * Press a control the way a mouse does, whatever it listens for.
  *
  * `click()` on its own is not a press. Radix's tabs and menus act on the
- * pointer going down and never see a bare click, which is why the step about
- * Following rang the tab and left the reader looking at the inbox. Our own
- * popovers act on the click and ignore the pointer.
+ * pointer going down and never see a bare click, so a step that opens one
+ * would announce a control that never appeared. Our own popovers act on the
+ * click and ignore the pointer.
  *
  * So: the pointer first, then a click only if the control did not already
  * answer it — otherwise anything listening to both would be opened and shut
@@ -869,42 +879,73 @@ export function TourRunner() {
   // they are reading is its own kind of rude.
   const scrolled = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!step?.anchor || !found || stale) return;
+    // `found` counts a step's waiting anchor as well as its own, and waiting
+    // is where most steps begin: a page still arriving, or a control the
+    // editor has not put there yet. Starting on that spent the one scroll a
+    // step gets on a control that was not on the page, and every later look
+    // was turned away as already done — the step then sat at the top of the
+    // page with the thing it is about below the fold.
+    if (!step?.anchor || !found || waiting || stale) return;
+    const anchor = step.anchor;
     // Keyed by where as well as what: step ids repeat between tours, and a
     // reader taking a second tour found its shared steps never scrolled.
     const key = `${state?.tour}:${step.id}:${location}`;
     if (scrolled.current === key) return;
+    // Claimed only once there is something to scroll to. The anchor was there
+    // when the poll last looked, a moment ago, but a page still filling in
+    // drops it between renders and the scroll is no use without it.
+    if (!anchorNode(anchor)) return;
     scrolled.current = key;
-    const node = anchorNode(step.anchor);
-    if (!node) return;
-    const box = node.getBoundingClientRect();
-    // A control already in front of the reader is left where it is.
-    // `scrollIntoView` moves every scrollable ancestor to obey `block`, so
-    // asking it to centre something that was already in view pulled the page
-    // out from under whoever had just arrived on it.
-    if (inView(box)) return;
-    // Centring a region taller than the window scrolls past its beginning:
-    // the reader is put half way down a panel they have not seen the top of.
-    // Those are brought to the top instead, where their heading is.
-    scrollToAnchor(node, isTall(box.height) ? "start" : "center");
-
-    // Then follow it to its rest. A smooth scroll stops firing `scroll`
-    // before its last frame is painted, so the box is re-read until it
-    // repeats or the scroll has had long enough. See SETTLE_MS.
-    let previous: string | null = null;
     let frame = 0;
-    const deadline = Date.now() + SETTLE_MS;
-    const settle = () => {
-      resync.current();
-      const rect = node.getBoundingClientRect();
-      const where = `${rect.top},${rect.left}`;
-      if (where === previous || Date.now() > deadline) return;
-      previous = where;
+
+    /**
+     * Scroll to the anchor, then make sure it really arrived.
+     *
+     * A page that is still filling in grows under the scroll: settings asks
+     * for the spaces it lists, and the list it is asked to reach sits a
+     * screen further down by the time the answer lands, leaving a scroll made
+     * a moment earlier short of it. So the box is read again once the scroll
+     * has come to rest, and the whole thing repeated while the anchor is
+     * still out of sight — a few times at most, because the alternative is
+     * chasing a page that never settles.
+     */
+    const reach = (attempt: number) => {
+      const node = anchorNode(anchor);
+      if (!node) return;
+      const box = node.getBoundingClientRect();
+      // A control already in front of the reader is left where it is.
+      // `scrollIntoView` moves every scrollable ancestor to obey `block`, so
+      // asking it to centre something that was already in view pulled the
+      // page out from under whoever had just arrived on it.
+      if (inView(box)) return;
+      if (attempt > SCROLL_TRIES) return;
+      // Centring a region taller than the window scrolls past its beginning:
+      // the reader is put half way down a panel they have not seen the top
+      // of. Those are brought to the top instead, where their heading is.
+      scrollToAnchor(node, isTall(box.height) ? "start" : "center");
+
+      // Then follow it to its rest. A smooth scroll stops firing `scroll`
+      // before its last frame is painted, so the box is re-read until it
+      // repeats or the scroll has had long enough. See SETTLE_MS.
+      let previous: string | null = null;
+      const deadline = Date.now() + SETTLE_MS;
+      const settle = () => {
+        resync.current();
+        const rect = node.getBoundingClientRect();
+        const where = `${rect.top},${rect.left}`;
+        if (where === previous || Date.now() > deadline) {
+          reach(attempt + 1);
+          return;
+        }
+        previous = where;
+        frame = window.requestAnimationFrame(settle);
+      };
       frame = window.requestAnimationFrame(settle);
     };
-    frame = window.requestAnimationFrame(settle);
+
+    reach(1);
     return () => window.cancelAnimationFrame(frame);
-  }, [found, location, stale, state?.tour, step]);
+  }, [found, location, stale, state?.tour, step, waiting]);
 
   /**
    * Open what the step is about, and close it again on the way out.

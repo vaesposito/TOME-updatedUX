@@ -198,7 +198,7 @@ export function ProjectHomeView({
 
   const feeds = React.useMemo(() => splitHomeFeeds(summary), [summary]);
 
-  /** Following a row is what "I have read it" means, as in the inbox. */
+  /** Following a row is what "I have read it" means, as it does in the bell. */
   const markRead = React.useCallback((item: TomeSummaryItem) => {
     setSummary((current) =>
       current
@@ -227,14 +227,6 @@ export function ProjectHomeView({
   const openPage = (path: string) =>
     onOpenPage ? () => onOpenPage(path) : undefined;
 
-  /**
-   * Everything this space has sent, where it can be worked through.
-   *
-   * On the All tab, not the inbox's usual Unread: these cards show what is
-   * there rather than what is new, so a reader following one of them to "see
-   * the rest" has often read the rest already.
-   */
-  const inboxHref = `/notifications?entity=${encodeURIComponent(slug)}&tab=all`;
   const ingestHref = `/projects/${encodeURIComponent(slug)}/tome/ingest`;
   const settingsHref = `/projects/${encodeURIComponent(slug)}/tome/settings`;
   const feedHref = `/projects/${encodeURIComponent(slug)}/tome/feed`;
@@ -407,7 +399,6 @@ export function ProjectHomeView({
         title="Needs attention"
         icon={<CircleAlert className="h-4 w-4" />}
         count={feeds.attention.length}
-        action={{ label: "All", href: inboxHref }}
       >
         <HomeNotificationList
           items={feeds.attention}
@@ -420,7 +411,6 @@ export function ProjectHomeView({
                 icon={<CircleAlert />}
                 headline="Nothing needs attention"
                 hint="Unresolved problems and decisions still to be made collect here."
-                action={{ label: "Open the inbox", href: inboxHref }}
               />
             )
           }
@@ -434,7 +424,6 @@ export function ProjectHomeView({
         title="Tagged for you"
         icon={<AtSign className="h-4 w-4" />}
         count={feeds.tagged.length}
-        action={{ label: "All", href: inboxHref }}
       >
         <HomeNotificationList
           items={feeds.tagged}
@@ -447,7 +436,6 @@ export function ProjectHomeView({
                 icon={<AtSign />}
                 headline="Nothing tagged you"
                 hint="A page or a decision that names you with an @ mention lands here."
-                action={{ label: "Open the inbox", href: inboxHref }}
               />
             )
           }
@@ -482,7 +470,6 @@ export function ProjectHomeView({
         title="Latest updates"
         icon={<Newspaper className="h-4 w-4" />}
         count={feeds.updates.length}
-        action={{ label: "All", href: inboxHref }}
       >
         <HomeNotificationList
           items={feeds.updates}

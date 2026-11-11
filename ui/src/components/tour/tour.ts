@@ -10,9 +10,7 @@
 /** Where a step can be anchored. Elements carry `data-tour="<id>"`. */
 export type TourAnchor =
   | "notifications-bell"
-  | "notifications-inbox"
-  | "notifications-watching"
-  | "notifications-watching-tree"
+  | "notifications-following"
   | "watch-toggle"
   | "page-notify"
   | "page-edit"

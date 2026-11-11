@@ -1,33 +1,24 @@
 /**
- * What has happened lately, in the shapes the inbox and the digests read.
+ * What has happened lately, in the shapes the bell and the digests read.
  *
- * One store of events, three readings of it: the inbox lists them filtered
- * and faceted, a space's Home shows the ones belonging to that space grouped
- * by what a reader would do about them, and the follow tree says where they
- * came from. Deriving all three from one list is what keeps them agreeing
- * with each other — a prototype whose counts contradict its rows is worse
- * than no prototype.
+ * One store of events, three readings of it: the bell lists the latest of
+ * them, a space's Home shows the ones belonging to that space grouped by what
+ * a reader would do about them, and the follow tree says where they came
+ * from. Deriving all three from one list is what keeps them agreeing with
+ * each other — a prototype whose counts contradict its rows is worse than no
+ * prototype.
  */
 
 import type {
   InAppNotificationView,
   NotificationFollowTree,
   NotificationFollowTreeNode,
-  NotificationInboxFacets,
-  NotificationInboxResponse,
-  NotificationInboxTab,
 } from "@/types/in-app-notification";
 import type {
   TomeSummary,
   TomeSummaryItem,
   TomeSummarySectionKey,
 } from "@/types/tome-summary";
-import {
-  DEFAULT_WEBEX_DELIVERY_HOUR,
-  DEFAULT_WEBEX_DELIVERY_WEEKDAY,
-  type WebexDeliveryRule,
-  type WebexDeliverySpace,
-} from "@/types/webex-delivery";
 
 import { PARENT_OF, SPACES, spaceBySlug, USER } from "./data";
 
@@ -260,83 +251,6 @@ export function rowsFor(slugs: readonly string[]): InAppNotificationView[] {
   return ROWS.filter((row) => row.entity_slug && wanted.has(row.entity_slug));
 }
 
-function origin(row: InAppNotificationView): "tome" | "platform" {
-  return row.category === "platform_health" ? "platform" : "tome";
-}
-
-function facets(rows: readonly InAppNotificationView[]): NotificationInboxFacets {
-  const by_action: Record<string, number> = {};
-  const by_origin: Record<string, number> = {};
-  for (const row of rows) {
-    if (row.action) by_action[row.action] = (by_action[row.action] ?? 0) + 1;
-    by_origin[origin(row)] = (by_origin[origin(row)] ?? 0) + 1;
-  }
-  // One entry per space that has sent something, indented by its parent the
-  // way the sidebar reads it.
-  const entities = [...new Set(ROWS.flatMap((row) => (row.entity_slug ? [row.entity_slug] : [])))];
-  return {
-    everything: rows.length,
-    needs_attention: rows.filter((row) => row.needs_attention).length,
-    mentions: rows.filter((row) => row.mentioned).length,
-    by_action,
-    by_origin,
-    by_entity: entities.map((slug) => {
-      const space = spaceBySlug(slug);
-      const parent = PARENT_OF[slug];
-      return {
-        entity_slug: slug,
-        entity_title: space?.title ?? slug,
-        entity_type: (space?.type === "subject" ? "project" : space?.type ?? "project") as
-          | "bhag"
-          | "area"
-          | "project",
-        ...(parent ? { parent_entity_slug: parent } : {}),
-        unread: ROWS.filter((row) => row.entity_slug === slug && !row.read).length,
-        muted: false,
-      };
-    }),
-  };
-}
-
-/** The inbox, filtered the way the route filters it. */
-export function inbox(url: URL): NotificationInboxResponse {
-  const tab = (url.searchParams.get("tab") ?? "unread") as NotificationInboxTab;
-  const entity = url.searchParams.get("entity") ?? undefined;
-  const actions = (url.searchParams.get("types") ?? "")
-    .split(",")
-    .filter(Boolean) as ("new" | "updated")[];
-  const important = url.searchParams.get("important") === "1";
-  const tagged = url.searchParams.get("tagged") === "1";
-  const originWanted = url.searchParams.get("origin") as "tome" | "platform" | null;
-
-  let rows = ROWS.filter((row) => (tab === "unread" ? !row.read : true));
-  if (tab === "dismissed") rows = rows.filter((row) => row.dismissed);
-  if (entity) rows = rows.filter((row) => row.entity_slug === entity);
-  if (actions.length) rows = rows.filter((row) => row.action && actions.includes(row.action));
-  if (important) rows = rows.filter((row) => row.needs_attention);
-  if (tagged) rows = rows.filter((row) => row.mentioned);
-  if (originWanted) rows = rows.filter((row) => origin(row) === originWanted);
-
-  return {
-    notifications: rows,
-    facets: facets(rows),
-    filter: {
-      ...(entity ? { entity } : {}),
-      actions,
-      important,
-      tagged,
-      origin: originWanted,
-    },
-    total: rows.length,
-    counts: {
-      unread: ROWS.filter((row) => !row.read).length,
-      all: ROWS.length,
-      dismissed: 0,
-    },
-    preferences: { muted_entity_slugs: [] },
-  };
-}
-
 /**
  * The follow tree: every readable space, flat and depth-first, with the pages
  * this reader already follows hung under their space.
@@ -391,49 +305,6 @@ export function followTree(following: ReadonlySet<string>): NotificationFollowTr
 
   return { nodes, total_unread: ROWS.filter((row) => !row.read).length };
 }
-
-/**
- * The spaces the platform's bot has been added to, for the destination
- * picker. A short list on purpose: what the picker has to get across is that
- * the bot's reach is narrower than the reader's.
- */
-export const WEBEX_SPACES: WebexDeliverySpace[] = [
-  { id: "space-delivery", name: "Delivery platform" },
-  { id: "space-standup", name: "Pipeline standup" },
-  { id: "space-incidents", name: "Incident response" },
-];
-
-/**
- * Where this reader's updates already go in Webex.
- *
- * Two rules rather than one per watched space, so the Watching tab arrives
- * showing both of its states: rows that are routed somewhere, and rows still
- * offering the choice.
- */
-export const WEBEX_RULES: WebexDeliveryRule[] = [
-  {
-    entity_slug: "build-pipeline",
-    entity_title: "Build pipeline",
-    entity_type: "project",
-    destination: "space",
-    space_id: "space-standup",
-    space_name: "Pipeline standup",
-    cadence: "immediate",
-    hour: DEFAULT_WEBEX_DELIVERY_HOUR,
-    weekday: DEFAULT_WEBEX_DELIVERY_WEEKDAY,
-    timezone: "UTC",
-  },
-  {
-    entity_slug: "ship-weekly",
-    entity_title: "Ship something every week",
-    entity_type: "bhag",
-    destination: "direct",
-    cadence: "weekly",
-    hour: DEFAULT_WEBEX_DELIVERY_HOUR,
-    weekday: DEFAULT_WEBEX_DELIVERY_WEEKDAY,
-    timezone: "UTC",
-  },
-];
 
 /** Which bucket of a space's digest a row belongs in. */
 function sectionOf(row: InAppNotificationView): TomeSummarySectionKey {

@@ -22,7 +22,7 @@ as they do in the application, and all of it is gone on reload.
 The fixtures are one small invented organisation — a goal, two areas, five
 projects under them, and six subjects on the function axis — with every name
 made up and every address on `example.com`. The notification rows, the
-digests on each Home, the inbox facets and the follow tree are all derived
+digests on each Home and the follow tree are all derived
 from one list of events, so the counts agree with the rows.
 
 ## Running it
@@ -47,7 +47,7 @@ Screenshots land in `prototype/shots/`.
 Every TOME screen is exported: the catalogue read both ways, the workspace
 overview and digest, each space's Home, wiki, pages, related content,
 sources, glossary, meetings, notes, issues, ingest, insights, templates and
-settings, plus the notification inbox and the function categories.
+settings, plus the notification settings and the function categories.
 
 The rest of the platform — chat, skills, the admin surfaces — is not, and the
 navigation's links to it land on a page saying so.

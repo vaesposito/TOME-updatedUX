@@ -475,7 +475,7 @@ export function TomeNotificationSettings({
         )}
 
         {showSpaces && (
-        <section className="space-y-3">
+        <section className="space-y-3" data-tour="notifications-following">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-semibold">Followed spaces</h3>
             <RowControls

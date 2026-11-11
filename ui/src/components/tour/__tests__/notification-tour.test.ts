@@ -21,11 +21,10 @@ function step(id: string) {
 }
 
 describe("the notifications walkthrough", () => {
-  it("covers the six places in the order they are met", () => {
+  it("covers the five places in the order they are met", () => {
     expect(NOTIFICATION_TOUR.map((entry) => entry.id)).toEqual([
       "bell",
-      "inbox",
-      "watching",
+      "following",
       "watch",
       "notify",
       "summary",
@@ -38,9 +37,10 @@ describe("the notifications walkthrough", () => {
     expect(step("bell").route).toBeUndefined();
   });
 
-  it("sends the two inbox steps to the notification page", () => {
-    expect(step("inbox").route?.(NOTHING)).toBe("/notifications");
-    expect(step("watching").route?.(NOTHING)).toBe("/notifications");
+  // Notifications are read at the bell and chosen in settings, so the step
+  // about choosing is the only one that has anywhere of its own to go.
+  it("sends the step about choosing to settings", () => {
+    expect(step("following").route?.(NOTHING)).toBe("/settings/notifications");
   });
 
   it("keeps the project steps on one project", () => {
@@ -77,15 +77,14 @@ describe("the notifications walkthrough", () => {
     for (const entry of NOTIFICATION_TOUR) {
       if (entry.waitingAnchor) expect(entry.hint).toBeTruthy();
     }
-    expect(step("watching").waitingAnchor).toBe("notifications-watching");
     expect(step("notify").waitingAnchor).toBe("page-edit");
   });
 });
 
 describe("samePath", () => {
   it("matches a path to itself", () => {
-    expect(samePath("/notifications", "/notifications")).toBe(true);
-    expect(samePath("/notifications", "/projects")).toBe(false);
+    expect(samePath("/settings/notifications", "/settings/notifications")).toBe(true);
+    expect(samePath("/settings/notifications", "/projects")).toBe(false);
   });
 
   // A wiki path is pushed encoded and read back from the router in whichever

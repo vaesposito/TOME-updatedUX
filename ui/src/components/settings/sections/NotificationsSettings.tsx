@@ -4,6 +4,7 @@ import { ReleaseNotesPreview } from "@/components/settings/ReleaseNotesPreview";
 import { AutoSaveStatus } from "@/components/settings/shared/AutoSaveStatus";
 import { SettingsCard } from "@/components/settings/shared/SettingsCard";
 import { SettingsSwitch } from "@/components/settings/shared/SettingsSwitch";
+import { TomeNotificationSettings } from "@/components/tome/TomeNotificationSettings";
 import { Button } from "@/components/ui/button";
 import { useAdminRole } from "@/hooks/use-admin-role";
 import { useKeyedAutoSave } from "@/hooks/use-keyed-auto-save";
@@ -16,8 +17,7 @@ import {
   requestBrowserNotificationPermission,
   type BrowserNotificationCapability,
 } from "@/lib/agent-completion-notifications";
-import { Activity,Bell,BellRing,BookOpen,ChevronsDownUp,ChevronsUpDown,ExternalLink,Loader2,Volume2 } from "lucide-react";
-import Link from "next/link";
+import { Activity,Bell,BellRing,BookOpen,ChevronsDownUp,ChevronsUpDown,Loader2,Volume2 } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
 
 type NotificationKey = "release-notes" | "browser-completions" | "completion-chime" | "platform-health";
@@ -411,16 +411,16 @@ export function NotificationsSettings(): React.ReactElement {
         onExpandedChange={(expanded) => setSectionExpanded("tome",expanded)}
         title={<span className="flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" />TOME</span>}
       >
-        {/* What to follow, and how loudly, is chosen per space rather than
-            with one switch, so this card points at that rather than
-            reproducing a tree of every space a reader can see. */}
-        <Link
-          className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:no-underline"
-          href="/notifications?tab=following"
-        >
-          Manage TOME notifications
-          <ExternalLink className="h-3.5 w-3.5" />
-        </Link>
+        {/* The controls themselves, rather than a link to them. What reaches
+            a reader, where it reaches them and which spaces it comes from is
+            one decision, and this is the settings every reader can open —
+            the TOME admin page carries the same panel but only admins can
+            get to it.
+
+            No Save, because nothing else on this page has one: a choice made
+            here is kept as it is made. What the panel says about not keeping
+            them yet still stands, and says so itself. */}
+        <TomeNotificationSettings showSave={false} />
       </SettingsCard>
 
       {isAdmin ? <SettingsCard

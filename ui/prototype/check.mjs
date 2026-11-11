@@ -83,7 +83,7 @@ const SCREENS = [
   ["issues", "/projects/build-pipeline/tome/issues/"],
   ["ingest", "/projects/build-pipeline/tome/ingest/"],
   ["settings", "/projects/build-pipeline/tome/settings/"],
-  ["notifications", "/notifications/"],
+  ["notification-settings", "/settings/notifications/"],
   ["category", "/projects/functions/engineering--engineering-reliability/"],
   ["appearance", "/settings/appearance/"],
 ];

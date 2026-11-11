@@ -133,7 +133,8 @@ export function HomeEmpty({
   headline: string;
   /** One sentence on what appears here, and what writes it. */
   hint: string;
-  action: HomeAction;
+  /** Left off where there is nowhere useful to send a reader next. */
+  action?: HomeAction;
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 py-6 text-center">
@@ -142,7 +143,7 @@ export function HomeEmpty({
       <p className="max-w-[38ch] text-[11px] leading-relaxed text-muted-foreground">
         {hint}
       </p>
-      <EmptyAction action={action} />
+      {action ? <EmptyAction action={action} /> : null}
     </div>
   );
 }

@@ -1,18 +1,19 @@
 /**
- * The notifications walkthrough: six places, in the order someone meets them.
+ * The notifications walkthrough: five places, in the order someone meets them.
  *
  * A tour of real controls rather than a slideshow of pictures. Each step
  * points at the element it describes, wherever that element lives — which
- * means the tour navigates between the notification page and a project, and
- * that the reader can click the thing being explained while it is explained.
+ * means the tour navigates between settings and a project, and that the
+ * reader can click the thing being explained while it is explained.
  *
- * The order runs outwards: first where notifications arrive (the bell, the
- * inbox), then where they are chosen (Following, a project's own Follow
- * button), then where they are created (saving a page), and finally where
- * they are read in bulk (a project's Home). Reading it through should
- * answer both "where do I see these" and "why am I getting them".
+ * The order runs outwards: first where notifications arrive (the bell), then
+ * where they are chosen (settings, and a project's own Follow button), then
+ * where they are created (saving a page), and finally where they are read in
+ * bulk (a project's Home). Reading it through should answer both "where do I
+ * see these" and "why am I getting them".
  */
 
+import { NOTIFICATION_SETTINGS_HREF } from "@/components/settings/settings-routes";
 import type { TourStep } from "@/components/tour/tour";
 
 // Re-exported because this file was the whole of the tour before there were
@@ -32,28 +33,15 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
     opens: ["notifications-bell"],
     title: "The bell is where they arrive",
     body:
-      "It counts what you have not read yet. Open it for the most recent few, grouped by the project they came from, and to mark the lot as read.",
+      "It counts what you have not read yet, and holds them grouped by where they came from. Reading one takes you to the thing it happened to, and Mark all read clears the count.",
   },
   {
-    id: "inbox",
-    anchor: "notifications-inbox",
-    route: () => "/notifications",
-    title: "The inbox holds all of them",
+    id: "following",
+    anchor: "notifications-following",
+    route: () => NOTIFICATION_SETTINGS_HREF,
+    title: "Settings decides what you are sent",
     body:
-      "The bell's See more opens this page: everything you have been sent, not just the latest few. This bar narrows it to what needs attention or what tagged you, and the list can be grouped by date, by source or by what happened.",
-  },
-  {
-    id: "watching",
-    // The tree is the subject and only exists once the tab is open, so the
-    // step opens it. The hint is what is left if the tab cannot be pressed.
-    anchor: "notifications-watching-tree",
-    waitingAnchor: "notifications-watching",
-    opens: ["notifications-watching"],
-    hint: "Open Following to choose what reaches you.",
-    route: () => "/notifications",
-    title: "Following decides what you are sent",
-    body:
-      "Tick a BHAG, an area or a project and its changes reach you. Each followed row also carries a Webex button, for sending that project's updates on to a team space or to your own direct messages.",
+      "Tick a BHAG, an area or a project and its changes reach you. Each row also says what kind of change is worth telling you about, where it should reach you, and how often — and the controls above the list set all of them at once.",
   },
   {
     id: "watch",
@@ -62,7 +50,7 @@ export const NOTIFICATION_TOUR: readonly TourStep[] = [
       subject.slug ? `/projects/${subject.slug}/tome` : null,
     title: "Or follow a project from the project",
     body:
-      "The same choice as the Following tab, made on the thing it concerns. The count beside it is how many other people are following, so you can tell whether a change will be noticed.",
+      "The same choice as the one in settings, made on the thing it concerns. The count beside it is how many other people are following, so you can tell whether a change will be noticed.",
     unavailable: "This step needs a project you can read, and there is not one yet.",
   },
   {

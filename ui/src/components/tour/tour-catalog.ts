@@ -54,5 +54,5 @@ export function findTour(id: string | null | undefined): Tour | undefined {
   return TOURS.find((tour) => tour.id === id);
 }
 
-/** The id the inbox's own button asks for. */
+/** The tour a button asks for when it does not name one. */
 export const NOTIFICATIONS_TOUR_ID = "notifications";

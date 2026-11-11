@@ -63,9 +63,9 @@ a bell to ignore, and five guided tours walk a newcomer through the lot.
 
 ## Notifications and following
 
-- An inbox of everything received, narrowed by status, type, space or origin.
-- A Watching tree over the whole portfolio, so a reader chooses what reaches them.
-- Each row can arrive in a chat space or a direct message, as it happens or as a daily or weekly digest.
+- Two places, not three: the bell holds what has arrived, and Settings decides what arrives at all. There is no separate notifications page.
+- Settings carries the whole portfolio as a tree, so a reader chooses what reaches them by ticking a goal, an area or a single space.
+- Each row says what kind of change is worth hearing about, where it should reach you and how often, and the controls above the tree set all of them at once.
 - One word for one idea: Watch and Follow are both Following, offering Everything, Important, Mentions or Off.
 - Quiet hours, and preferences set per space as well as overall.
 - Saving a wiki edit asks who should hear about it.

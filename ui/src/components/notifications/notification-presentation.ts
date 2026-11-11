@@ -17,7 +17,6 @@ import {
  * the message they read as the end of the sentence rather than as things to
  * press. Kept here so the inbox and the summary cannot drift apart.
  */
-export const ROW_ACTION_CLASS = "h-auto gap-1.5 px-2 py-1 text-xs";
 
 /**
  * The line under a row's headline: who did it, or what they said.
@@ -113,68 +112,6 @@ export function notificationTimestamp(isoDate: string): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Day-bucket heading, matching how people scan a feed by recency. */
-export function notificationDayGroup(isoDate: string): string {
-  const date = new Date(isoDate);
-  if (Number.isNaN(date.getTime())) return "Earlier";
-
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const daysAgo = Math.floor((startOfToday.getTime() - date.getTime()) / DAY);
-
-  if (date.getTime() >= startOfToday.getTime()) return "Today";
-  if (daysAgo < 1) return "Yesterday";
-  if (daysAgo < 7) return "Last week";
-  if (daysAgo < 30) return "Last month";
-  return "Earlier";
-}
-
-/** Stable display order for the day buckets above. */
-export const DAY_GROUP_ORDER: readonly string[] = [
-  "Today",
-  "Yesterday",
-  "Last week",
-  "Last month",
-  "Earlier",
-];
-
-export function groupByDay<T extends { created_at: string }>(
-  notifications: readonly T[],
-): Array<{ group: string; items: T[] }> {
-  const buckets = new Map<string, T[]>();
-  for (const notification of notifications) {
-    const key = notificationDayGroup(notification.created_at);
-    const bucket = buckets.get(key) ?? [];
-    bucket.push(notification);
-    buckets.set(key, bucket);
-  }
-  return DAY_GROUP_ORDER.filter((group) => buckets.has(group)).map((group) => ({
-    group,
-    items: buckets.get(group) ?? [],
-  }));
-}
-
-/**
- * Split the list into TOME and Platform, in that order.
- *
- * The order is fixed rather than by size: TOME is the reader's own work and
- * platform news is the backdrop to it, so a quiet week for TOME should not
- * push it below the noise.
- */
-export function groupByOrigin<T extends { category: InAppNotificationCategory }>(
-  notifications: readonly T[],
-): Array<{ group: string; items: T[] }> {
-  const tome: T[] = [];
-  const platform: T[] = [];
-  for (const notification of notifications) {
-    (notificationOrigin(notification) === "TOME" ? tome : platform).push(notification);
-  }
-  return [
-    { group: "TOME", items: tome },
-    { group: "Platform", items: platform },
-  ].filter((section) => section.items.length > 0);
-}
-
 /** Everything a row must carry before its type can be worked out. */
 interface TypedRow {
   action?: NotificationAction;
@@ -212,37 +149,6 @@ export function notificationType(notification: TypedRow): string {
     NOTIFICATION_TYPE_FACETS.find((facet) => facet.action === action)?.label ??
     "New"
   );
-}
-
-/**
- * Split the list by what happened, matching the Type filter's own words.
- *
- * Tagged, then New, then Updated: most-addressed-to-you first. Grouped on
- * the action rather than the event label, which is nearly unique per row and
- * would produce a heading for almost every notification.
- */
-export function groupByAction<T extends TypedRow>(
-  notifications: readonly T[],
-): Array<{ group: string; items: T[] }> {
-  const tagged: T[] = [];
-  const buckets = new Map<NotificationAction, T[]>();
-  for (const notification of notifications) {
-    // Tagged is its own heading rather than a flag inside New or Updated:
-    // being addressed by name is the thing a reader scans for, and splitting
-    // it across two other sections buries it.
-    if (notification.mentioned) {
-      tagged.push(notification);
-      continue;
-    }
-    const action = resolvedAction(notification);
-    buckets.set(action, [...(buckets.get(action) ?? []), notification]);
-  }
-  return [
-    ...(tagged.length > 0 ? [{ group: "Tagged", items: tagged }] : []),
-    ...NOTIFICATION_TYPE_FACETS.filter(({ action }) => buckets.has(action)).map(
-      ({ action, label }) => ({ group: label, items: buckets.get(action) ?? [] }),
-    ),
-  ];
 }
 
 /** The fields a row needs before it can offer a link. */

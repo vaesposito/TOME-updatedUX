@@ -587,13 +587,11 @@ describe("a step whose subject is behind a button", () => {
   });
 
   it("presses a tab the way a mouse does, and only once", async () => {
-    // Radix's tabs answer the pointer going down and never see a bare
-    // click, so the step about Following used to ring the tab and leave the
-    // reader looking at the inbox. Pressing both ways would open the tab
-    // and shut it again.
-    pathname = "/notifications";
+    // Radix's tabs answer the pointer going down and never see a bare click,
+    // so a step that rang one would describe something the reader never saw.
+    // Pressing both ways would open the tab and shut it again.
     const tab = plant(
-      "notifications-watching",
+      "notifications-bell",
       { top: 60, left: 300, width: 96, height: 32 },
       "button",
     );
@@ -606,7 +604,7 @@ describe("a step whose subject is behind a button", () => {
 
     window.sessionStorage.setItem(
       TOUR_STATE_KEY,
-      JSON.stringify({ tour: "notifications", index: 2, subject: null }),
+      JSON.stringify({ tour: "notifications", index: 0, subject: null }),
     );
 
     render(<TourRunner />);
@@ -619,48 +617,47 @@ describe("a step whose subject is behind a button", () => {
 
   it("gives the tab the reader was on back when the tour ends", async () => {
     // Pressing a tab a second time only chooses it again, so a step that
-    // opened Following would hand back a page nobody asked to be on.
-    pathname = "/notifications";
+    // opened one would hand back a page nobody asked to be on.
     const list = document.createElement("div");
     list.setAttribute("role", "tablist");
     document.body.append(list);
     planted.push(list);
 
-    const inbox = size(document.createElement("button"), {
+    const other = size(document.createElement("button"), {
       top: 60,
       left: 200,
       width: 80,
       height: 32,
     });
-    inbox.setAttribute("role", "tab");
-    inbox.setAttribute("aria-selected", "true");
-    const following = plant(
-      "notifications-watching",
+    other.setAttribute("role", "tab");
+    other.setAttribute("aria-selected", "true");
+    const opened = plant(
+      "notifications-bell",
       { top: 60, left: 300, width: 96, height: 32 },
       "button",
     );
-    following.setAttribute("role", "tab");
-    following.setAttribute("aria-selected", "false");
+    opened.setAttribute("role", "tab");
+    opened.setAttribute("aria-selected", "false");
     // A tab bar, as Radix builds one: chosen by the pointer going down.
-    for (const [tab, other] of [
-      [inbox, following],
-      [following, inbox],
+    for (const [tab, sibling] of [
+      [other, opened],
+      [opened, other],
     ]) {
       tab.addEventListener("mousedown", () => {
         tab.setAttribute("aria-selected", "true");
-        other.setAttribute("aria-selected", "false");
+        sibling.setAttribute("aria-selected", "false");
       });
     }
-    list.append(inbox, following);
+    list.append(other, opened);
 
     window.sessionStorage.setItem(
       TOUR_STATE_KEY,
-      JSON.stringify({ tour: "notifications", index: 2, subject: null }),
+      JSON.stringify({ tour: "notifications", index: 0, subject: null }),
     );
 
     render(<TourRunner />);
     await waitFor(() =>
-      expect(following.getAttribute("aria-selected")).toBe("true"),
+      expect(opened.getAttribute("aria-selected")).toBe("true"),
     );
 
     act(() => {
@@ -670,7 +667,7 @@ describe("a step whose subject is behind a button", () => {
     });
 
     await waitFor(() =>
-      expect(inbox.getAttribute("aria-selected")).toBe("true"),
+      expect(other.getAttribute("aria-selected")).toBe("true"),
     );
   });
 
@@ -703,7 +700,7 @@ describe("a step whose subject is behind a button", () => {
 
 describe("a step that opens the editor", () => {
   /** The notifications step about who hears, which opens Edit and the menu. */
-  const NOTIFY = 4;
+  const NOTIFY = 3;
 
   /** The wiki page the notify step borrows, as a saved place. */
   const onThePage = () => {
@@ -768,6 +765,32 @@ describe("a step that opens the editor", () => {
     // Cancel rather than Save, and rather than nothing: the editor writes a
     // draft half a second after it opens, and only Cancel discards it.
     await waitFor(() => expect(editor.cancelled).toHaveBeenCalledTimes(1));
+  });
+
+  it("scrolls to the control the editor puts on the page", async () => {
+    // Until Edit is pressed there is only the waiting anchor to point at, and
+    // a step that counted that as its one go at scrolling left the ring off
+    // the screen for every control that arrives a moment after the step does.
+    const edit = plant(
+      "page-edit",
+      { top: 60, left: 900, width: 44, height: 28 },
+      "button",
+    );
+    edit.setAttribute("data-tour-undo", "page-cancel");
+    edit.addEventListener("click", () => {
+      plant("page-cancel", { top: 60, left: 950, width: 60, height: 28 }, "button");
+      // Opening a page for editing is a round trip, so the menu the step is
+      // about turns up a moment after the step has settled for the waiting
+      // anchor — which is the moment the step used to spend.
+      window.setTimeout(() => {
+        plant("page-notify", { top: 1200, left: 800, width: 127, height: 28 }, "button");
+      }, POLL * 3);
+    });
+    onThePage();
+
+    render(<TourRunner />);
+
+    await waitFor(() => expect(scrolledBy).toHaveBeenCalled());
   });
 
   it("waits for Cancel when the reader leaves before the editor is back", async () => {

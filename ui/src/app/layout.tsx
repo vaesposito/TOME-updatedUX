@@ -8,7 +8,6 @@ import { getClientConfigScript,getServerConfig } from "@/lib/config";
 import type { Metadata } from "next";
 import { IBM_Plex_Sans,Inter,JetBrains_Mono,Source_Sans_3 } from "next/font/google";
 import { headers } from "next/headers";
-import Script from "next/script";
 import "./globals.css";
 
 // Primary font: Inter - Used by OpenAI, clean and highly readable
@@ -92,18 +91,28 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Inject client config synchronously before any JS runs */}
-        <Script
+        {/*
+          Plain script tags, written into the document rather than handed to
+          the script loader.
+
+          Both of these have to have run before the first paint: the theme
+          one decides what the page looks like, and the config one is read
+          synchronously by client code that does not wait for anything.
+          `beforeInteractive` sounds like it promises that, but it means
+          before the application becomes interactive, not before the document
+          is drawn — the loader runs the code a frame or two after parsing
+          ends, which is late enough to show a page in the wrong theme and
+          then correct it.
+        */}
+        <script
           dangerouslySetInnerHTML={{
             __html: `window.__APP_CONFIG__=${configScript};`,
           }}
           id="runtime-app-config"
-          strategy="beforeInteractive"
         />
-        <Script
+        <script
           dangerouslySetInnerHTML={{ __html: themeScript }}
           id="initial-appearance-theme"
-          strategy="beforeInteractive"
         />
       </head>
       <body

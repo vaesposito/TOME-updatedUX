@@ -79,32 +79,50 @@ export function KindBadge({
   kind,
   size = "sm",
   iconOnly = false,
+  describe = true,
 }: {
   kind: PageKind;
   size?: "xs" | "sm";
   iconOnly?: boolean;
+  /**
+   * Whether the mark explains itself on hover.
+   *
+   * Turned off where the thing holding the mark already explains the kind —
+   * a menu row that carries its own tooltip, say. Both would open on the way
+   * past, leaving two boxes over each other saying the same thing in
+   * different words.
+   */
+  describe?: boolean;
 }) {
   const spec = PAGE_KIND_SPECS[kind];
   const { Icon } = spec;
 
+  const explanation = (
+    <TooltipContent
+      side="right"
+      className="flex w-64 flex-col gap-1 whitespace-normal text-[11px] font-normal normal-case leading-relaxed"
+    >
+      <span className="text-xs font-semibold">{spec.title}</span>
+      <span className="opacity-70">{spec.description}</span>
+    </TooltipContent>
+  );
+
   if (iconOnly) {
+    const mark = (
+      <span
+        className="inline-flex cursor-default items-center text-neutral-400 dark:text-neutral-500"
+        aria-label={spec.label}
+      >
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+    );
+
+    if (!describe) return mark;
+
     return (
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            className="inline-flex cursor-default items-center text-neutral-400 dark:text-neutral-500"
-            aria-label={spec.label}
-          >
-            <Icon className="h-3.5 w-3.5" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent
-          side="right"
-          className="flex w-64 flex-col gap-1 whitespace-normal text-[11px] font-normal normal-case leading-relaxed"
-        >
-          <span className="text-xs font-semibold">{spec.title}</span>
-          <span className="opacity-70">{spec.description}</span>
-        </TooltipContent>
+        <TooltipTrigger asChild>{mark}</TooltipTrigger>
+        {explanation}
       </Tooltip>
     );
   }
@@ -114,24 +132,22 @@ export function KindBadge({
       ? "text-[9px] px-1 py-0 gap-0.5 h-auto"
       : "text-[10px] px-1.5 py-0.5 gap-1 h-auto";
   const iconSize = size === "xs" ? "h-2.5 w-2.5" : "h-3 w-3";
+  const badge = (
+    <Badge
+      variant="outline"
+      className={`font-medium uppercase tracking-wide ${sizing} ${spec.badgeClass}`}
+    >
+      <Icon className={`${iconSize} ${spec.iconClass}`} />
+      <span>{spec.label}</span>
+    </Badge>
+  );
+
+  if (!describe) return badge;
+
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge
-          variant="outline"
-          className={`font-medium uppercase tracking-wide ${sizing} ${spec.badgeClass}`}
-        >
-          <Icon className={`${iconSize} ${spec.iconClass}`} />
-          <span>{spec.label}</span>
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent
-        side="right"
-        className="flex w-64 flex-col gap-1 text-[11px] font-normal normal-case leading-relaxed"
-      >
-        <span className="text-xs font-semibold">{spec.title}</span>
-        <span className="opacity-70">{spec.description}</span>
-      </TooltipContent>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      {explanation}
     </Tooltip>
   );
 }

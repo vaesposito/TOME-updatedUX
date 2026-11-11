@@ -109,11 +109,23 @@ import type {
   PageNotifySelection,
 } from "@/types/tome";
 
-/** User-flippable kinds (report is system-managed via path). */
-const FLIPPABLE_KINDS: { key: PageKind; label: string }[] = [
-  { key: "stable", label: "Stable" },
-  { key: "dynamic", label: "Dynamic" },
-  { key: "hidden", label: "Hidden" },
+/**
+ * User-flippable kinds (report is system-managed via path), each with the
+ * line the kind select explains it in.
+ *
+ * Short on purpose. The hint is what a reader is given for free, on the way
+ * down the list and without opening it at all, so it has to land in a glance.
+ * The full semantics stay on the info button beside each row, which is the
+ * one thing in this menu that asks to be asked.
+ */
+const FLIPPABLE_KINDS: { key: PageKind; label: string; hint: string }[] = [
+  { key: "stable", label: "Stable", hint: "Human-curated" },
+  {
+    key: "dynamic",
+    label: "Dynamic",
+    hint: "Custom prompts, agent from ingestions",
+  },
+  { key: "hidden", label: "Hidden", hint: "Hidden from the team" },
 ];
 
 /** Notify nobody beyond the entity's watchers, who are always told. */
@@ -1430,26 +1442,48 @@ function KindToggle({
   const [open, setOpen] = useState(false);
   const spec = PAGE_KIND_SPECS[currentKind];
   const { Icon } = spec;
+  // Absent only for a report page, which the header states with a plain badge
+  // rather than this control, so the trigger always has a line to say.
+  const currentHint = FLIPPABLE_KINDS.find((o) => o.key === currentKind)?.hint;
+
+  const trigger = (
+    <PopoverTrigger asChild>
+      {/* The kind used to be carried by a filled, colour-coded pill, which
+          made the one control in the row that only opens a list look like
+          the most pressable thing in it. The kind still has to be readable
+          without opening anything, so it moves into the label and the
+          kind's own mark — which is where the tree already reads it from —
+          and the colour is spent on that mark alone. */}
+      <PageToolbarSelect
+        open={open}
+        active
+        icon={<Icon className={cn("h-3 w-3 shrink-0", spec.iconClass)} aria-hidden="true" />}
+        className="uppercase tracking-wide"
+        data-testid="tome-page-kind"
+      >
+        {spec.label}
+      </PageToolbarSelect>
+    </PopoverTrigger>
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        {/* The kind used to be carried by a filled, colour-coded pill, which
-            made the one control in the row that only opens a list look like
-            the most pressable thing in it. The kind still has to be readable
-            without opening anything, so it moves into the label and the
-            kind's own mark — which is where the tree already reads it from —
-            and the colour is spent on that mark alone. */}
-        <PageToolbarSelect
-          open={open}
-          active
-          icon={<Icon className={cn("h-3 w-3 shrink-0", spec.iconClass)} aria-hidden="true" />}
-          className="uppercase tracking-wide"
-          title={`${spec.title} page — ${spec.description} Click to change.`}
-        >
-          {spec.label}
-        </PageToolbarSelect>
-      </PopoverTrigger>
+      {/* The label says which kind this is; the tooltip says what that kind
+          means, in the same words the menu's own rows use. Above the control
+          because the menu opens below it, and a hint over the list a reader
+          is reaching for is worse than no hint. Not a `title`: the kinds are
+          explained by the shared tooltip everywhere else, and the browser's
+          own would arrive a second later on top of it. */}
+      {currentHint ? (
+        <Tooltip className="shrink-0">
+          <TooltipTrigger>{trigger}</TooltipTrigger>
+          <TooltipContent side="top" className="text-[11px] font-normal normal-case">
+            {currentHint}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        trigger
+      )}
       <PopoverContent align="end" className="w-56 p-2">
         <p className="mb-2 px-1 text-[11px] uppercase tracking-wider text-muted-foreground">
           Change kind
@@ -1463,24 +1497,38 @@ function KindToggle({
                 o.key === currentKind && "bg-muted",
               )}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  onChange(o.key);
-                  setOpen(false);
-                }}
-                className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-left"
-              >
-                <span className="flex items-center gap-2">
-                  <KindBadge kind={o.key} iconOnly />
-                  <span>{o.label}</span>
-                </span>
-                {o.key === currentKind && (
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    current
-                  </span>
-                )}
-              </button>
+              {/* The row explains itself, so a reader moving down the list is
+                  told what each kind is without stopping on anything. The
+                  mark inside it gives up its own tooltip for the same reason
+                  the trigger gave up its `title`: one explanation at a time.
+                  Left, while the info button's full account of the kind opens
+                  right, so moving from the row to that button does not put
+                  the second box where the first one still is. */}
+              <Tooltip className="min-w-0 flex-1">
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(o.key);
+                      setOpen(false);
+                    }}
+                    className="flex w-full min-w-0 items-center justify-between gap-2 px-2 py-1.5 text-left"
+                  >
+                    <span className="flex items-center gap-2">
+                      <KindBadge kind={o.key} iconOnly describe={false} />
+                      <span>{o.label}</span>
+                    </span>
+                    {o.key === currentKind && (
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        current
+                      </span>
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="text-[11px] font-normal">
+                  {o.hint}
+                </TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button

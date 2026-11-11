@@ -403,7 +403,7 @@ describe("WikiPageView", () => {
 
     const actions = screen.getByTestId("tome-page-actions");
     expect(actions).toHaveTextContent("dynamic");
-    expect(screen.queryByTitle(/Click to change the kind/)).toBeNull();
+    expect(screen.queryByTestId("tome-page-kind")).toBeNull();
   });
 
   it("wears the kind's own badge on the control that changes it", () => {
@@ -417,12 +417,57 @@ describe("WikiPageView", () => {
       />,
     );
 
-    const toggle = screen.getByTitle(/Dynamic page/);
-    expect(toggle).toHaveTextContent("dynamic");
-    expect(toggle).toHaveAttribute(
-      "title",
-      expect.stringContaining("Agent rewrites this page on every reingest"),
+    expect(screen.getByTestId("tome-page-kind")).toHaveTextContent("dynamic");
+  });
+
+  it("says what the chosen kind means without the menu being opened", async () => {
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="roadmap.md"
+        markdown={"---\ntitle: Roadmap\nkind: dynamic\n---\nRoadmap content"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
     );
+
+    const toggle = screen.getByTestId("tome-page-kind");
+    // The browser's own tooltip would arrive a second after the shared one,
+    // on top of it and saying something else.
+    expect(toggle).not.toHaveAttribute("title");
+
+    fireEvent.focus(toggle);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Custom prompts, agent from ingestions",
+    );
+  });
+
+  it("explains each kind on the row that offers it", async () => {
+    render(
+      <WikiPageView
+        slug="example-project"
+        path="charter.md"
+        markdown={"---\ntitle: Example charter\nkind: stable\n---\nOriginal markdown"}
+        onWrite={jest.fn().mockResolvedValue(undefined)}
+        onReload={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("tome-page-kind"));
+    // Scoped to the menu: the hints are portalled to the body, so searching
+    // the whole document for "Hidden" would find the tooltip saying it too.
+    const menu = document.querySelector("[data-popover-content]") as HTMLElement;
+
+    for (const [label, hint] of [
+      ["Stable", "Human-curated"],
+      ["Dynamic", "Custom prompts, agent from ingestions"],
+      ["Hidden", "Hidden from the team"],
+    ]) {
+      const row = within(menu).getByText(label).closest("button") as HTMLElement;
+      fireEvent.focus(row);
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(hint);
+      fireEvent.blur(row);
+    }
   });
 
   it("explains every page kind from explicit info buttons", async () => {
@@ -436,7 +481,7 @@ describe("WikiPageView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTitle(/Stable page/));
+    fireEvent.click(screen.getByTestId("tome-page-kind"));
 
     const stableInfo = screen.getByRole("button", { name: "About Stable pages" });
     const dynamicInfo = screen.getByRole("button", { name: "About Dynamic pages" });
@@ -1094,7 +1139,7 @@ describe("what the editor's toolbar looks like", () => {
     // act, so they are the same control: a bordered field with a chevron.
     const pickers = [
       screen.getByRole("button", { name: /Connect to a space/ }),
-      screen.getByTitle(/Dynamic page/),
+      screen.getByTestId("tome-page-kind"),
       screen.getByRole("button", { name: /Notifications/ }),
     ];
     for (const picker of pickers) {
@@ -1117,7 +1162,7 @@ describe("what the editor's toolbar looks like", () => {
 
     // The fill used to carry the kind. The label and the kind's own mark
     // carry it now, so it is still readable without opening anything.
-    const kind = screen.getByTitle(/Dynamic page/);
+    const kind = screen.getByTestId("tome-page-kind");
     expect(kind).toHaveTextContent("dynamic");
     expect(kind.querySelector("svg")).not.toBeNull();
   });

@@ -416,6 +416,17 @@ const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) =>
   [/^\/api\/tome\/myagent\/status$/, () => ({ connected: false })],
   [/^\/api\/tome\/token$/, () => ({ token: null })],
   [/^\/api\/tome\/webex-meeting-series$/, () => ({ candidates: [], complete: true, warnings: [] })],
+  // Feedback is taken and goes nowhere: there is no ticket provider behind a
+  // static export. The dialog shows what comes back here as the name of the
+  // ticket it filed, so that is where it has to say that nothing was.
+  [
+    /^\/api\/tickets\/(report|jira)$/,
+    (match) => ({
+      id: "Not filed — this prototype has no ticket provider",
+      url: "",
+      provider: match[1] === "jira" ? "jira" : "github",
+    }),
+  ],
   [/^\/api\/dynamic-agents\/teams$/, () => ({ teams: [] })],
   [/^\/api\/rooms$/, () => ({ rooms: [] })],
 ];

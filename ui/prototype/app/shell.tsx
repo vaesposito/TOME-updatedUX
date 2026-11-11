@@ -48,6 +48,12 @@ if (typeof window !== "undefined") {
     storageMode: "memory",
     tomeEnabled: true,
     workflowsEnabled: false,
+    // Feedback is offered here the way it is in a deployment that has a
+    // ticket provider configured. Both keys have to be named: the control
+    // asks for the two together, and a deployment derives the second from
+    // whichever provider it has, which a static export has none of.
+    reportProblemEnabled: true,
+    ticketEnabled: true,
     // The application reads this object instead of its own defaults rather
     // than on top of them, so anything left out here comes back undefined.
     // The appearance keys have to be named: the header's appearance hydrator

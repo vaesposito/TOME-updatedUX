@@ -379,20 +379,15 @@ export interface NotificationPreferences {
  * you want to start following is by definition not in your list yet.
  */
 export interface NotificationFollowTreeNode {
-  /**
-   * Unique within the tree. Entities use their own slug; a page uses
-   * `<entity-slug>#<page-path>`, since the same file name can exist under
-   * more than one project.
-   */
+  /** Unique within the tree, and the entity's own slug. */
   slug: string;
   title: string;
-  type: "bhag" | "area" | "project" | "page";
+  /** Following is a space-level idea: a single wiki page cannot be followed. */
+  type: "bhag" | "area" | "project";
   /** Absent for a root, or when the tier above is not readable. */
   parent_slug?: string;
   /** The entity a node belongs to. For an entity node, its own slug. */
   entity_slug: string;
-  /** Set on page nodes only — the wiki path being watched. */
-  page_path?: string;
   following: boolean;
   /** Notifications from this entity are suppressed, watched or not. */
   muted: boolean;

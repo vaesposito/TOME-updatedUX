@@ -21,10 +21,7 @@ import {
   resolveReadableHierarchy,
 } from "@/lib/tome/entity-hierarchy";
 import { resolveUniqueTomeProjectBySlug } from "@/lib/tome/project-resolver";
-import {
-  listSubjectWatchedEntities,
-  listSubjectWatchedPages,
-} from "@/lib/tome/watchers";
+import { listSubjectWatchedEntities } from "@/lib/tome/watchers";
 import {
   EMPTY_NOTIFICATION_FILTER,
   NEW_FOR_DAYS,
@@ -37,7 +34,6 @@ import {
   type InAppNotificationView,
   type NotificationEntityFacet,
   type NotificationFollowTree,
-  type NotificationFollowTreeNode,
   type NotificationInboxFacets,
   type NotificationInboxFilter,
   type NotificationInboxResponse,
@@ -503,11 +499,10 @@ export async function getNotificationFollowTree(
   principal: InboxPrincipal & { isAdmin?: boolean },
 ): Promise<NotificationFollowTree> {
   const { subject, email, isAdmin } = principal;
-  const [prefs, hierarchy, watched, watchedPages] = await Promise.all([
+  const [prefs, hierarchy, watched] = await Promise.all([
     getNotificationPreferences(email),
     resolveReadableHierarchy(subject, { isAdmin: isAdmin === true }),
     listSubjectWatchedEntities(subject),
-    listSubjectWatchedPages(subject),
   ]);
   if (hierarchy.length === 0) return { nodes: [], total_unread: 0 };
 
@@ -547,51 +542,18 @@ export async function getNotificationFollowTree(
     if (parent) subtotal.set(parent, (subtotal.get(parent) ?? 0) + total);
   }
 
-  // Watched pages hang off their entity as a fourth tier. They carry no
-  // counts of their own: notifications are raised against the entity, so a
-  // per-page number would always read zero and imply the page is quiet.
-  const readable = new Set(hierarchy.map((node) => node.slug));
-  const pageNodes: NotificationFollowTreeNode[] = watchedPages
-    .filter((page) => readable.has(page.entity_slug))
-    .map((page) => ({
-      slug: `${page.entity_slug}#${page.page_path}`,
-      // The folder part is already implied by where the row sits, so the
-      // title is the file name and the full path rides along for the tooltip.
-      title: page.page_path.split("/").pop() || page.page_path,
-      type: "page" as const,
-      parent_slug: page.entity_slug,
-      entity_slug: page.entity_slug,
-      page_path: page.page_path,
-      following: true,
-      muted: muted.has(page.entity_slug),
-      unread: 0,
-      subtree_unread: 0,
-    }));
-  const pagesByEntity = new Map<string, NotificationFollowTreeNode[]>();
-  for (const page of pageNodes) {
-    pagesByEntity.set(page.parent_slug as string, [
-      ...(pagesByEntity.get(page.parent_slug as string) ?? []),
-      page,
-    ]);
-  }
-
   return {
-    nodes: hierarchy.flatMap((node) => [
-      {
-        slug: node.slug,
-        title: node.title,
-        type: node.type,
-        ...(node.parent_slug ? { parent_slug: node.parent_slug } : {}),
-        entity_slug: node.slug,
-        following: following.has(node.slug),
-        muted: muted.has(node.slug),
-        unread: unreadBySlug.get(node.slug) ?? 0,
-        subtree_unread: subtotal.get(node.slug) ?? 0,
-      },
-      ...(pagesByEntity.get(node.slug) ?? []).sort((a, b) =>
-        a.title.localeCompare(b.title),
-      ),
-    ]),
+    nodes: hierarchy.map((node) => ({
+      slug: node.slug,
+      title: node.title,
+      type: node.type,
+      ...(node.parent_slug ? { parent_slug: node.parent_slug } : {}),
+      entity_slug: node.slug,
+      following: following.has(node.slug),
+      muted: muted.has(node.slug),
+      unread: unreadBySlug.get(node.slug) ?? 0,
+      subtree_unread: subtotal.get(node.slug) ?? 0,
+    })),
     total_unread: hierarchy
       .filter((node) => !node.parent_slug)
       .reduce((sum, node) => sum + (subtotal.get(node.slug) ?? 0), 0),

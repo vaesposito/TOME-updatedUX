@@ -335,50 +335,6 @@ export async function listSubjectWatchedEntities(
     }));
 }
 
-export interface WatchedPage {
-  entity_slug: string;
-  entity_title: string;
-  page_path: string;
-  created_at: string;
-}
-
-/**
- * The wiki pages a subject watches individually.
- *
- * Unlike entities, pages are not enumerated for browsing — a wiki can hold
- * hundreds, and a checkbox tree of all of them would be unusable. The
- * Following tree therefore lists the pages someone has actually subscribed
- * to, and new ones are added from the page itself.
- */
-export async function listSubjectWatchedPages(
-  subject: string,
-): Promise<WatchedPage[]> {
-  if (!subject) return [];
-  const rows = await (await watchers())
-    .find({ subject, page_path: { $exists: true } })
-    .sort({ created_at: -1 })
-    .toArray();
-  if (rows.length === 0) return [];
-
-  const projects = await getCollection<{ slug: string; title?: string }>("projects");
-  const named = await projects
-    .find({ slug: { $in: [...new Set(rows.map((row) => row.entity_slug))] } })
-    .project<{ slug: string; title?: string }>({ slug: 1, title: 1 })
-    .toArray();
-  const titleBySlug = new Map(named.map((row) => [row.slug, row.title]));
-
-  // A page whose entity has since been deleted is dropped rather than shown
-  // hanging off a slug with no home in the tree.
-  return rows
-    .filter((row) => row.page_path && titleBySlug.has(row.entity_slug))
-    .map((row) => ({
-      entity_slug: row.entity_slug,
-      entity_title: titleBySlug.get(row.entity_slug) || row.entity_slug,
-      page_path: row.page_path as string,
-      created_at: row.created_at,
-    }));
-}
-
 /**
  * Changed-field prefixes mapped to what a watcher sees, most specific first.
  * A single edit can touch several fields; the first match wins so the

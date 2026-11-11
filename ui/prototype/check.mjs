@@ -193,6 +193,46 @@ if (!only) {
     );
   }
 
+  // A browser that was here before dark was the default.
+  //
+  // The application stores a theme on sight rather than only when someone
+  // switches, so everyone who opened the prototype while it still started in
+  // light is carrying "light" or "system" and a stored choice wins. Changing
+  // the default has to reach them once — and must not reach someone who
+  // picked light after being shown dark, whose choice is their own.
+  for (const [label, stored, mark, expected] of [
+    ["was here before dark, stored light", "light", null, "dark"],
+    ["was here before dark, stored system", "system", null, "dark"],
+    ["chose light after being shown dark", "light", "dark", "light"],
+  ]) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await context.addInitScript(
+      ([theme, defaultMark]) => {
+        try {
+          localStorage.setItem("theme", theme);
+          if (defaultMark) {
+            localStorage.setItem("tome.prototype.theme-default", defaultMark);
+          }
+        } catch {
+          // a browser refusing storage has nothing stored to carry over
+        }
+      },
+      [stored, mark],
+    );
+    const visitor = await context.newPage();
+    await watchFirstPaint(visitor);
+    await visitor.goto(`${origin}${BASE}/projects/`, { waitUntil: "networkidle" });
+    await visitor.waitForTimeout(700);
+    const seen = await themeOf(visitor);
+    console.log(
+      `\n=== ${label}\n` +
+        `   when the document finished parsing: ${seen.atParse}\n` +
+        `   once settled: ${seen.theme}, now storing ${seen.stored}` +
+        `${seen.theme === expected ? "" : `   ! expected ${expected}`}`,
+    );
+    await context.close();
+  }
+
   // Dark is a starting point, not a lock: switching has to work, and has to
   // hold on the next page the visitor opens.
   await first.goto(`${origin}${BASE}/settings/appearance/`, { waitUntil: "networkidle" });

@@ -16,3 +16,16 @@
  * holds for the rest of the visit.
  */
 export const PROTOTYPE_THEME = "dark";
+
+/**
+ * Where the browser records which default it has already been told about.
+ *
+ * A stored choice wins over the default, and the application stores one on
+ * sight rather than only when someone switches — so anybody who opened the
+ * prototype while it still started in light is carrying "light" or "system"
+ * and would keep it for good, no matter what the default became. Comparing
+ * the default they were last shown against the current one lets a change of
+ * default reach them once, while leaving a switch they made afterwards
+ * alone.
+ */
+export const PROTOTYPE_THEME_DEFAULT_KEY = "tome.prototype.theme-default";

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
-import { PROTOTYPE_THEME } from "~/mock/theme";
+import { PROTOTYPE_THEME, PROTOTYPE_THEME_DEFAULT_KEY } from "~/mock/theme";
 import { PrototypeShell } from "./shell";
 import "./globals.css";
 
@@ -35,7 +35,10 @@ export const metadata: Metadata = {
  *
  * It writes the two attributes `ThemeProvider` reads, and the provider's own
  * effect stands down when it finds `data-theme-preference` already set. A
- * stored choice wins, so a visitor who switches to light stays in light.
+ * stored choice wins, so a visitor who switches to light stays in light —
+ * except on the first visit after the default itself changes, which reaches
+ * the people who were here while the prototype still opened in light and
+ * have been carrying that ever since.
  *
  * Written as a plain tag rather than through `next/script`: that component's
  * "beforeInteractive" hands the code to the framework to run once its own
@@ -43,9 +46,17 @@ export const metadata: Metadata = {
  * enough to be the flash this is here to prevent. An inline tag in the head
  * runs while the document is still being parsed.
  */
-const themeScript = `(function(){try{var preference=localStorage.getItem("theme")||${JSON.stringify(
-  PROTOTYPE_THEME,
-).replace(/</g, "\\u003c")};var theme=preference;if(theme==="system"){theme=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme-preference",preference);document.documentElement.setAttribute("data-theme",theme);document.documentElement.style.removeProperty("color-scheme");}catch(_error){}})();`;
+const themeScript = `(function(){try{
+var fallback=${JSON.stringify(PROTOTYPE_THEME).replace(/</g, "\\u003c")};
+var mark=${JSON.stringify(PROTOTYPE_THEME_DEFAULT_KEY).replace(/</g, "\\u003c")};
+if(localStorage.getItem(mark)!==fallback){localStorage.setItem(mark,fallback);localStorage.removeItem("theme");}
+var preference=localStorage.getItem("theme")||fallback;
+var theme=preference;
+if(theme==="system"){theme=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+document.documentElement.setAttribute("data-theme-preference",preference);
+document.documentElement.setAttribute("data-theme",theme);
+document.documentElement.style.removeProperty("color-scheme");
+}catch(_error){}})();`;
 
 export default function RootLayout({
   children,

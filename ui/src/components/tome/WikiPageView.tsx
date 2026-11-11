@@ -72,7 +72,6 @@ import {
 } from "@/lib/tome/page-provenance";
 import { pageDisplayName } from "@/lib/tome/page-names";
 import { PageToolbarSelect } from "@/components/tome/PageToolbarSelect";
-import { WatchToggle } from "@/components/tome/WatchToggle";
 import { ViewOnlyTooltip } from "@/components/tome/ViewOnlyTooltip";
 import { WikiExportMenu } from "@/components/tome/WikiExportMenu";
 import {
@@ -1089,9 +1088,6 @@ export function WikiPageView({
           )}
           {!isEditing && (
             <>
-              {/* Watching one page, rather than the whole space, for people
-                  who care about a single document. */}
-              <WatchToggle slug={slug} pagePath={path} className="h-7 text-xs" />
               <WikiExportMenu
                 slug={slug}
                 path={path}

@@ -13,7 +13,14 @@
  * reload, which is the honest thing for a prototype to do.
  */
 
-import { buildTree } from "@/lib/tome/schema";
+import { pageDisplayName } from "@/lib/tome/page-names";
+import {
+  buildTree,
+  FM_TITLE,
+  parseFrontmatter,
+  SPEC_BY_PATH,
+} from "@/lib/tome/schema";
+import { pageSpaceTags } from "@/lib/tome/space-tags";
 
 import {
   childrenOf,
@@ -47,11 +54,47 @@ const session = {
   folders: new Map<string, SessionFolder[]>(),
   following: new Set<string>(FOLLOWED),
   read: new Set<string>(),
+  /** When a page was last written here, keyed `slug:path`. */
+  written: new Map<string, string>(),
 };
 
 function pages(slug: string): Record<string, string> {
   if (!session.pages.has(slug)) session.pages.set(slug, { ...pagesFor(slug) });
   return session.pages.get(slug) as Record<string, string>;
+}
+
+/**
+ * When a page was last edited.
+ *
+ * A page nobody has touched this visit falls back to its space's own last
+ * edit, which is the only date the fixtures carry; a page written here takes
+ * the time of the write, so it sorts above the rest wherever a surface lists
+ * pages newest first.
+ */
+function editedAt(slug: string, path: string): string {
+  return (
+    session.written.get(`${slug}:${path}`) ??
+    spaceBySlug(slug)?.last_edited_at ??
+    new Date(0).toISOString()
+  );
+}
+
+/**
+ * One page, in the shape the read and write routes both report it.
+ *
+ * Derived from the markdown with the application's own frontmatter parser and
+ * page specs, so the title and kind the editor reads are the ones the server
+ * would have given it.
+ */
+function pageResponse(path: string, markdown: string): Json {
+  const [fm] = parseFrontmatter(markdown);
+  const spec = SPEC_BY_PATH.get(path);
+  return {
+    path,
+    markdown,
+    title: String(fm.title ?? spec?.title ?? path),
+    kind: typeof fm.kind === "string" ? fm.kind : spec?.kind ?? "stable",
+  };
 }
 
 /** A folder as the store keeps it, before the tree is derived from it. */
@@ -91,6 +134,49 @@ function wiki(slug: string) {
     placements: {},
     canEdit: true,
   };
+}
+
+/** The page's own name, as a related-content row reads it. */
+function taggedTitle(path: string, markdown: string): string {
+  const [fm] = parseFrontmatter(markdown);
+  return String(fm[FM_TITLE] ?? "").trim() || pageDisplayName(path);
+}
+
+/**
+ * The pages that tag a space, newest first.
+ *
+ * Derived from the session's pages rather than kept as a list of its own,
+ * because that is where the tag lives: in the frontmatter of the page making
+ * the claim, in whatever space that page sits in. Deriving it is what makes a
+ * connection a reader adds during a visit show up at the other end of it,
+ * the same way the real index does on every page write.
+ *
+ * A space's own pages are left out, as `pagesTaggingSpace` leaves them out:
+ * they are already in front of the reader in its tree, and related content
+ * promises what is elsewhere.
+ */
+function taggedContent(slug: string): Json[] {
+  const items: Json[] = [];
+  for (const space of SPACES) {
+    if (space.slug === slug) continue;
+    for (const [path, markdown] of Object.entries(pages(space.slug))) {
+      const count = pageSpaceTags(markdown).bySlug[slug];
+      if (!count) continue;
+      items.push({
+        space_slug: space.slug,
+        space_title: space.title,
+        path,
+        title: taggedTitle(path, markdown),
+        whole_page: count.page,
+        passages: count.passages,
+        updated_at: editedAt(space.slug, path),
+      });
+    }
+  }
+  return items.sort((left, right) =>
+    String(right.updated_at).localeCompare(String(left.updated_at)) ||
+    String(left.path).localeCompare(String(right.path)),
+  );
 }
 
 /** A space, shaped the way the child and overview routes report one. */
@@ -135,8 +221,25 @@ function projects(url: URL) {
   return { projects: found };
 }
 
+/**
+ * Turn a request down the way the real API turns one down.
+ *
+ * Only reachable from a request the application does not make, which is
+ * exactly when a prototype should say so rather than report success: a write
+ * accepted and dropped is the one failure a reader cannot see.
+ */
+function refuse(error: string, code = "BAD_REQUEST", status = 400): Response {
+  return new Response(JSON.stringify({ success: false, error, code }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 /** Everything the prototype knows how to answer, in the order it is tried. */
-const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) => Json | null][] = [
+const ROUTES: [
+  RegExp,
+  (match: RegExpMatchArray, url: URL, init: RequestInit) => Json | Response | null,
+][] = [
   // The shell: who is signed in, and what this deployment calls itself.
   [/^\/api\/auth\/session$/, () => null],
   [/^\/api\/users\/me$/, () => ({ user: USER })],
@@ -243,14 +346,24 @@ const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) =>
       const own = pages(slug);
       if (init.method === "PUT" || init.method === "POST") {
         const body = init.body ? (JSON.parse(String(init.body)) as Json) : {};
-        if (typeof body.content === "string") own[path] = body.content;
-        return { slug, path, saved: true };
+        // `markdown` is the only key the real route accepts, and the editor
+        // is the only thing that writes here. Taking anything else would let
+        // a save the application cannot make look as though it had worked.
+        if (typeof body.markdown !== "string") {
+          return refuse("`markdown` (string) is required");
+        }
+        own[path] = body.markdown;
+        session.written.set(`${slug}:${path}`, new Date().toISOString());
+        // Nobody is told: a static prototype has no one to notify, and the
+        // editor reads this to decide whether to say that anyone was.
+        return { ...pageResponse(path, body.markdown), notify: null };
       }
       if (init.method === "DELETE") {
         delete own[path];
-        return { slug, path, deleted: true };
+        session.written.delete(`${slug}:${path}`);
+        return { deleted: true, path };
       }
-      return { slug, path, content: own[path] ?? "", canEdit: true };
+      return pageResponse(path, own[path] ?? "");
     },
   ],
   [
@@ -272,6 +385,10 @@ const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) =>
       }
       return { folders: folders(slug) };
     },
+  ],
+  [
+    /^\/api\/tome\/projects\/([^/]+)\/tagged-content$/,
+    (match) => ({ items: taggedContent(decodeURIComponent(match[1])) }),
   ],
   [/^\/api\/tome\/projects\/([^/]+)\/history\/(.+)$/, () => ({ revisions: [] })],
   [/^\/api\/tome\/projects\/([^/]+)\/revisions\/(.+)$/, () => ({ revisions: [] })],
@@ -362,13 +479,15 @@ const ROUTES: [RegExp, (match: RegExpMatchArray, url: URL, init: RequestInit) =>
   [/^\/api\/tome\/myagent\/status$/, () => ({ connected: false })],
   [/^\/api\/tome\/token$/, () => ({ token: null })],
   [/^\/api\/tome\/webex-meeting-series$/, () => ({ candidates: [], complete: true, warnings: [] })],
-  // Feedback is taken and goes nowhere: there is no ticket provider behind a
-  // static export. The dialog shows what comes back here as the name of the
-  // ticket it filed, so that is where it has to say that nothing was.
+  // Feedback is taken and goes no further: there is no ticket provider behind
+  // a static export. The dialog heads the screen "Ticket Created" and shows
+  // what comes back here as the ticket's name, so the name says where the
+  // ticket is rather than denying the heading — which is as close to honest as
+  // this gets without editing the application's own copy.
   [
     /^\/api\/tickets\/(report|jira)$/,
     (match) => ({
-      id: "Not filed — this prototype has no ticket provider",
+      id: "Kept in this prototype",
       url: "",
       provider: match[1] === "jira" ? "jira" : "github",
     }),
@@ -425,7 +544,8 @@ export function installMockApi(): void {
     for (const [pattern, answer] of ROUTES) {
       const match = url.pathname.match(pattern);
       if (!match) continue;
-      return reply(answer(match, url, { ...init, method }));
+      const answered = answer(match, url, { ...init, method });
+      return answered instanceof Response ? answered : reply(answered);
     }
 
     // A stream the prototype cannot produce is better closed than left open.

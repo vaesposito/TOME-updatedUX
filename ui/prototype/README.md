@@ -17,13 +17,21 @@ a screen with no data shows its own empty state rather than an error.
 
 Writes are accepted and kept in memory for the visit: following a space,
 editing a page, creating a folder and marking a notification read all behave
-as they do in the application, and all of it is gone on reload.
+as they do in the application, and all of it is gone on reload. A page created
+during a visit is the one thing a reload does not merely forget: its address
+was never exported as a file, so asking for it again reaches the host's own
+404 rather than the application.
 
 The fixtures are one small invented organisation — a goal, two areas, five
 projects under them, and six subjects on the function axis — with every name
 made up and every address on `example.com`. The notification rows, the
 digests on each Home and the follow tree are all derived
 from one list of events, so the counts agree with the rows.
+
+One page carries a `tagged_spaces` connection to another space, so related
+content is not empty before anyone has touched anything. It is derived from
+the session's pages rather than listed, so a connection a reader makes while
+editing shows up at the other end of it too.
 
 ## Running it
 

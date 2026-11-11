@@ -395,10 +395,14 @@ A pipeline copied into forty repositories is forty pipelines. One definition
 with declared inputs is a single thing to reason about, and the only cost is
 that a service cannot quietly diverge — which is the point.
 `,
+    // `tagged_spaces` is how the product stores a whole-page tag, and a tag is
+    // the only thing that relates two spaces: this page is what the
+    // release-notes space shows as related content, and what its agent reads.
     "roadmap.md": `---
 title: Roadmap
 kind: stable
 order: -4
+tagged_spaces: [release-notes]
 updated_by: avery.quinn@example.com
 ---
 

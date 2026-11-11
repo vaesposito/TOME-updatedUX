@@ -385,14 +385,14 @@ describe("an anchor that is in the document more than once", () => {
   it("rings the copy the reader can see", async () => {
     // The same control in two places — a project's header and its settings,
     // say — where the one that comes first is the one off screen.
-    plant("hub-search", { top: -400, left: 0, width: 120, height: 32 });
-    plant("hub-search", { top: 220, left: 48, width: 224, height: 32 });
+    plant("hub-tab-projects", { top: -400, left: 0, width: 120, height: 32 });
+    plant("hub-tab-projects", { top: 220, left: 48, width: 224, height: 32 });
 
     window.sessionStorage.setItem(
       TOUR_STATE_KEY,
       JSON.stringify({
         tour: "general",
-        index: stepPointingAt("hub-search"),
+        index: stepPointingAt("hub-tab-projects"),
         subject: null,
       }),
     );
@@ -418,7 +418,7 @@ describe("the scroll a step makes to reach its anchor", () => {
         return 0;
       });
     const box = { top: 900, left: 48, width: 224, height: 32 };
-    plant("hub-search", box);
+    plant("hub-tab-projects", box);
     scrolledBy.mockImplementation(() => {
       box.top = 300;
     });
@@ -427,7 +427,7 @@ describe("the scroll a step makes to reach its anchor", () => {
       TOUR_STATE_KEY,
       JSON.stringify({
         tour: "general",
-        index: stepPointingAt("hub-search"),
+        index: stepPointingAt("hub-tab-projects"),
         subject: null,
       }),
     );
@@ -467,14 +467,14 @@ describe("the scroll a step makes to reach its anchor", () => {
     // window, which makes it scrollable to a script and immovable to a
     // wheel. A step that scrolled it left the whole product sitting under
     // its own header with no way for the reader to put it back.
-    const field = plant("hub-search", {
+    const control = plant("hub-tab-projects", {
       top: 900,
       left: 48,
       width: 224,
       height: 32,
     });
     const inner = wrap(
-      field,
+      control,
       "auto",
       { top: 100, left: 0, width: 1024, height: 600 },
       2000,
@@ -490,7 +490,7 @@ describe("the scroll a step makes to reach its anchor", () => {
       TOUR_STATE_KEY,
       JSON.stringify({
         tour: "general",
-        index: stepPointingAt("hub-search"),
+        index: stepPointingAt("hub-tab-projects"),
         subject: null,
       }),
     );
@@ -508,13 +508,13 @@ describe("the scroll a step makes to reach its anchor", () => {
   });
 
   it("is not made at all for a control already in front of the reader", async () => {
-    plant("hub-search", { top: 220, left: 48, width: 224, height: 32 });
+    plant("hub-tab-projects", { top: 220, left: 48, width: 224, height: 32 });
 
     window.sessionStorage.setItem(
       TOUR_STATE_KEY,
       JSON.stringify({
         tour: "general",
-        index: stepPointingAt("hub-search"),
+        index: stepPointingAt("hub-tab-projects"),
         subject: null,
       }),
     );
@@ -1170,14 +1170,15 @@ describe("a card for a control that never moves", () => {
   it("is placed on arrival rather than at the first thing that stirs", async () => {
     // The card is positioned from a measurement taken once the popover has
     // rendered. Taking it before meant the card stayed hidden until the
-    // ring happened to move, which on a static control is never.
-    plant("hub-search", { top: 220, left: 48, width: 224, height: 32 });
+    // ring happened to move, which on a static control is never — a tab
+    // sitting in the catalogue's own header being exactly that.
+    plant("hub-tab-projects", { top: 220, left: 48, width: 224, height: 32 });
 
     window.sessionStorage.setItem(
       TOUR_STATE_KEY,
       JSON.stringify({
         tour: "general",
-        index: stepPointingAt("hub-search"),
+        index: stepPointingAt("hub-tab-projects"),
         subject: null,
       }),
     );

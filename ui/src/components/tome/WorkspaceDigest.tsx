@@ -96,10 +96,14 @@ export function WorkspaceDigest() {
     <div className="mx-auto max-w-[68ch] space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold tracking-tight">Digest</h2>
+        {/* What the walkthrough rings when it says the digest is configured:
+            the control, rather than the prose below it, which is a page tall
+            and would leave the ring bigger than the window. */}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5"
+          data-tour="hub-digest-configure"
           onClick={() => setConfiguring(true)}
         >
           <Settings2 className="h-3.5 w-3.5" />

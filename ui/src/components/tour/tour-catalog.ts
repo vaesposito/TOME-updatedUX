@@ -20,7 +20,7 @@ export const TOURS: readonly Tour[] = [
   {
     id: "general",
     name: "Getting around",
-    blurb: "The catalogue, both ways of reading it, and what a project holds.",
+    blurb: "How little there is, both ways of reading it, and what a space holds.",
     steps: GENERAL_TOUR,
   },
   {

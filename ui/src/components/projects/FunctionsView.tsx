@@ -142,11 +142,17 @@ export function FunctionsView({
 
         {/* One offer, where the catalogue makes its one offer. Where the new
             subject goes is asked by the flow, as it has to be once the
-            button no longer hangs off the row that would have said. */}
+            button no longer hangs off the row that would have said.
+
+            The walkthrough's step about what a subject is points here: it is
+            the one control on this axis that names the thing, and the only
+            part of the view that is there whether or not the deployment has
+            any subjects yet. */}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5"
+          data-tour="hub-add-subject"
           onClick={() => setCreating(true)}
         >
           <Plus className="h-3.5 w-3.5" />

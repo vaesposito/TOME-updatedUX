@@ -11,9 +11,11 @@
 
 import { render, screen } from "@testing-library/react";
 
+import { FunctionsView } from "@/components/projects/FunctionsView";
 import { HubTabs } from "@/components/projects/HubTabs";
 import { PageSpaceTags } from "@/components/tome/PageSpaceTags";
 import { WebexMeetingSeriesSettings } from "@/components/tome/WebexMeetingSeriesSettings";
+import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 
 /** The element a step with this anchor would be measured against. */
 const anchored = (id: string) => document.querySelector(`[data-tour="${id}"]`);
@@ -23,6 +25,41 @@ describe("the catalogue's tabs", () => {
     render(<HubTabs value="projects" onChange={jest.fn()} />);
 
     expect(anchored("hub-tabs")).toBe(screen.getByRole("tablist"));
+  });
+
+  it("each carry their own anchor, so a step can ring one of them", () => {
+    render(<HubTabs value="projects" onChange={jest.fn()} />);
+
+    expect(anchored("hub-tab-projects")).toBe(
+      screen.getByRole("tab", { name: /By project/ }),
+    );
+  });
+});
+
+describe("what a subject is", () => {
+  it("is anchored on the control that names one, not on the axis", () => {
+    // The function axis has no tab of its own for a subject: the step about
+    // what one is points at the only control that says the word, which is
+    // also the only part of the view a deployment with no subjects still has.
+    render(<FunctionsView subjects={[]} />);
+
+    expect(anchored("hub-add-subject")).toBe(
+      screen.getByRole("button", { name: /Add subject/ }),
+    );
+  });
+});
+
+describe("the digest", () => {
+  it("is anchored on what configures it, not on the prose it writes", () => {
+    render(<WorkspaceDigest />);
+
+    const control = screen.getByRole("button", { name: /Configure digest/ });
+    expect(anchored("hub-digest-configure")).toBe(control);
+    // The digest itself is a page tall, and a ring drawn round it would be
+    // bigger than the window.
+    expect(anchored("hub-digest-configure")).not.toContainElement(
+      screen.getByRole("heading", { name: "Digest" }),
+    );
   });
 });
 

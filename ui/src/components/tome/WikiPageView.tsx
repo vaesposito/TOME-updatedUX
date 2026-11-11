@@ -997,8 +997,18 @@ export function WikiPageView({
             )}
           </div>
         </div>
+        {/* Editing adds the space picker, the notify menu and the three
+            buttons that end the edit to a row that already carries the
+            page's name, so on one line the name was cut to a couple of
+            characters and the draft's own status with it. Taking the whole
+            width drops this onto a second line: what the page is reads
+            across the first, what you can do to it sits under it, and Save
+            stays where the eye last left it at the right-hand end. */}
         <div
-          className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2"
+          className={cn(
+            "ml-auto flex max-w-full flex-wrap items-center justify-end gap-2",
+            isEditing && "w-full",
+          )}
           data-testid="tome-page-actions"
         >
           {/* Only the positive case is worth a chip: which template seeded

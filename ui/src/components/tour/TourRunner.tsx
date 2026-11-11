@@ -351,6 +351,56 @@ function clearOf(ring: Rect): Rect {
   return { top, left, width: right - left, height: bottom - top };
 }
 
+/** The card's own width, which `w-80` fixes. */
+const CARD_WIDTH = 320;
+
+/**
+ * Room the card needs beyond its own size.
+ *
+ * The gap the popover leaves between card and anchor plus the margin it
+ * keeps from the window's edge. Below this the popover's own clamp pulls the
+ * card back inside the window — which, for a card asked to sit under a box
+ * taller than the room beneath it, means back on top of that box.
+ */
+const CARD_MARGIN = 16;
+
+/**
+ * The height assumed for a card that has never been drawn.
+ *
+ * Only the first card of a session is placed from this: from then on the
+ * real one is on the screen and is measured. Set to the tallest a card gets
+ * at this width, so the one unmeasured placement errs towards standing aside
+ * rather than towards landing on the panel the step opened.
+ */
+const CARD_HEIGHT_GUESS = 260;
+
+/**
+ * Which side of `hang` the card can sit on without covering it.
+ *
+ * Bottom is preferred, because that is where a reader looks for it and the
+ * only side whose slide-in reads as the card belonging to the control above
+ * it. Beside it when there is no room below — the bell is twelve pixels from
+ * the top of the window, so there is never room above either. Null when
+ * nothing clears it, which is the signal to put the card in the middle
+ * instead: a box that is wide as well as tall leaves the card no side at
+ * all, and overlapping is worse than being unanchored.
+ */
+function sideClearing(
+  hang: Rect,
+  cardHeight: number,
+): "bottom" | "left" | "right" | null {
+  if (window.innerHeight - (hang.top + hang.height) >= cardHeight + CARD_MARGIN) {
+    return "bottom";
+  }
+  // Measured against the window's edges, because the popover clamps the card
+  // inside them: a card placed to the left of a box only a card's width from
+  // the edge is clamped straight back over it.
+  const toTheLeft = hang.left;
+  const toTheRight = window.innerWidth - (hang.left + hang.width);
+  if (Math.max(toTheLeft, toTheRight) < CARD_WIDTH + CARD_MARGIN) return null;
+  return toTheLeft >= toTheRight ? "left" : "right";
+}
+
 function measure(anchor: TourAnchor): Rect | null {
   const node = anchorNode(anchor);
   if (!node) return null;
@@ -630,6 +680,9 @@ export function TourRunner() {
   const [waiting, setWaiting] = React.useState(false);
   /** Set once a step has had long enough to find an anchor. See GRACE_MS. */
   const [graceOver, setGraceOver] = React.useState(false);
+  /** The card as drawn, so the side it goes on is chosen from its own height. */
+  const cardRef = React.useRef<HTMLDivElement>(null);
+  const [cardHeight, setCardHeight] = React.useState(0);
 
   /** The tour being walked, and the step within it. */
   const tour = findTour(state?.tour);
@@ -873,6 +926,20 @@ export function TourRunner() {
     return () => window.clearTimeout(timer);
   }, [pathname, step]);
 
+  // Measure the card, for the choice of which side of the anchor it goes on.
+  // In a layout effect rather than from the poll: React flushes what this
+  // sets before the browser paints, so the popover is asked for the right
+  // side in the same breath it is first placed, and a card that has to stand
+  // aside is never seen sitting on what it was meant to clear.
+  //
+  // Re-read whenever the card could have changed size: a step of its own,
+  // the hint in place of the body, or the anchor moving — which is also how
+  // the first card of a session gets measured at all.
+  React.useLayoutEffect(() => {
+    const measured = cardRef.current?.getBoundingClientRect().height ?? 0;
+    if (measured > 0 && measured !== cardHeight) setCardHeight(measured);
+  }, [cardHeight, rect, state?.index, state?.tour, waiting]);
+
   // Bring the anchor into view when it first turns up, not on a timer: on a
   // page that was still loading the timer fired at nothing and never tried
   // again. Once per step, because scrolling someone's page under them while
@@ -1053,6 +1120,7 @@ export function TourRunner() {
 
   const card = (
     <div
+      ref={cardRef}
       role="dialog"
       aria-label={`${tour?.name ?? "TOME"} walkthrough`}
       data-tour-card=""
@@ -1146,34 +1214,75 @@ export function TourRunner() {
   // Still looking, with nowhere yet to have been. Lasts one poll at most.
   if (!rect) return null;
   const hang = avoid ?? rect;
+  /**
+   * Which side of the box the card goes on.
+   *
+   * Asked only of a step that opened something, because only there is the
+   * box bigger than the ring. Everywhere else the popover is hanging from
+   * the control itself, and its own choice between below and above is made
+   * from the same box the card has to clear — so there is nothing here to
+   * improve on, and moving those cards sideways would be a change to every
+   * step in every tour for the sake of one.
+   */
+  const side = step.opens?.length
+    ? sideClearing(hang, cardHeight || CARD_HEIGHT_GUESS)
+    : "bottom";
+
+  /* The highlight. Fixed to the element's own box, and transparent to the
+     pointer so the control underneath still works. The very wide shadow is
+     what dims the rest of the window.
+
+     Position changes are not animated: between pages the two boxes have
+     nothing to do with each other, and a ring sliding across the window to a
+     control on a different page read as a glitch. */
+  const spotlight = (
+    <span
+      aria-hidden="true"
+      data-testid="tour-spotlight"
+      style={{
+        position: "fixed",
+        top: rect.top - 4,
+        left: rect.left - 4,
+        width: rect.width + 8,
+        height: rect.height + 8,
+        opacity: dimmed ? 0 : 1,
+        pointerEvents: "none",
+        boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.6)",
+      }}
+      className={cn(
+        "z-[55] rounded-lg ring-2 ring-primary",
+        !dimmed && "transition-opacity duration-200",
+      )}
+    />
+  );
+
+  // Nothing clears what this step opened. The control is still ringed, and
+  // the card is put where an unanchored step's goes rather than over the
+  // panel the step exists to explain. No backdrop of its own: the ring is
+  // still there, and its shadow is already dimming the page.
+  if (side === null) {
+    return (
+      <>
+        {spotlight}
+        <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className={cn(
+              "rounded-lg border border-border bg-popover text-popover-foreground shadow-lg",
+              dimmed
+                ? "pointer-events-none opacity-0"
+                : "pointer-events-auto opacity-100 transition-opacity duration-200",
+            )}
+          >
+            {card}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <Popover open onOpenChange={() => {}} className="fixed left-0 top-0 h-0 w-0">
-      {/* The highlight. Fixed to the element's own box, and transparent to
-          the pointer so the control underneath still works. The very wide
-          shadow is what dims the rest of the window.
-
-          Position changes are not animated: between pages the two boxes
-          have nothing to do with each other, and a ring sliding across the
-          window to a control on a different page read as a glitch. */}
-      <span
-        aria-hidden="true"
-        data-testid="tour-spotlight"
-        style={{
-          position: "fixed",
-          top: rect.top - 4,
-          left: rect.left - 4,
-          width: rect.width + 8,
-          height: rect.height + 8,
-          opacity: dimmed ? 0 : 1,
-          pointerEvents: "none",
-          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.6)",
-        }}
-        className={cn(
-          "z-[55] rounded-lg ring-2 ring-primary",
-          !dimmed && "transition-opacity duration-200",
-        )}
-      />
+      {spotlight}
       <PopoverTrigger asChild>
         {/* What the card hangs from, which is the ring plus anything the
             step opened. A separate node from the ring because the two want
@@ -1193,7 +1302,7 @@ export function TourRunner() {
         />
       </PopoverTrigger>
       <PopoverContent
-        side="bottom"
+        side={side}
         align="start"
         className={cn(
           "p-0",

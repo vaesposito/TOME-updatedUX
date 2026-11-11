@@ -698,6 +698,98 @@ describe("a step whose subject is behind a button", () => {
   });
 });
 
+/**
+ * Where the card goes when the box it must clear fills the window.
+ *
+ * Handing the card a box to clear is not enough on its own: the card asked
+ * for the side below it, and the popover's clamp — which keeps every menu in
+ * the product inside the window — slid it back up over the list the step was
+ * explaining. The bell is twelve pixels from the top, so there is no room
+ * above either; the card has to go beside it, or nowhere.
+ *
+ * Asserted on the slide-in, which is the one thing the chosen side shows in
+ * jsdom: nothing here has a width, so the coordinates the popover works out
+ * are all zero.
+ */
+describe("a card whose step opened something tall", () => {
+  /** The window the real measurements were taken in. */
+  const sized = (width: number, height: number) => {
+    for (const [name, value] of [
+      ["innerWidth", width],
+      ["innerHeight", height],
+    ] as const) {
+      Object.defineProperty(window, name, { configurable: true, value });
+    }
+  };
+
+  // jsdom's own, so the rest of the file measures what it was written for.
+  afterEach(() => sized(1024, 768));
+
+  /** The bell as the header draws it, with the list it drops below itself. */
+  function bellOpening(panel: Box): HTMLElement {
+    const button = plant(
+      "notifications-bell",
+      { top: 12, left: 1240, width: 32, height: 32 },
+      "button",
+    );
+    button.addEventListener("click", () => {
+      const list = size(document.createElement("div"), panel);
+      list.setAttribute("data-popover-content", "");
+      document.body.append(list);
+      planted.push(list);
+    });
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({ tour: "notifications", index: 0, subject: null }),
+    );
+    return button;
+  }
+
+  /** What the popover was told, read back off the card's own animation. */
+  const slideOf = async () => {
+    const dialog = await screen.findByRole("dialog");
+    const panel = dialog.closest("[data-popover-content]");
+    return panel?.className ?? "unanchored";
+  };
+
+  it("goes beside it when the window is too short to go below", async () => {
+    sized(1280, 720);
+    bellOpening({ top: 48, left: 880, width: 360, height: 400 });
+
+    render(<TourRunner />);
+
+    // From the right, which is a card that was placed on the left.
+    await waitFor(async () =>
+      expect(await slideOf()).toContain("slide-in-from-right-2"),
+    );
+  });
+
+  it("stays below it when there is room below", async () => {
+    sized(1440, 900);
+    bellOpening({ top: 48, left: 1080, width: 360, height: 400 });
+
+    render(<TourRunner />);
+
+    await waitFor(async () =>
+      expect(await slideOf()).toContain("slide-in-from-top-2"),
+    );
+  });
+
+  it("is put in the middle when nothing clears it", async () => {
+    // Wide as well as tall: no room below, and none to either side either.
+    // Overlapping the thing being explained is the one answer worse than
+    // being unanchored, so the card goes where an unanchored step's goes.
+    sized(1280, 720);
+    bellOpening({ top: 48, left: 40, width: 1200, height: 600 });
+
+    render(<TourRunner />);
+
+    await waitFor(async () => expect(await slideOf()).toBe("unanchored"));
+    // And the control is still ringed: only the card moved.
+    expect(screen.getByTestId("tour-spotlight")).toBeInTheDocument();
+  });
+});
+
 describe("a step that opens the editor", () => {
   /** The notifications step about who hears, which opens Edit and the menu. */
   const NOTIFY = 3;

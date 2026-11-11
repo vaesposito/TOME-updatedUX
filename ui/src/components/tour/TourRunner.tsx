@@ -549,6 +549,15 @@ interface Saved {
    * did nothing for as long as it took.
    */
   subject: TourSubject | null;
+  /**
+   * The step being reached for, if the reader asked for one and it has not
+   * been shown yet.
+   *
+   * Saved because reaching a step can mean a fresh page load — see the effect
+   * that writes this — and a request lost in that moment reads as a Next that
+   * did nothing.
+   */
+  pending?: number | null;
 }
 
 function readSaved(): Saved | null {
@@ -560,7 +569,12 @@ function readSaved(): Saved | null {
     const tour = findTour(parsed.tour);
     if (!tour) return null;
     if (parsed.index < 0 || parsed.index >= tour.steps.length) return null;
-    return parsed;
+    const asked = parsed.pending;
+    const wanted =
+      typeof asked === "number" && asked >= 0 && asked < tour.steps.length
+        ? asked
+        : null;
+    return { ...parsed, pending: wanted };
   } catch {
     // Storage can be unavailable or hold something stale; either way the
     // tour simply is not running.
@@ -616,7 +630,12 @@ export function TourRunner() {
 
   // Resume after a navigation, and listen for a request to start one.
   React.useEffect(() => {
-    setState(readSaved());
+    const saved = readSaved();
+    setState(saved);
+    // The step that was being reached for is picked up again, so a Next that
+    // crossed pages by way of a page load finishes rather than coming back on
+    // the step it left.
+    setPending(saved?.pending ?? null);
 
     const onStart = (event: Event) => {
       // A tour we do not have is not started at all, rather than started as
@@ -665,16 +684,10 @@ export function TourRunner() {
   /** Show a step. Only called once its page is on screen. */
   const go = React.useCallback((index: number) => {
     setPending(null);
-    setState((current) => {
-      if (!current) return current;
-      const next = { ...current, index };
-      try {
-        window.sessionStorage.setItem(TOUR_STATE_KEY, JSON.stringify(next));
-      } catch {
-        // The step still changes; only resuming after a reload is lost.
-      }
-      return next;
-    });
+    // Storing the new place is left to the effect below, which watches both
+    // the place and the request: two writers disagreed about whether a step
+    // already reached was still being asked for.
+    setState((current) => (current ? { ...current, index } : current));
   }, []);
 
   /** Ask for a step. What Back and Next do; the arriving is `go`'s job. */
@@ -712,15 +725,26 @@ export function TourRunner() {
     [location],
   );
 
-  // Persist the opening step, which `go` never sees.
+  // Persist the place, and the step being reached for along with it.
+  //
+  // Covers the opening step, which `go` never sees — and the case that broke
+  // tours wherever pages are served as directories: the step asks for a page
+  // written without a trailing slash, the host answers with one, and the
+  // redirect is a fresh page load. Everything in React goes with it, so a
+  // request held only in state was lost, the tour came back on the step it
+  // had left, and that step's own route sent the reader back where they
+  // started. Pressing Next did nothing, forever.
   React.useEffect(() => {
     if (!state) return;
     try {
-      window.sessionStorage.setItem(TOUR_STATE_KEY, JSON.stringify(state));
+      window.sessionStorage.setItem(
+        TOUR_STATE_KEY,
+        JSON.stringify({ ...state, pending }),
+      );
     } catch {
-      // See `go`.
+      // The tour still runs; only resuming after a page load is lost.
     }
-  }, [state]);
+  }, [pending, state]);
 
   /**
    * Where a step belongs, or null if it cannot be worked out.

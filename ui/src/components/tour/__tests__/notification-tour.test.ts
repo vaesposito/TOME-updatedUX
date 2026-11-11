@@ -110,6 +110,28 @@ describe("samePath", () => {
   it("falls back to the raw strings when one will not decode", () => {
     expect(samePath("/wiki/%E0%A4%A", "/wiki/%E0%A4%A")).toBe(true);
   });
+
+  // A host that serves pages as directories answers with a trailing slash,
+  // while steps are written without one. Treating those as different places
+  // left a step pushing its own route, being redirected back, and never
+  // showing itself.
+  it("treats a trailing slash as the same place", () => {
+    expect(
+      samePath(
+        "/projects/example-project/tome/wiki/overview.md",
+        "/projects/example-project/tome/wiki/overview.md/",
+      ),
+    ).toBe(true);
+    expect(samePath("/projects/", "/projects")).toBe(true);
+    expect(samePath("/", "/")).toBe(true);
+  });
+
+  it("keeps the query when a slash is trimmed", () => {
+    expect(samePath("/projects/?tab=digest", "/projects?tab=digest")).toBe(true);
+    expect(samePath("/projects/?tab=digest", "/projects?tab=overview")).toBe(
+      false,
+    );
+  });
 });
 
 describe("isTourRunning", () => {

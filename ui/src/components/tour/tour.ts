@@ -190,14 +190,24 @@ export function projectSlugFromPath(path: string | null | undefined): string | n
  *
  * The query counts: the catalogue's tabs live in one, and a step asking for
  * `?tab=digest` while standing on a bare `/projects` has not arrived yet.
+ *
+ * A trailing slash does not: `/wiki/page.md` and `/wiki/page.md/` are the
+ * same page. Steps are written without one, and a host that serves pages as
+ * directories answers with one — so comparing them literally left the step
+ * convinced it had not arrived, pushing its route again, being redirected
+ * back to the slashed form, and never showing itself at all.
  */
 export function samePath(a: string, b: string): boolean {
-  const decoded = (path: string) => {
+  const settled = (location: string) => {
+    const [path = "", query] = location.split("?");
+    // Only a trailing one, and never the whole of the root path.
+    const trimmed = path.length > 1 ? path.replace(/\/$/, "") : path;
+    const whole = query ? `${trimmed}?${query}` : trimmed;
     try {
-      return decodeURIComponent(path);
+      return decodeURIComponent(whole);
     } catch {
-      return path;
+      return whole;
     }
   };
-  return decoded(a) === decoded(b);
+  return settled(a) === settled(b);
 }

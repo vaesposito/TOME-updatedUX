@@ -9,7 +9,7 @@
  * believing it had arrived because the path already matched.
  */
 
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { TourRunner } from "../TourRunner";
 import { EDITING_TOUR } from "../editing-tour";
@@ -119,6 +119,89 @@ describe("starting a tour", () => {
     });
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("a step reached across a page load", () => {
+  // Wherever pages are served as directories, a step asks for a path written
+  // without a trailing slash and the host answers with one. The redirect is a
+  // fresh page load, so everything the runner held in state goes — and the
+  // request for the next step went with it, leaving the tour on the step it
+  // had left, whose own route sent the reader back. Next did nothing at all.
+  it("finishes the step it was reaching for", async () => {
+    const reaching = stepPointingAt("project-home");
+    expect(reaching).toBeGreaterThan(-1);
+    pathname = "/projects/example-project/tome";
+    plant("project-home", { top: 10, left: 0, width: 400, height: 200 });
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "general",
+        index: 0,
+        subject: { slug: "example-project", pagePath: "overview.md" },
+        pending: reaching,
+      }),
+    );
+
+    render(<TourRunner />);
+
+    expect(
+      await screen.findByText(GENERAL_TOUR[reaching]?.title as string),
+    ).toBeInTheDocument();
+    // And it does not bounce back to where the step it left belonged.
+    expect(push).not.toHaveBeenCalledWith("/projects");
+  });
+
+  // The linking tour opens on a step with nothing to point at, which is the
+  // one kind that shows in jsdom without a control being planted for it.
+  it("keeps the request where a page load can find it", async () => {
+    pathname = "/projects";
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "linking",
+        index: 0,
+        // A page to go to, so the next step really does cross a page rather
+        // than being reached where the reader already stands.
+        subject: { slug: "example-project", pagePath: "overview.md" },
+      }),
+    );
+
+    render(<TourRunner />);
+    await screen.findByText("Nothing is only in one place");
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    });
+
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/projects/example-project/tome/wiki/overview.md",
+      ),
+    );
+    const saved = JSON.parse(
+      window.sessionStorage.getItem(TOUR_STATE_KEY) ?? "{}",
+    );
+    expect(saved.pending).toBe(1);
+    expect(saved.index).toBe(0);
+  });
+
+  it("ignores a saved request that is not a step", async () => {
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "linking",
+        index: 0,
+        subject: null,
+        pending: 99,
+      }),
+    );
+
+    render(<TourRunner />);
+
+    expect(
+      await screen.findByText("Nothing is only in one place"),
+    ).toBeInTheDocument();
   });
 });
 

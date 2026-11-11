@@ -59,6 +59,7 @@ a bell to ignore, and five guided tours walk a newcomer through the lot.
 - The header tells a person's edit from the agent's, and a page the next ingest may overwrite says so.
 - The wiki has a glossary of its own, holding the only search box left in TOME.
 - A page, or one passage of it, can be tagged into other spaces and shows up in their content and their agent's answers.
+- Leaving an editor without typing no longer leaves the page claiming unsaved work.
 
 ## Notifications and following
 
@@ -75,6 +76,7 @@ a bell to ignore, and five guided tours walk a newcomer through the lot.
 - The spotlight lands on the control the step names, opening whatever hides it and putting it back afterwards.
 - Steps explaining an idea rather than a control appear at once, in the middle of the window.
 - A tour borrows a space that really has pages, so a newcomer is not told there is nothing to show.
+- A step about the editor opens it, and closes it again on the way out without ever discarding something you had typed.
 
 ## The agent and chat delivery
 
@@ -87,3 +89,4 @@ a bell to ignore, and five guided tours walk a newcomer through the lot.
 
 - The welcome band greets you by name, its tabs moved onto the page below and its buttons at one size.
 - An information mark beside the title gives the release and build date, in a note you can copy from.
+- A dark-mode reader no longer meets a frame of light: the theme is settled while the document is still being parsed.

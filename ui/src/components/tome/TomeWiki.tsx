@@ -3401,8 +3401,17 @@ export function TomeWiki({ slug }: { slug: string }) {
                           </Button>
                           {/* Filled, like New note on Notes: the one thing a
                               reader comes to an empty branch to do looks the
-                              same whichever branch they came to. */}
-                          <Button onClick={() => openNewPage(null)}>
+                              same whichever branch they came to.
+
+                              The walkthrough about writing a page rings this
+                              and asks the reader to press it. It never
+                              presses it itself: a page, once made, is theirs
+                              to remove, and nothing else a tour does has to
+                              be undone by hand. */}
+                          <Button
+                            data-tour="wiki-new-page"
+                            onClick={() => openNewPage(null)}
+                          >
                             <FilePlus2 className="h-4 w-4" />
                             New page
                           </Button>

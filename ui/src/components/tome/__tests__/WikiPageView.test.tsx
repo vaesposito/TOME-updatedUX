@@ -1196,6 +1196,19 @@ describe("what the editor's toolbar looks like", () => {
     );
     expect(container.querySelector('[data-tour="page-delete"]')).toHaveTextContent("Delete");
   });
+
+  it("anchors the kind on the control, not on the tooltip around it", async () => {
+    // The walkthrough about writing a page rings this to say whether an
+    // ingest may rewrite what the reader just wrote. The control is wrapped
+    // in the tooltip that explains the kind, and a ring drawn round the
+    // wrapper would be a ring round a thing with no edges.
+    render(page({ onDelete: jest.fn() }));
+    await openEdit();
+
+    expect(document.querySelector('[data-tour="page-kind"]')).toBe(
+      screen.getByTestId("tome-page-kind"),
+    );
+  });
 });
 
 describe("a walkthrough that opens the editor itself", () => {

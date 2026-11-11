@@ -275,9 +275,7 @@ describe("borrowing something to show", () => {
     });
 
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith(
-        "/projects/example-project/tome/wiki/charter.md",
-      ),
+      expect(push).toHaveBeenCalledWith("/projects/example-project/tome/wiki"),
     );
   });
 });
@@ -967,42 +965,6 @@ describe("a step that opens the editor", () => {
     expect(editor.press).not.toHaveBeenCalled();
   });
 
-  it("keeps the editor open across the run of steps that are about it", async () => {
-    // Four steps in a row are about the editor. Shutting it after each one
-    // flickered the page, had it write and discard a draft four times, and
-    // left the step arriving looking for its control on a half-shut page.
-    const editor = plantEditor();
-    pathname = "/projects/example-project/tome/wiki/charter.md";
-    window.sessionStorage.setItem(
-      TOUR_STATE_KEY,
-      JSON.stringify({
-        tour: "editing",
-        index: EDITING_TOUR.findIndex((step) => step.id === "modes"),
-        subject: { slug: "example-project", pagePath: "charter.md" },
-      }),
-    );
-
-    render(<TourRunner />);
-    await waitFor(() => expect(editor.press).toHaveBeenCalledTimes(1));
-    await screen.findByRole("dialog");
-
-    act(() => {
-      screen.getByRole("button", { name: "Next" }).click();
-    });
-    await screen.findByText("Telling the agent what a dynamic page should say");
-
-    expect(editor.cancelled).not.toHaveBeenCalled();
-    expect(editor.press).toHaveBeenCalledTimes(1);
-
-    // And it is still given back at the end.
-    act(() => {
-      document.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-      );
-    });
-    await waitFor(() => expect(editor.cancelled).toHaveBeenCalledTimes(1));
-  });
-
   it("does not press a menu that has already shut itself", async () => {
     // A menu closes when the reader clicks anywhere else, and pressing Next
     // is clicking somewhere else. The press meant to close it opened it
@@ -1070,6 +1032,45 @@ describe("a step that opens the editor", () => {
   });
 });
 
+describe("a walkthrough that asks rather than presses", () => {
+  it("rings New page, leaves it alone, and stays where the reader lands", async () => {
+    // Everything a tour opens it puts back, and a page is the one thing it
+    // could open that putting back would not cover. So the tour about
+    // writing a page rings the button and waits — and because the page a
+    // reader then makes was not in the subject the runner resolved, every
+    // step after this one has to stay wherever they ended up.
+    const pressed = jest.fn();
+    const button = plant(
+      "wiki-new-page",
+      { top: 120, left: 800, width: 120, height: 32 },
+      "button",
+    );
+    button.addEventListener("click", pressed);
+    pathname = "/projects/example-project/tome/wiki";
+    window.sessionStorage.setItem(
+      TOUR_STATE_KEY,
+      JSON.stringify({
+        tour: "editing",
+        index: EDITING_TOUR.findIndex((step) => step.id === "new"),
+        subject: { slug: "example-project", pagePath: "charter.md" },
+      }),
+    );
+
+    render(<TourRunner />);
+
+    await screen.findByTestId("tour-spotlight");
+    expect(pressed).not.toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    });
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(push).not.toHaveBeenCalled();
+    expect(pressed).not.toHaveBeenCalled();
+  });
+});
+
 describe("a page the lookup could not find", () => {
   it("is waited for rather than navigated to anyway", async () => {
     // Started from inside a project, both because that is where a reader
@@ -1118,9 +1119,7 @@ describe("a page the lookup could not find", () => {
     });
 
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith(
-        "/projects/project-8/tome/wiki/charter.md",
-      ),
+      expect(push).toHaveBeenCalledWith("/projects/project-8/tome/wiki"),
     );
   });
 });
@@ -1159,9 +1158,7 @@ describe("the projects the reader watches", () => {
     });
 
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith(
-        "/projects/example-watched/tome/wiki/charter.md",
-      ),
+      expect(push).toHaveBeenCalledWith("/projects/example-watched/tome/wiki"),
     );
   });
 });

@@ -1,5 +1,4 @@
-import { pageRoute } from "@/components/tour/editing-tour";
-import type { TourStep } from "@/components/tour/tour";
+import { wikiPageRoute, type TourStep } from "@/components/tour/tour";
 
 /**
  * How one space's knowledge reaches another.
@@ -32,7 +31,7 @@ export const LINKING_TOUR: readonly TourStep[] = [
     // reader's waiting on this page that Cancel would throw away.
     opens: ["page-edit", "page-tags"],
     hint: "Choose Edit — Connect to a space sits with the page's own details.",
-    route: pageRoute,
+    route: wikiPageRoute,
     title: "Connect a page to another space",
     body:
       "A whole-page connection is kept in the page's frontmatter, so it survives an ingest that rewrites the body. To connect a single paragraph instead, type # in the editor and pick the space.",

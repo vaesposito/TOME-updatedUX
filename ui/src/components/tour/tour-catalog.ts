@@ -26,7 +26,7 @@ export const TOURS: readonly Tour[] = [
   {
     id: "editing",
     name: "Writing a page",
-    blurb: "Page kinds, the three editors, prompts, and who hears about an edit.",
+    blurb: "Making one, connecting it, who hears about it, and whose page it is.",
     steps: EDITING_TOUR,
   },
   {

@@ -1460,6 +1460,10 @@ function KindToggle({
         icon={<Icon className={cn("h-3 w-3 shrink-0", spec.iconClass)} aria-hidden="true" />}
         className="uppercase tracking-wide"
         data-testid="tome-page-kind"
+        // On the control rather than on the row it shares with the page's
+        // other details: the walkthrough's step is about the one thing that
+        // decides whether an ingest may rewrite the page.
+        data-tour="page-kind"
       >
         {spec.label}
       </PageToolbarSelect>

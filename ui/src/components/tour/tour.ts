@@ -16,7 +16,9 @@ export type TourAnchor =
   | "page-edit"
   | "page-cancel"
   | "page-delete"
+  | "page-kind"
   | "wiki-arrange"
+  | "wiki-new-page"
   | "project-home"
   | "hub-tabs"
   | "hub-search"
@@ -179,6 +181,18 @@ export function projectSlugFromPath(path: string | null | undefined): string | n
   } catch {
     return slug;
   }
+}
+
+/**
+ * Where the borrowed page is, or null if there is none to borrow.
+ *
+ * Encoded a segment at a time, because a page path holds slashes that are
+ * part of the address and may hold spaces that are not.
+ */
+export function wikiPageRoute(subject: TourSubject): string | null {
+  if (!subject.slug || !subject.pagePath) return null;
+  const path = subject.pagePath.split("/").map(encodeURIComponent).join("/");
+  return `/projects/${subject.slug}/tome/wiki/${path}`;
 }
 
 /**

@@ -115,8 +115,8 @@ export const TOME_HOME_WIDGETS: readonly TomeHomeWidget[] = [
   // other wikis, which needs the width to name both the page and its space.
   //
   // Whole-width for the reason the band above it is: the page is three
-  // columns and the shipped set fills whole rows of them, so a fourteenth
-  // card of width one would leave a row of one wherever it landed.
+  // columns and the shipped set fills whole rows of them, so a card of width
+  // one added to that set would leave a row of one wherever it landed.
   //
   // No `workspace`, because the card is about what tags *this* space and
   // there is no this space when every space is in view.

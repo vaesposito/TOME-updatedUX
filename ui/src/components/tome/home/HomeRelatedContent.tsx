@@ -1,7 +1,6 @@
 "use client";
 
 import { FileSymlink } from "lucide-react";
-import * as React from "react";
 
 import {
   HomeCard,

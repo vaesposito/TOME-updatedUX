@@ -495,7 +495,7 @@ describe("WikiPageView", () => {
 
     fireEvent.focus(dynamicInfo);
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "Agent rewrites this page on every reingest. Your edits feed in as prior context; they may or may not survive verbatim.",
+      "Custom prompts shape this page, and the agent writes it from what it ingests. Your own edits feed the next rewrite as context rather than surviving verbatim.",
     );
     fireEvent.blur(dynamicInfo);
 

@@ -27,7 +27,7 @@ export const PAGE_KIND_DESCRIPTIONS: Record<PageKind, string> = {
   stable:
     "Human-curated. Written once on greenfield ingest, then preserved across every reingest. Edit freely; your changes stick.",
   dynamic:
-    "Agent rewrites this page on every reingest. Your edits feed in as prior context; they may or may not survive verbatim.",
+    "Custom prompts shape this page, and the agent writes it from what it ingests. Your own edits feed the next rewrite as context rather than surviving verbatim.",
   hidden:
     "Agent-only memory. Read by the synthesizers and chat, not surfaced in the wiki. Useful for project-specific instructions or notes you want the agent to keep in mind.",
   report:

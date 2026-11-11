@@ -41,6 +41,15 @@ interface PanelShellProps extends PanelHeaderProps {
   maxWidthClassName?: string;
   /** Allows dense panels to reduce the shared padding and vertical rhythm. */
   contentClassName?: string;
+  /**
+   * Marks this panel as a walkthrough step's subject.
+   *
+   * On the shell rather than on whatever the panel happens to be showing:
+   * several of these swap their content for an empty state, and a step
+   * anchored on the content would have nothing to ring in exactly the
+   * deployment where it most needed to say so.
+   */
+  anchor?: string;
 }
 
 /**
@@ -56,11 +65,13 @@ export function PanelShell({
   action,
   maxWidthClassName = "max-w-4xl",
   contentClassName,
+  anchor,
   children,
 }: PanelShellProps) {
   return (
     <ScrollArea className="h-full">
       <div
+        data-tour={anchor}
         className={cn(
           "mx-auto space-y-6 p-6",
           maxWidthClassName,

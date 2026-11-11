@@ -2782,6 +2782,11 @@ export function TomeWiki({ slug }: { slug: string }) {
                     <NavSection
                       icon={<FileSymlink className="h-4 w-4" />}
                       label="Related content"
+                      // The walkthrough about connecting two spaces points
+                      // here for the far end of a connection: the rail entry
+                      // is in every space whether or not anything has tagged
+                      // it, so the step has something to ring either way.
+                      anchor="space-related"
                       active={navActive.related}
                       expanded={referencesOpen}
                       onToggle={() => setReferencesOpen(!referencesOpen)}
@@ -3496,6 +3501,11 @@ export function TomeWiki({ slug }: { slug: string }) {
               <div className="min-h-0 min-w-0 flex-1">
                 <PanelShell
                   title="Related content"
+                  // On the shell rather than on the list: the list is swapped
+                  // for an empty state whenever nothing tags this space, and
+                  // the walkthrough's step has to be able to ring the view
+                  // either way — including to say that it is empty.
+                  anchor="space-related-list"
                   description="Pages written in other spaces that tag this one. Each row names the space it lives in, so you can go and read it in place."
                   titleAccessory={
                     <span className="text-xs font-normal text-muted-foreground">

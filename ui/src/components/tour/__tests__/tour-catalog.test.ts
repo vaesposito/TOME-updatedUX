@@ -36,7 +36,7 @@ describe("the catalogue", () => {
     for (const tour of TOURS) {
       for (const step of tour.steps) {
         if (!step.route) continue;
-        const nowhere = step.route({ slug: null, pagePath: null });
+        const nowhere = step.route({ slug: null, pagePath: null, otherSlug: null });
         if (nowhere === null) {
           expect(step.unavailable).toBeDefined();
         }

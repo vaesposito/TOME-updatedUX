@@ -14,6 +14,9 @@ import { render, screen } from "@testing-library/react";
 import { FunctionsView } from "@/components/projects/FunctionsView";
 import { HubTabs } from "@/components/projects/HubTabs";
 import { PageSpaceTags } from "@/components/tome/PageSpaceTags";
+import { PanelShell } from "@/components/tome/PanelHeader";
+import { NavSection } from "@/components/tome/RailNav";
+import { TomeEmpty } from "@/components/tome/TomeEmpty";
 import { WebexMeetingSeriesSettings } from "@/components/tome/WebexMeetingSeriesSettings";
 import { WorkspaceDigest } from "@/components/tome/WorkspaceDigest";
 
@@ -96,6 +99,50 @@ describe("connecting a page to a space", () => {
     );
 
     expect(anchored("page-tags")).toBeNull();
+  });
+});
+
+describe("the far end of a connection", () => {
+  it("is anchored on the rail's own row, not on the column it heads", () => {
+    // Expanded, the section is the whole rail: a ring drawn round the column
+    // would take in every page under it as well as the row being named.
+    render(
+      <NavSection
+        icon={null}
+        label="Related content"
+        active={false}
+        expanded
+        count={2}
+        onToggle={jest.fn()}
+        onClick={jest.fn()}
+        controlsId="related"
+        anchor="space-related"
+      >
+        <span>A page from somewhere else</span>
+      </NavSection>,
+    );
+
+    expect(anchored("space-related")).toBe(
+      screen.getByRole("button", { name: "Related content" }),
+    );
+    expect(anchored("space-related")).not.toContainElement(
+      screen.getByText("A page from somewhere else"),
+    );
+  });
+
+  it("is anchored on the view, so an empty one can still be rung", () => {
+    // The list is swapped for an empty state whenever nothing tags the
+    // space, and a step anchored on the list would have nothing to point at
+    // in exactly the deployment where it most has something to say.
+    render(
+      <PanelShell title="Related content" anchor="space-related-list">
+        <TomeEmpty headline="No page tags this space yet" />
+      </PanelShell>,
+    );
+
+    expect(anchored("space-related-list")).toContainElement(
+      screen.getByText("No page tags this space yet"),
+    );
   });
 });
 

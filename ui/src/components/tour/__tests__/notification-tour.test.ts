@@ -11,8 +11,9 @@ import {
 const HAS_PROJECT: TourSubject = {
   slug: "example-project",
   pagePath: "charter.md",
+  otherSlug: "example-other-project",
 };
-const NOTHING: TourSubject = { slug: null, pagePath: null };
+const NOTHING: TourSubject = { slug: null, pagePath: null, otherSlug: null };
 
 function step(id: string) {
   const found = NOTIFICATION_TOUR.find((entry) => entry.id === id);
@@ -65,7 +66,11 @@ describe("the notifications walkthrough", () => {
   // A project with no wiki page can still show its Watch button and its
   // Home; only the step about saving a page has nothing to open.
   it("still visits a project that has no pages", () => {
-    const empty: TourSubject = { slug: "example-project", pagePath: null };
+    const empty: TourSubject = {
+      slug: "example-project",
+      pagePath: null,
+      otherSlug: null,
+    };
     expect(step("watch").route?.(empty)).toBe("/projects/example-project/tome");
     expect(step("summary").route?.(empty)).toBe("/projects/example-project/tome");
     expect(step("notify").route?.(empty)).toBeNull();

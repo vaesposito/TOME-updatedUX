@@ -40,6 +40,7 @@ export function NavSection({
   children,
   holdsNothing,
   actions,
+  anchor,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -81,6 +82,14 @@ export function NavSection({
    * column for as long as the pointer was there.
    */
   actions?: React.ReactNode;
+  /**
+   * Marks this row as a walkthrough step's subject.
+   *
+   * Carried on the row's own button rather than on the column that holds the
+   * row and everything under it: a step rings what it names, and the section
+   * expanded is the whole rail.
+   */
+  anchor?: string;
 }) {
   const empty = count === 0;
 
@@ -107,6 +116,7 @@ export function NavSection({
           }}
           aria-expanded={empty ? undefined : expanded}
           aria-controls={empty ? undefined : controlsId}
+          data-tour={anchor}
           className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-2 text-left"
         >
           {icon}

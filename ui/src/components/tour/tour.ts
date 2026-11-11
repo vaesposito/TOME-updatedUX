@@ -20,6 +20,8 @@ export type TourAnchor =
   | "wiki-arrange"
   | "wiki-new-page"
   | "project-home"
+  | "space-related"
+  | "space-related-list"
   | "hub-tabs"
   | "hub-search"
   | "hub-create"
@@ -49,6 +51,19 @@ export interface TourSubject {
   slug: string | null;
   /** A page in that project, for steps about one. */
   pagePath: string | null;
+  /**
+   * A second project, for the steps that are about two.
+   *
+   * A connection has two ends, and the walkthrough about making one has to
+   * show the other: the page is written here and turns up over there. One
+   * project could not say where over there is.
+   *
+   * The next one the reader can read after the one the rest of the tour
+   * borrowed, so that the two are never the same space — which would make
+   * the point of the tour impossible to see — and null in a deployment where
+   * they can read only one.
+   */
+  otherSlug: string | null;
 }
 
 export interface TourStep {

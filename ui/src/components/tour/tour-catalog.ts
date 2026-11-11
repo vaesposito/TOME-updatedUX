@@ -38,7 +38,7 @@ export const TOURS: readonly Tour[] = [
   {
     id: "linking",
     name: "Connecting spaces",
-    blurb: "Putting a page in another space's related content, and what an edge is.",
+    blurb: "Connecting a page, then standing in the space it reaches.",
     steps: LINKING_TOUR,
   },
   {

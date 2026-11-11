@@ -29,7 +29,7 @@ jest.mock("next/navigation", () => ({
 /** The step index within the general tour that asks for a given route. */
 const stepAsking = (route: string) =>
   GENERAL_TOUR.findIndex(
-    (step) => step.route?.({ slug: null, pagePath: null }) === route,
+    (step) => step.route?.({ slug: null, pagePath: null, otherSlug: null }) === route,
   );
 
 /** The step index within the general tour that points at a given control. */

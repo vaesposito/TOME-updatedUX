@@ -16,8 +16,9 @@ import type { TourSubject } from "../tour";
 const HAS_PROJECT: TourSubject = {
   slug: "example-project",
   pagePath: "charter.md",
+  otherSlug: "example-other-project",
 };
-const NOTHING: TourSubject = { slug: null, pagePath: null };
+const NOTHING: TourSubject = { slug: null, pagePath: null, otherSlug: null };
 
 /** Which step creates the page; everything after it is on a page that is new. */
 const CREATES = "new";

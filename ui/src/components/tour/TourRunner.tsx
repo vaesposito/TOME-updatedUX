@@ -539,20 +539,26 @@ async function lookUpSubject(preferred: string | null): Promise<TourSubject> {
   // usual answer is in the first batch, and a deployment where it is not
   // should still get a page rather than an apology. See MAX_PROBES.
   const candidates = slugs.slice(0, MAX_PROBES);
+  /** The next one along, for the steps that are about a second space. */
+  const besides = (chosen: string | null) =>
+    slugs.find((candidate) => candidate !== chosen) ?? null;
   for (let from = 0; from < candidates.length; from += PROBE_BATCH) {
     const batch = candidates.slice(from, from + PROBE_BATCH);
     const pages = await Promise.all(batch.map(firstPage));
     const found = pages.findIndex((path) => path !== null);
     if (found >= 0) {
+      const slug = batch[found] as string;
       return {
-        slug: batch[found] as string,
+        slug,
         pagePath: pages[found] as string,
+        otherSlug: besides(slug),
       };
     }
   }
   // Nothing with a page: the first readable project still serves the steps
   // that only need a project, and the page steps say what is missing.
-  return { slug: slugs.at(0) ?? null, pagePath: null };
+  const only = slugs.at(0) ?? null;
+  return { slug: only, pagePath: null, otherSlug: besides(only) };
 }
 
 /**
@@ -817,7 +823,7 @@ export function TourRunner() {
    * held up the two inbox steps for a project they never needed.
    */
   const subjectProbe: TourSubject = React.useMemo(
-    () => state?.subject ?? { slug: null, pagePath: null },
+    () => state?.subject ?? { slug: null, pagePath: null, otherSlug: null },
     [state?.subject],
   );
   const routeOf = React.useCallback(
